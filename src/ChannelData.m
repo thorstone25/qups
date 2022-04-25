@@ -90,6 +90,7 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = gpuArray(chd), chd = applyFun2Props(chd, @gpuArray); end
         function chd = tall(chd)    , chd = applyFun2Data (chd, @tall); end
         function chd = sparse(chd)  , chd = applyFun2Data (chd, @sparse); end
+        function T = classUnderlying(self), T = class(self.data); end
     end
 
     % DSP overloads 
@@ -238,6 +239,40 @@ classdef ChannelData < matlab.mixin.Copyable
             fc = f(mode(argmax(abs(y.data), [], 1), 'all')); % select peak over receives/transmits
         end
     
+        function chd = rectifyt0(chd, interp)
+            % RECTIFYT0 - Collapse t0 to a scalar
+            %
+            % chd = RECTIFYT0(chd) returns a ChannelData object with a
+            % single value of t0 by resmapling all channels onto a single
+            % time axis. 
+            %
+            % chd = RECTIFYT0(chd, interp) specifices the interpolation
+            % method as recognized by interpn.
+            %
+            % See also INTERPN 
+
+
+            if nargin < 2, interp = 'linear'; end
+            % get offset based on minimum
+            t0_ = min(chd.t0, [], 'all');
+            koff = (chd.t0 - t0_)*chd.fs; % distance from universal t0 in indices ( 1 x [1|N] x [1|M])
+            T_ = chd.T + ceil(max(koff)); % new maximum time
+            k = cast((1:T_)', 'like', real(chd.data));
+            k = k + koff; % time offset as appropriate
+            
+            % get new data vectors in index coordinates
+            k = k + false([1, chd.N]); % T' x N
+            n = chd.rxs + false([T_,1]); % T' x N
+
+            % resample - 1 tx at a time to save data
+            for m = chd.M:-1:1
+                data_(:,:,m) = interpn(sub(chd.data,m,3), sub(k,m,3), n, interp, 0);
+            end
+
+            % make new ChannelData
+            chd = ChannelData('data', data_, 't0', t0_, 'fs', chd.fs);
+            
+        end
     end
 
     % plotting and display
@@ -308,11 +343,11 @@ classdef ChannelData < matlab.mixin.Copyable
             self.t0 = t0_;
             self.fs = fs_;
         end
-        function t = get.time(self), t = cast(self.t0 + (0 : gather(self.T) - 1)' ./ self.fs, 'like', real(self.data(1))); end % match data type, except always real
+        function t = get.time(self), t = cast(self.t0 + (0 : gather(self.T) - 1)' ./ self.fs, 'like', real(self.data)); end % match data type, except always real
         function T = get.T(self), T = size(self.data,1); end
         function N = get.N(self), N = size(self.data,2); end
         function M = get.M(self), M = size(self.data,3); end
-        function n = get.rxs(self), n=cast(shiftdim(1:self.N,0 ), 'like', real(self.data(1))); end
-        function m = get.txs(self), m=cast(shiftdim(1:self.M,-1), 'like', real(self.data(1))); end
+        function n = get.rxs(self), n=cast(shiftdim(1:self.N,0 ), 'like', real(self.data)); end
+        function m = get.txs(self), m=cast(shiftdim(1:self.M,-1), 'like', real(self.data)); end
     end    
 end
