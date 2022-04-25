@@ -5,7 +5,9 @@ classdef SequenceRadial < Sequence
     % utilities for transmit sequences that can be defined by range and 
     % angle with respect to an apex.
     %
-    % See also: SEQUENCE SEQUENCERADIAL/SEQUENCERADIAL
+    % Use with a TransducerConvex.
+    %
+    % See also: SEQUENCERADIAL/SEQUENCERADIAL SEQUENCE TRANSDUCERCONVEX
     
     properties
         apex = [0;0;0] % 3 x 1 center of polar coordinate system
@@ -98,7 +100,8 @@ classdef SequenceRadial < Sequence
         function t0 = t0Offset(self)
             switch self.type
                 case 'VS' % for virtual source, t0 is at the foci
-                    t0 = - self.ranges ./ self.c0; % (1 x S)
+                    % transducer intersects 0: offset to that distance
+                    t0 = - (self.ranges - vecnorm(self.apex,2,1)) ./ self.c0; % (1 x S)
                 otherwise % PW - t0 is at origin; FSA - t0 at the element
                     t0 = 0; % (1 x 1)
             end

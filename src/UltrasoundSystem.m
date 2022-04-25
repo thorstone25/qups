@@ -609,8 +609,17 @@ classdef UltrasoundSystem < handle
         end        
         
         function [ksource, tsig, sig0] = getKWaveSource(self, kgrid, kgrid_origin, el_sub_div, c0)
-            if nargin < 4, el_sub_div = [1,1]; end
-            if nargin < 5, c0 = 1540; end
+            % ULTRASOUNDSYSTEM/GETKWAVESOURCE - Create a k-wave compatible source structures
+            % 
+            % [ksource, tsig, sig0] = GETKWAVESOURCE(self, kgrid, kgrid_origin, el_sub_div, c0)
+            % creates k-Wave compatible source structures.
+            % 
+            % See also ULTRASOUNDSYSTEM/GETKWAVEGRID
+            % ULTRASOUNDSYSTEM/GETKWAVERECEIVE
+
+            %
+            if nargin < 4 || isempty(el_sub_div), el_sub_div = [1,1]; end
+            if nargin < 5 || isempty(c0)        , c0 = 1540; end
             
             nPulse = self.sequence.numPulse; % number of pulses
             if(isnan(nPulse)), nPulse = self.tx.numel; end % for FSA apertures
@@ -619,7 +628,7 @@ classdef UltrasoundSystem < handle
             vec = @(x) x(:);
             
             % beamforming
-            sigt0 = self.sequence.t0Offset();
+            sigt0 = self.sequence.t0Offset(); % 1 x S
             steering_delays = -sigt0 - self.sequence.delays(self.tx); % (N x S)
             el_apodization  = self.sequence.apodization(self.tx); % ([1|N] x [1|S])
             el_apodization = el_apodization + zeros([self.tx.numel nPulse]); % (N x S)
@@ -657,7 +666,7 @@ classdef UltrasoundSystem < handle
             [n0, nend] = deal(floor(t0 / kgrid.dt), ceil(tend / kgrid.dt));
             t  = (  n0   : 1 :   nend  )' * kgrid.dt; % includes zero if t0 <= 0 <= tend
             tc = (2*n0-1 : 1 : 2*nend-1)' * kgrid.dt; % includes zero if t0 <= 0 <= tend
-            tsig = tc + sigt0; % offset output time zero
+            tsig = tc + shiftdim(sigt0(:),-2); % offset output time zero (T x 1 x [1|S])
 
             % tests
             assert(min(t) <= 0 && max(t) >= 0, 'The sampled signal does not begin and end after 0.'); % test that we are actually sampling through t == 0
