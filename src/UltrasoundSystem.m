@@ -1206,7 +1206,7 @@ classdef UltrasoundSystem < handle
             apod_args = {};
             
             % convert to x/y/z in 1st dimension
-            P_im = cat(1, X(:)', Y(:)', Z(:)'); % 3 x I
+            P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 = 3 x I
             
             % get positions of the aperture(s)
             P_tx = self.tx.positions(); % cast(self.tx.positions(), 'like', time(end)); % 3 x M
@@ -1228,14 +1228,14 @@ classdef UltrasoundSystem < handle
             
             % beamform and collapse the aperture
             if nargin < 5 || isempty(rcvfun)
-                % beamform the data (I x 1)
+                % beamform the data (I1 x I2 x I3 x 1)
                 B = beamform('DAS', pos_args{:}, dat_args{:}, ext_args{:});
             else
-                % beamform the data (I x N)
+                % beamform the data (I1 x I2 x I3 x N)
                 B = beamform('SYN', pos_args{:}, dat_args{:}, ext_args{:});
                 
                 % apply recieve aperture function in dim 1 and shape up
-                B = rcvfun(B, 2); % I x 1
+                B = rcvfun(B, 4); % I1 x I2 x I3 x 1
             end
             
             % make the shape consistent
