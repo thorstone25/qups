@@ -104,7 +104,7 @@ classdef Sequence < handle
         end
     end
     
-    % temporal response ethods
+    % temporal response methods
     methods   
         function tau = delays(self, tx)
             % tau = DELAYS(self, tx)
@@ -167,6 +167,15 @@ classdef Sequence < handle
                     a = eye(size(tx.positions(),2)); % N x N identity
                 otherwise
                     a = ones([size(tx.positions(),2) self.numPulse]);
+            end
+        end
+
+        function t0 = t0Offset(self)
+            switch self.type
+                case 'VS' % for virtual source, t0 is at the foci
+                    t0 = - vecnorm(self.focus, 2,1) ./ self.c0; % (1 x S)
+                otherwise % PW - t0 is at origin; FSA - t0 at the element
+                    t0 = 0; % (1 x 1)
             end
         end
     end

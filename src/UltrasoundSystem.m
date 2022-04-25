@@ -120,6 +120,7 @@ classdef UltrasoundSystem < handle
             self.tmp_folder = tempname; % gives a folder usually in /tmp
             mkdir(self.tmp_folder); % make the folder
             addpath(self.tmp_folder); % this should let us shadow any other binaries
+            self.recompile(); % attempt to recopmile code
         end
 
         function delete(self)
@@ -607,7 +608,7 @@ classdef UltrasoundSystem < handle
             
         end        
         
-        function [ksource, t, sig0] = getKWaveSource(self, kgrid, kgrid_origin, el_sub_div, c0)
+        function [ksource, tsig, sig0] = getKWaveSource(self, kgrid, kgrid_origin, el_sub_div, c0)
             if nargin < 4, el_sub_div = [1,1]; end
             if nargin < 5, c0 = 1540; end
             
@@ -618,7 +619,8 @@ classdef UltrasoundSystem < handle
             vec = @(x) x(:);
             
             % beamforming
-            steering_delays = self.sequence.delays(self.tx); % (N x S)
+            sigt0 = self.sequence.t0Offset();
+            steering_delays = -sigt0 - self.sequence.delays(self.tx); % (N x S)
             el_apodization  = self.sequence.apodization(self.tx); % ([1|N] x [1|S])
             el_apodization = el_apodization + zeros([self.tx.numel nPulse]); % (N x S)
             
@@ -635,42 +637,58 @@ classdef UltrasoundSystem < handle
             sig_dur = reshape([chirp_waveform.tend] - [chirp_waveform.t0], size(chirp_waveform));
             
             % get the largest subelement-surface to pixel step size
-            max_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0;
+            grid_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0;
             
             % check for delta functions - functions less than a max delay
-            sig_is_delta = abs(sig_dur) < max_delay;
-            imp_is_delta = abs(imp_dur) < max_delay;
+            sig_is_delta = abs(sig_dur) < grid_delay;
+            imp_is_delta = abs(imp_dur) < grid_delay;
             
             % get minimum and maximum steering angle delays
             [min_steer, max_steer] = deal(min(steering_delays(:)), max(steering_delays(:)));
             
+            % get max cumulative delay to ensure that signal is sampled
+            % starting from before the first waveform begins until after
+            % the last waveform ends
+            tdur = imp_dur + sig_dur + grid_delay;
+            
             % get the signal time domain 
-            t0   = tx_impulse_waveform.t0   + min([chirp_waveform.t0])   - max_delay + min_steer;
-            tend = tx_impulse_waveform.tend + max([chirp_waveform.tend]) + max_delay + max_steer;
-            t = (floor(t0 / kgrid.dt) : 1 : ceil(tend / kgrid.dt))' * kgrid.dt; % includes zero if t0 <= 0 <= tend
+            t0   = tx_impulse_waveform.t0   + min([chirp_waveform.t0])   - tdur + min_steer;
+            tend = tx_impulse_waveform.tend + max([chirp_waveform.tend]) + tdur + max_steer;
+            [n0, nend] = deal(floor(t0 / kgrid.dt), ceil(tend / kgrid.dt));
+            t  = (  n0   : 1 :   nend  )' * kgrid.dt; % includes zero if t0 <= 0 <= tend
+            tc = (2*n0-1 : 1 : 2*nend-1)' * kgrid.dt; % includes zero if t0 <= 0 <= tend
+            tsig = tc + sigt0; % offset output time zero
+
+            % tests
+            assert(min(t) <= 0 && max(t) >= 0, 'The sampled signal does not begin and end after 0.'); % test that we are actually sampling through t == 0
+            assert(any(t==0), 'The sampled signal does not pass through 0.'); % test we pass through 0.
             
             % define the sampling functional: 
             % always the same length as t
             % t always includes 0
             function sig = shiftSignal(delay,ind)
                 % check for delta functions - functions less than a max delay
-                sig_is_delta = abs(sig_dur(ind)) < max_delay; 
-                imp_is_delta = abs(imp_dur) < max_delay;
+                sig_is_delta = abs(sig_dur(ind)) < grid_delay; 
+                imp_is_delta = abs(imp_dur) < grid_delay;
                 
                 if(~imp_is_delta) % impulse not a delta: delay the impulse
                     sig_samp = vec(tx_impulse_waveform(ind).sample(t - delay));
                     imp_samp = vec(chirp_waveform.sample(t));
-                    sig = conv(sig_samp, imp_samp, 'same');
+                    sig = conv(sig_samp, imp_samp, 'full');
                 elseif(~sig_is_delta) % signal is not a delta: delay on signal
                     sig_samp = vec(tx_impulse_waveform(ind).sample(t));
                     imp_samp = vec(chirp_waveform.sample(t - delay));
-                    sig = conv(sig_samp, imp_samp, 'same');
+                    sig = conv(sig_samp, imp_samp, 'full');
                 else % both are deltas use linear resampling (sketchy)
                     sig_samp = vec(tx_impulse_waveform(ind).sample(t));
                     imp_samp = vec(chirp_waveform.sample(t));
-                    sig = interp1(t,conv(sig_samp, imp_samp), t - delay, 'linear', 0);
+                    sig = interp1(t,conv(sig_samp, imp_samp, 'full'), t - delay, 'linear', 0);
                 end
-                sig = real(sig) .* inv(norm(vec(abs(sig))));
+                % sig = real(sig) .* inv(norm(vec(abs(sig))));
+                % normalize samples?
+                nsig = norm(vec(abs(sig)));
+                isig = nsig > 0;
+                sig(isig) = real(sig(isig)) .* inv(nsig(isig));
             end
             
             % output the non-delayed signals
@@ -705,7 +723,7 @@ classdef UltrasoundSystem < handle
             [t_vec] = dealfun(sendDataToWorkers, vec(t));
             
             % dereference
-            [nTx, T] = deal(self.tx.numel, numel(t));
+            [nTx, T] = deal(self.tx.numel, numel(tc));
             
             % define the transmit sources
             fprintf('\nDefining sources ...\n');
@@ -773,11 +791,11 @@ classdef UltrasoundSystem < handle
                     if(~imp_is_delta) % impulse not a delta: delay the impulse
                         imp_samp = (tx_impulse_waveform.sample(t_ - delays));  %#ok<PFBNS>
                         sig_samp = (chirp_waveform.sample(     t_));           %#ok<PFBNS>
-                        sig = convn(imp_samp, sig_samp, 'same');
+                        sig = convn(imp_samp, sig_samp, 'full');
                     elseif(~sig_is_delta) % signal is not a delta: delay on signal
                         imp_samp = (tx_impulse_waveform.sample(t_));
                         sig_samp = (chirp_waveform.sample(     t_ - delays));
-                        sig = convn(sig_samp, imp_samp, 'same');
+                        sig = convn(sig_samp, imp_samp, 'full');
                     else % both are deltas use linear resampling (sketchy)
                         warning('UltrasoundSystem:getKWaveSource:convolvingDeltas', ...
                             ['Using linear interpolation to convolve two delta functions with a shift. ', ...
@@ -785,12 +803,14 @@ classdef UltrasoundSystem < handle
                         sig_samp = (tx_impulse_waveform.sample(t_));
                         imp_samp = (chirp_waveform.sample(     t_));
                         t_samp = t_vec.Value - delays;
-                        conv_samp = griddedInterpolant(t_, conv(sig_samp, imp_samp, 'same'), 'linear', 'none');
+                        conv_samp = griddedInterpolant(t_, conv(sig_samp, imp_samp, 'full'), 'linear', 'none');
                         sig = reshape(conv_samp(vec(t_samp).'), size(t_samp));
                     end
                     
                     % normalize samples?
-                    sig = real(sig) .* inv(norm(vec(abs(sig))));
+                    nsig = norm(vec(abs(sig)));
+                    isig = nsig > 0;
+                    sig(isig) = real(sig(isig)) .* inv(nsig(isig));
                     %%%
 
                     % add contributing signal from each subsample to each identical pixels
@@ -829,55 +849,60 @@ classdef UltrasoundSystem < handle
         end
         
         function [resp, t_resp] = getKWaveReceive(self, kgrid, ksensor, sens_map, sensor_data, c0, varargin)
-            
+            %
+
             % set defaults
-            device = 0; % use native type = -1 * logical(gpuDeviceCount); % use available gpu
+            kwargs.device = []; % use native type = -1 * logical(gpuDeviceCount); % use available gpu
+            kwargs.interp = 'linear';
 
             % helper function
             vec = @(x) x(:);
             
             % set options
             for i = 1:numel(varargin)
-                switch varargin{i}
-                    case 'device'
-                        if varargin{i+1} > gpuDeviceCount 
-                            warning('Attempted to select device %i but only %i devices are available. Using the default device')
-                        else
-                        switch varargin{i+1}
-                            case -1
-                                % force on gpu
-                                sensor_data = gpuArray(sensor_data);
-                            case 0
-                                % don't place on gpu
-                            otherwise
-                                % select gpu, then place
-                                g = gpuDevice();
-                                if g.Index ~= device
-                                    sensor_data = gather(sensor_data);
-                                    g = gpuDevice(device);
-                                    sensor_data = gpuArray(sensor_data);
-                                end
-                        end
+                kwargs.(varargin{i}) = varargin{i+1};
+            end
+
+            % set device
+            if isempty(kwargs.device), % do nothing
+            elseif kwargs.device > gpuDeviceCount
+                warning('Attempted to select device %i but only %i devices are available. Using the default device')
+            else
+                switch kwargs.device
+                    case -1
+                        % force on gpu
+                        sensor_data = gpuArray(sensor_data);
+                    case 0
+                        % don't place on gpu
+                    otherwise
+                        % select gpu, then place
+                        g = gpuDevice();
+                        if g.Index ~= kwargs.device
+                            sensor_data = gather(sensor_data);
+                            g = gpuDevice(kwargs.device);
+                            sensor_data = gpuArray(sensor_data);
                         end
                 end
             end
             
             % define the rx impulse response function
-            max_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0;
-            rx_imp = self.rx.impulse();
+            max_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0; % maximum grid delay
+            rx_imp = self.rx.impulse(); % rx temporatl impulse response function
             n0  = floor((rx_imp.t0   - max_delay) / kgrid.dt);
             nend = ceil((rx_imp.tend + max_delay) / kgrid.dt);
             t_rx = vec(n0 : 1 : nend) * kgrid.dt; % includes zero if t0 <= 0 <= tend
             rx_imp_is_delta = (max(t_rx) - min(t_rx)) < max_delay; % check for delta functions - functions less than a max delay
-            [nst, nfin] = deal(min(n0,0),max(nend, kgrid.Nt-1));
-            rx_pad = [-nst, nfin - (kgrid.Nt-1)];
+            [nst, nfin] = deal(n0 + 0 + 1, nend + kgrid.Nt - 1 - 1); % time axis after convolution
+            % [nst, nfin] = deal(min(n0, 0), max(nend, kgrid.Nt-1));
+            % rx_pad = [-nst, nfin - (kgrid.Nt-1)];
+            % T_data = kgrid.Nt; % size of kgrid data
             
             % set time to precision and device of sensor data
             t_rx = real(cast(t_rx, 'like', sensor_data));
             
             % get output signal sizing
             t_resp = vec(nst : 1 : nfin) * kgrid.dt; % includes zero if t0 <= 0 <= tend
-            T_resp = numel(t_resp);
+            T_resp = numel(t_resp); % size of kgrid data after convolution
                         
             % get index mapping
             ind_msk_all = sort(find(ksensor.mask));
@@ -886,6 +911,9 @@ classdef UltrasoundSystem < handle
             % implicitly preallocated when using a parfor loop
             % resp = zeros([T_resp, self.rx.numel], 'like', sensor_data);
             
+            % splice
+            [device, interp] = deal(kwargs.device, kwargs.interp);
+
             % for each (sub)element
             parfor (el = 1:self.rx.numel)
                 
@@ -908,25 +936,25 @@ classdef UltrasoundSystem < handle
                 [~, ind_sen] = ismember(ind_msk, ind_msk_all);
                 nSubEl = numel(ind_sen);
 
-                % get sensor data (T_resp x nSubEl)
+                % get sensor data (T_data x nSubEl)
                 resp_samp = cat(1, ...
-                    zeros([rx_pad(1), numel(ind_sen)]), ...
-                    amp .* (resp_samp(ind_sen,:).'), ...
-                    zeros([rx_pad(2), numel(ind_sen)])...
-                    ); %#ok<PFBNS>
+                    ... zeros([rx_pad(1), numel(ind_sen)]), ...
+                    amp .* (resp_samp(ind_sen,:).') ...
+                    ... zeros([rx_pad(2), numel(ind_sen)])...
+                    ); % %#ok<PFBNS>
                 
                 % apply delay via convolution with a
                 % shifted impulse response function
                 if(~rx_imp_is_delta) % rx impulse not a delta: delay the impulse
-                    imp_samp = rx_imp.sample(t_rx - delays); %#ok<PFBNS> % (T_resp x nSubEl)
-                    resp_samp = convd(resp_samp, imp_samp, 1, 'same', 'device', device);
+                    imp_samp = rx_imp.sample(t_rx - delays); %#ok<PFBNS> % (T_data x nSubEl)
+                    resp_samp = convd(resp_samp, imp_samp, 1, 'full', 'device', device); % (T_resp x nSubEl)
                 else % impulse is a delta: use linear resampling (sketchy)
                     warning('UltrasoundSystem:kWaveSensor2ChannelData:convolvingDeltas', ...
                         ['Using linear interpolation to convolve two delta functions with a shift. ', ...
                         'Use a small rect function to avoid this. ']);
-                    imp_samp = vec(rx_imp.sample(t_rx));
-                    conv_samp = convn(resp_samp, imp_samp, 'same'); % (T_resp x nSubEl) % GPU OOM?
-                    conv_sampler = griddedInterpolant(t_resp, zeros([T_resp,1], 'like', t_resp), 'linear', 'none');
+                    imp_samp = vec(rx_imp.sample(t_rx)); % (T_data x nSubEl)
+                    conv_samp = convn(resp_samp, imp_samp, 'full'); % (T_resp x nSubEl) % GPU OOM?
+                    conv_sampler = griddedInterpolant(t_resp, zeros([T_resp,1], 'like', t_resp), interp, 'none');
                     resp_samp = zeros([T_resp, nSubEl], 'like', conv_samp);
                     for i = nSubEl:-1:1
                         conv_sampler.Values(:) = conv_samp(:,i);
@@ -1054,10 +1082,8 @@ classdef UltrasoundSystem < handle
 
             % select function
             switch kwargs.dims
-                case 2
-                    kspaceFirstOrderND_ = @kspaceFirstOrder2D;
-                case 3
-                    kspaceFirstOrderND_ = @kspaceFirstOrder3D;
+                case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2D;
+                case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3D;
             end
 
             % get all arguments
@@ -1067,42 +1093,38 @@ classdef UltrasoundSystem < handle
                 'UniformOutput', false ...
                 );
 
-            switch 'direct'
-                case 'direct'
-                    out = cell(self.sequence.numPulse, 2);
-                    [c0, Np] = deal(target.c0, self.sequence.numPulse);
-                    parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
-                        fprintf('\nComputing pulse %i of %i\n', puls, Np);
-                        tt_pulse = tic;
+            out = cell(self.sequence.numPulse, 2);
+            [c0, Np] = deal(target.c0, self.sequence.numPulse);
+            parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
+                fprintf('\nComputing pulse %i of %i\n', puls, Np);
+                tt_pulse = tic;
 
-                        % prealloc
-                        outp = cell(1,2);
-                        % gpuDevice(1+mod(pulse-1, ngpu));
+                % prealloc
+                outp = cell(1,2);
+                % gpuDevice(1+mod(pulse-1, ngpu));
 
-                        % simulate
-                        sensor_data = kspaceFirstOrderND_(kgrid, kmedium, ksource{puls}, ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
+                % simulate
+                sensor_data = kspaceFirstOrderND_(kgrid, kmedium, ksource{puls}, ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
 
-                        % Process the simulation data
-                        [outp{1}, outp{2}] = self.getKWaveReceive(kgrid, ksensor, sens_map, sensor_data, c0); %#ok<PFBNS>
+                % Process the simulation data
+                [outp{1}, outp{2}] = self.getKWaveReceive(kgrid, ksensor, sens_map, sensor_data, c0); %#ok<PFBNS>
 
-                        % enforce on the CPU - save to output var
-                        outp = cellfun(@gather, outp, 'UniformOutput', false);
-                        [out{puls,:}] = deal(outp{:});
+                % enforce on the CPU - save to output var
+                outp = cellfun(@gather, outp, 'UniformOutput', false);
+                [out{puls,:}] = deal(outp{:});
 
-                        % report timing
-                        fprintf('\nFinished pulse %i of %i\n', puls, Np);
-                        toc(tt_pulse)
-                    end
-
-                    % get voltages (T x N x M)
-                    voltages = cast(cell2mat(shiftdim(out(:,1), -2)), 'single');
-
-                    % get timing (T x 1 x M) -> (T x 1)
-                    t_resp   = mode(cell2mat(shiftdim(out(:,2), -2)), 3);
-
+                % report timing
+                fprintf('\nFinished pulse %i of %i\n', puls, Np);
+                toc(tt_pulse)
             end
 
-            fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.", toc(tt_kwave));
+            % get voltages (T x N x M)
+            voltages = cast(cell2mat(shiftdim(out(:,1), -2)), 'single');
+
+            % get timing (T x 1 x M) -> (T x 1)
+            t_resp   = mode(cell2mat(shiftdim(out(:,2), -2)), 3);
+
+            fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
 
             % get time axis
             time = t_resp + min(t_sig);
@@ -1682,7 +1704,7 @@ classdef UltrasoundSystem < handle
                     join("-I" + d.IncludePath), ...
                     join("-L" + d.Libraries), ...
                     join("-D" + d.DefinedMacros),...
-                    d.Source ...
+                    fullfile(UltrasoundSystem.getSrcFolder(), 'FMM', 'functions', d.Source) ...
                     );
                 
                 try
