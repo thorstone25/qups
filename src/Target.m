@@ -77,7 +77,7 @@ classdef Target < Medium & Scatterers
             points(2,:) = korigin(3) + kgrid.z(:);
             
             % get property map from the Medium object
-            [kmedium.sound_speed, kmedium.density, kmedium.BonA, kmedium.alpha_coeff] = self.getPropertyMap(points);
+            [kmedium.sound_speed, kmedium.density, kmedium.BonA, kmedium.alpha_coeff, kmedium.alpha_power] = self.getPropertyMap(points);
 
             % create scatterers by perturbing the region at the nearest
             % pixel/voxel
@@ -90,8 +90,8 @@ classdef Target < Medium & Scatterers
             kmedium.alpha_coeff(ind_prop)   = alpha_coeff;
 
             % remove higher order terms if the coefficients are all 0s
-            if all(kmedium.alpha_coeff == 0), kmedium = rmfield(kmedium, ["alpha_coeff", "alpha_power"]); end
-            if all(kmedium.BonA == 0), kmedium = rmfield(kmedium, "BonA"); end
+            if all(isnan(kmedium.alpha_coeff)), kmedium = rmfield(kmedium, ["alpha_coeff", "alpha_power"]); end
+            if all(isnan(kmedium.BonA)), kmedium = rmfield(kmedium, "BonA"); end
 
             % set alpha power if alpha coefficient is set
             if isfield(kmedium, 'alpha_coeff'), kmedium.alpha_power = self.alphap0; end
