@@ -261,7 +261,7 @@ classdef ChannelData < matlab.mixin.Copyable
             k = k + koff; % time offset as appropriate
             
             % get new data vectors in index coordinates
-            k = k + false([1, chd.N]); % T' x N
+            k = k + false([1, chd.N, chd.M]); % T' x N x M
             n = chd.rxs + false([T_,1]); % T' x N
 
             % resample - 1 tx at a time to save data
