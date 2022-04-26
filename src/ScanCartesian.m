@@ -90,9 +90,24 @@ classdef ScanCartesian < Scan
         function ord = getPermuteOrder(self)
             ord = arrayfun(@(c) find(c == 'XYZ'), self.order);
         end
-    
+
+        function setImageGridOnSequence(self, seq)
+            % setImageGridOnSequence Align Scan to a Sequence
+            %
+            % setImageGridOnSequence(self, seq) modifies the Scan so that
+            % it aligns with the Sequence seq. 
+            %
+
+            % soft validate the transmit sequence type: it should be focused
+            if seq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + seq.type + ". This may produce unexpected results."...
+                    );
+            end
+
+            self.x = sub(seq.focus,1,1); % use these x-values
+        end
     end
-    
+
    % dependent methods
     methods
         % image sizing
@@ -141,6 +156,13 @@ classdef ScanCartesian < Scan
             if ~isnan(r), self.nz = ceil(diff(self.zb) / r) + 1; end
         end
         function set.res(self,r), [self.resx, self.resy, self.resz] = deal(r(1), r(2), r(3)); end
+    end
+
+    % overloads
+    methods(Access=protected)
+        function sc = copyElement(self)
+            sc = ScanCartesian('x', self.x, 'y', self.y, 'z', self.z, 'order', self.order);
+        end
     end
     
 end

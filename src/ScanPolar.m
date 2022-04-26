@@ -207,6 +207,13 @@ classdef ScanPolar < Scan
         end
         function set.res(self,r), [self.resr, self.resa, self.resy] = deal(r(1), r(2), r(3)); end
     end
+
+    % overloads
+    methods(Access=protected)
+        function sc = copyElement(self)
+            sc = ScanPolar('a', self.a, 'y', self.y, 'r', self.r, 'order', self.order, 'origin', self.origin);
+        end
+    end
     
 end
 
