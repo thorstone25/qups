@@ -1180,6 +1180,7 @@ classdef UltrasoundSystem < handle
             % default name-value pair arguments
             prec = 'single';
             device = int64(-1 * logical(gpuDeviceCount)); % {0 | -1} -> {CPU | GPU}
+            apod = 1;
             interp_args = {};
             
             % name-value pairs
@@ -1191,6 +1192,7 @@ classdef UltrasoundSystem < handle
                         device = varargin{n+1};
                     case 'interp'
                         interp_args = varargin(n:n+1);
+                    case 'apod', apod = varargin{n+1}; 
                     otherwise
                         error('Unrecognized name-value pair');
                 end
@@ -1203,7 +1205,7 @@ classdef UltrasoundSystem < handle
             % apod = self.scan.apodScanline(self.sequence);
 
             % reshape into I x M x N?
-            apod_args = {};
+            apod_args = {'apod', apod};
             
             % convert to x/y/z in 1st dimension
             P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 = 3 x I
@@ -1237,9 +1239,6 @@ classdef UltrasoundSystem < handle
                 % apply recieve aperture function in dim 1 and shape up
                 B = rcvfun(B, 4); % I1 x I2 x I3 x 1
             end
-            
-            % make the shape consistent
-            B = reshape(B, image_size);        
         end
         
         function [chd, tau_focal] = focusTx(self, chd0, seq, varargin)

@@ -46,6 +46,7 @@ function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
 VS = true;
 odataPrototype = complex(zeros(0, 'like', x));
 interp_type = 'linear'; 
+apod = ones(1, 'like', x);
 isType = @(c,T) isa(c, T) || isa(c, 'gpuArray') && strcmp(classUnderlying(c), T);
 if isType(x, 'single')
     idataType = 'single';
@@ -90,6 +91,9 @@ while (n <= nargs)
         case 'interp'
             n = n + 1;
             interp_type = varargin{n};
+        case 'apod',
+            n = n + 1; 
+            apod = varargin{n};
         otherwise
             error('Unrecognized option');
     end
@@ -180,6 +184,10 @@ if device
     [T, N, M] = size(x);
     I = numel(Pi) / 3; % guaranteed 3D
     Isz = size(Pi, 2:4); % I1 x I2 x I3 == I
+
+    % get stride for apodization
+    Iasz = size(apod,1:5);
+    astride = [1, cumprod(Iasz(1:end-1))] .* (Iasz ~= 1);
     
     % get kernel and frame sizing
     switch fun
@@ -210,11 +218,11 @@ if device
     nF = ceil(I ./ kI); % number of frames
     
     % constant arg type casting
-    tmp = cellfun(@uint64, {T,M,N,kI,nF}, per_cell{:});
-    [T, M, N, kI, nF] = deal(tmp{:});
+    tmp = cellfun(@uint64, {T,M,N,kI,nF,Isz}, per_cell{:});
+    [T, M, N, kI, nF, Isz] = deal(tmp{:});
     
     % set constant args
-    k.setConstantMemory('T', T, 'M', M, 'N', N, 'I', kI, 'VS', VS);
+    k.setConstantMemory('T', T, 'M', M, 'N', N, 'I', kI, 'VS', VS, 'I1', Isz(1), 'I2', Isz(2), 'I3', Isz(3));
     
     % set kernel size
     k.ThreadBlockSize = nThreads;
@@ -234,7 +242,7 @@ if device
     switch fun
         case {'DAS','SYN','BF'}
             y = cellfun(@(pi) cast(...
-                k.feval(yg, pi, Pr, Pv, Nv, x, t0, fs, cinv),...
+                k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x, t0, fs, cinv),...
                 'like', odataPrototype), Pif, per_cell{:});
         case {'delays'}
             y = cellfun(@(pi) cast(...
@@ -286,7 +294,7 @@ else
     % receive sensing vector
     dr = vecnorm(Pi - Pr, 2, 1); % 1 x I1 x I2 x I3 x N x 1
     
-    % bring to I1 x I2 x I3 x N x M == I x N x M
+    % bring to I1 x I2 x I3 x N x M == [I] x N x M
     dv = shiftdim(dv, 1); 
     dr = shiftdim(dr, 1);
     
@@ -303,17 +311,22 @@ else
         case 'DAS'
             y = zeros([Isz, 1, 1], 'like', odataPrototype);
             dvm = num2cell(dv, [1:3]); % ({I} x 1 x M)
-            xmn = num2cell(x,  [1]); % ({T} x N x M)
+            xmn = shiftdim(num2cell(x,  [1]),1); % ({T} x N x M)
+            amn = shiftdim(num2cell(apod, [1:3]),3); % ({I} x N x M)
+            amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
             parfor m = 1:M
                 yn = zeros([Isz, 1, 1], 'like', odataPrototype);
                 drn = num2cell(dr, [1]); % ({I} x N x 1)
                 for n = 1:N
                     % time delay (I x 1 x 1)
                     tau = cinv .* (dvm{m} + drn{n});
+
+                    % extract apodization
+                    a = bsub(amn(:,m), n, 1); % amn(n,m) || amn(1,m)
                     
                     % sample and output (I x 1 x 1)
-                    yn = yn + cast(...
-                        interpn(t, xmn{1,n,m}, tau, interp_type, 0), ...
+                    yn = yn + a{1} .* cast(...
+                        interpn(t, xmn{n,m}, tau, interp_type, 0), ...
                         'like', odataPrototype);
                 end
                 y = y + yn;
@@ -322,29 +335,37 @@ else
         case 'SYN'
             y = zeros([Isz, N, 1], 'like', odataPrototype);
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
-            xm  = num2cell(x,  [1,2]); % ({T} x {N} x M)
+            xm  = num2cell(swapdim(x,2,4),  [1,4]); % ({T x N} x M)
+            am = num2cell(apod, [1:4]);
+            am = repmat(am, double([ones(1,4),M]) ./ [ones(1,4), size(am,5)]); % broadcast to ({I x N} x M)
             parfor m = 1:M
                 % time delay (I x N x 1)
                 tau = cinv .* (dvm{m} + dr); 
+
+                % extract apodizzation
+                an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
                 
                 % sample and output (I x N x 1)
                 y = y + cast(cell2mat(cellfun(...
-                    @(x, tau) ...
-                    interpn(t, x, tau, interp_type, 0), ...
-                    num2cell(xm{m},1), pck(tau), per_cell{:})), ...
+                    @(x, tau, a) ...
+                    a .* interpn(t, x, tau, interp_type, 0), ...
+                    num2cell(xm{m},1), pck(tau), pck(an), per_cell{:})), ...
                     'like', odataPrototype); %#ok<PFBNS>
             end
             
         case 'BF'
             % time delay (I x N x M)
             tau = cinv .* (dv + dr);
+
+            % set size of x
+            xmn = permute(x, [1,4,5,2,3]); % (T x 1 x 1 x N x M)
             
             % sample and output (I x N x M)
             y = cell2mat(cellfun(... 
-                @(x, tau) cast(...
-                interpn(t, x, tau, interp_type, 0), ...
+                @(x, tau, a) cast(...
+                a .* interpn(t, x, tau, interp_type, 0), ...
                 'like', odataPrototype), ...
-                num2cell(x,1), pck(tau), per_cell{:}));
+                pck(xmn,1), pck(tau), pck(apod), per_cell{:}));
     end
     
 end
@@ -396,7 +417,7 @@ end
             [~, Mv] = size(Pv);
             [~, Mnv] = size(Nv);
             [~, Nr] = size(Pr);
-            Isz = size(Pi, 2:ndims(Pi));
+            Isz = size(Pi, 2:4);
             I = prod(Isz);
 
             % expand vectors
@@ -409,9 +430,9 @@ end
             [~, Mv] = size(Pv);
             [~, Mnv] = size(Nv);
             [~, Nr] = size(Pr);
-            Isz = size(Pi, 2:ndims(Pi));
+            Isz = size(Pi, 2:4);
+            Iasz = size(apod, 1:5);
             I = prod(Isz);
-            Ia = I;
 
             % expand vectors
             if Mv  == 1,   Pv = repmat(Pv,1,M);     Mv  = M; end
@@ -422,8 +443,10 @@ end
         % check sizing
         assert(Mv == Mnv || (M == Mv && M == Mnv), 'Inconsistent transmitter data size.');
         assert(N == Nr, 'Inconsistent receiver data size.');
-        assert(Ia == 1 || Ia == I, 'Inconsistent apodization data size');
-        
+        assert(all(Iasz(1:3) == 1 | Iasz(1:3) == Isz), 'Apodization data size inconsistent with pixel data size');
+        assert(Iasz(4) == 1 || Iasz(4) == N, 'Apodization data size inconsistent with receiver data size');
+        assert(Iasz(5) == 1 || Iasz(5) == M, 'Apodization data size inconsistent with transmit data size');
+                
         % expand to 3D: 1D -> x, 2D -> x,z, 4D -> x/w, y/w, z/w
         Pi = modDim(Pi);
         Pv = modDim(Pv);
