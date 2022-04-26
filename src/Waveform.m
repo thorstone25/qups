@@ -1,3 +1,6 @@
+% WAVEFORM Arbitrary Waveform definition class
+%
+% 
 classdef Waveform < handle
     
     properties(GetAccess=public, SetAccess=protected)
@@ -8,7 +11,7 @@ classdef Waveform < handle
     
     properties(GetAccess=public, SetAccess=protected)
         samples = []                % sampled form of the waveform
-        mode = 'fun'         % echo mode {fun | samp | custom}
+        mode = 'fun'         % echo mode {*fun | samp}
         dt = []              % time resolution in sampled mode
     end
     

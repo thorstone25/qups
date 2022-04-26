@@ -1,4 +1,4 @@
-% TRANSDUCER - Abstract Transducer class
+% TRANSDUCER Abstract Transducer class
 % 
 % Superclass for a medical ultrasound transducer. Any TRANSDUCER has
 % methods for the positions and orientations of it's elements as well as
@@ -87,6 +87,12 @@ classdef (Abstract) Transducer < handle
     methods (Abstract)
         % inferred position methods
         p = positions(self); % compute the positions of the elements
+        % TRANSDUCER/ORIENTATIONS Orientation of the elements
+        %
+        % [theta, phi] = ORIENTATIONS(self) returns the azimuth and
+        % elevation angles of the elements of the transducer. 
+        %
+        % See also TRANSDUCER/POSITIONS
         [theta, phi, normal, width, height] = orientations(self); % compute the orientations
         pb = bounds(self); % compute the 3 x 2 array of x/y/z by min/max 
         pch = patches(self,sub_div); % computes a [Ndiv x Nel] cell array of
