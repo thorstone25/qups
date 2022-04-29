@@ -303,7 +303,7 @@ classdef ChannelData < matlab.mixin.Copyable
             y = zeros(size(tau), 'like', chd.data); 
             
             % dispatch
-            assert(self.tdim == 1); % TODO: generalize this restriction if necessary
+            assert(chd.tdim == 1); % TODO: generalize this restriction if necessary
             switch class(chd.data) % TODO: dispatch based on interp as well
                 case "gpuArray"
                     ntau = (tau - chd.t0) * chd.fs;
