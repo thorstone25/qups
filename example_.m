@@ -14,13 +14,20 @@
 % * Create linear and curvilinear (convex) transducers
 % * Define full-synthetic-aperture, focused, diverging, or plane-wave transmits
 % * Beamform to create a b-mode image
-% * Simulate point targets or distributed media via k-Wave
+% * Simulate point targets or distributed media (via k-Wave)
 %% 
+% Please submit issues or feature requests via <https://github.com/thorstone25/qups/issues 
+% github>!
+% 
+% 
+% 
 % 
 % Setup the workspace
+% (Run once)
 
+ 
 %#ok<*UNRCH> ignore unreachable code due to constant values
-%#ok<*BDLGI> ignroe casting numbers to logical values
+%#ok<*BDLGI> ignore casting numbers to logical values
 device = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
 % setup;  % add all the necessary paths
 setup parallel; % also starts a parpool for faster processing
@@ -39,7 +46,7 @@ targ.rho_scat = 2; % make density scatterers at 2x the density
 targ.scat_mode = 'ratio'; 
 % Choose a transducer
 
-switch "L11-5V"
+switch "L12-3V"
     case 'L11-5V', xdc = TransducerArray.L11_5V(); % linear array
     case 'L12-3V', xdc = TransducerArray.L12_3V(); % another linear array
     case 'C5-2V' , xdc = TransducerConvex.C5_2V(); % convex array
@@ -57,11 +64,15 @@ end
 if isa(xdc, 'TransducerArray') 
     switch "Focused"
         case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
-        case 'Plane-wave', seq = SequenceRadial('type', 'PW', ...
-                'ranges', 1, 'angles', -10:2:10, 'c0', targ.c0); % Plane Wave (PW) sequence
-        case 'Focused', seq = Sequence('type', 'VS', 'c0', targ.c0, ...
-        'focus', [1;0;0] .* 1e-3*(-10 : 2.0 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
-        ... 'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
+        case 'Plane-wave', 
+            [amin, amax, Na] = deal( -25 ,  25 , 26 );
+            seq = SequenceRadial('type', 'PW', ...
+                'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
+        case 'Focused', 
+            [xmin, xmax, Nx] = deal( -10 ,  10 , 21 );
+            seq = Sequence('type', 'VS', 'c0', targ.c0, ...
+        'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
+        ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
         ); 
     end
 
@@ -72,8 +83,9 @@ if isa(xdc, 'TransducerArray')
 elseif isa(xdc, 'TransducerConvex') 
     switch "sector"
         case 'sector'
+            [amin, amax, Na] = deal( -40 ,  40 , 41 );
             seq = SequenceRadial('type', 'VS', 'c0', targ.c0, ...
-                'angles', -5:1:5, ...
+                'angles', linspace(amin, amax, Na), ...
                 'ranges', norm(xdc.center) + 35e-3, 'apex', xdc.center ...
                 ); % sector scan sequence
         case 'FSA'
@@ -83,8 +95,8 @@ elseif isa(xdc, 'TransducerConvex')
     end
 end
 % Choose an imaging region
-% For linear transducers only!
 
+% For linear transducers only!
 if isa(xdc, 'TransducerArray') 
     % set the scan at the edge of the transducer
     pn = xdc.positions(); % element positions
@@ -96,9 +108,7 @@ if isa(xdc, 'TransducerArray')
         'z', linspace(zb(1), zb(end), 2^9) ...
         ); % X x Z scan
 
-%% 
 % For convex transducers only!
-
 elseif isa(xdc, 'TransducerConvex') 
 
     % use with a SequenceRadial!
@@ -129,6 +139,10 @@ hl = legend(gca, 'Location','bestoutside');
 set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
 %% Simulate a Point Target
 
+ 
+%% 
+% 
+
 % Construct an UltrasoundSystem object, combining all of these properties
 us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
 
@@ -136,15 +150,19 @@ us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
 % run on CPU to use spline interpolation
 % chd0 = calc_scat_all(us, targ, [1,1], 'device', 0, 'interp', 'spline'); % use FieldII, 
 % chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpn', 'device', 0, 'interp', 'spline'); % use a Greens function
-chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpn', 'device', device, 'interp', 'linear'); % use a gpu if available!
+chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a gpu if available!
 chd0
 
 % display the channel data across the transmits
 chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in dB
-figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis([-80 0] + (max(chd.data(:), [], 'omitnan')))
+figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis(gather([-80 0] + (max(chd.data(chd.data < inf)))))
 xlabel('Channel'); ylabel('Time (s)');
 for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
 %% Create an image
+
+ 
+%% 
+% 
 
 % Precondition the data
 chd = chd0;
@@ -155,23 +173,27 @@ if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert 
 chd = rectifyt0(chd, 'linear'); % linearly resample if needed to align t0 time axis
 
 % Run a simple DAS algorithm
+switch class(xdc)
+    case 'TransducerArray' , scale = 1e-3;
+    case 'TransducerConvex', scale = 1;
+end
 switch seq.type
     case "VS", 
-        switch "accept"
+        switch "translating"
             case 'multiline', apod = multilineApodization(us.scan, us.sequence);
             case 'scanline', apod = scanlineApodization(us.scan, us.sequence);
-            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 7.2*1e-3);
-            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.5, us.rx.aperture_size);
-            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 45); 
+            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 13.6*scale);
+            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.8);
+            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
             case 'none', apod = 1;
         end        
-    otherwise, apod = 1;
+    otherwise, apod = 1; % not implemented :(
 end
-b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'linear', 'apod', apod);
+b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'cubic', 'apod', apod);
 
 % show the image
 b_im = mod2db(b); % convert to power in dB
-figure; imagesc(scan, b_im, [-120, 0] + max(b_im(:))); % display with 60dB dynamic range
+figure; imagesc(scan, b_im, [-80, 0] + max(b_im(:))); % display with 60dB dynamic range
 colormap gray; colorbar;
 %% Scan Convert for a Sector Scan
 
@@ -180,10 +202,12 @@ if ~isa(scan, 'ScanCartesian')
     [scanc.nx, scanc.nz] = deal(2^9); % don't change boundaries, but increase resolution
     bc_im = (scanConvert(scan, mod2db(b), scanc)); % interpolate in dB - could also do abs, as long as it's not complex!
 
-    imagesc(scanc, bc_im, [-60, 0] + max(bc_im(bc_im < Inf)));
+    imagesc(scanc, bc_im, [-80, 0] + max(bc_im(bc_im < Inf)));
     colormap gray; colorbar;
 end
 %% Run a k-Wave Sim (requires k-Wave)
+
+ 
 % Note: For a FSA acquisition, that means 1 sim per element!
 
 % use some low-res simulation parameters 
@@ -201,8 +225,9 @@ chd = copy(chd1);
 figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis([-80 0] + mod2db(max(chd.data(:), [], 'omitnan')))
 xlabel('Channel'); ylabel('Time (s)');
 for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = mod2db(chd.data(:,:,m)); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
-%% Create an image
+%% Create an image 
 
+ 
 % Precondition the data
 chd = copy(chd1);
 chd = single(chd); % use less data
