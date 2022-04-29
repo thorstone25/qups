@@ -28,7 +28,7 @@ classdef Sequence < handle
     % See also: SEQUENCERADIAL
     
     properties
-        type = 'FSA'            % {'FSA', 'plane[-wave]'], 'virtual[-source]'],'focus[ed]','diverg{e|ing}'}
+        type = 'FSA'            % {'FSA', 'PW', 'VS'}
         focus = [0;0;0]         % (3 x S) array specifying the focal point or plane-wave direction (m)
         c0 = 1540               % sound speed for the transmit delays (m/s)
         pulse = Waveform.Delta()% ([1|N] x [1|S]) transmit Waveform (array)
@@ -121,21 +121,21 @@ classdef Sequence < handle
             % vector direction for the plane wave
             %
             % Inputs:
-            %   - method:   {'virtual-source'*,'focused','diverging', 'plane-wave'}
-            %   - focus:    a (3 x S) array specifying the focal point or
-            %               plane-wave direction (m)
-            %   - c0:       beamforming sound speed (m/s)
+            % - tx:        a Transducer
             %
             % Outputs:
             %   - tau:      a (N x S) array of element delays (s)
+            %
+            % N -> number of elements, S -> number of transmits
             
             % element positions (3 x 1 x N)
             p = permute(tx.positions(),[1 3 2]); 
             
             switch self.type
-                case {'VS'}        
+                case 'VS'
                     v = self.focus - p; % element to focus vector (3 x S x N)
                     tau = hypot(hypot(v(1,:,:), v(2,:,:)),v(3,:,:)) ./ self.c0; % delay magnitude (1 x S x N)
+                    %{
                     switch self.type
                         case {'virtual-source','virtual',}
                             s = all(self.focus(3,:) > p(3,:), 3); % whether in front of the transducer (1 x S)
@@ -145,8 +145,9 @@ classdef Sequence < handle
                         case {'diverging','diverge'}
                             % tau =   tau;          % assert behind, so diverge with positive delays
                     end
+                    %}
                     
-                case {'PW'}
+                case 'PW'
                     % use inner product of plane-wave vector with the
                     % positions to get plane-aligned distance
                     tau = sum(self.focus .* p, 1) ./ self.c0; % delay (1 x S x N)
@@ -163,7 +164,7 @@ classdef Sequence < handle
         function a = apodization(self, tx)
             switch self.type
                 case 'FSA'
-                    % todo: use apodization
+                    % TODO: use apodization as a sequence property
                     a = eye(size(tx.positions(),2)); % N x N identity
                 otherwise
                     a = ones([size(tx.positions(),2) self.numPulse]);
