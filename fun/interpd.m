@@ -18,12 +18,12 @@ assert(isreal(t)); % sampling at a real data type
 
 maxdims = max(ndims(x), ndims(t));
 ddms = setdiff(1:maxdims, dim); % data dimensions
-xsz = size(x , ddms);
+xsz = size(x, ddms);
 tsz = size(t, ddms);
-assert(all(xsz == tsz | xsz == 1)); % data sizing must be broadcastable
+assert(all(xsz == tsz | xsz == 1), 'Data sizing is not broadcastable.'); % data sizing must be broadcastable
 
 bdms = ddms(xsz == tsz); % broadcasting dimensions
-rdms = ddms(xsz == 1  ); % replicating dimensions
+rdms = ddms(xsz ~= tsz & xsz == 1); % replicating dimensions
 
 % set the data order: sampling dimensions, broadcasting dimensions,
 % replicating dimensions
