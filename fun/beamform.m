@@ -131,8 +131,15 @@ if device
     end
 
     % warn if non-linear interp was requested
-    if ~strcmp(interp_type, 'linear')
-        warning('Only linear interpolation supported on the GPU. Set ''device'' to 0 to use an alternate interpolation method.');
+    switch interp_type
+        case "nearest",flagnum = 0;
+        case "linear", flagnum = 1;
+        case "cubic",  flagnum = 2;
+        case "lanczos3",flagnum = 3;
+        otherwise
+            error('QUPS:beamform:UnrecognizedInput', "Unrecognized interpolation of type " ...
+                + interp_type ...
+                + ": must be one of {'nearest', 'linear', 'cubic', 'lanczos3'}.");
     end
 
     % load the kernel
@@ -242,7 +249,7 @@ if device
     switch fun
         case {'DAS','SYN','BF'}
             y = cellfun(@(pi) cast(...
-                k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x, t0, fs, cinv),...
+                k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x, flagnum, t0, fs, cinv),...
                 'like', odataPrototype), Pif, per_cell{:});
         case {'delays'}
             y = cellfun(@(pi) cast(...

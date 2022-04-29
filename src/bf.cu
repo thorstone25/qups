@@ -1,6 +1,5 @@
 # include "helper_math.h" // vector math
 
-
 // data sizes: I -> pixels, M -> transmitters, N -> receivers, 
 // T -> time samples, S -> signal
         
@@ -43,6 +42,9 @@ __constant__ size_t D; // number of points in the spatial integration
 __constant__ bool VS; // whither virtual source mode
 # endif
 
+# include "interpd.cu" // samplers using constant sizing
+
+
 
 /* Creates the positions for a linear array aperture given it's description
 *
@@ -68,6 +70,7 @@ __global__ void pos_step_rng_len(double3 * Pn, const double3 Pn0, const double3 
     const uint idx = threadIdx.x + blockIdx.x * blockDim.x;
     Pn[idx] = Pn0 + idx * dPn;
 }
+
 
 /*
 * Delay and sum the given data at the given pixels
@@ -110,7 +113,7 @@ __global__ void DASf(float2 * __restrict__ y,
     const float * __restrict__ Pi, const float * __restrict__ Pr, 
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
 	const float2 * __restrict__ a, const size_t * astride, 
-    const float2 * __restrict__ x, 
+    const float2 * __restrict__ x, const int iflag,
 	const float t0, const float fs, const float cinv) {
 
     // get starting index of this pixel
@@ -133,7 +136,6 @@ __global__ void DASf(float2 * __restrict__ y,
     float rf, dv, dr;
     float2 val, pix = zero_v;
     float3 rv;
-    union {float f; int i;} t;
 
     // if valid pixel, for each tx/rx
     if(tid < I){
@@ -153,15 +155,8 @@ __global__ void DASf(float2 * __restrict__ y,
                 // data/time index number
                 rf = (cinv * (dv + dr) - t0) * fs;
 
-                // fractional and integer part
-                rf = modf(rf, &t.f);
-                t.i = (int)(t.f);
-                
-                // if in bounds, linearly interpolate by ratio rf at time-index t.i[+1]
-                val = (0 <= t.i && t.i + 1 < T) ?            
-                   lerp(x[t.i + 1 + (n + m * N) * T],
-                        x[t.i +     (n + m * N) * T], rf) 
-                : zero_v; // out of bounds: extrap 0
+                // sample the trace
+                val = samplef(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // accumulate tx here: add to pixel value
                 pix += val * a[abase + n * astride[3] + m * astride[4]];
@@ -175,7 +170,7 @@ __global__ void DAS(double2 * __restrict__ y,
     const double * __restrict__ Pi, const double * __restrict__ Pr, 
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
     const double2 * __restrict__ a, const size_t * astride,
-	const double2 * __restrict__ x, 
+	const double2 * __restrict__ x, const int iflag,
 	const double t0, const double fs, const double cinv) {
 
     // get starting index of this pixel
@@ -198,7 +193,6 @@ __global__ void DAS(double2 * __restrict__ y,
     double rf, dv, dr;
     double2 val, pix = zero_v;
     double3 rv;
-    union {double f; int i;} t;
 
     // if valid pixel, for each tx/rx
     if(tid < I){
@@ -218,15 +212,8 @@ __global__ void DAS(double2 * __restrict__ y,
                 // data/time index number
                 rf = (cinv * (dv + dr) - t0) * fs;
 
-                // fractional and integer part
-                rf = modf(rf, &t.f);
-                t.i = (int)(t.f);
-                
-                // if in bounds, linearly interpolate by ratio rf at time-index t.i[+1]
-                val = (0 <= t.i && t.i + 1 < T) ?            
-                   lerp(x[t.i + 1 + (n + m * N) * T],
-                        x[t.i +     (n + m * N) * T], rf) 
-                : zero_v; // out of bounds: extrap 0
+                // sample the trace
+                val = sample(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // accumulate tx here: add to pixel value
                 pix += val * a[abase + n * astride[3] + m * astride[4]];
@@ -276,7 +263,7 @@ __global__ void SYNf(float2 * __restrict__ y,
     const float * __restrict__ Pi, const float * __restrict__ Pr, 
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
     const float2 * __restrict__ a, const size_t * astride,
-    const float2 * __restrict__ x,
+    const float2 * __restrict__ x, const int iflag,
 	const float t0, const float fs, const float cinv) {
 
     // get starting index of this pixel
@@ -299,7 +286,6 @@ __global__ void SYNf(float2 * __restrict__ y,
     float rf, dv, dr;
     float2 val;
     float3 rv;
-    union {float f; int i;} t;
 
     // if valid pixel, for each tx/rx
     if(tid < I){
@@ -319,15 +305,8 @@ __global__ void SYNf(float2 * __restrict__ y,
                 // data/time index number
                 rf = (cinv * (dv + dr) - t0) * fs;
 
-                // fractional and integer part
-                rf = modf(rf, &t.f);
-                t.i = (int)(t.f);
-                
-                // if in bounds, linearly interpolate by ratio rf at time-index t.i[+1]
-                val = (0 <= t.i && t.i + 1 < T) ?            
-                   lerp(x[t.i + 1 + (n + m * N) * T],
-                        x[t.i +     (n + m * N) * T], rf) 
-                : zero_v; // out of bounds: extrap 0
+                // sample the trace
+                val = samplef(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // apply apodization
                 val *= a[abase + n * astride[3] + m * astride[4]]; // index as I x N
@@ -343,7 +322,7 @@ __global__ void SYN(double2 * __restrict__ y,
     const double * __restrict__ Pi, const double * __restrict__ Pr, 
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
 	const double2 * __restrict__ a, const size_t * astride,
-	const double2 * __restrict__ x, 
+	const double2 * __restrict__ x, const int iflag,
 	const double t0, const double fs, const double cinv) {
 
     // get starting index of this pixel
@@ -366,7 +345,6 @@ __global__ void SYN(double2 * __restrict__ y,
     double rf, dv, dr;
     double2 val;
     double3 rv;
-    union {double f; int i;} t;
 
     // if valid pixel, for each tx/rx
     if(tid < I){
@@ -386,15 +364,8 @@ __global__ void SYN(double2 * __restrict__ y,
                 // data/time index number
                 rf = (cinv * (dv + dr) - t0) * fs;
 
-                // fractional and integer part
-                rf = modf(rf, &t.f);
-                t.i = (int)(t.f);
-                
-                // if in bounds, linearly interpolate by ratio rf at time-index t.i[+1]
-                val = (0 <= t.i && t.i + 1 < T) ?            
-                   lerp(x[t.i + 1 + (n + m * N) * T],
-                        x[t.i +     (n + m * N) * T], rf) 
-                : zero_v; // out of bounds: extrap 0
+                // sample the trace
+                val = sample(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // accumulate tx here: add to pixel value
                 y[tid + n*I] += val * a[abase + n * astride[3] + m * astride[4]]; // index as I x N
@@ -442,7 +413,7 @@ __global__ void BFf(float2 * __restrict__ y,
     const float * __restrict__ Pi, const float * __restrict__ Pr, 
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
 	const float2 * __restrict__ a, const size_t * astride,
-	const float2 * __restrict__ x, 
+	const float2 * __restrict__ x, const int iflag,
 	const float t0, const float fs, const float cinv) {
 
     // get starting index of this pixel
@@ -465,7 +436,6 @@ __global__ void BFf(float2 * __restrict__ y,
     float rf, dv, dr;
     float2 val;
     float3 rv;
-    union {float f; int i;} t;
 
     // if valid pixel, for each tx/rx
     if(tid < I){
@@ -485,15 +455,8 @@ __global__ void BFf(float2 * __restrict__ y,
                 // data/time index number
                 rf = (cinv * (dv + dr) - t0) * fs;
 
-                // fractional and integer part
-                rf = modf(rf, &t.f);
-                t.i = (int)(t.f);
-                
-                // if in bounds, linearly interpolate by ratio rf at time-index t.i[+1]
-                val = (0 <= t.i && t.i + 1 < T) ?            
-                   lerp(x[t.i + 1 + (n + m * N) * T],
-                        x[t.i +     (n + m * N) * T], rf) 
-                : zero_v; // out of bounds: extrap 0
+                // sample the trace
+                val = samplef(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // output value
                 y[tid + n * I + m * I * N] = val * a[abase + n * astride[3] + m * astride[4]]; // index as I x N x M
@@ -507,7 +470,7 @@ __global__ void BF(double2 * __restrict__ y,
     const double * __restrict__ Pi, const double * __restrict__ Pr, 
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
 	const double2 * __restrict__ a, const size_t * astride,
-	const double2 * __restrict__ x, 
+	const double2 * __restrict__ x, const int iflag,
 	const double t0, const double fs, const double cinv) {
 
     // get starting index of this pixel
@@ -530,7 +493,6 @@ __global__ void BF(double2 * __restrict__ y,
     double rf, dv, dr;
     double2 val;
     double3 rv;
-    union {double f; int i;} t;
 
     // if valid pixel, for each tx/rx
     if(tid < I){
@@ -550,15 +512,8 @@ __global__ void BF(double2 * __restrict__ y,
                 // data/time index number
                 rf = (cinv * (dv + dr) - t0) * fs;
 
-                // fractional and integer part
-                rf = modf(rf, &t.f);
-                t.i = (int)(t.f);
-                
-                // if in bounds, linearly interpolate by ratio rf at time-index t.i[+1]
-                val = (0 <= t.i && t.i + 1 < T) ?            
-                   lerp(x[t.i + 1 + (n + m * N) * T],
-                        x[t.i +     (n + m * N) * T], rf) 
-                : zero_v; // out of bounds: extrap 0
+                // sample the trace
+                val = sample(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // output value
                 y[tid + n * I + m * I * N] = val * a[abase + n * astride[3] + m * astride[4]]; // index as I x N x M
