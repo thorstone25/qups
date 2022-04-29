@@ -288,6 +288,8 @@ classdef UltrasoundSystem < handle
                     f = @(tau) (terp(gather(t - tau)));
                 case 'interpn'
                     f = @(tau) interpn(round(fs_*tk), kern, t - tau, interp_method, 0);
+                case 'interpd'
+                    f = @(tau) interpd(kern(:), (t - tau) - (fs_*tk(1)), 1, interp_method);
                 otherwise
                     f = @(tau) interpn(fs_*tk, kern, t - tau, interp_method, 0);
             end
@@ -1222,7 +1224,7 @@ classdef UltrasoundSystem < handle
                 case 'FSA'
                     pos_args = {P_im, P_rx, P_tx, [0;0;1]};
                 case 'PW'
-                    pos_args = {P_im, P_rx, [0;0;0], self.sequence.focus}; 
+                    pos_args = {P_im, P_rx, [0;0;0], self.sequence.focus}; % TODO: use origin property in tx sequence
                     ext_args{end+1} = 'plane-waves'; 
                 case 'VS'
                     pos_args = {P_im, P_rx, self.sequence.focus, [0;0;1]};
@@ -1326,33 +1328,18 @@ classdef UltrasoundSystem < handle
             % get the focal points
             switch seq.type
                 case 'FSA',  % nothing to do
-                    [chd, tau_focal] = deal(chd0, 0);
+                    [chd, tau_focal] = deal(chd0, 0); 
                     return
-                otherwise, p_focal = seq.focus;
             end
 
             % set dimensions for apodization and focal points
-            p_focal = permute(p_focal, [1,3,4,2]); % 3 x 1 x 1 x M'
-            MP = size(p_focal, 4); % number of synthesized transmits
+            MP = seq.numPulse;
             
-            % force full in 4th dimension
-            apod = shiftdim(apod,-2) + false([1,1,1,MP]); % 1 x 1 x [1|M] x M'
+            % shift to broadcast dimensions
+            apod = shiftdim(apod,-2); % 1 x 1 x [1|M] x M'
 
-            % average speed of sound
-            c = seq.c0;
-            
-            % get positions of the aperture(s)
-            tx_pos = cast(permute(self.tx.positions(),[1,3,2]), 'like', chd0.t0); % 3 x 1 x M
-            
             % dist/time to receiver
-            switch seq.type
-                case 'VS'
-                    tau_focal = -vecnorm(p_focal - tx_pos, 2, 1) ./ c; % 1 x 1 x M x M'
-                case 'PW'
-                    tau_focal = -sum(p_focal .* tx_pos, 1) ./ c; % 1 x 1 x M x M'
-                otherwise
-                    error('Unexpected state :(');
-            end
+            tau_focal = - shiftdim(self.sequence.delays(self.tx), -2); % 1 x 1 x M x M'
             
             % get time vector description
             tstart = chd0.t0;
@@ -1396,12 +1383,13 @@ classdef UltrasoundSystem < handle
 
             % send to device if requested
             if device > 0, gpuDevice(device); end % reset if positive
-            if device == 0 && any(interp_method ~= ["linear", "nearest"]), resp0 = gather(chd0.data); end % enforce on CPU
+            if device == 0 && any(interp_method ~= ["linear", "nearest", "cubic"]), resp0 = gather(chd0.data); end % enforce on CPU
             if device < 0, resp0 = gpuArray(chd0.data); else, resp0 = chd0.data; end % select if non-zero
 
             % choose domain to process data in
             switch delay_domain
-                case 'freq'
+                case 'freq' % TODO: make this an interpolation method instead
+                    MPa = size(apod, 4); assert(MPa == MP || MPa == 1, 'Apodization size error in dim 4.'); % broadcast dimensions
                     for mp = MP:-1:1
                         % get shift and weighting vector in freq domain across the
                         % aperture i.e. build the steering vector
@@ -1409,11 +1397,11 @@ classdef UltrasoundSystem < handle
 
                         % apply delay in frequency domain using an L-point padded DFT
                         try
-                            resp_mp = sub(apod,mp,4) .* cast(ifft((fft(resp0, L, 1) .* wL ), L, 1, 'nonsymmetric'), 'like', resp0);
+                            resp_mp = sub(apod,min(mp,MPa),4) .* cast(ifft((fft(resp0, L, 1) .* wL ), L, 1, 'nonsymmetric'), 'like', resp0);
                         catch
                             resp_mp = gather(resp0); L = gather(L); wL = gather(wL);
                             resp_mp = ifft(( fft(resp_mp, L, 1) .* wL ), L, 1, 'nonsymmetric');
-                            resp_mp = sub(apod,mp,4) .* cast(resp_mp, 'like', resp0);
+                            resp_mp = sub(apod,min(mp,MPa),4) .* cast(resp_mp, 'like', resp0);
                         end
 
                         % handle FFT wrap-around
@@ -1428,39 +1416,15 @@ classdef UltrasoundSystem < handle
                         resp(:,:,:,mp) = resp_mp;
                     end
                 case 'time'
-                    % get sizing
-                    N = chd0.N;
-
-                    % get time axes
                     time = cast(dt .* l + tstart, 'like', chd0.t0); % T' x 1 x 1
-                    time0 = chd0.time; % T x 1 x [1|M]?
-
-                    for mp = MP:-1:1
-                        % get sample time vector: replicate for each rx
-                        tau_samp = time - sub(tau_focal,mp,4) + zeros([1, size(resp0, 2), 1]); % L x N x M x {M'}
-
-                        % preallocate output data
-                        resp_mp = zeros(size(tau_samp), 'like', resp);
-
-                        % resample (hint: parpool('threads'))
-                        parfor i = 1 : chd0.M
-                            resp_mp(:,:,i) =  interpn(...
-                                time0 + dt*nwrap, cast(1:N, 'like', time0), ...
-                                resp0(:,:,i), tau_samp(:,:,i), cast((1:N) + false(size(time)), 'like', tau_samp(:,:,i)), ...
-                                interp_method, 0 ...
-                                );
-                        end
-
-                        % apply apodization (T' x N x M)
-                        resp_mp = sub(apod,mp,4) .* resp_mp;
-
-                        % sum across transmitters
-                        if summation
-                            resp_mp = sum(resp_mp, 3); % T' x N x 1
-                        end
-
-                        % store result
-                        resp(:,:,:,mp) = resp_mp;
+                    Na = size(apod,2); assert(Na == chd0.N || Na == 1, 'Apodization size error in dim 2.'); % broadcast dimensions
+                    for n = chd0.N:-1:1
+                        chd_ = copy(chd0);
+                        chd_.data = sub(chd_.data,n,2);
+                        a = sub(apod, min(n,Na), 2);
+                        y = a .* chd_.sample(time - tau_focal - dt*nwrap, interp_method); % sample and apodize the data (T x 1 x M x M')
+                        if summation, y = sum(y, 3); end
+                        resp(:,n,:,:) = y; % store data (T x 1 x [1|M] x M')
                     end
 
                 otherwise, error('Unknown delay domain');
