@@ -265,6 +265,7 @@ classdef ChannelData < matlab.mixin.Copyable
             n = chd.rxs + false([T_,1]); % T' x N
 
             % resample - 1 tx at a time to save data
+            % TODO: use own sampling method to do this.
             for m = chd.M:-1:1
                 data_(:,:,m) = interpn(sub(chd.data,m,3), sub(k,m,3), n, interp, 0);
             end
@@ -279,6 +280,15 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % y = SAMPLE(chd, tau) samples the data at the times given in
             % tau. 
+            %
+            % y = SAMPLE(chd, tau, interp) specifies the interpolation
+            % method. For a gpu, currently ["linear", "nearest", "cubic"] 
+            % are supported. On a cpu, support is provided by interpn
+            %
+            % tau must have broadcastable sizing in the non-temporal
+            % dimensions.
+            %
+            % See also INTERPN CHANNELDATA/RECTIFYT0
 
             if nargin < 3, interp = 'linear'; end
 
@@ -289,23 +299,36 @@ classdef ChannelData < matlab.mixin.Copyable
             assert(N_ == 1 || N_ == chd.N);
             assert(M_ == 1 || M_ == chd.M);
 
-            switch class(chd.data)
-                case "gpuArray" % TODO: implement via clever strides
-                    y = interpd(chd.data, (tau - chd.t0) * chd.fs, 1, interp); % supports GPU-spline!
+            % pre-allocate
+            y = zeros(size(tau), 'like', chd.data); 
+            
+            % dispatch
+            assert(self.tdim == 1); % TODO: generalize this restriction if necessary
+            switch class(chd.data) % TODO: dispatch based on interp as well
+                case "gpuArray"
+                    ntau = (tau - chd.t0) * chd.fs;
+                    mxdim = max(ndims(chd.data), ndims(ntau));
+                    if all(size(chd.data,2:mxdim) <= size(tau, 2:mxdim))
+                        y = interpd(chd.data, ntau, self.tdim, interp); % all at once
+                    else % TODO: implement implicit broadcast across receives/transmits for tau within interpd
+                        for m = chd.M:-1:1
+                            for n = chd.N:-1:1
+                                y(:,n,m,:) = interpd(chd.data(:,n,m), ntau(:,min(n,N_),min(m,M_),:), self.tdim, interp); % easy iteration
+                            end
+                        end
+                    end
 
                 otherwise % interpolate, iterate over n,m
-                    y = zeros(size(tau), 'like', tau); % pre-allocate
+                    % TODO: switch to 2D interpolation for MATLAB optimization
                     [t, x] = deal(chd.time, chd.data); % splice
+                    [Nt, Mt] = deal(size(chd.t0,2), size(chd.t0,3)); % sizing
                     for m = 1:chd.M
                         for n = 1:chd.N
-                            y(:,n,m,:) = interpn(t, x(:,n,m), tau(:,max(n,N_),max(m,M_),:), interp, 0); 
+                            y(:,n,m,:) = interpn(t(:,min(n,Nt),min(m,Mt)), x(:,n,m), tau(:,min(n,N_),min(m,M_),:), interp, 0); 
                         end
                     end
             end
-
-
         end
-    
     end
 
     % plotting and display
@@ -376,11 +399,23 @@ classdef ChannelData < matlab.mixin.Copyable
             self.t0 = t0_;
             self.fs = fs_;
         end
-        function t = get.time(self), t = cast(self.t0 + (0 : gather(self.T) - 1)' ./ self.fs, 'like', real(self.data)); end % match data type, except always real
-        function T = get.T(self), T = size(self.data,1); end
-        function N = get.N(self), N = size(self.data,2); end
-        function M = get.M(self), M = size(self.data,3); end
+        function t = get.time(self), t = cast(self.t0 + shiftdim((0 : gather(self.T) - 1)', self.tdim-1) ./ self.fs, 'like', real(self.data)); end % match data type, except always real
+        function T = get.T(self), T = size(self.data,self.tdim); end
+        function N = get.N(self), N = size(self.data,self.ndim); end
+        function M = get.M(self), M = size(self.data,self.mdim); end
         function n = get.rxs(self), n=cast(shiftdim(1:self.N,0 ), 'like', real(self.data)); end
         function m = get.txs(self), m=cast(shiftdim(1:self.M,-1), 'like', real(self.data)); end
-    end    
+    end
+
+    % convenience functions (used internally for now)
+    properties(Hidden, Dependent)
+        tdim
+        ndim
+        mdim
+    end
+    methods
+        function d = get.tdim(self), d = find(self.ord == 'T'); end
+        function d = get.ndim(self), d = find(self.ord == 'N'); end
+        function d = get.mdim(self), d = find(self.ord == 'M'); end
+    end
 end
