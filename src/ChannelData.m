@@ -273,6 +273,39 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = ChannelData('data', data_, 't0', t0_, 'fs', chd.fs);
             
         end
+    
+        function y = sample(chd, tau, interp)
+            % SAMPLE Sample the channel data in time
+            %
+            % y = SAMPLE(chd, tau) samples the data at the times given in
+            % tau. 
+
+            if nargin < 3, interp = 'linear'; end
+
+            % get sizing in first 3 dims (could be more)
+            [T_, N_, M_] = size(tau, 1:3); % T' x [1|N] x [1|M] x ...
+
+            % check implicit broadcasting compatability
+            assert(N_ == 1 || N_ == chd.N);
+            assert(M_ == 1 || M_ == chd.M);
+
+            switch class(chd.data)
+                case "gpuArray" % TODO: implement via clever strides
+                    y = interpd(chd.data, (tau - chd.t0) * chd.fs, 1, interp); % supports GPU-spline!
+
+                otherwise % interpolate, iterate over n,m
+                    y = zeros(size(tau), 'like', tau); % pre-allocate
+                    [t, x] = deal(chd.time, chd.data); % splice
+                    for m = 1:chd.M
+                        for n = 1:chd.N
+                            y(:,n,m,:) = interpn(t, x(:,n,m), tau(:,max(n,N_),max(m,M_),:), interp, 0); 
+                        end
+                    end
+            end
+
+
+        end
+    
     end
 
     % plotting and display
