@@ -42,7 +42,14 @@ classdef Target < Medium & Scatterers
             target = Target(args{:});
             
         end
-        % get kWave compatible density object
+        
+        % get SIMUS medium params
+        function p = getSIMUSParam(self)
+            p = struct('c', self.c0); 
+            if ~isnan(self.alpha0), p.attenuation = self.alpha0; end 
+        end
+        
+        % get kWave compatible medium struct
         function kmedium = getKWaveMedium(self, kgrid, korigin)
             % kmedium = getKWaveMedium(self, kgrid, korigin)
             %

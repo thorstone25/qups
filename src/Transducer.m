@@ -120,6 +120,11 @@ classdef (Abstract) Transducer < handle
         xdc = Verasonics(Trans, c0)
 
     end
+
+    % SIMUS functions
+    methods
+        p = getSIMUSParam(self)
+    end
     
     % kWave functions
     methods

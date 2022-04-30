@@ -132,7 +132,24 @@ classdef TransducerConvex < Transducer
             end
         end        
     end
-    
+
+    % SIMUS conversion functions
+    methods
+        function p = getSIMUSParam(self)
+            p = struct( ...
+                'fc', self.fc, ...
+                'pitch', self.pitch, ...
+                'width', self.width, ...
+                'height', self.height, ...
+                'Nelements', self.numel, ...
+                'radius', self.radius, ...
+                'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in %
+                'focus', self.el_focus ... elevation focus
+                );
+        end
+    end
+
+
     % Field II conversion function
     methods(Access=public)
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)

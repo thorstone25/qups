@@ -342,6 +342,76 @@ classdef UltrasoundSystem < handle
         end
     end
 
+    % SIMUS calls
+    methods
+        function chd = simus(self, target, varargin)
+            % no halp :(
+            % defaults
+            kwargs = struct(...
+                'parcluster', 0, ...
+                'periods', 1, ...
+                'dims', [] ...
+                );
+
+            % load options
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % TODO: check the transmit/receive/sequence impulse: they 
+            % cannot be satisfied if not a Delta or empty
+            warning("QUPS:UltrasoundSystem:simus:unsatisfiable", "Transmit sequence determined by 'periods', property.");
+            
+            % get the points and the dimensions of the simulation(s)
+            [X, Y, Z, A] = deal(sub(target.pos,1,1), sub(target.pos,2,1), sub(target.pos,3,1), target.amp);
+            if isempty(kwargs.dims) 
+                if all(Y == 0, 'all'), kwargs.dims = 2; Y = []; % don't simulate in Y if it is all zeros 
+                else, kwargs.dims = 3; end
+            end
+            if kwargs.dims == 2 && any(Y ~= 0)
+                warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
+            end
+
+            % get the transmit delays / apodization
+            tau_tx  = - self.sequence.delays(self.tx); % N x M
+            apod_tx = self.sequence.apodization(self.tx); % N x M
+            t0_nonneg = min(tau_tx, [], 1); % 1 x M
+
+            % get all other param struct values (implicitly force same
+            % transducer)
+            p = {getSIMUSParam(target), getSIMUSParam(self.xdc)};
+            p = cellfun(@struct2nvpair, p, 'UniformOutput', false);
+            p = cat(1, p{:});
+            p = struct(p{:});
+
+            % set transmit sequence ... the only way we can
+            p.fs    = self.fs;
+            p.TXnow = kwargs.periods; % number of wavelengths
+
+            % set options TODO: forward Name-Value pair arguments
+            opt = struct( ...
+                'ParPool', false, ... % parpool on pfield.m
+                'FullFrequencyDirectivity', false, ... % use central freq as reference
+                'ElementSplitting', 1, ... % element subdivisions
+                'WaitBar', false, ... % add wait bar
+                'dBThresh', -100 ... % threshold for computing each frequency
+                );
+            
+            % call the sim
+            % parfor (m = 1:self.sequence.numPulse, kwargs.parcluster)
+            for m = self.sequence.numPulse:-1:1
+                p_ = p; % splice
+                p_.TXapodization = apod_tx(:,m); % set tx apodization
+                rf{m} = simus(X,Y,Z,A,tau_tx(:,m) - t0_nonneg(:,m), p_, opt); % rf trace
+            end
+
+            % extend time axis so that it's identical
+            T = max(cellfun(@(x)size(x,1), rf));
+            rf = cellfun(@(x) cat(1, x, zeros([T - size(x,1), size(x,2:ndims(x))], 'like', x)), rf, 'UniformOutput', false);
+
+            % create the output QUPS ChannelData object
+            chd = ChannelData('data', cat(3, rf{:}), 't0', shiftdim(t0_nonneg(:), -2), 'fs', self.fs);
+        end
+    end
+
     % Field II calls
     methods(Access=public)
         function [chd] = calc_scat_all(self, target, element_subdivisions, varargin)
