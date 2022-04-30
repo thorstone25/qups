@@ -38,7 +38,7 @@ try hw = waitbar(0, 'test', 'Visible', 'off'); close(hw); end %#ok<TRYNC> % R202
 % Choose a Target
 
 target_depth = 1e-3 * 30;
-switch "single"
+switch "array"
     case 'single', targ = Target('pos', [0;0;target_depth], 'c0', 1500); % simple point target
     case 'array' , targ = Target('pos', [0;0;1] * 1e-3*(10:5:50)); % targets every 5mm
 end
@@ -69,7 +69,7 @@ if isa(xdc, 'TransducerArray')
             seq = SequenceRadial('type', 'PW', ...
                 'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
         case 'Focused', 
-            [xmin, xmax, Nx] = deal( -10 ,  10 , 21 );
+            [xmin, xmax, Nx] = deal( -10 ,  10 , 5 );
             seq = Sequence('type', 'VS', 'c0', targ.c0, ...
         'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
         ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
@@ -149,6 +149,7 @@ us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
 % Simulate a point target
 % run on CPU to use spline interpolation
 % chd0 = calc_scat_all(us, targ, [1,1], 'device', 0, 'interp', 'spline'); % use FieldII, 
+% chd0 = simus(us, targ, 'periods', 5); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
 % chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpn', 'device', 0, 'interp', 'spline'); % use a Greens function
 chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a gpu if available!
 chd0
@@ -182,7 +183,7 @@ switch seq.type
         switch "translating"
             case 'multiline', apod = multilineApodization(us.scan, us.sequence);
             case 'scanline', apod = scanlineApodization(us.scan, us.sequence);
-            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 13.6*scale);
+            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 19.8*scale);
             case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.8);
             case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
             case 'none', apod = 1;
