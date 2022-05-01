@@ -1737,7 +1737,7 @@ classdef UltrasoundSystem < handle
                 
                 try
                     s = system(com);
-                    if s, warning("Error recompiling code!"); else, disp("Success recompiling " + d.Source + ".cu"); end
+                    if s, warning("Error recompiling code!"); else, disp("Success recompiling " + d.Source); end
                 catch
                     warning("Unable to recompile code!");
                 end

@@ -51,7 +51,7 @@ classdef (Abstract) Transducer < handle
 
             elseif nargin == 1 && isa(varargin{1}, 'uff.probe') % uff Constructor
                 probe = varargin{1};
-                props = properties(probe)';
+                props = fieldnames(probe)';
                 for p = props
                     switch p{1}
                         case 'N',  self.numel  = probe.(p{1});
@@ -122,7 +122,7 @@ classdef (Abstract) Transducer < handle
     end
 
     % SIMUS functions
-    methods
+    methods (Abstract)
         p = getSIMUSParam(self)
     end
     
@@ -290,8 +290,9 @@ classdef (Abstract) Transducer < handle
         %       - outcoords2
         %       - surf
         xdc = getFullwaveTransducer(self, grid)
+        
     end
-    
+
     methods
         % get positions
         function p = getPositions(self)
@@ -582,4 +583,5 @@ classdef (Abstract) Transducer < handle
     end
 end
 
+% helper functions
 function x = vec(x), x = x(:); end

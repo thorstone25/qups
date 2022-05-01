@@ -27,7 +27,7 @@ classdef TransducerConvex < Transducer
             % initialize the TransducerConvex
             if nargin == 1 && isa(varargin{1}, 'uff.curvilinear_array') % (uff object)
                 probe = varargin{1};
-                props = properties(probe)';
+                props = fieldnames(probe)';
                 for p = props
                     switch p{1}
                         case 'radius', self.radius = probe.(p{1});

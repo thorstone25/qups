@@ -23,7 +23,7 @@ classdef TransducerArray < Transducer
             % initialize the TransducerArray 
             if nargin == 1 && isa(varargin{1}, 'uff.linear_array') % (uff object)
                 probe = varargin{1};
-                props = properties(probe)';
+                props = fieldnames(probe)';
                 for p = props
                     switch p{1}
                         case 'pitch', self.pitch = probe.(p{1});
