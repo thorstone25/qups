@@ -164,10 +164,10 @@ classdef Sequence < handle
         function a = apodization(self, tx)
             switch self.type
                 case 'FSA'
-                    % TODO: use apodization as a sequence property
+                    % TODO: use apodization as a sequence property?
                     a = eye(size(tx.positions(),2)); % N x N identity
                 otherwise
-                    a = ones([size(tx.positions(),2) self.numPulse]);
+                    a = ones([size(tx.positions(),2) self.numPulse]); % N x S
             end
         end
 

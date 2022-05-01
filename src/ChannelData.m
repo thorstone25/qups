@@ -307,7 +307,7 @@ classdef ChannelData < matlab.mixin.Copyable
             switch class(chd.data) % TODO: dispatch based on interp as well
                 case "gpuArray"
                     ntau = (tau - chd.t0) * chd.fs;
-                    mxdim = max(ndims(chd.data), ndims(ntau));
+                    mxdim = max(ndims(chd.data), ndims(ntau)); % max dims
                     if all(size(chd.data,2:mxdim) <= size(tau, 2:mxdim))
                         y = interpd(chd.data, ntau, self.tdim, interp); % all at once
                     else % TODO: implement implicit broadcast across receives/transmits for tau within interpd
@@ -353,6 +353,9 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also IMAGESC
 
+            % TODO: generalize to handle more complex cases of the time
+            % axes, including more dimes in t0 than dims in the data
+            % Assume t0 always singleton in dimension of channels
 
             % parse inputs
             if nargin < 2, m = floor((self.M+1)/2); end

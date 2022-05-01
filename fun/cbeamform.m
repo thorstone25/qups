@@ -49,6 +49,8 @@ function y = cbeamform(fun, Pi, Pr, Pv, cgrid, x, c, t0, fs, varargin)
 %
 %
 
+% TODO: replicate changes from beamform.m to accept Pi as 3 x I1 x I2 x I3
+
 % default parameters
 VS = true;
 odataPrototype = complex(zeros(0, 'like', x));

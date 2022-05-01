@@ -4,7 +4,7 @@ classdef Medium < handle
         c0 = 1540;          % reference speed of sound (m/s) - defaults to average sound speed in tissue
         rho0 = 1020;        % reference density (??/??) - defaults to some parameter thingy maybe?
         BoA0 = NaN;         % reference non-linearity - use 9 in tissue?
-        alpha0 = NaN;       % reference power law absorption factor - use 0.5 in tissue?
+        alpha0 = NaN;       % reference power law absorption factor (dB/cm/MHz) - use 0.5 in tissue?
         alphap0 = 1.01;     % global power law absorption exponent
         pertreg = {};       % regions of alternate properties given in
                             % a cell array of perturbation regions. A 
