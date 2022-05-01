@@ -167,7 +167,7 @@ for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); h.YData
 
 % Precondition the data
 chd = chd0;
-chd = single(chd); % use less data
+chd = singleT(chd); % use less data
 chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC 
 if device, chd = gpuArray(chd); end % move data to GPU
 if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
@@ -235,7 +235,7 @@ for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = mod2db(chd.data(:,:,m));
  
 % Precondition the data
 chd = copy(chd1);
-chd = single(chd); % use less data
+chd = singleT(chd); % use less data
 chd.data(chd.time < 10e-6 | chd.time > 50e-6,:,:) = 0; % clear direct feedback
 chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC bias
 if device, chd = gpuArray(chd); end % move data to GPU
