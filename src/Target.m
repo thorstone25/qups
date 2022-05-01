@@ -105,18 +105,15 @@ classdef Target < Medium & Scatterers
         end
     
         % get Fullwave compatible map struct
-        function maps = getFullwaveMap(self, grid, kwargs)
+        function maps = getFullwaveMap(self, grid, varargin)
             % GETFULLWAVEMAP - Get Fullwave compatible map structure
             %
             % maps = getFullwaveMap(self, grid) returns a map sampled on
             % the grid "grid". Some assembly required. Grid is a cell array
             % of vectors {x, y, z}.
 
-            arguments
-                self (1,1) Target
-                grid (1,3) cell % {X, Y, Z}
-                kwargs.method (1,1) string {mustBeMember(kwargs.method, [""])} = "";
-            end
+            kwargs.method = "";
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % create samples of the grid points
             [xg, yg, zg] = deal(grid{:});
