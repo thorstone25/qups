@@ -8,6 +8,8 @@ The easiest way to get started is to open and run [`example.mlx`](example.mlx) o
 ### Compatibility
 QUPS targets MATLAB R2020b and later on linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
 
+If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
+
 ## Documentation
 QUPS is (partially) internally documented following MATLAB conventions. This means you can use `doc` on any class and `help` on any class or method with `help classname/methodname` or `help classname.methodname`.
 
