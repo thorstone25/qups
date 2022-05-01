@@ -115,12 +115,27 @@ classdef UltrasoundSystem < handle
                 end
             end
             
+            % TODO: use a bin folder locally if we can create one to avoid
+            % recompiling to temp when we can instead use a cached version
             % get a temp folder for binaries or code that needs to be
             % recompiled
             self.tmp_folder = tempname; % gives a folder usually in /tmp
             mkdir(self.tmp_folder); % make the folder
             addpath(self.tmp_folder); % this should let us shadow any other binaries
-            self.recompile(); % attempt to recopmile code
+            
+            % copy code or recompile it
+            defs = self.getCUDAFileDefs();
+            fls = arrayfun(@(d) string(strrep(d.Source, 'cu', 'ptx')), defs);
+            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
+            if any(~s), self.recompileCUDA(); end % attempt to recompile code
+            
+            % copy code or recompile it
+            % TODO: generalize to mex extension for other machines (with 
+            % isunix or iswindows or ismac)
+            defs = self.getMexFileDefs();
+            fls = arrayfun(@(d) string(strrep(d.Source, 'c', 'mexa64')), defs);
+            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
+            if any(~s), self.recompileMex(); end % attempt to recompile code
         end
 
         function delete(self)
@@ -346,19 +361,26 @@ classdef UltrasoundSystem < handle
     methods
         function chd = simus(self, target, varargin)
             % no halp :(
+            
             % defaults
+            % TODO: forward arguments to params or opt as appropriate
             kwargs = struct(...
-                'parcluster', 0, ...
+                'device', 0, ...
+                'interp', 'cubic', ...
+                'parcluster', gcp('nocreate'), ...
                 'periods', 1, ...
                 'dims', [] ...
                 );
 
             % load options
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+            if isempty(kwargs.parcluster), kwargs.parcluster = 0; end % select 0 workers if empty
 
             % TODO: check the transmit/receive/sequence impulse: they 
             % cannot be satisfied if not a Delta or empty
-            warning("QUPS:UltrasoundSystem:simus:unsatisfiable", "Transmit sequence determined by 'periods', property.");
+            if ~ismember("periods", varargin(cellfun(@ischar,varargin) | cellfun(@isstring, varargin))) % was this an input?
+                warning("QUPS:UltrasoundSystem:simus:unsatisfiable", "Transmit sequence determined by 'periods', property.");
+            end
             
             % get the points and the dimensions of the simulation(s)
             [X, Y, Z, A] = deal(sub(target.pos,1,1), sub(target.pos,2,1), sub(target.pos,3,1), target.amp);
@@ -370,11 +392,6 @@ classdef UltrasoundSystem < handle
                 warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
             end
 
-            % get the transmit delays / apodization
-            tau_tx  = - self.sequence.delays(self.tx); % N x M
-            apod_tx = self.sequence.apodization(self.tx); % N x M
-            t0_nonneg = min(tau_tx, [], 1); % 1 x M
-
             % get all other param struct values (implicitly force same
             % transducer)
             p = {getSIMUSParam(target), getSIMUSParam(self.xdc)};
@@ -383,32 +400,44 @@ classdef UltrasoundSystem < handle
             p = struct(p{:});
 
             % set transmit sequence ... the only way we can
+            % TODO: forward arguments to transmit parameters
             p.fs    = self.fs;
             p.TXnow = kwargs.periods; % number of wavelengths
+            p.TXapodization = zeros([self.xdc.numel,1]); % set tx apodization
+            p.RXdelay = zeros([self.xdc.numel,1]); % receive delays (none)
 
-            % set options TODO: forward Name-Value pair arguments
+            % set options 
+            % TODO: forward Name-Value pair arguments
             opt = struct( ...
                 'ParPool', false, ... % parpool on pfield.m
                 'FullFrequencyDirectivity', false, ... % use central freq as reference
                 'ElementSplitting', 1, ... % element subdivisions
                 'WaitBar', false, ... % add wait bar
                 'dBThresh', -100 ... % threshold for computing each frequency
+                ... 'FrequencyStep', df, ... % freuqency domain resolution
+                ... 'CallFun', 'simus' ... % hack: use the simulation portion of the code
                 );
-            
-            % call the sim
-            % parfor (m = 1:self.sequence.numPulse, kwargs.parcluster)
-            for m = self.sequence.numPulse:-1:1
+
+            % call the sim: FSA approach
+            M = self.xdc.numel; % splice
+            parfor (m = 1:M, kwargs.parcluster)
                 p_ = p; % splice
-                p_.TXapodization = apod_tx(:,m); % set tx apodization
-                rf{m} = simus(X,Y,Z,A,tau_tx(:,m) - t0_nonneg(:,m), p_, opt); % rf trace
+                p_.TXapodization(m) = 1; % transmit only on element m
+                rf{m} = simus(X,Y,Z,A,zeros([M,1]),p_,opt); % rf for each transmit (no delays)
             end
 
-            % extend time axis so that it's identical
-            T = max(cellfun(@(x)size(x,1), rf));
-            rf = cellfun(@(x) cat(1, x, zeros([T - size(x,1), size(x,2:ndims(x))], 'like', x)), rf, 'UniformOutput', false);
+            % extend time axis so that it's identical for all transmits
+            T = (cellfun(@(x)size(x,1), rf));
+            if numel(unique(T)) > 1
+                rf = cellfun(@(x) cat(1, x, zeros([max(T) - size(x,1), size(x,2:ndims(x))], 'like', x)), rf, 'UniformOutput', false);
+            end
+            rf = cat(3, rf{:}); % T x N x M
 
             % create the output QUPS ChannelData object
-            chd = ChannelData('data', cat(3, rf{:}), 't0', shiftdim(t0_nonneg(:), -2), 'fs', self.fs);
+            chd = ChannelData('data', rf, 't0', 0, 'fs', self.fs);
+
+            % synthesize linearly
+            chd = self.focusTx(chd, self.sequence, 'interp', kwargs.interp);
         end
     end
 
@@ -431,7 +460,7 @@ classdef UltrasoundSystem < handle
             % where T -> time, M -> transmitters, N -> receivers
             
             % defaults
-            kwargs = struct('interp', 'linear', 'device', -logical(gpuDeviceCount));
+            kwargs = struct('interp', 'linear');
 
             % load options
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
@@ -497,11 +526,8 @@ classdef UltrasoundSystem < handle
             chd_ = ChannelData('data', voltages, 't0', time(1), 'fs', self.fs);
 
             % synthesize linearly
-            [chd] = self.focusTx(chd_, self.sequence, 'interp', kwargs.interp, 'device', kwargs.device);
+            [chd] = self.focusTx(chd_, self.sequence, 'interp', kwargs.interp);
 
-            % send data (back) to CPU
-            chd = gather(chd);
-            
             % cleanup
             if field_started, evalc('field_end'); end
         end        
@@ -1313,103 +1339,60 @@ classdef UltrasoundSystem < handle
             end
         end
         
-        function [chd, tau_focal] = focusTx(self, chd0, seq, varargin)
-            % FOCUSTX - synthesize transmits
+        function chd = focusTx(self, chd0, seq, varargin)
+            % FOCUSTX - Synthesize transmits
             %
-            % [chd, tau_focal] = focusTx(self, chd0, medium, seq)
+            % chd = FOCUSTX(self, chd0) focuses the FSA ChannelData chd0 by
+            % linearly synthesizing transmits (e.g. delay and sum across 
+            % transmits)
             %
-            % method to focus FSA transmit data at a focal point. The
-            % function operates in the frequency domain for computational
-            % efficiency and to preserve the frequency content of the
-            % signal. It is equivalent to using a sinc interpolator rather
-            % than a linear interpolator.
+            % chd = FOCUSTX(self, chd0, seq) uses the Sequence seq to focus
+            % the data instead of self.sequence.
             %
-            % The time 0 indicates the time at which the wave was emitted
-            % from the projection of the focal point onto the transducer.
-            % Since the delays are carried out in the frequency domain, the
-            % output is periodic in time. This function does not perform
-            % any check nor provide any guarantee that the time indices
-            % given will be within the period corresponding to the true
-            % time delay. However, it is gauranteed to contain a full
-            % period of the data without overlap such that the true data
-            % can always be recovered from a single period.
+            % chd = FOCUSTX(..., Name, Value, ...) uses name-value pairs to
+            % specify 
             %
-            % inputs:
-            %   - chd0:                 ChannelData object
-            %   - seq:                  Sequence object
+            % Name/value pair arguments
+            %  length -               Length of DFT / time vector
+            %  sum -                  Set false to preserve transmits
+            %  interp -               Interpolation method
             %
-            %   Name/value pair arguments
-            %   - domain:               {'time' | 'freq'} operation domain
-            %   - length:               Length of DFT / time vector
-            %   - apod: ([1|M] x [1|M']):  Apodization
-            %   - sum:                  Whither domain summation
-            %   - intpern:              interpolation method
+            %  Interpolation methods are passed to the ChannelData/sample
+            %  function. An additional method 'freq' is provided to delay
+            %  the data in the frequency domain.
+            % 
             % where T -> time, M -> transmitters, N -> receivers, M' ->
             % synthetic transmits
             %
-            % outputs:
-            %   - chd:                          New ChannelData object
-            %   - tau_focal (T' x 1 x [1|M] x M'):   The focal delays
+            % Outputs:
+            %   chd -                   New ChannelData object
+            %
+            % See also CHANNELDATA/SAMPLE
             
             % defaults
-            delay_domain = 'time';
             L = [];
-            apod = 1;
             summation = true;
             interp_method = 'linear';
             
+            % focus using self's sequence 
+            if nargin < 3 || isempty(seq), seq = self.sequence; end
+
             % optional inputs
             for i = 1:2:numel(varargin)
                 switch varargin{i}
-                    case 'domain'
-                        delay_domain = varargin{i+1};
-                    case 'length'
-                        L = varargin{i+1};
-                    case 'apod'
-                        apod = varargin{i+1};
-                    case 'sum'
-                        summation = varargin{i+1};
-                    case 'device'
-                        device = varargin{i+1};
-                    case 'interp'
-                        interp_method = varargin{i+1};
-                    otherwise
-                        error('Unrecognized input.'); 
+                    case 'length', L = varargin{i+1};
+                    case 'sum', summation = varargin{i+1};
+                    case 'interp', interp_method = varargin{i+1};
+                    otherwise, error('Unrecognized input.'); 
                 end     
             end
 
-            % satisfy interp method request
-            if any(cellfun(@(v) string(v) == "interp", varargin)) ...
-                    && ~ismember(interp_method, ["nearest", "linear"])
-                if delay_domain == "freq", 
-                    warning('Switching to time domain computation to satisfy interpolation type.')
-                end
-                delay_domain = 'time';
-            end
-
-            % choose default device base on domain
-            if ~exist("device", 'var')
-                    switch delay_domain
-                        case 'freq', device = -logical(gpuDeviceCount);
-                        case 'time', device = 0;
-                    end
-            end
-
-            % get the focal points
-            switch seq.type
-                case 'FSA',  % nothing to do
-                    [chd, tau_focal] = deal(chd0, 0); 
-                    return
-            end
-
-            % set dimensions for apodization and focal points
-            MP = seq.numPulse;
-            
-            % shift to broadcast dimensions
-            apod = shiftdim(apod,-2); % 1 x 1 x [1|M] x M'
+            % nothing to do for FSA acquisitions
+            switch seq.type, case 'FSA', chd = copy(chd0); return; end 
 
             % dist/time to receiver
-            tau_focal = - shiftdim(self.sequence.delays(self.tx), -2); % 1 x 1 x M x M'
+            tau_focal = - shiftdim(seq.delays(self.tx),      -2); % 1 x 1 x M x M'
+            apod      =   shiftdim(seq.apodization(self.tx), -2); % 1 x 1 x [1|M] x [1|M']
             
             % get time vector description
             tstart = chd0.t0;
@@ -1446,64 +1429,32 @@ classdef UltrasoundSystem < handle
             % extended time vector
             l = shiftdim(0 : 1 : (L - 1), 1); % L x 1 x 1
 
-            % pre-allocate and match output sizing/type to input
-            osz = [L, chd0.N, chd0.M, MP]; 
-            if summation, osz(3) = 1; end % transmit dimension collapsed when summing
-            resp = zeros(osz, 'like', chd0.data);
-
-            % send to device if requested
-            if device > 0, gpuDevice(device); end % reset if positive
-            if device == 0 && any(interp_method ~= ["linear", "nearest", "cubic"]), resp0 = gather(chd0.data); end % enforce on CPU
-            if device < 0, resp0 = gpuArray(chd0.data); else, resp0 = chd0.data; end % select if non-zero
-
             % choose domain to process data in
-            switch delay_domain
-                case 'freq' % TODO: make this an interpolation method instead
-                    MPa = size(apod, 4); assert(MPa == MP || MPa == 1, 'Apodization size error in dim 4.'); % broadcast dimensions
-                    for mp = MP:-1:1
-                        % get shift and weighting vector in freq domain across the
-                        % aperture i.e. build the steering vector
-                        wL = exp(-2i * pi ./ dt ./ L .* l .* sub(tau_focal,mp,4)); % L x 1 x M x {M'}
-
-                        % apply delay in frequency domain using an L-point padded DFT
-                        try
-                            resp_mp = sub(apod,min(mp,MPa),4) .* cast(ifft((fft(resp0, L, 1) .* wL ), L, 1, 'nonsymmetric'), 'like', resp0);
-                        catch
-                            resp_mp = gather(resp0); L = gather(L); wL = gather(wL);
-                            resp_mp = ifft(( fft(resp_mp, L, 1) .* wL ), L, 1, 'nonsymmetric');
-                            resp_mp = sub(apod,min(mp,MPa),4) .* cast(resp_mp, 'like', resp0);
-                        end
-
-                        % handle FFT wrap-around
-                        resp_mp = circshift(resp_mp, nwrap, 1);
-
-                        % sum across transmitters
-                        if summation
-                            resp_mp = sum(resp_mp, 3); % T' x N x 1
-                        end
-
-                        % store results
-                        resp(:,:,:,mp) = resp_mp;
+            switch interp_method
+                case 'freq'
+                    wL = apod .* exp(-2i * pi ./ dt ./ L .* l .* tau_focal); % steering vector (L x 1 x M x M')
+                    x = fft(chd0.data, L, 1); % data in freq domain (L x N x M x 1)
+                    if summation, y = tenmul(wL,   x, 3, 1); % apply phase shift and sum over transmits (L x N x 1 x M')
+                    else,         y =        wL .* x;       % apply phase shift, no sum over transmits (L x N x M x M') <- huge!!!
                     end
-                case 'time'
+                    z = ifft(y, L, 1, 'nonsymmetric'); % back to time (L x N x [1|M] x M')
+                    z = circshift(z, nwrap, 1); % handle FFT wrap-around
+
+                otherwise
                     time = cast(dt .* l + tstart, 'like', chd0.t0); % T' x 1 x 1
-                    Na = size(apod,2); assert(Na == chd0.N || Na == 1, 'Apodization size error in dim 2.'); % broadcast dimensions
-                    for n = chd0.N:-1:1
-                        chd_ = copy(chd0);
-                        chd_.data = sub(chd_.data,n,2);
-                        a = sub(apod, min(n,Na), 2);
-                        y = a .* chd_.sample(time - tau_focal - dt*nwrap, interp_method); % sample and apodize the data (T x 1 x M x M')
+                    for n = chd0.N:-1:1 % per receive channel (implicit pre-allocation)
+                        chd_ = copy(chd0); % don't modify original data
+                        chd_.data = sub(chd_.data,n,2); % choose only this channel
+                        y = apod .* chd_.sample(time - tau_focal - dt*nwrap, interp_method); % sample and apodize the data (T x 1 x M x M')
                         if summation, y = sum(y, 3); end
-                        resp(:,n,:,:) = y; % store data (T x 1 x [1|M] x M')
+                        z(:,n,:,:) = y; % store data (T x 1 x [1|M] x M')
                     end
-
-                otherwise, error('Unknown delay domain');
             end
 
-            % create output channeld data
-            chd = copy(chd0);
+            % create output channel data object
+            chd = copy(chd0); % cpy all properties
             chd.t0 = tstart - dt*nwrap; % shift time axes
-            chd.data = permute(resp,[1,2,4,3]); ... % convert to L x N x M' x [1|M]
+            chd.data = permute(z,[1,2,4,3]); ... % convert to L x N x M' x [1|M]
         end
         
         function [B, X, Y, Z] = DASEikonal(self, chd, medium, cgrid, rcvfun, varargin)
@@ -1732,13 +1683,10 @@ classdef UltrasoundSystem < handle
             % RECOMPILEMEX(self)
             %
             %
-            
-            % get all source code definitions
-            defs = [...
-                UltrasoundSystem.genMexdef_msfm(), ... % both msfm files
-                ];
-            
-            % compile each
+                     
+            defs = UltrasoundSystem.getMexFileDefs();
+
+            % compile each definition
             for d = defs
                 % make full command
                 com = cat(1,...
@@ -1771,17 +1719,15 @@ classdef UltrasoundSystem < handle
             src_folder = UltrasoundSystem.getSrcFolder();
             
             % get all source code definitions
-            defs = [...
-                UltrasoundSystem.genCUDAdef_beamform(cuda_folder),...
-                ];
+            defs = UltrasoundSystem.getCUDAFileDefs();
             
             % compile each
             for d = defs
                 % make full command
                 com = join(cat(1,...
                     fullfile(cuda_folder,'bin/nvcc'), ...
-                    ['--ptx ' fullfile(src_folder, [d.Source '.cu'])], ...
-                    ['-o ' fullfile(self.tmp_folder, [d.Source '.ptx'])], ...
+                    ['--ptx ' fullfile(src_folder, [d.Source])], ...
+                    ['-o ' fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx'))], ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
                     join("-L" + d.Libraries), ...
@@ -1799,6 +1745,25 @@ classdef UltrasoundSystem < handle
         end
     end
     methods(Static)
+        function defs = getCUDAFileDefs(cuda_folder)
+            % no halp :(
+            
+            % CUDA folder
+            if nargin < 1, cuda_folder = UltrasoundSystem.getDefaultCUDAFolder(); end
+
+            % get all source code definitions
+            defs = [...
+                UltrasoundSystem.genCUDAdef_beamform(cuda_folder),...
+                ];
+        end
+
+        function defs = getMexFileDefs()
+            % get all source code definitions
+            defs = [...
+                UltrasoundSystem.genMexdef_msfm(), ... % both msfm files
+                ];
+        end
+
         function f = getSrcFolder()
             f = fileparts(mfilename('fullpath'));
         end
@@ -1815,13 +1780,13 @@ classdef UltrasoundSystem < handle
         end
 
         function d = genCUDAdef_beamform(cuda_folder)
-            %
+            % no halp :(
 
             % CUDA folder
             if nargin < 1, cuda_folder = UltrasoundSystem.getDefaultCUDAFolder(); end
 
             % filename
-            d.Source = 'bf';
+            d.Source = 'bf.cu';
 
             d.IncludePath = {... include folders
                 fullfile(cuda_folder, 'samples/common/inc'), ...
