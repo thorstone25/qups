@@ -14,7 +14,7 @@
 % * Create linear and curvilinear (convex) transducers
 % * Define full-synthetic-aperture, focused, diverging, or plane-wave transmits
 % * Beamform to create a b-mode image
-% * Simulate point targets or distributed media (via k-Wave)
+% * Simulate point targets (via MUST or FieldII) or distributed media (via k-Wave)
 %% 
 % Please submit issues or feature requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -30,7 +30,7 @@
 %#ok<*BDLGI> ignore casting numbers to logical values
 device = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
 % setup;  % add all the necessary paths
-setup parallel; % also starts a parpool for faster processing
+setup parallel cache; % start a parpool for faster processing | recompile and cache local mex/CUDA binaries
 
 try hw = waitbar(0, 'test', 'Visible', 'off'); close(hw); end %#ok<TRYNC> % R2021b bug - errors on first call
 %% 
@@ -38,15 +38,16 @@ try hw = waitbar(0, 'test', 'Visible', 'off'); close(hw); end %#ok<TRYNC> % R202
 % Choose a Target
 
 target_depth = 1e-3 * 30;
-switch "array"
+switch "single"
     case 'single', targ = Target('pos', [0;0;target_depth], 'c0', 1500); % simple point target
-    case 'array' , targ = Target('pos', [0;0;1] * 1e-3*(10:5:50)); % targets every 5mm
+    case 'array' , targ = Target('pos', [0;0;1] * 1e-3*(10:5:50), 'c0', 1500); % targets every 5mm
+    case 'diffuse', targ = Target('pos', 1e-3*[40;10;60].*([1;0;1].*rand(3,2501)-[0.5;0;0]), 'c0', 1500); % diffuse scattering
 end
 targ.rho_scat = 2; % make density scatterers at 2x the density
 targ.scat_mode = 'ratio'; 
 % Choose a transducer
 
-switch "L12-3V"
+switch "L11-5V"
     case 'L11-5V', xdc = TransducerArray.L11_5V(); % linear array
     case 'L12-3V', xdc = TransducerArray.L12_3V(); % another linear array
     case 'C5-2V' , xdc = TransducerConvex.C5_2V(); % convex array
@@ -54,7 +55,7 @@ end
 % Choose the simulation region
 % Make sure it covers the target and the transducer!
 
-switch "small"
+switch "large"
     case 'small', tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 16), 'z', linspace(  0e-3, 60e-3, 16));
     case 'large', tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 16), 'z', linspace(-30e-3, 60e-3, 16));
 end
@@ -69,7 +70,7 @@ if isa(xdc, 'TransducerArray')
             seq = SequenceRadial('type', 'PW', ...
                 'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
         case 'Focused', 
-            [xmin, xmax, Nx] = deal( -10 ,  10 , 5 );
+            [xmin, xmax, Nx] = deal( -10 ,  10 , 21 );
             seq = Sequence('type', 'VS', 'c0', targ.c0, ...
         'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
         ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
@@ -119,12 +120,10 @@ elseif isa(xdc, 'TransducerConvex')
 end
 %% 
 % 
-% 
-% Show the transducer's impulse response
 
-figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
-%% 
-% Plot configuration of the simulation
+% Show the transducer's impulse response
+% figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
+%  Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
 imagesc(targ, tscan); colorbar; % show the background medium for the simulation/imaging region
@@ -137,7 +136,7 @@ end
 plot(targ, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
 hl = legend(gca, 'Location','bestoutside'); 
 set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
-%% Simulate a Point Target
+%% Simulate the Point Scatterer(s)
 
  
 %% 
@@ -148,18 +147,19 @@ us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
 
 % Simulate a point target
 % run on CPU to use spline interpolation
-% chd0 = calc_scat_all(us, targ, [1,1], 'device', 0, 'interp', 'spline'); % use FieldII, 
-% chd0 = simus(us, targ, 'periods', 5); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-% chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpn', 'device', 0, 'interp', 'spline'); % use a Greens function
-chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a gpu if available!
+switch "SIMUS"
+    case 'FieldII', chd0 = calc_scat_all(us, targ, [1,1], 'device', device, 'interp', 'cubic'); % use FieldII, 
+    case 'SIMUS'  , chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'freq'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
+    case 'Greens' , chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a Greens function with a GPU if available!
+end
 chd0
 
 % display the channel data across the transmits
 chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in dB
 figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis(gather([-80 0] + (max(chd.data(chd.data < inf)))))
-xlabel('Channel'); ylabel('Time (s)');
-for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
-%% Create an image
+xlabel('Channel'); ylabel('Time (s)'); ylim([min(chd.time(:)), max(chd.time(:))]);
+for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); h.YData(:) = chd.time(:,:,min(m,size(chd.time,3))); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
+%% Create a B-mode Image
 
  
 %% 
@@ -180,7 +180,11 @@ switch class(xdc)
 end
 switch seq.type
     case "VS", 
-        switch "translating"
+
+%% 
+% Choose an apodization method for Virtual Source (VS) transmits
+
+        switch "accept"
             case 'multiline', apod = multilineApodization(us.scan, us.sequence);
             case 'scanline', apod = scanlineApodization(us.scan, us.sequence);
             case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 19.8*scale);
@@ -188,7 +192,7 @@ switch seq.type
             case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
             case 'none', apod = 1;
         end        
-    otherwise, apod = 1; % not implemented :(
+    otherwise, apod = 1; % apodization profiles for plane-wave/FSA not implemented :(
 end
 b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'cubic', 'apod', apod);
 
