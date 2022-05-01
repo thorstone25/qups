@@ -1,8 +1,7 @@
 function setup(varargin)
 base_path = fileparts(mfilename('fullpath'));
-rel_paths = {'.', 'fun', 'src', 'utils'};
+rel_paths = {'.', 'bin', 'fun', 'src', 'utils'};
 paths = cellfun(@(p)fullfile(base_path, p), rel_paths, 'UniformOutput', false);
-addpath(paths{:});
 
 for i = 1:nargin
     switch varargin{i}
@@ -17,8 +16,15 @@ for i = 1:nargin
                     parpool('threads');
                 end
             end
+        case 'cache'
+            us = UltrasoundSystem();
+            us.recompile();
+            copyfile(us.tmp_folder, fullfile(base_path, "bin"));
         otherwise 
             error('Unrecognized option'); 
     end
 end
 
+% add (existent) paths after (optionally) adding bin folder
+paths = paths(7 == cellfun(@exist, paths));
+addpath(paths{:});
