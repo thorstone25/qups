@@ -22,8 +22,8 @@ xsz = size(x, ddms);
 tsz = size(t, ddms);
 assert(all(xsz == tsz | xsz == 1), 'Data sizing is not broadcastable.'); % data sizing must be broadcastable
 
-bdms = ddms(xsz == tsz); % broadcasting dimensions
-rdms = ddms(xsz ~= tsz & xsz == 1); % replicating dimensions
+bdms = ddms(xsz == tsz); % matching dimensions
+rdms = ddms(xsz ~= tsz & xsz == 1); % outer dimensions
 
 % set the data order: sampling dimensions, broadcasting dimensions,
 % replicating dimensions
@@ -32,8 +32,8 @@ ord = [dim, bdms, rdms]; % this should be all of the dimensions
 % get the data sizing
 T = size(x, dim);
 I = size(t, dim);
-N = prod(size(t, bdms));
-M = prod(size(t, rdms));
+if isempty(bdms), N = 1; else, N = prod(size(t, bdms)); end
+if isempty(rdms), M = 1; else, M = prod(size(t, rdms)); end
 
 % move the input data to the proper dimensions for the GPU kernel
 x = permute(x, ord);
