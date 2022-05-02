@@ -40,6 +40,7 @@ classdef Sequence < handle
     
     properties(Hidden)
         FSA_n_tx = nan % hidden storage of the number of pulse for an FSA sequence
+        apodization_ = [] % hidden storage of user entered apodization values or function
     end
     
     methods
@@ -160,14 +161,24 @@ classdef Sequence < handle
             % reshape for output
             tau = permute(tau, [3 2 1]);
         end
-        
+
         function a = apodization(self, tx)
-            switch self.type
-                case 'FSA'
-                    % TODO: use apodization as a sequence property?
-                    a = eye(size(tx.positions(),2)); % N x N identity
-                otherwise
-                    a = ones([size(tx.positions(),2) self.numPulse]); % N x S
+            if isempty(self.apodization_) % apodization not set by user:
+                switch self.type
+                    case 'FSA'
+                        % TODO: use apodization as a sequence property?
+                        a = eye(size(tx.positions(),2)); % N x N identity
+                    otherwise
+                        a = ones([size(tx.positions(),2) self.numPulse]); % N x S
+                end
+            else
+                if isa(self.apodization_, 'function_handle')
+                    a = self.apodization_(tx); % call the function on tx
+                elseif isnumeric(self.apodization_)
+                    a = self.apodization_; % return the user supplied values
+                else, warning("Unable to interpret apodization; not a function handle or numeric type")
+                    a = self.apodization_; % return the user supplied values anyway
+                end
             end
         end
 
@@ -197,6 +208,16 @@ classdef Sequence < handle
             self.FSA_n_tx = n;
         end
        
+        function setApodization(self, apod)
+            % no halp :(
+            
+            % should be fun or data
+            if ~(isa(apod, 'function_handle') || isnumeric(apod))
+                warning("Expected a function handle or numeric type; instead got a " + class(apod) + ".");
+            end
+            self.apodization_ = apod; 
+        end
+        
         % set the transmit type
         function set.type(self, t)
             switch t
