@@ -1568,6 +1568,8 @@ classdef UltrasoundSystem < handle
             % 
             % See also ULTRASOUNDSYSTEM/DAS ULTRASOUNDSYSTEM/FOCUSTX
 
+            % TODO: include apodization, device, other keyword arguments
+
             % options
             kwargs.fthresh = -40; % threshold for including frequencies
 
@@ -1577,11 +1579,12 @@ classdef UltrasoundSystem < handle
             f = chd.fs * (0 : K - 1)' / K; % frequency axis
             df = chd.fs * 1 / K; % frequency step size
             x = fft(chd.data,K,1); % K x N x M x ...
-            x = x .* exp(-2i*pi*f.*chd.t0); % re-align t0 axis
+            x = x .* exp(-2i*pi*f.*chd.t0); % re-align time axis
 
             % choose frequencies to evaluate
             xmax = max(x, [], 1); % maximum value per trace
             f_val = mag2db(abs(x)) - mag2db(abs(xmax)) >= kwargs.fthresh; % threshold 
+            f_val = f_val & f < chd.fs / 2; % positive frequencies only
             f_val = (any(f_val, 2:ndims(x))); % evaluate any freqs across aperture/frames that is above threshold
             
             % get the pixel positions
@@ -1602,7 +1605,7 @@ classdef UltrasoundSystem < handle
             % transform to frequency step kernels
             w_rx    = exp(-2i*pi*df.*tau_rx); %  receive greens function
             w_tx    = exp(-2i*pi*df.*tau_tx); % transmit greens function
-            w_steer = exp(-2i*pi*df.*del_tx); % transmits steering delays
+            w_steer = exp(-2i*pi*df.*del_tx); % transmit steering delays
 
             % TODO: cast data type for efficency?
             [w_tx, w_rx, w_steer, apod_tx] = dealfun(@(w) cast(w, 'like', real(x)), w_tx, w_rx, w_steer, apod_tx);
@@ -1616,7 +1619,7 @@ classdef UltrasoundSystem < handle
                 % if ~f_val(k), continue; end
 
                 % report progress
-                if isvalid(h), waitbar(k/K, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
+                if isvalid(h), waitbar(k/K/2, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
 
                 % select frequency
                 xk = shiftdim(x(k,:,:,:,:,:),1); % data, in freq. domain (N x V x ...)
