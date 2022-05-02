@@ -1559,6 +1559,91 @@ classdef UltrasoundSystem < handle
             % make the shape consistent
             B = reshape(B, image_size);        
         end
+    
+        function b = matrixbf(self, chd, c0)
+            % MATRIXBF Matrix beamformer
+            %
+            % b = matrixbf(self, chd)
+            % 
+            % 
+            % See also ULTRASOUNDSYSTEM/DAS ULTRASOUNDSYSTEM/FOCUSTX
+
+            % options
+            kwargs.fthresh = -40; % threshold for including frequencies
+
+            % move the data to the frequency domain, being careful to
+            % preserve the time axis
+            K = round(chd.T); % DFT length
+            f = chd.fs * (0 : K - 1)' / K; % frequency axis
+            df = chd.fs * 1 / K; % frequency step size
+            x = fft(chd.data,K,1); % K x N x M x ...
+            x = x .* exp(-2i*pi*f.*chd.t0); % re-align t0 axis
+
+            % choose frequencies to evaluate
+            xmax = max(x, [], 1); % maximum value per trace
+            f_val = mag2db(abs(x)) - mag2db(abs(xmax)) >= kwargs.fthresh; % threshold 
+            f_val = (any(f_val, 2:ndims(x))); % evaluate any freqs across aperture/frames that is above threshold
+            
+            % get the pixel positions
+            Pi = cell(3,1);
+            [Pi{:}] = self.scan.getImagingGrid();
+            Pi = cellfun(@(x) {shiftdim(x, -4)}, Pi); % place I in dims 5-7
+            Pi = cat(1,Pi{:}); % 3 x 1 x 1 x 1 x [I]
+            
+            % get the delays for the transmit/receive green's matrix
+            % kernels
+            tau_tx = vecnorm(self.tx.positions() - Pi,2,1) / c0; % 1 x M x 1 x 1 x [I]
+            tau_rx = vecnorm(self.rx.positions() - Pi,2,1) / c0; % 1 x N x 1 x 1 x [I]
+
+            % get the transmit steering vector weights and delays
+            del_tx  = self.sequence.delays(self.tx); % M x V
+            apod_tx = self.sequence.apodization(self.tx); % M x V
+
+            % transform to frequency step kernels
+            w_rx    = exp(-2i*pi*df.*tau_rx); %  receive greens function
+            w_tx    = exp(-2i*pi*df.*tau_tx); % transmit greens function
+            w_steer = exp(-2i*pi*df.*del_tx); % transmits steering delays
+
+            % TODO: cast data type for efficency?
+            [w_tx, w_rx, w_steer, apod_tx] = dealfun(@(w) cast(w, 'like', real(x)), w_tx, w_rx, w_steer, apod_tx);
+            b = zeros([1, size(Pi,2:ndims(Pi))], 'like', x);
+
+            % beamform one frequency at a time to save memory space
+            h = waitbar(0,'Beamforming ...');
+            % parfor (k = 1:K)
+            for k = gather(find(f_val)')
+                % skip unimportant frequencies
+                % if ~f_val(k), continue; end
+
+                % report progress
+                if isvalid(h), waitbar(k/K, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
+
+                % select frequency
+                xk = shiftdim(x(k,:,:,:,:,:),1); % data, in freq. domain (N x V x ...)
+                % TODO: adapt for multiple frames
+
+                % compute the greens functions on transmit/receive
+                G_tx = w_tx.^(k-1); % 1 x M x 1 x 1 x [I]
+                G_rx = w_rx.^(k-1); % 1 x M x 1 x 1 x [I]
+
+                % compute the inverse steering vector on transmit
+                T_tx = apod_tx .* w_steer.^(k-1); % M x V
+                A_tx = pagemtimes(G_tx, T_tx); % 1 x V x 1 x 1 x [I]
+                Ainv_tx = pagetranspose(A_tx); % V x 1 x 1 x 1 x [I] % make a column vector
+                
+                % delay and sum the data for this frequency
+                yn = pagemtimes(conj(G_rx), xk); % 1 x V x 1 x 1 x [I]
+                y  = pagemtimes(yn, conj(Ainv_tx)); % 1 x 1 x 1 x 1 x [I]
+                
+                % integrate over all frequencies
+                b = b + y; % 1 x 1 x 1 x 1 x [I]
+
+            end           
+            if isvalid(h), close(h); end
+
+            % revert to normal dimensions
+            b = shiftdim(b,4); % [I] x ...
+        end    
     end
     
     % Receive Aperture beamforming methods: operate along dimension 2
