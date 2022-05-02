@@ -335,7 +335,7 @@ classdef ChannelData < matlab.mixin.Copyable
                     else % TODO: implement implicit broadcast across receives/transmits for tau within interpd
                         for m = chd.M:-1:1
                             for n = chd.N:-1:1
-                                y(:,n,m,:) = interpd(chd.data(:,n,m), ntau(:,min(n,N_),min(m,M_),:), self.tdim, interp); % easy iteration
+                                y(:,n,m,:) = interpd(chd.data(:,n,m), ntau(:,min(n,N_),min(m,M_),:), chd.tdim, interp); % easy iteration
                             end
                         end
                     end
@@ -434,8 +434,17 @@ classdef ChannelData < matlab.mixin.Copyable
 
         function h = animate(self, varargin)
             % no halp :(
+
+            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
+                ax = varargin{1}; varargin(1) = [];
+            else
+                ax = gca;
+            end
+
+            % now use the handle only
             for f = 1:prod(size(self.data,3:ndims(self.data)))
-                h = imagesc(self, f, varargin{:});
+                if ~isvalid(ax), break; end % quit if handle destroyed
+                h = imagesc(self, 1, ax, varargin{:});
                 drawnow limitrate; pause(1/5);
             end
         end
