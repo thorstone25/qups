@@ -2,6 +2,8 @@ function setup(varargin)
 base_path = fileparts(mfilename('fullpath'));
 rel_paths = {'.', 'bin', 'fun', 'src', 'utils'};
 paths = cellfun(@(p)fullfile(base_path, p), rel_paths, 'UniformOutput', false);
+paths = paths(7 == cellfun(@exist, paths));
+addpath(paths{:});
 
 for i = 1:nargin
     switch varargin{i}
@@ -17,7 +19,7 @@ for i = 1:nargin
                 end
             end
         case 'cache'
-            us = UltrasoundSystem();
+            us = UltrasoundSystem(); % needs paths to have been added already
             us.recompile();
             copyfile(us.tmp_folder, fullfile(base_path, "bin"));
         otherwise 
@@ -25,6 +27,3 @@ for i = 1:nargin
     end
 end
 
-% add (existent) paths after (optionally) adding bin folder
-paths = paths(7 == cellfun(@exist, paths));
-addpath(paths{:});
