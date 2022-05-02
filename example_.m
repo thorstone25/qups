@@ -63,7 +63,7 @@ end
 % For linear transducers only!
 
 if isa(xdc, 'TransducerArray') 
-    switch "Focused"
+    switch "FSA"
         case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
         case 'Plane-wave', 
             [amin, amax, Na] = deal( -25 ,  25 , 26 );
@@ -103,12 +103,18 @@ if isa(xdc, 'TransducerArray')
     pn = xdc.positions(); % element positions
     xb = pn(1,[1,end]); % x-limits are the edge of the aperture
     zb = [-10e-3, 10e-3] + [min(targ.pos(3,:)), max(targ.pos(3,:))]; % z-limits surround the point target
-    
-    scan = ScanCartesian(...
-        'x', linspace(xb(1), xb(end), 2^9), ...
-        'z', linspace(zb(1), zb(end), 2^9) ...
-        ); % X x Z scan
-
+    switch "low"
+        case "high"
+            scan = ScanCartesian(...
+                'x', linspace(xb(1), xb(end), 2^9), ...
+                'z', linspace(zb(1), zb(end), 2^9) ...
+                ); % X x Z scan
+        case "low"
+            scan = ScanCartesian(...
+                'x', linspace(xb(1), xb(end), 2^6), ...
+                'z', linspace(zb(1), zb(end), 2^6) ...
+                ); % X x Z scan
+    end
 % For convex transducers only!
 elseif isa(xdc, 'TransducerConvex') 
 
@@ -171,7 +177,7 @@ chd = singleT(chd); % use less data
 chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC 
 if device, chd = gpuArray(chd); end % move data to GPU
 if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
-chd = rectifyt0(chd, 'linear'); % linearly resample if needed to align t0 time axis
+% chd = rectifyt0(chd, 'linear'); % linearly resample if needed to align t0 time axis
 
 % Run a simple DAS algorithm
 switch class(xdc)
@@ -184,7 +190,7 @@ switch seq.type
 %% 
 % Choose an apodization method for Virtual Source (VS) transmits
 
-        switch "accept"
+        switch "none"
             case 'multiline', apod = multilineApodization(us.scan, us.sequence);
             case 'scanline', apod = scanlineApodization(us.scan, us.sequence);
             case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 19.8*scale);
@@ -194,11 +200,17 @@ switch seq.type
         end        
     otherwise, apod = 1; % apodization profiles for plane-wave/FSA not implemented :(
 end
-b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'cubic', 'apod', apod);
+
+switch "DAS"
+    case "DAS"
+        b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'cubic', 'apod', apod); % use a delay-and-sum beamformer
+    case "matrix"
+        b = matrixbf(us, chd, targ.c0); % use a matrix beamformer
+end
 
 % show the image
 b_im = mod2db(b); % convert to power in dB
-figure; imagesc(scan, b_im, [-80, 0] + max(b_im(:))); % display with 60dB dynamic range
+figure; imagesc(scan, b_im, [-80, 0] + max(b_im(:))); % display with 80dB dynamic range
 colormap gray; colorbar;
 %% Scan Convert for a Sector Scan
 
