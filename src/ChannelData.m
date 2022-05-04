@@ -191,19 +191,19 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also RESAMPLE
 
+            % save original data prototypes
+            [Tt, Tf, Td] = deal(chd.t0, chd.fs, zeros([0,0], 'like', chd.data));
+            
             % Make new ChannelData (avoid modifying the original)
             chd = copy(chd);
 
-            % save original type
-            [Tt, Tf, Td] = deal(chd.t0, chd.fs, chd(1));
-            
             % ensure numeric args are non-sparse, double
-            chd = double(chd);
-            fs = double(fs);
-            inum = cellfun(@isnumeric, varargin);
+            chd = (doubleT(chd)); % data is type double
+            fs = (double(fs)); % new frequency is type double
+            inum = cellfun(@isnumeric, varargin); % all numeric inputs are type double
             varargin(inum) = cellfun(@double, varargin(inum), 'UniformOutput', false);
 
-            % resample in time - no support for other dims: fs required
+            % resample in time - no support for other dims: fs is required arg
             [y, ty] = resample(chd.data, chd.time, fs, varargin{:}, 'Dimension', 1);
             [chd.fs, chd.t0, chd.data] = deal(fs, ty(1), y);            
 
@@ -331,7 +331,7 @@ classdef ChannelData < matlab.mixin.Copyable
                     ntau = (tau - chd.t0) * chd.fs;
                     mxdim = max(ndims(chd.data), ndims(ntau)); % max dims
                     if all(size(chd.data,2:mxdim) <= size(tau, 2:mxdim)) % if time delays defined across all dimensions of the data
-                        y(:) = interpd(chd.data, ntau, self.tdim, interp); % sample all at once
+                        y(:) = interpd(chd.data, ntau, chd.tdim, interp); % sample all at once
                     else % TODO: implement implicit broadcast across receives/transmits for tau within interpd
                         for m = chd.M:-1:1
                             for n = chd.N:-1:1
@@ -444,7 +444,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % now use the handle only
             for f = 1:prod(size(self.data,3:ndims(self.data)))
                 if ~isvalid(ax), break; end % quit if handle destroyed
-                h = imagesc(self, 1, ax, varargin{:});
+                h = imagesc(self, f, ax, varargin{:});
                 drawnow limitrate; pause(1/5);
             end
         end
