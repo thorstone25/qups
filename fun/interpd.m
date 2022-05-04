@@ -1,7 +1,7 @@
 function y = interpd(x, t, dim, interp)
 % INTERPD Interpolation in one dimension
 %
-% y = interpd(x, t, dim, interp)
+% y = INTERPD(x, t, dim, interp)
 %
 % x is (T x N')
 % t is (I x N' x M')
@@ -9,7 +9,8 @@ function y = interpd(x, t, dim, interp)
 % Sampling is performed in dimension matching I/T, broadcasted in N' (must
 % match) and the data is replicated across M' i.e. x(t, n', m') = x(t, n')
 %
-% 
+% x is 0-base indexed implicitly i.e. to x(1) in MATLAB <-> t == 0
+%
 
 %% validate dimensions
 if nargin < 4, interp = 'linear'; end
