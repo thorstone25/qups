@@ -188,8 +188,12 @@ classdef Medium < handle
             % h = IMAGESC(self, scan, ax) uses the axes ax for plotting
             % instead of the current axes
             %
+            % h = IMAGESC(..., prop, ...) plots the property prop instead
+            % of the sound speed. Prop must be one of {'c', 'rho', 'BoA', 
+            % 'alpha', 'alphap'}.
+            %
             % h = IMAGESC(..., arg1, arg2, ...) passes following arguments
-            % to the imagesc function
+            % to the built-in IMAGESC function
             %
             % See also SCAN/IMAGESC, IMAGESC
 
@@ -204,10 +208,32 @@ classdef Medium < handle
             % compute the properties on the grid
             [c, rho, BoA, alpha, alphap] = self.getPropertyMap(grd);
 
+            x = c; % default
+            i = 1; % manual iteration
+            while i <= numel(varargin), % go through each property
+                v = varargin{i};
+                if (ischar(v) || isstring(v)) % look for a keyword
+                    isfound = true;
+                    switch v
+                        case 'c',       x = c;
+                        case 'rho',     x = rho;
+                        case 'BoA',     x = BoA;
+                        case 'alpha',   x = alpha;
+                        case 'alphap',  x = alphap;
+                        otherwise, isfound = false;
+                    end
+                    if isfound, 
+                        varargin(i) = []; % delete the property - don't pass to imagesc
+                        continue, 
+                    end 
+                end
+                i = i + 1; % iterate
+            end
+
             % plot the sound speed on the scan (no scaling!)
             % TODO: allow user to toggle properties by linking data or
             % making a GUI or something
-            h = imagesc(scan, real(c), varargin{:}); 
+            h = imagesc(scan, real(x), varargin{:}); 
         end
     end
 end
