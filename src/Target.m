@@ -127,13 +127,18 @@ classdef Target < Medium & Scatterers
             % create scatterers by perturbing the region at the nearest
             % pixel/voxel
             [ind_prop, cs, rhos, BonAs, alpha_coeffs] = self.modMap(pg);
-            c(ind_prop) = cs;
-            rho(ind_prop) = rhos;
-            BoA(ind_prop) = BonAs;
-            alpha(ind_prop) = alpha_coeffs;
+            c(ind_prop)         = cs;
+            rho(ind_prop)       = rhos;
+            BoA(ind_prop)       = BonAs;
+            alpha(ind_prop)     = alpha_coeffs;
 
             % set the map properties
             maps = struct('cmap', c, 'rmap', rho, 'amap', alpha, 'nmap', 1 + BoA./2);
+
+            % Use 0 for invalid properties in fullwave(?)
+            for f = string(fieldnames(maps))', maps.(f) = nan2zero(maps.(f)); end
+
+
         end
     
     end
