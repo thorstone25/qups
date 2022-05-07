@@ -27,6 +27,12 @@ classdef UltrasoundSystem < handle
     methods
         % constructor
         function self = UltrasoundSystem(varargin)
+            % UltrasoundSystem - Construct an UltrasoundSystem
+            %
+            % us = UltrasoundSystem(Name,Value,...) constructs an
+            % UltrasoundSystem object using name value pairs. It's the
+            % recommended method of construction.
+            
             % initialize Target / Transducer array
             xdc_args = {};
             for i = 1:2:nargin
@@ -354,6 +360,273 @@ classdef UltrasoundSystem < handle
 
             % send data (back) to CPU
             chd = gather(chd);
+        end
+    end
+
+    % Fullwave calls
+    methods
+        function conf = fullwaveConf(self, target, sscan, varargin)
+            % FULLWAVECONF - Generate a Fullwave simulation configuration
+            %
+            % conf = FULLWAVECONF(self, targ, scan) creates a simulation
+            % configuration struct to be used with [] to simulate the
+            % response from the Target targ using the simulation region
+            % in the ScanCartesian sscan.
+            %
+            % 
+
+            % kwarg defaults
+            kwargs = struct(...
+                'ppw', 15, ...          points per wavelength
+                'f0', self.xdc.fc, ...    center frequency of the transmit / simulation
+                'CFL', 0.3, ...         minimum CFL
+                'txdel', 'cont' ...     delay models {'disc', 'cont'}
+                );
+
+            % name-value pairs
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            %% Configuration variables
+
+            % basic vars
+            c0       = target.c0;           % speed of sound (m/s)
+            % f0       = kwargs.f0;         % center frequency of transmitted wave [Hz]
+            % lambda   = c0/f0;             % wavelength of
+            omega0   = 2*pi*kwargs.f0;    % center radian frequency of transmitted wave
+
+            % simulation field /grid
+            dur      = diff(sscan.zb)*2.3/c0; % duration of simulation (s)
+            cfl_min  = kwargs.CFL; % 0.5;
+
+            % % define the spatial grid
+            [~, sdims] = ismember('XZ', sscan.order);
+            grid.size = sscan.size(sdims); % simulation size
+            grid.step = [mode(diff(sscan.x)), mode(diff(sscan.z))]; % simulation step size %TODO: warning if irregular?
+            grid.origin = [sscan.x(1), sscan.z(1)]; % first value
+
+            % determine other grid vars
+            ppw = kwargs.ppw;
+
+            dX = min(grid.step); % limit of spatial step size
+            fs = self.fs;         % data sampling frequency
+            cfl0 = (c0*(1/fs)/dX); % cfl at requested frequency
+            modT = ceil(cfl0 / cfl_min); % scaling for desired cfl
+            dT   = (1/fs)/modT;   % simulation sampling interval
+            cfl  = c0 * dT / dX;  % Courant-Friedrichs-Levi condition
+
+            % DEBUG 1: this must be consistent with itself!!!
+            % CFL,c0,ppw,omega0 all go together!
+            % at the end: conf.sim  = {c0,omega0,dur,ppw,cfl,maps2,xdcfw,nTic,modT};
+
+            %% Define the Transducer
+            xdcfw = self.xdc.getFullwaveTransducer(grid);
+
+            %% Define the Transmit Delays
+
+            % get transmit delays
+            tau_tx = -self.sequence.delays(self.tx); % M x V
+
+            % forward to all subelement delays, synchronized
+            tau_tx_pix = zeros([xdcfw.nInPx, self.sequence.numPulse]);
+            i = logical(xdcfw.incoords(:,4)); % find non-zero indices - they map to an element
+            tau_tx_pix(i,:) = tau_tx(xdcfw.incoords(i,4),:); % apply synchronized delays
+
+            % 0-base the delays for the sim
+            t0_xdc = min(min(tau_tx_pix));
+            tau_tx_pix = (tau_tx_pix - t0_xdc); % discretized delays in seconds
+
+
+            %% Define the Transmit Apodization
+
+            % get apodization per element
+            apod = self.sequence.apodization(self.tx);
+
+            % map to sub-elements
+            tx_apod = zeros(size(tau_tx_pix)); % pre-allocate
+            i = logical(xdcfw.incoords(:,4)); % find non-zero indices - they map to an element
+            tx_apod(i,:) = apod(xdcfw.incoords(i,4),:); % apply synchronized delays
+
+
+            %% Define the Transmit Pulse
+
+            pulse = self.sequence.pulse;
+            nTic = ceil(max(max(tau_tx_pix ./ dT))) + 2*ceil(pulse.duration ./ dT);
+            nTic = nTic + (modT - mod(nTic, modT)) + 1; % make multiple of modT, + 1
+            n0 = floor(pulse.t0 / dT); % start time in time indices
+            t = (n0 + (0 : nTic - 1)) * dT; % transmit time axis
+            icvec = self.sequence.pulse.fun(t);
+
+            % get transmit signal per input-pixel, time index, transmit for nTic time
+            % indices
+            switch kwargs.txdel
+                % apply discrete shifts in time
+                case 'disc',  icmat = arrayfun(@(d) circshift(icvec(:), round(d ./ dT)), tau_tx_pix, 'UniformOutput', false);
+                    % resample the waveform
+                case 'cont', icmat = arrayfun(@(d) self.sequence.pulse.fun(t(:) - d), tau_tx_pix, 'UniformOutput', false);
+            end
+
+            % reshape and apply transmit apodization
+            icmat = cell2mat(shiftdim(icmat,  -1));  % (T' x nInPx x nTx)
+            icmat = icmat .* shiftdim(tx_apod,-1);
+
+
+            %% Define the Medium
+            % get maps in X x 1 x Z
+            maps = target.getFullwaveMap({sscan.x, 0, sscan.z});
+
+            % switch to X x Z x 1
+            for f = string(fieldnames(maps))', maps.(f) = permute(maps.(f), [1,3,2]); end
+
+            %% Store the configuration variables
+            conf.sim = {c0,omega0,dur,ppw,cfl,maps,xdcfw,nTic,modT}; % args for full write function
+            conf.tx  = icmat;  % transmit data
+            conf.t0  = t0_xdc; % time delay offset
+            conf.fs  = fs;     % sampling frequency
+            conf.tstart = n0*dT; % signal start time (0 is the peak)
+            conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
+
+        end
+    
+        function job = fullwaveJob(self, conf, simdir, clu)
+            % FULLWAVEJOB - Create a Fullwave simulation job.
+            %
+            % job = FULLWAVEJOB(self, conf) creates a job to run the 
+            % fullwave simulation from conf.
+            % 
+            % job = FULLWAVEJOB(self, conf, simdir) uses the directory 
+            % simdir to store the simulation inputs and outputs.
+            %
+            % job = FULLWAVEJOB(self, conf, simdir, clu) creates a job on
+            % the parcluster clu. The parcluster must have access to the
+            % simulation directory simdir. The resource configurations for 
+            % the parcluster clu should be setup prior to this call to
+            % ensure enough RAM is present.
+            %
+            % Use 'submit' to submit the job.
+            % 
+            % See also FULLWAVECONF PARCLUSTER PARALLEL.CLUSTER
+
+            % parse inputs
+            if nargin < 4, clu = parcluster('local'); end
+            if nargin < 3, simdir = fullfile(pwd, 'fwsim'); end
+
+            % make simulation directory
+            mkdir(simdir);
+
+            % Write Simulation Files
+            write_fullwave_sim(simdir, conf.sim{:}); % all the .dat files
+	    src_folder = fileparts(mfilename('fullpath'));
+            copyfile(fullfile(src_folder, '..', 'bin', 'fullwave2_executable'), simdir); % the executable
+
+            % create a job
+            % we'll call like this: runFullwaveTx(icmat, simdir, outdir)
+            N = size(conf.tx, 3); % number of transmits
+            for n = N:-1:1, args{n} = {conf.tx(:,:,n), simdir, fullfile(simdir, string(n))}; end % number the outputs
+            job = clu.createJob("AutoAddClientPath",true,"AutoAttachFiles",true);
+            job.createTask(@runFullwaveTx, 0, args, "CaptureDiary",true,"Name",'Fullwave-Simulation');
+
+            % write the configuration variables we need for post-processing
+            conf = rmfield(conf, ["sim", "tx"]); % remove large variables, save the rest
+            save(fullfile(simdir, 'conf.mat'), "-struct", "conf");
+            
+	end
+
+        function chd = readFullwaveSim(self, simdir, conf)
+            % READFULLWAVESIM - Create a ChannelData object from the simulation data.
+            %
+            % chd = READFULLWAVESIM(simdir) creates a ChannelData object from the
+            % simulation files located in the directory simdir.
+            %
+            % chd = READFULLWAVESIM(simdir, conf) uses the configuration file conf
+            % rather than loading one from the simulation directory.
+            %
+            % See also RUNFULWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
+
+            % see if we can find a conf file in the directory if not given to us
+            if nargin < 3
+                cfile = fullfile(simdir, 'conf.mat');
+                if exist(cfile, 'file'), conf = load(cfile, 'fs', 't0', 'tstart', 'outmap');
+                else, error('Unable to find configuration file.'); end
+            end
+
+            % get the folders in the simulation directory
+            % they are numbered for each transmit, so we can just count them
+            listing = dir(simdir);
+            dnm = double(string({listing.name})); % directory names
+            mind = dnm(~isnan(dnm));
+            M = max(mind); % number of transmits - inferred from number of files
+
+            % get output mapping
+            outmap = conf.outmap;
+            mPx = length(outmap);
+
+            % number of elements
+            N = max(outmap);
+
+            % preallocate
+            xm = cell(N,M);
+
+            f = waitbar(0, 'Initializing ...');
+            for m = 1:M
+                % update status
+                if isvalid(f), waitbar(m/M, f, sprintf('Loading Files: %d %%', floor(m/M*100))); end
+
+                % load data (with a reference, in case it is large)
+                outfile = fullfile(simdir, num2str(m), 'genout.dat');
+                mdat = memmapfile(outfile, 'Writable', false, 'Format', 'single');
+                xm_ = reshape(mdat.Data, mPx, []); % N'' x T'' % pixels x time steps
+
+                % average across sub-elements to get signal for a single receive element
+                for n = 1:N, xm{n,m} = mean(xm_((outmap == n),:),1)'; end % T x {N} x {M}
+            end
+
+            % set all values to have the same size
+            T = max(cellfun(@length, xm), [], 'all'); % maximum size
+            xm = cellfun(@(x) cat(1, x(:), zeros([T-length(x),1])), xm, 'UniformOutput', false); % expand to size T
+            xm = cell2mat(shiftdim(xm, -1)); % make datacube
+
+            % Construct a Channel Data object
+            chd = ChannelData('data', xm, 'fs', conf.fs, 't0', conf.t0 + conf.tstart);
+
+            % cleanup
+            if isvalid(f), delete(f); end
+        end
+
+        function chd = fullwaveSim(self, target, sscan, varargin)
+            % FULLWAVESIM - Run a fullwave simulation
+            %
+            % chd = FULLWAVESIM(self, target, sscan, varargin)
+
+            % defaults
+            kwargs = struct(...
+                'simdir', fullfile(pwd, 'fwsim'), ...
+                'parcluster', parcluster('local'), ... parallel cluster
+                'ppw', 15, ...          points per wavelength
+                'f0', us.xdc.fc, ...    center frequency of the transmit / simulation
+                'CFL', 0.3, ...         minimum CFL
+                'txdel', 'cont' ...     delay models {'disc', 'cont'}
+                );
+
+            % parse inputs
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'ppw', 'f0', 'CFL', 'txdel'}));
+
+            % create the configuration
+            conf_args_ = struct2nvpair(conf_args);
+            conf = fullwaveConf(self, target, sscan, conf_args_{:});
+
+            % create a job to process it
+            job = self.fullwaveJob(conf, kwargs.simdir, kwargs.parcluster);
+
+            % submit the job
+            submit(job); 
+
+            % wait for it to finish
+            wait(job); 
+
+            % read in the data
+            chd = self.readFullwaveSim(kwargs.simdir);
         end
     end
 
@@ -1251,25 +1524,25 @@ classdef UltrasoundSystem < handle
     
     % Beamforming
     methods(Access=public)
-        function [B, X, Y, Z] = DAS(self, chd, medium, rcvfun, varargin)
-            % Delay and sum
+        function [B, X, Y, Z] = DAS(self, chd, c0, rcvfun, varargin)
+            % DAS Delay and sum
             %
-            % [B, X, Y, Z] = DAS(self, chd, medium, rcvfun, varargin)
+            % b = DAS(us, chd, c0) performs delay-and-sum beamforming on 
+            % the ChannelData chd using an assumed sound speed of c0. The
+            % ChannelData must conform to the delays given by the Sequence 
+            % model in us.sequence. The output is defined on the Scan 
+            % object us.scan. Additional frames in the ChannelData are 
             % 
-            % function to perform delay and sum beamforming on SAR data
-            % inputs:
-            %   - time (T x 1) or {2}:  time sample values or a start time, 
-            %                           frequency pair (s) | (s, Hz)
-            %   - resp (T x M x N):     voltage samples (pure)
-            %   - medium:               Medium object
-            %   - rcvfun:               Receive aperture accumulation
-            %                           (defaults to a summation)
-            %   Name-value pair arguments
-            %   - prec:                 compute precision of the positions
-            %                           {'single'* | 'double'}
-            %   - device:               GPU device index: -1 for default
-            %                           gpu, 0 for cpu, 1-4 for device index
-            % where T -> time, M -> transmitters, N -> receivers
+            % Inputs:
+            %  chd      - A ChannelData object  
+            %  c0       - A sound speed, or any object with a .c0 property
+            %  rcvfun   - Receive aperture accumulation function (defaults 
+            %             to summation)
+            % Name/Value pair arguments
+            %  prec -  compute precision of the positions 
+            %            {'single'* | 'double'}
+            %  device - GPU device index: -1 for default gpu, 0 for cpu, n
+            %           to select (and reset!) a gpuDevice.
             %
             % outputs:
             %   - X\Y\Z:    3D coordinates of the output
@@ -1295,14 +1568,17 @@ classdef UltrasoundSystem < handle
                         error('Unrecognized name-value pair');
                 end
             end
+
+            % accept c0 as a value, or an object with a c0 property
+            if ~isnumeric(c0) && ~istall(c0), c0 = c0.c0; end % accept tall numbers too for now.
+
+            % make sure t0 is a scalar
+            if ~isscalar(chd.t0), chd = rectifyt0(chd); end
             
-            % get positions of the imaging plane % 
+            % get positions of the imaging plane 
             [X, Y, Z, image_size] = self.scan.getImagingGrid();
 
-            % get the apodization
-            % apod = self.scan.apodScanline(self.sequence);
-
-            % reshape into I x M x N?
+            % reshape into I x N x M
             apod_args = {'apod', apod};
             
             % convert to x/y/z in 1st dimension
@@ -1313,7 +1589,7 @@ classdef UltrasoundSystem < handle
             P_rx = self.rx.positions(); % cast(self.rx.positions(), 'like', time(end)); % 3 x N
             
             % get the beamformer arguments
-            dat_args = {chd.data, chd.t0, chd.fs, medium.c0, 'device', device, 'position-precision', prec}; % data args
+            dat_args = {chd.data, chd.t0, chd.fs, c0, 'device', device, 'position-precision', prec}; % data args
             ext_args = [interp_args, apod_args]; % extra args
             
             switch self.sequence.type
@@ -1325,18 +1601,18 @@ classdef UltrasoundSystem < handle
                 case 'VS'
                     pos_args = {P_im, P_rx, self.sequence.focus, [0;0;1]};
             end
-            
+
             % beamform and collapse the aperture
             if nargin < 5 || isempty(rcvfun)
-                % beamform the data (I1 x I2 x I3 x 1)
+                % beamform the data (I1 x I2 x I3 x 1 x 1 x F x ...)
                 B = beamform('DAS', pos_args{:}, dat_args{:}, ext_args{:});
             else
-                % beamform the data (I1 x I2 x I3 x N)
-                B = beamform('SYN', pos_args{:}, dat_args{:}, ext_args{:});
-                
-                % apply recieve aperture function in dim 1 and shape up
-                B = rcvfun(B, 4); % I1 x I2 x I3 x 1
+                % beamform the data (I1 x I2 x I3 x N x 1 x F x ...) -> (I1 x I2 x I3 x 1 x 1 x F x ...)
+                B = rcvfun(beamform('SYN', pos_args{:}, dat_args{:}, ext_args{:}), 4);
             end
+
+            % move higher dimensions back down (I1 x I2 x I3 x F x ...)
+            B = permute(B, [1:3,6:ndims(B),4:5]);
         end
         
         function chd = focusTx(self, chd0, seq, varargin)
@@ -1354,15 +1630,11 @@ classdef UltrasoundSystem < handle
             %
             % Name/value pair arguments
             %  length -               Length of DFT / time vector
-            %  sum -                  Set false to preserve transmits
             %  interp -               Interpolation method
             %
             %  Interpolation methods are passed to the ChannelData/sample
             %  function. An additional method 'freq' is provided to delay
             %  the data in the frequency domain.
-            % 
-            % where T -> time, M -> transmitters, N -> receivers, M' ->
-            % synthetic transmits
             %
             % Outputs:
             %   chd -                   New ChannelData object
@@ -1371,8 +1643,7 @@ classdef UltrasoundSystem < handle
             
             % defaults
             L = [];
-            summation = true;
-            interp_method = 'linear';
+            interp_method = 'cubic';
             
             % focus using self's sequence 
             if nargin < 3 || isempty(seq), seq = self.sequence; end
@@ -1381,80 +1652,81 @@ classdef UltrasoundSystem < handle
             for i = 1:2:numel(varargin)
                 switch varargin{i}
                     case 'length', L = varargin{i+1};
-                    case 'sum', summation = varargin{i+1};
                     case 'interp', interp_method = varargin{i+1};
                     otherwise, error('Unrecognized input.'); 
                 end     
             end
 
+            % Copy semantics
+            chd = copy(chd0);
+
             % nothing to do for FSA acquisitions
-            switch seq.type, case 'FSA', chd = copy(chd0); return; end 
+            switch seq.type, case 'FSA', return; end 
 
             % dist/time to receiver
             tau_focal = - shiftdim(seq.delays(self.tx),      -2); % 1 x 1 x M x M'
             apod      =   shiftdim(seq.apodization(self.tx), -2); % 1 x 1 x [1|M] x [1|M']
-            
-            % get time vector description
-            tstart = chd0.t0;
-            dt = 1 ./ chd0.fs;
-            
-            % find minimum signal length
-            nwrap = ceil(max(abs(tau_focal(:))) ./ dt); % amount the signal extends beyond original
-            tend = max(chd0.t0) + dt*(chd0.T - 1 + nwrap); % maximum signal time
-            S = ceil((tend - tstart) ./ dt) + 1; % minimum signal length
+
+            % resample only within the window where we currently have data.
+            nmin = floor(min(tau_focal,[],'all') .* chd.fs); % minimum sample time
+            nmax =  ceil(max(tau_focal,[],'all') .* chd.fs); % maximum sample time
+            chd.t0    =    chd.t0 + nmin / chd.fs; % shift time axes forwards to meet minimum sample time
+            tau_focal = tau_focal - nmin / chd.fs; % shift delays backwards to meet time axes
+            chd = zeropad(chd,0,(nmax - nmin)); % expand time axes to capture all data
             
             % pick new signal length
             if isempty(L)
-                L = S + 1;
+                L = chd.T;
             elseif ischar(L)
                 switch L
                     case 'min'
-                        L = S + 1;
+                        L = chd.T;
                     case 'pow2'
-                        try 
-                            L = 2^(nextpow2(S));
-                        catch
-                            L = gpuArray(2^nextpow2(gather(S)));
-                        end
+                            L = 2^(nextpow2(chd.T));
                     otherwise
-                        error('Unrecognized choice for DFT length');
+                        error('Unrecognized strategy for DFT length');
                         
                 end
             elseif isscalar(L)
-                if L < S, warning('Signal length may be too short!'); end
+                if L < chd.T, warning('Signal length may be too short!'); end
             else
-                error("L must be a scalar or one of {min | pow2}");
+                error("L must be a scalar or one of {'min' | 'pow2'}");
             end
             
-            % extended time vector
+            % frequency vector
             l = shiftdim(0 : 1 : (L - 1), 1); % L x 1 x 1
 
-            % choose domain to process data in
+            % choose an interpolation method: frequency is implemented here
+            % but will be moved into the ChannelData class at some point
             switch interp_method
                 case 'freq'
-                    wL = apod .* exp(-2i * pi ./ dt ./ L .* l .* tau_focal); % steering vector (L x 1 x M x M')
-                    x = fft(chd0.data, L, 1); % data in freq domain (L x N x M x 1)
-                    if summation, y = tenmul(wL,   x, 3, 1); % apply phase shift and sum over transmits (L x N x 1 x M')
-                    else,         y =        wL .* x;       % apply phase shift, no sum over transmits (L x N x M x M') <- huge!!!
-                    end
-                    z = ifft(y, L, 1, 'nonsymmetric'); % back to time (L x N x [1|M] x M')
+                    % clear out the 4th dimension in the data
+                    x = chd.data; 
+                    dimfree = max(4,ndims(x)+1); % replace 4th dimension with a free one
+                    x = permute(x,[1:3,dimfree,4:ndims(x)]);
+
+                    % apply phase shifts and sum
+                    wL = apod .* exp(-2i * pi * chd.fs  .* tau_focal ./ L); % steering vector (1 x 1 x M x M')
+                    x = fft(x, L, 1); % put data in freq domain (L x N x M x 1 x F x ...)
+                    y = tenmul(wL.^l, x, 3, 1); % apply phase shift and sum over transmits (L x N x 1 x M' x F x ...)
+                    z = ifft(y, L, 1, 'nonsymmetric'); % back to time (T' x N x 1 x M' x F x ...)
                     z = circshift(z, nwrap, 1); % handle FFT wrap-around
+                    
+                    % move back to original dimensions
+                    z = permute(z, [1,2,4,5:ndims(z),3]); % T' x N x M' x F x ...
 
                 otherwise
-                    time = cast(dt .* l + tstart, 'like', chd0.t0); % T' x 1 x 1
-                    for n = chd0.N:-1:1 % per receive channel (implicit pre-allocation)
-                        chd_ = copy(chd0); % don't modify original data
-                        chd_.data = sub(chd_.data,n,2); % choose only this channel
-                        y = apod .* chd_.sample(time - tau_focal - dt*nwrap, interp_method); % sample and apodize the data (T x 1 x M x M')
-                        if summation, y = sum(y, 3); end
-                        z(:,n,:,:) = y; % store data (T x 1 x [1|M] x M')
+                    [MP, MPa] = deal(size(tau_focal,4), size(apod,4)); % sizing: number of transmits
+                    for m = MP:-1:1 % per transmit (implicit pre-allocation)
+                        y = chd.sample(chd.time - sub(tau_focal,m,4), interp_method); % sample the data (T' x N x M x F x ...)
+                        y = sum(sub(apod,min(m,MPa),4) .* y, 3); % apodize and sum over transmits
+                        z{m} = y; % store data (T' x N x {M'} x F x ...)
                     end
+                    z = cat(3, z{:}); % combine (T' x N x M' x F x ...)
             end
 
-            % create output channel data object
-            chd = copy(chd0); % cpy all properties
-            chd.t0 = tstart - dt*nwrap; % shift time axes
-            chd.data = permute(z,[1,2,4,3]); ... % convert to L x N x M' x [1|M]
+            % store output channel data
+            chd.data = z; % (T' x N x M' x F x ...)
         end
         
         function [B, X, Y, Z] = DASEikonal(self, chd, medium, cgrid, rcvfun, varargin)
