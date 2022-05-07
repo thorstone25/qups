@@ -19,8 +19,8 @@ limitations under the License.
 # include "helper_math.h" // vector math
 
 // Modified for use as a stand-alone ptx
-// data is (T x N)
-// sample times are (I x N)
+// data is (T x N x F)
+// sample times are (I x N x M)
 // # ifndef T
 // __constant__ size_t T;
 // # endif
@@ -32,6 +32,9 @@ limitations under the License.
 // # endif
 // # ifndef M
 // __constant__ size_t M;
+// # endif
+// # ifndef F
+// __constant__ size_t F;
 // # endif
 
 
@@ -204,16 +207,17 @@ inline __device__ float2 samplef(const float2 * x, float tau, int flag, const fl
 __global__ void interpdf(float2 * __restrict__ y, 
     const float2 * __restrict__ x, const float * __restrict__ tau, const int flag) {
 
-    // get sampleing index
+    // get sampling index
     const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
     float2 no_v = make_float2(0.0f, 0.0f);
 
     // if valid sample, for each tx/rx
-    if(i < I && n < N){
+    if(i < I && n < N && f < F){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // output
-            y[i + n*I + m*I*N] = samplef(&x[n*T], tau[i + n*I + m*I*N], flag, no_v);
+        for(size_t m = 0; m < M; ++m){ // per transmit
+            y[i + n*I + m*N*I + f*M*N*I] = samplef(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
         }
     }
 }
@@ -239,16 +243,17 @@ inline __device__ double2 sample(const double2 * x, double tau, int flag, const 
 __global__ void interpd(double2 * __restrict__ y, 
     const double2 * __restrict__ x, const double * __restrict__ tau, const int flag) {
 
-    // get sampleing index
+    // get sampling index
     const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
     double2 no_v = make_double2(0.0, 0.0);
 
     // if valid sample, for each tx/rx
-    if(i < I && n < N){
+    if(i < I && n < N && f < F){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // output
-            y[i + n*I + m*I*N] = sample(&x[n*T], tau[i + n*I + m*I*N], flag, no_v);
+        for(size_t m = 0; m < M; ++m){ // per transmit
+            y[i + n*I + m*N*I + f*M*N*I] = sample(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
         }
     }
 }

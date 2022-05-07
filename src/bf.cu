@@ -1,7 +1,7 @@
 # include "helper_math.h" // vector math
 
 // data sizes: I -> pixels, M -> transmitters, N -> receivers, 
-// T -> time samples, S -> signal
+// T -> time samples, F -> Frames, S -> signal
         
 # ifndef T
 __constant__ size_t T;
@@ -14,6 +14,9 @@ __constant__ size_t N;
 # endif
 # ifndef I
 __constant__ size_t I;
+# endif
+# ifndef F
+__constant__ size_t F;
 # endif
 # ifndef S
 __constant__ size_t S;
