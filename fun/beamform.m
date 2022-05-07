@@ -1,46 +1,68 @@
 function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
-
+% BEAMFORM Beamform data using a delay-and-sum approach
+% 
+% y = BEAMFORM(fun, Pi, Pr, Pv, Nv, x, t0, fs, c) beamforms the given data
+% by computing and applying beamforming delays based on an assumed sound
+% speed, receiver positions, and (virtual) positions transmit positions. 
+% Optionally sum across the receive aperture and/or transmit aperture 
+% (default).
+% 
+% Inputs:
+%  fun -         algorithm for aperture summation {'DAS'|'SYN'|'BF'|'delays'}
+%  Pi -          pixel positions (3 x [I]) == (3 x I1 x I2 x I3)
+%  Pr -          receiver positions (3 x N)
+%  Pv -          (virtual) transmit foci (3 x M)
+%  Nv -          plane-wave transmit normal (3 x M)
+%  x -           datacube of complex sample values (T x N x M x F x ...)
+%  t0 -          initial time for the data (scalar)
+%  fs -          sampling frequency of the data (scalar)
+%  c -           sound speed used for beamforming (scalar)
 %
-% function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
+% Outputs: 
+%  y -           beamformed data (I1 x I2 x I3 x [1|N] x [1|M] x F x ...)
+% 
+% Where T -> time samples, N -> receivers, M -> transmits, F -> data frames
+% I = [I1 x I2 x I3] -> pixels
+% 
+% fun must be one of {'DAS'*|'SYN'|'BF'|'delays'}:
+%   DAS - sum across both apertures
+%   SYN - sum across the transmi apeture only
+%   BF  - do not sum
+%   delays - return time delays
 %
-% Beamform the data at the given pixels. Optionally sum across apertures.
-% 
-% Given a set of pixels, (virtual or plane wave) transmitter locations,
-% receiver locations, as well as a datacube equipped with a time,
-% transmitter and receiver axis, beamforming the data without summation.
-% The data is linearly interpolated at the sample time.
-% 
-% All positions are in vector coordinates.
-% 
-% If the virtual transmitter normal has a fourth component that is 0, this
-% indicates that the transmission should be treated as a plane wave
-% transmission instead of a virtual source (focused) transmission.
-% 
-% The value of t = 0 must be the time when the peak of the wavefront
-% reaches the virtual source location. Because this time must be the same
-% for all transmits, the datacube must be stitched together in such a way
-% that for all transmits, the same time axis is used.
-% 
 % If the function is 'delays', the output will be the time delay for each
 % transmitter-receiver pair. The values for 'x', 't0', and 'fs' will be
 % ignored.
 % 
-% Inputs:
-%  fun -         algorithm for aperture summation {'DAS'|'SYN'|'BF'|'delays'}
-%  Pi -          pixel positions (3 x I[1 x I2 x I3])
-%  Pr -          receiver positions (3 x N)
-%  Pv -          (virtual) transmitter positions (3 x M)
-%  Nv -          (virtual) transmitter normal (3 x M)
-%  x -           datacube of complex sample values (T x N x M)
-%  t0 -          initial time for the data
-%  fs -          sampling frequency of the data
-%  c -           sound speed used for beamforming
+% y = BEAMFORM(..., 'plane-waves', ...) uses a plane-wave delay model 
+% instead of a virtual-source delay model (default).
 % 
-% Outputs:
-%   y -          complex pixel values per transmit/channel (I[ x N x M])
-%                I -> pixels, M -> transmitters, N -> receivers, T -> time samples
+% In a plane-wave model, time t == 0 is when the wave passes through the 
+% origin of the coordinate system. Pv is the origin of the coordinate
+% system (typically [0;0;0]) and Nv is the normal vector of the plane wave.
 % 
+% In a virtual-source model, time t == 0 is when the wavefront (in theory) 
+% passes through the focus. For a full-synthetic-aperture (FSA) 
+% acquisition, Pv is the position of the transmitting element. In a focused
+% or diverging wave transmit, Pv is the focus. Nv is ignored.
 % 
+% y = BEAMFORM(..., 'apod', apod, ...) applies apodization across the image
+% and data dimensions. apod must be able to broadcast to size 
+% I1 x I2 x I3 x N x M
+% 
+% y = BEAMFORM(..., 'device', device, ...) forces selection of a gpuDevice.
+% device can be one of {0, -1, +n}:
+%    0 - use native MATLAB calls to interp1
+%   -1 - use a CUDAKernel on the current GPU
+%   +n - reset gpuDevice n and use a CUDAKernel (caution: this will clear
+%        all of your gpuArray variables!
+% 
+% y = BEAMFORM(..., 'interp', method, ...) uses method for the underlying
+% intepolation. On the gpu, method can be one of 
+% {"nearest","linear"*,"cubic","lanczos3"}. In MATLAB, support is
+% determined by the interp1 function. 
+% 
+% See also ULTRASOUNDSYSTEM/DAS CHANNELDATA/SAMPLE INTERP1
 
 % default parameters
 VS = true;
@@ -121,6 +143,10 @@ parse_inputs();
 
 % store this option input for convenience
 per_cell = {'UniformOutput', false};
+
+% move replicating dimensions of the data to dims 6+
+% TODO: support doing this with non-scalar t0 definition
+x = permute(x, [1:3,(max(3,ndims(x))+[1,2]),4:ndims(x)]); % (T x N x M x 1 x 1 x F x ...)
     
 if device
 
@@ -244,23 +270,35 @@ if device
     Pif = NaN([3, kI, nF], 'like', Pi); % initialize value
     Pif(1:3, 1:I) = Pi(:,:); % place valid pixel positions
     Pif = num2cell(Pif, [1,2]); % pack in cells per frame
+
+    % partition data per frame
+    fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
+    F = prod(fsz);
     
-    % for each frame, run the kernel
+    % for each data frame, run the kernel
     switch fun
         case {'DAS','SYN','BF'}
-            y = cellfun(@(pi) cast(...
-                k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x, flagnum, t0, fs, cinv),...
-                'like', odataPrototype), Pif, per_cell{:});
+            for f = F:-1:1 % beamform each data frame
+                yf = cellfun(@(pi) cast(...
+                    k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x(:,:,:,f), flagnum, t0, fs, cinv),...
+                    'like', odataPrototype), Pif, per_cell{:});
+
+                % concatentate pixels
+                y{f} = cat(1, yf{:}); % I' [x N [x M]] x 1 x 1 x {F x ...}
+            end
+            % unpack frames
+            y = cat(6, y{:});
         case {'delays'}
             y = cellfun(@(pi) cast(...
                 k.feval(yg, pi, Pr, Pv, Nv, cinv), ...
                 'like', odataPrototype), Pif, per_cell{:});
+            % concatentate pixels
+            y = cat(1, y{:}); % I' [x N [x M]]
     end
     
     % reshape output and truncate garbage
-    y = cat(1, y{:}); % I' [x N [x M]]
-    y = y(1:I,:,:); % trim the junk
-    y = reshape(y, [Isz, size(y,2), size(y,3)]); % I1 x I2 x I3[ x N [x M]]
+    y = sub(y,1:I,1); % trim the junk
+    y = reshape(y, [Isz, size(y,2), size(y,3), fsz]); % I1 x I2 x I3 x [1|N] x [1|M] x F x ...
     
 else
     
@@ -310,7 +348,7 @@ else
     
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3]); % pack for I
-    
+
     switch fun
         case 'delays'
             y = cast(cinv .* (dv + dr), 'like', odataPrototype);
@@ -318,7 +356,7 @@ else
         case 'DAS'
             y = zeros([Isz, 1, 1], 'like', odataPrototype);
             dvm = num2cell(dv, [1:3]); % ({I} x 1 x M)
-            xmn = shiftdim(num2cell(x,  [1]),1); % ({T} x N x M)
+            xmn = shiftdim(num2cell(x,  [1,6:ndims(x)]),1); % ({T} x N x M x 1 x 1 x {F x ...})
             amn = shiftdim(num2cell(apod, [1:3]),3); % ({I} x N x M)
             amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
             parfor m = 1:M
@@ -333,7 +371,7 @@ else
                     
                     % sample and output (I x 1 x 1)
                     yn = yn + a{1} .* cast(...
-                        interpn(t, xmn{n,m}, tau, interp_type, 0), ...
+                        interp1(t, xmn{n,m}, tau, interp_type, 0), ...
                         'like', odataPrototype);
                 end
                 y = y + yn;
@@ -342,7 +380,7 @@ else
         case 'SYN'
             y = zeros([Isz, N, 1], 'like', odataPrototype);
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
-            xm  = num2cell(swapdim(x,2,4),  [1,4]); % ({T x N} x M)
+            xm  = num2cell(swapdim(x,2,4),  [1,4,6:ndims(x)]); % ({T x N} x M x {F x ...)
             am = num2cell(apod, [1:4]);
             am = repmat(am, double([ones(1,4),M]) ./ [ones(1,4), size(am,5)]); % broadcast to ({I x N} x M)
             parfor m = 1:M
@@ -355,7 +393,7 @@ else
                 % sample and output (I x N x 1)
                 y = y + cast(cell2mat(cellfun(...
                     @(x, tau, a) ...
-                    a .* interpn(t, x, tau, interp_type, 0), ...
+                    a .* interp1(t, x, tau, interp_type, 0), ...
                     num2cell(xm{m},1), pck(tau), pck(an), per_cell{:})), ...
                     'like', odataPrototype); %#ok<PFBNS>
             end
@@ -365,12 +403,12 @@ else
             tau = cinv .* (dv + dr);
 
             % set size of x
-            xmn = permute(x, [1,4,5,2,3]); % (T x 1 x 1 x N x M)
+            xmn = permute(x, [1,4,5,2,3,6:ndims(x)]); % (T x 1 x 1 x N x M x {F x ...})
             
             % sample and output (I x N x M)
             y = cell2mat(cellfun(... 
                 @(x, tau, a) cast(...
-                a .* interpn(t, x, tau, interp_type, 0), ...
+                a .* interp1(t, x, tau, interp_type, 0), ...
                 'like', odataPrototype), ...
                 pck(xmn,1), pck(tau), pck(apod), per_cell{:}));
     end
