@@ -5,7 +5,7 @@
 % the characteristics of the elements (width/height, impulse response, 
 % central frequency, etc.). This class offers definitions for common
 % transducers and conversion functions between real transducers (mainly
-% from Verasonics atm) and simulation programs (k-Wave, Fullwave, FieldII).
+% from Verasonics) and simulation programs (k-Wave, Fullwave, FieldII).
 % 
 % See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERPISTON
 
@@ -82,7 +82,7 @@ classdef (Abstract) Transducer < handle
             end   
         end
     end
-        
+
     % transducer specific methods
     methods (Abstract)
         % inferred position methods
@@ -416,11 +416,18 @@ classdef (Abstract) Transducer < handle
     
     % dependent methods
     methods
+        function set.bw(self, b),
+            if(length(b) ~= 2),
+                error("bw must be a length 2 vector of the passband cutoff frequencies."); 
+            end, 
+            self.bw = b;
+        end
+
         function a = get.area(self), a = self.width * self.height; end
         
-        function b = get.bw_frac(self), b = self.bw ./ self.fc; end
+        function b = get.bw_frac(self), b = diff(self.bw) ./ self.fc; end
         
-        function set.bw_frac(self, bf), self.bw = bf * self.fc; end
+        function set.bw_frac(self, bf), self.bw = mean(self.bw) + [-1 1]/2 * bf; end
         
         function o = get.origin(self), o = - self.offset; end
         

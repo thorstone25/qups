@@ -302,8 +302,9 @@ classdef TransducerConvex < Transducer
             end
 
             % remove coordinates with no matching element - they are unused
-            % xdc.incoords (xdc.incoords (:,4)==0,:) = [];
-            % xdc.outcoords(xdc.outcoords(:,4)==0,:) = [];
+            % this was commented out and it worked
+            xdc_.incoords (xdc_.incoords (:,4)==0,:) = [];
+            xdc_.outcoords(xdc_.outcoords(:,4)==0,:) = [];
 
             xdc_.nOutPx = size(xdc_.outcoords,1);
             xdc_.nInPx  = size(xdc_.incoords,1);
@@ -383,7 +384,7 @@ classdef TransducerConvex < Transducer
         function xdc = C5_2V()
             xdc = TransducerConvex(...
             'fc', 1e6*mean([2.4 5]), ... % in verasonics doc, this is 4
-            'bandwidth', 1e6*diff([2.4 5]), ...
+            'bandwidth', 1e6*([2.4 5]), ...
             'width', 0.46e-3, ...
             'height', 13.5e-3, ...
             'numel', 128, ...
@@ -415,7 +416,7 @@ classdef TransducerConvex < Transducer
             % set relevant properties
             xdc = TransducerArray(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
-                'bandwidth', 1e6*diff(Trans.Bandwidth), ... % bandwidth [Hz]
+                'bandwidth', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
                 'width', scale*Trans.elementWidth, ... % linear kerf
                 'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
                 'numel', Trans.numelements, ... % number of elements

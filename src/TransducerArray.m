@@ -347,7 +347,7 @@ classdef TransducerArray < Transducer
         function xdc = L12_3V()
             xdc = TransducerArray(...
                 'fc', mean([4e6 11e6]), ...
-                'bandwidth', diff([4e6 11e6]), ...
+                'bandwidth', ([4e6 11e6]), ...
                 'width', (0.18e-3), ... placeholder @ 90% pitch
                 'height', (2e-3), ... placeholder @ 10x picth
                 'numel', 192, ...
@@ -358,7 +358,7 @@ classdef TransducerArray < Transducer
         function xdc = L11_5V()
             xdc = TransducerArray(...
                 'fc', mean([4.5e6 10e6]), ...
-                'bandwidth', diff([4.5e6 10e6]), ...
+                'bandwidth', ([4.5e6 10e6]), ...
                 'width', (0.27e-3), ... placeholder @ 90% pitch
                 'height', (3e-3), ... placehoder @ 10x picth
                 'numel', 128, ...
@@ -369,7 +369,7 @@ classdef TransducerArray < Transducer
         function xdc = L11_2V()
             xdc = TransducerArray(...
                 'fc', 5.1333e+06, ... % Transducer center frequency [Hz]
-                'bandwidth', 3e+06, ... % bandwidth [Hz]
+                'bandwidth', 5.1333e6 + 3e6*[-1 1]/2, ... % bandwidth [Hz]
                 'width', 0.270e-3, ... % linear kerf
                 'height', 5e-3, ... % Height of element [m]
                 'numel', 128, ... % number of elements
@@ -382,7 +382,7 @@ classdef TransducerArray < Transducer
             % Transducer parameters pulled from verasonics L12-5 50mm probe
             xdc = TransducerArray(...
                 'fc', 7.5e6, ... % Transducer center frequency [Hz]
-                'bandwidth', diff([5 11])*1e6, ... % bandwidth [Hz]
+                'bandwidth', ([5 11])*1e6, ... % bandwidth [Hz]
                 'width', hex2num('3f265251dc6ba641'), ... % element width [m]
                 'height', 7.5e-3, ... % Height of element [m]
                 'numel', 256, ... % number of elements
@@ -413,7 +413,7 @@ classdef TransducerArray < Transducer
             % set relevant properties
             xdc = TransducerArray(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
-                'bandwidth', 1e6*diff(Trans.Bandwidth), ... % bandwidth [Hz]
+                'bandwidth', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
                 'width', scale*Trans.elementWidth, ... % linear kerf
                 'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
                 'numel', Trans.numelements, ... % number of elements
