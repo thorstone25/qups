@@ -1,28 +1,42 @@
-% CHANNELDATA - Store channel data and associated properties
+% CHANNELDATA - Store and process channel data
 %
-% The ChannelData class stores a datacube and it's temporal axes and
-% provides overloaded methods for convenience in manipulating and plotting 
-% the data. The ChannelData must have a t0 value consistent with the
-% definition of t0 in QUPS to be used with higher beamforming algorithms in
-% QUPS.
+% The ChannelData class stores an N-dimensional datacube and it's temporal 
+% axes and provides overloaded methods for manipulating and plotting the 
+% data. The ChannelData must have a t0 value consistent with the
+% definition of t0 in QUPS to be used with other beamforming algorithms in
+% QUPS. Most methods that affect the time axes, such as zeropad or filter, 
+% will shift the time axes accordingly.
 %
-% All data is assumed to be sampled as the same sampling freuqency, but the
-% start time t0 may vary across transmits.
+% The underlying datacube can be N-dimensional as long as the first
+% dimension is time. The second and third dimensions should be receivers 
+% and transmits respectively to be compatible with QUPS. All data must
+% share the same sampling frequency fs, but the start time t0 may vary
+% across any dimension(s) except for the first and second dimensions. For
+% example, if each transmit has a different t0, this can be represented by
+% an array of size [1,1,M].
 %
+% The underlying numeric type of the data can be cast by appending 'T' to
+% the type (e.g. singleT(chd) produces a ChannelData) whereas the datacube 
+% itself can be cast using the numeric type constructor (e.g. single(chd) 
+% produces an array). Overloaded methods are also provided to cast to a 
+% gpuArray or tall type. The time axes is also cast to the corresponding
+% type. This enables MATLABian casting rules to apply to the object, which
+% can be used by other functions.
+% 
 % See also SEQUENCE TRANSDUCER
 
 classdef ChannelData < matlab.mixin.Copyable
 
     properties
-        data    % channel data (T x N x M)
-        t0 = 0  % start time (T x 1 x [1|M])
-        fs      % sampling freuqency
+        data    % channel data (T x N x M x F x ...)
+        t0 = 0  % start time (1 x 1 x [1|M] x [1|F] x ...)
+        fs = 1  % sampling freuqency (scalar)
     end
     properties(SetAccess=protected,GetAccess=public)
-        ord = 'TNM'; % data order
+        ord = 'TNM'; % data order: T: time, N: receive, M: transmit
     end
     properties (Dependent)
-        time    % time axis (T x 1 x [1|M])
+        time    % time axis (T x 1 x [1|M] x [1|F] x ...)
     end
     properties(Hidden, Dependent)
         T       % number of time samples
@@ -47,10 +61,10 @@ classdef ChannelData < matlab.mixin.Copyable
         end
     end
     
-    % copy
+    % copyable overloads
     methods(Access=protected)
         function chd = copyElement(self)
-            chd = ChannelData('fs', self.fs,'t0',self.t0,'data',self.data);
+            chd = ChannelData('data',self.data,'fs', self.fs,'t0',self.t0);
         end
     end
 
@@ -59,15 +73,18 @@ classdef ChannelData < matlab.mixin.Copyable
         function channel_data = getUSTBChannelData(self, sequence, xdc)
             % GETUSTBCHANNELDATA - Create a USTB channel data object
             % 
-            % channel_data = getUSTBChannelData(self) creates a USTB channel data
-            % object from the given data parameters
+            % channel_data = getUSTBChannelData(self, sequence, xdc) 
+            % creates a USTB compatible channel data object from the QUPS 
+            % channel data. USTB must be on the path.
+            %
+            % 
             
             channel_data = uff.channel_data(...
                 'sampling_frequency', self.fs, ...
                 'sound_speed', sequence.c0, ...
                 'sequence', sequence.getUSTBSequence(xdc, self.t0), ...
                 'probe', xdc.getUSTBProbe(), ...
-                'data', self.data ...
+                'data', self.data(:,:,:,:) ... limit to 4 dimensions
                 );
 
         end
@@ -85,21 +102,37 @@ classdef ChannelData < matlab.mixin.Copyable
     % data type overloads
     methods
         function chd = gather(chd)  , chd = applyFun2Props(chd, @gather); end
+        % gather the underlying data
         function chd = gpuArray(chd), chd = applyFun2Props(chd, @gpuArray); end
+        % cast underlying type to gpuArray
         function chd = tall(chd)    , chd = applyFun2Data (chd, @tall); end
+        % cast underlying type to tall
         function chd = sparse(chd)  , chd = applyFun2Data (chd, @sparse); end
+        % cast underlying type to sparse
         function chd = doubleT(chd) , chd = applyFun2Props(chd, @double); end
+        % cast underlying type to double
         function chd = singleT(chd) , chd = applyFun2Props(chd, @single); end
+        % cast underlying type to single
         function chd =  int64T(chd) , chd = applyFun2Data (chd, @int64); end
+        % cast underlying type to int64
         function chd = uint64T(chd) , chd = applyFun2Data (chd, @uint64); end
+        % cast underlying type to uint64
         function chd =  int32T(chd) , chd = applyFun2Data (chd, @int32); end
+        % cast underlying type to int32
         function chd = uint32T(chd) , chd = applyFun2Data (chd, @uint32); end
+        % cast underlying type to uint32
         function chd =  int16T(chd) , chd = applyFun2Data (chd, @int16); end
+        % cast underlying type to int16
         function chd = uint16T(chd) , chd = applyFun2Data (chd, @uint16); end
-        function chd =  int8T(chd)  , chd = applyFun2Data (chd, @int8); end
-        function chd = uint8T(chd)  , chd = applyFun2Data (chd, @uint8); end
+        % cast underlying type to uint16
+        function chd =   int8T(chd) , chd = applyFun2Data (chd, @int8); end
+        % cast underlying type to int8
+        function chd =  uint8T(chd) , chd = applyFun2Data (chd, @uint8); end
+        % cast underlying type to uint8
         function T = classUnderlying(self), try T = classUnderlying(self.data); catch, T = class(self.data); end, end % revert to class if undefined
+        % underlying class of the data or class of the data
         function T = underlyingType(self), try T = underlyingType(self.data); catch, T = class(self.data); end, end % R2020b+ overload
+        % underlying type of the data or class of the data
         function tf = isreal(self), tf = isreal(self.data); end
     end
     
@@ -107,19 +140,120 @@ classdef ChannelData < matlab.mixin.Copyable
     % these functions
     methods
         function x = double(chd), x = double(chd.data); end
+        % convert to a double array
         function x = single(chd), x = single(chd.data); end
+        % convert to a single array
         function x =  int64(chd), x =  int64(chd.data); end
+        % convert to a int64 array
         function x = uint64(chd), x = uint64(chd.data); end
+        % convert to a uint64 array
         function x =  int32(chd), x =  int32(chd.data); end
+        % convert to a int32 array
         function x = uint32(chd), x = uint32(chd.data); end
+        % convert to a uint32 array
         function x =  int16(chd), x =  int16(chd.data); end
+        % convert to a int16 array
         function x = uint16(chd), x = uint16(chd.data); end
+        % convert to a uint16 array
         function x =   int8(chd), x =   int8(chd.data); end
+        % convert to a int8 array
         function x =  uint8(chd), x =  uint8(chd.data); end
+        % convert to a uint8 array
     end
 
     % DSP overloads 
     methods
+        function D = getPassbandFilter(chd, bw, N)
+            % GETPASSBANDFILTER Get a passband filter
+            %
+            % D = GETPASSBANDFILTER(chd, bw) creates a FIR bandpass 
+            % digitalFilter object D with a passband between bw(1) and 
+            % bw(end). It can be used to filter the ChannelData.
+            %
+            % D = GETPASSBANDFILTER(chd, bw, N) uses N coefficients.
+            %
+            % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
+            % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
+
+
+            % defaults
+            if nargin < 3, N = 25; end
+
+            % make a
+            D = designfilt('bandpassfir', ...
+                'SampleRate',chd.fs, ...
+                'FilterOrder', N, ...
+                'CutoffFrequency1', bw(1), ...
+                'CutoffFrequency2', bw(end), ...
+                'DesignMethod', 'window' ...
+                );
+        end
+        function chd = filter(chd, D)
+            % FILTER Filter data with a digitalFilter
+            %
+            % chd = FILTER(chd, D) filters the channel data with the
+            % digitalFilter D. Use DESIGNFILT to design a digital filter
+            %
+            % See also DESIGNFILT DIGITALFILTER FILTER
+
+            % data must be in dim 1! but we don't check for this, just
+            % require it
+
+            % hard error if we aren't given a digitalFilter
+            assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
+
+            % copy semantics
+            chd = copy(chd);
+
+            % filter: always applied in dim 1
+            chd.data = filter(D, chd.data);
+
+            % adjust time axes
+            chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+        end
+        function chd = filtfilt(chd, D)
+            % FILTFILT Filter data with a digitalFilter
+            %
+            % chd = FILTFILT(chd, D) filters the channel data with the
+            % digitalFilter D. Use DESIGNFILT to design a digital filter
+            %
+            % See also DESIGNFILT DIGITALFILTER FILTFILT
+
+            % data must be in dim 1! but we don't check for this, just
+            % require it
+
+            % hard error if we aren't given a digitalFilter
+            assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
+
+            % copy semantics
+            chd = copy(chd);
+
+            % filter: always applied in dim 1
+            chd.data = filtfilt(D, chd.data);
+        end
+        function chd = fftfilt(chd, D)
+            % FFTFILT Filter data with a digitalFilter
+            %
+            % chd = FFTFILT(chd, D) filters the channel data with the
+            % digitalFilter D. Use DESIGNFILT to design a digital filter
+            %
+            % See also DESIGNFILT DIGITALFILTER FFTFILT
+
+            % data must be in dim 1! but we don't check for this, just
+            % require it
+
+            % hard error if we aren't given a digitalFilter
+            assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
+
+            % copy semantics
+            chd = copy(chd);
+
+            % filter: always applied in dim 1
+            chd.data(:,:) = fftfilt(D, chd.data(:,:));
+
+            % adjust time axes
+            chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+        end
         function chd = hilbert(chd, varargin)
             % HILBERT - overloads the hilbert function
             %
@@ -133,12 +267,17 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.data = hilbert(chd.data, varargin{:});
         end
         function chd = fft(chd, N, dim)
-            % CHANNELDATA/FFT - overload of fft
+            % FFT - overload of fft
             %
             % chd = FFT(chd) computes the fft of the channel data along the 
-            % time axis. 
+            % time axis. The time axes is unchanged.
             %
-            % See FFT
+            % chd = FFT(chd, N) computes the N-point fft.
+            %
+            % chd = FFT(chd, N, dim) or FFT(chd, [], dim) operates along
+            % dimension dim.
+            %
+            % See also FFT CHANNELDATA/FFTSHIFT
 
             % defaults
             if nargin < 3, dim = 1; end
@@ -147,17 +286,34 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.data = fft(chd.data, N, dim); % take the fourier transform
         end
         function chd = fftshift(chd, dim)
-            % CHANNELDATA/FFTSHIFT - overload of fftshift
+            % FFTSHIFT - overload of fftshift
             %
-            % See FFTSHIFT
+            % chd = FFTSHIFT(chd) swaps the left and right halves of the 
+            % data along the time dimension. The time and frequency axes  
+            % are unchanged.
+            %
+            % chd = FFTSHIFT(chd, dim) operates along dimension dim.
+            %
+            % See also FFTSHIFT CHANNELDATA/FFT 
+
             if nargin < 2, dim = 1; end
             chd = copy(chd);
             chd.data = fftshift(chd.data, dim);
         end
         function chd = ifft(chd, N, dim)
-            % CHANNELDATA/IFFT - overload of ifft
+            % IFFT - overload of fft
             %
-            % See IFFT
+            % chd = IFFT(chd) computes the inverse fft of the channel data 
+            % along the time axis. The time and frequency axes are 
+            % unchanged.
+            %
+            % chd = IFFT(chd, N) computes the N-point inverse fft.
+            %
+            % chd = IFFT(chd, N, dim) or IFFT(chd, [], dim) operates along
+            % dimension dim.
+            %
+            % See also IFFT CHANNELDATA/IFFTSHIFT
+
 
             % defaults
             if nargin < 3, dim = 1; end
@@ -166,15 +322,23 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.data = ifft(chd.data, N, dim); % take the fourier transform
         end
         function chd = ifftshift(chd, dim)
-            % CHANNELDATA/IFFTSHIFT - overload of ifftshift
+            % IFFTSHIFT - overload of fftshift
             %
-            % See IFFTSHIFT
+            % chd = IFFTSHIFT(chd) swaps the left and right halves of the 
+            % data along the time dimension. The time and frequency axes  
+            % are unchanged.
+            %
+            % chd = IFFTSHIFT(chd, dim) operates along dimension dim.
+            %
+            % IFFTSHIFT undoes the effects of fftshift
+            % 
+            % See also IFFTSHIFT CHANNELDATA/IFFT 
             if nargin < 2, dim = 1; end
             chd = copy(chd);
             chd.data = ifftshift(chd.data, dim);
         end
         function chd = resample(chd, fs, varargin)
-            % CHANNELDATA/RESAMPLE - Overload of resample
+            % RESAMPLE - Resample the data in time
             %
             % chd = RESAMPLE(chd, fs) resamples the data at sampling
             % frequency fs. And returns a new ChannelData object.
@@ -223,7 +387,7 @@ classdef ChannelData < matlab.mixin.Copyable
     % DSP helpers
     methods
         function chd = zeropad(chd, B, A)
-            % CHANNELDATA/ZEROPAD - Zero pad the data in time
+            % ZEROPAD - Zero pad the data in time
             %
             % chd = ZEROPAD(chd, B) prepends B zeros to the ChannelData 
             % data in time
@@ -231,11 +395,13 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd = ZEROPAD(chd, B, A) also appends A zeros to the 
             % ChannelData data in time
             %
+            % When using this function, the time axis is adjusted.
+            % 
             % See also CIRCSHIFT
 
             if nargin < 2 || isempty(B), B = 0; end
             if nargin < 3 || isempty(A), A = 0; end
-            assert(A >= 0 && B >= 0);
+            assert(A >= 0 && B >= 0, 'Data append or prepend size must be positive.');
 
             chd = copy(chd); % copy semantics
             chd.data(end+(B+A),:) = 0; % append A + B zeros in time to the data
@@ -289,66 +455,136 @@ classdef ChannelData < matlab.mixin.Copyable
         function y = sample(chd, tau, interp)
             % SAMPLE Sample the channel data in time
             %
-            % y = SAMPLE(chd, tau) samples the data at the times given by 
-            % the delays tau. 
-            %
-            % y = SAMPLE(chd, tau, interp) specifies the interpolation
-            % method. For a gpu, currently ["linear", "nearest", "cubic"] 
-            % are supported. On a cpu, support is provided by interpn
+            % y = SAMPLE(chd, tau) samples the ChannelData chd at the times
+            % given by the delays tau. 
             %
             % tau must have broadcastable sizing in the non-temporal
-            % dimensions.
+            % dimensions. In other words, in all dimensions d, either of
+            % the following must hold
+            %   1)   size(tau,d)    ==   size(chd.data,d) 
+            %   2)  (size(tau,d) == 1 || size(chd.data,d) == 1)
             %
-            % See also INTERPN CHANNELDATA/RECTIFYT0
+            % The underlying routines are optimized for compute
+            % performance. Consider using a for-loop if memory is a
+            % concern.
+            % 
+            % y = SAMPLE(chd, tau, interp) specifies the interpolation
+            % method. Interpolation is handled by the built-in interp1 
+            % function. The available methods are:
+            %
+            %   'linear'   - (default) linear interpolation **
+            %   'nearest'  - nearest neighbor interpolation **
+            %   'next'     - next neighbor interpolation
+            %   'previous' - previous neighbor interpolation
+            %   'spline'   - piecewise cubic spline interpolation 
+            %   'pchip'    - shape-preserving piecewise cubic interpolation
+            %   'cubic'    - cubic convolution interpolation for ***
+            %                uniformly-spaced data **
+            %   'v5cubic'  - same as 'cubic' ***
+            %   'makima'   - modified Akima cubic interpolation
+            %   'freq'     - frequency domain sinc interpolation ****
+            %   'lanczos3' - lanczos kernel with a = 3 **
+            % 
+            %    **   GPU support is enabled via interpd
+            %    ***  GPU support is enabled via interp1
+            %    **** GPU support is native
+            %
+            % See also INTERP1 INTERPD CHANNELDATA/RECTIFYT0
 
+            % defaults
             if nargin < 3, interp = 'linear'; end
 
-            % get sizing in first 3 dims (matching dimensions)
-            [T_, N_, M_] = size(tau, 1:3); % T' x [1|N] x [1|M] x ...
+            % check condition that we can implicitly broadcast
+            for d = 2:ndims(tau)
+                assert(any(size(tau,d) == size(chd.data,d)) || ...
+                      any([size(tau,d)  , size(chd.data,d)] == 1), ...
+                    'Delay size must match the data size (%i) or be singleton in dimension %i.',...
+                    size(chd.data, d), d ...
+                    );
+            end
 
-            % check implicit broadcasting compatability
-            assert(N_ == 1 || N_ == chd.N);
-            assert(M_ == 1 || M_ == chd.M);
-
-            % pre-allocate
-            y = zeros(size(tau), 'like', chd.data); 
-            
             % dispatch
-            assert(chd.tdim == 1); % TODO: generalize this restriction if necessary
-            
-            % TODO: use {inner|outer|matching} approach to allow broadcast sampling
-            % for the native implementation, iterate over matching 
-            % dimensions and use interp1 to sample in time (the sole inner
-            % dimension). sub can now be used to index multiple matching
-            % dimensions. For the GPU kernel, the variables of iteration
-            % must be created for having the outer dimensions in both the
-            % data and the sampling times.
+            assert(chd.tdim == 1, 'Time must be in the first dimension of the data.'); % TODO: generalize this restriction if necessary
+            if (isa(chd.data, 'gpuArray') && ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
+                    % interpolate on the gpu if we can
+                    y = interpd(chd.data, (tau - chd.t0) * chd.fs, 1, interp, 0); 
 
-            % TODO: implement frequency domain sinc interpolation as in
-            % UltrasoundSystem/FocusTX to be used as an interp option
-            switch class(chd.data)
-                case "gpuArray"
-                    ntau = (tau - chd.t0) * chd.fs;
-                    mxdim = max(ndims(chd.data), ndims(ntau)); % max dims
-                    if all(size(chd.data,2:mxdim) <= size(tau, 2:mxdim)) % if time delays defined across all dimensions of the data
-                        y(:) = interpd(chd.data, ntau, chd.tdim, interp); % sample all at once
-                    else % TODO: implement implicit broadcast across receives/transmits for tau within interpd
-                        for m = chd.M:-1:1
-                            for n = chd.N:-1:1
-                                y(:,n,m,:) = interpd(chd.data(:,n,m), ntau(:,min(n,N_),min(m,M_),:), chd.tdim, interp); % easy iteration
-                            end
-                        end
-                    end
+            elseif interp == "freq"
+                % extend data if necessary
+                ntau = (tau - chd.t0) * chd.fs; % sample delays (I x [1|N] x [1|M] x [1|F] x ...)
+                nwrap = min(0,floor(min(ntau,[],'all'))); % amount the signal is wrapped around from negative time
+                next  = max(0, ceil(max(ntau,[],'all')) - chd.T-1); % amount the signal is extended in positive time
+                chd = zeropad(chd, -nwrap, next); % extend signal to ensure we sample zeros
 
-                otherwise % interpolate, iterate over n,m
-                    % TODO: switch to 2D interpolation for MATLAB optimization
-                    [t, x] = deal(chd.time, chd.data); % splice
-                    [Nt, Mt] = deal(size(chd.t0,2), size(chd.t0,3)); % sizing
-                    for m = 1:chd.M
-                        for n = 1:chd.N
-                            y(:,n,m,:) = interpn(t(:,min(n,Nt),min(m,Mt)), x(:,n,m), tau(:,min(n,N_),min(m,M_),:), interp, 0); 
-                        end
+                x = chd.data; % reference data (T x N x M x [1|F] x ...)
+                L = chd.T; % fft length
+                % l = (0:L-1)'; % make new time vector in sample dimension
+                d = max(ndims(x), ndims(ntau)); % find max dimension
+                ntau = swapdim(ntau, d+1, 1); % move sampling to next one, a free dimension
+                
+                % apply phase shifts and sum (code written serially to 
+                % request in-place operation from MATLAB)
+                x = fft(x, L, 1); % put data in freq domain (L x N x M x [1|F] x ... x I)
+                wL = exp(2i*pi*ntau./L); % sampling steering vector (1 x [1|N] x [1|M] x [1|F] x ... x I)
+                xl = num2cell(x, 2:ndims(x)); % splice data in freq domain (L x {N x M x [1|F] x ... x I})
+                y = 0; % initialize accumulator
+                if isa(x, 'gpuArray') || isa(wL, 'gpuArray'), clu = 0; % avoid parfor on gpuArray
+                else, clu = gcp('nocreate'); if isempty(clu), clu = 0; end % otherwise, use current parpool   
+                end
+                parfor (l = (1:L), clu), y = y + wL.^(l-1) .* xl{l}; end % apply phase shift and sum over freq (1 x N x M x [1|F] x ... x I)
+                y = swapdim(y, 1, d+1); % move samples back to first dim (I x N x 1 x M' x F x ...)
+                                    
+            else % use interp1, iterating over matched dimensions, broadcasting otherwise
+                    % convert to index based coordinates
+                    ntau = (tau - chd.t0) * chd.fs; % get full size sample delays
+                    x = chd.data; % reference data
+
+                    % get dims to pack versus loop
+                    mxdim = max(ndims(x), ndims(tau)); % maximum number of dimensions
+                    xsing = 1+find(size(x   ,2:mxdim) == 1); % x    singular
+                    nsing = 1+find(size(ntau,2:mxdim) == 1); % ntau singular
+                    bdim  = setxor(xsing, nsing); % broadcast dimensions
+                    pdim  = union(1,bdim); % pack dim1 & all broadcast dimensions
+                    ldim  = setxor(1:mxdim,pdim); % loop over matching dims (the compliment)
+                    Dn    = max(pdim(size(ntau,pdim) ~= 1)); if isempty(Dn), Dn = 1; end % dimensions
+                    Dx    = max(pdim(size(x   ,pdim) ~= 1)); if isempty(Dx), Dx = 1; end % dimensions
+
+
+                    % sample: output is [size(ntau,1), size(ntau,2:Dn), size(x,2:Dx)].
+                    xc = num2cell(x   ,pdim); % pack/splice data
+                    nc = num2cell(ntau,pdim); % pack/splice data
+                    if isa(x, 'gpuArray') || isa(ntau, 'gpuArray'), clu = 0; % avoid parfor on gpuArray
+                    elseif numel(xc) == 1, clu = 0; % don't parallelize over 1 thing
+                    else, clu = gcp('nocreate'); if isempty(clu), clu = 0; end % otherwise, use current parpool
                     end
+                    parfor (i = 1:numel(xc), clu), y{i} = interp1(xc{i}, nc{i}, interp, 0); end
+                    
+                    % check my logic ...
+                    assert(...
+                        isempty(2:Dn) ||  all(cellfun(@(y) all(size(y,2:Dn) == size(ntau,(2:Dn)) | ~ismember(2:Dn, pdim)), y)), ...
+                        'Internal error. Please either check your sizing, check your MATLAB version, submit an issue, or give up.' ...
+                        );
+
+                    assert(...
+                        isempty(2:Dx) || all(cellfun(@(y) all(size(y,Dn-1+(2:Dx)) == size(x,(2:Dx)) | ~ismember(2:Dx, pdim)), y)), ...
+                        'Internal error. Please either check your sizing, check your MATLAB version, submit an issue, or give up.' ...
+                        );
+
+                    % output is [Tp, size(ntau,2:Dn), size(x,2:Dx)] - we want to identify
+                    % the broadcast dimensions of x and pull them back into
+                    % their original dimensions
+                    yord = [1, 2:Dn, Dn-1+(2:Dx)]; % full dimension size
+                    yord(nsing) = Dn+nsing-1; % swap out entries of ntau that are singular
+                    yord(Dn+nsing-1) = nsing; % corresponding to where x is non-singular
+                    y = cellfun(@(y) {permute(y, yord)}, y); % and permute it down
+
+                    % output is now (Tp x N x M x F x ...) in principal,
+                    % but with cell arrays over the looped dimensions
+                    % restore output sizing using trailing singleton dimensions
+                    y = cat(mxdim+1, y{:}); % (Tp x [1|N] x [1|M] x F x ... x [N|1] x [M|1]
+                    if ~isempty(ldim), lsz = size(ntau,ldim); else, lsz = []; end % forward empty
+                    y = reshape(y, [size(y,1:mxdim), lsz]); % restore data size in upper dimension
+                    y = swapdim(y,ldim,mxdim+(1:numel(ldim))); % fold upper dimensions back into original dimensions
             end
         end
         
@@ -356,12 +592,14 @@ classdef ChannelData < matlab.mixin.Copyable
             % ALIGNINT - Align data to integer sampling
             %
             % chd = ALIGNINT(chd, interp) returns a ChannelData object
-            % resampled to have use an integer time axis. This can be used
-            % to compress the data to an integer type, but erases
-            % information about the true sampling frequency. 
-            % It can be useful if you want to store many ChannelData 
-            % objects and only cast them to a floating-point type when they
-            % are being processed.
+            % resampled to have an integer time axis. 
+            % 
+            % This can be used to compress the data to an integer type, but
+            % may erase information about the true sampling frequency and
+            % initial time which is used by beamforming algorithms. It can 
+            % be useful if you want to store many ChannelData objects with 
+            % less precision and only cast them to a floating-point type 
+            % when they are being processed.
             % 
             % See also CHANNELDATA/RECTIFYT0 CHANNELDATA/SAMPLE 
 
@@ -375,15 +613,15 @@ classdef ChannelData < matlab.mixin.Copyable
     % plotting and display
     methods
         function h = imagesc(self, m, varargin)
-            % CHANNELDATA/IMAGESC - Overload of imagesc function
+            % IMAGESC - Overload of imagesc function
             %
-            % h = imagesc(self, m) displays transmit m of the channel data 
+            % h = IMAGESC(self, m) displays transmit m of the channel data 
             % and returns the handle h.
             %
-            % h = imagesc(self, m, 'YData', yax) uses the yax for the
+            % h = IMAGESC(self, m, 'YData', yax) uses the yax for the
             % y-axis instead of the time domain.
             % 
-            % h = imagesc(self, m, Name, Value, ...) passes the followin
+            % h = IMAGESC(self, m, Name, Value, ...) passes the followin
             % arguments to the imagesc function.
             %
             % Example:
@@ -433,7 +671,13 @@ classdef ChannelData < matlab.mixin.Copyable
         end
 
         function h = animate(self, varargin)
-            % no halp :(
+            % ANIMATE Show the data across transmits
+            %
+            % h = ANIMATE(self, ...) iteratively calls imagesc to quickly
+            % display the data. All trailing arguments are passed to
+            % ChannelData/imagesc.
+            %
+            % See also CHANNELDATA/IMAGESC IMAGESC
 
             if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
                 ax = varargin{1}; varargin(1) = [];
@@ -455,12 +699,14 @@ classdef ChannelData < matlab.mixin.Copyable
         function set.time(self, t)
             % set.time - set the time axis
             %
-            % time must be (T x 1 x [1|M])
+            % time must be of dimensions (T x 1 x [1|M]) where M is the
+            % number of transmits.
 
+            % TODO: validate size
             % TODO: warn or error if time axis is not regularly spaced
 
             %  get the possible sampling freuqencies
-            fs_ = unique(diff(t,1));
+            fs_ = unique(diff(t,1,1));
 
             % choose the sampling frequency with the best adherence to the
             % data
@@ -492,3 +738,5 @@ classdef ChannelData < matlab.mixin.Copyable
         function d = get.mdim(self), d = find(self.ord == 'M'); end
     end
 end
+
+% TODO: make a default interpolation method property
