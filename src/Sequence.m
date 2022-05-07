@@ -135,18 +135,9 @@ classdef Sequence < handle
             switch self.type
                 case 'VS'
                     v = self.focus - p; % element to focus vector (3 x S x N)
+                    s = ~all(self.focus(3,:) > p(3,:,:), 3); % whether in behind of the transducer (1 x S)
                     tau = hypot(hypot(v(1,:,:), v(2,:,:)),v(3,:,:)) ./ self.c0; % delay magnitude (1 x S x N)
-                    %{
-                    switch self.type
-                        case {'virtual-source','virtual',}
-                            s = all(self.focus(3,:) > p(3,:), 3); % whether in front of the transducer (1 x S)
-                            tau = (-1^s) .* tau;    % if in front, focus with negative delays, else, diverge with positive delays
-                        case {'focused','focus'}
-                            tau = - tau;            % assert in front, so focus with negative delays
-                        case {'diverging','diverge'}
-                            % tau =   tau;          % assert behind, so diverge with positive delays
-                    end
-                    %}
+                    tau = (-1).^s .* tau; % swap sign for diverging transmit
                     
                 case 'PW'
                     % use inner product of plane-wave vector with the
