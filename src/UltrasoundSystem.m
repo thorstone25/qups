@@ -373,13 +373,12 @@ classdef UltrasoundSystem < handle
             % response from the Target targ using the simulation region
             % in the ScanCartesian sscan.
             %
-            % 
+            %
 
             % kwarg defaults
             kwargs = struct(...
-                'ppw', 15, ...          points per wavelength
                 'f0', self.xdc.fc, ...    center frequency of the transmit / simulation
-                'CFL', 0.3, ...         minimum CFL
+                'CFL', 0.5, ...         minimum CFL
                 'txdel', 'cont' ...     delay models {'disc', 'cont'}
                 );
 
@@ -389,33 +388,30 @@ classdef UltrasoundSystem < handle
             %% Configuration variables
 
             % basic vars
-            c0       = target.c0;           % speed of sound (m/s)
-            % f0       = kwargs.f0;         % center frequency of transmitted wave [Hz]
-            % lambda   = c0/f0;             % wavelength of
-            omega0   = 2*pi*kwargs.f0;    % center radian frequency of transmitted wave
+            c0       = target.c0;       % speed of sound (m/s)
+            omega0   = 2*pi*kwargs.f0;  % center radian frequency of transmitted wave
+            dur      = diff(sscan.zb)*2.3/c0; % duration of simulation (s) TODO: make this more general, or an input?
 
-            % simulation field /grid
-            dur      = diff(sscan.zb)*2.3/c0; % duration of simulation (s)
-            cfl_min  = kwargs.CFL; % 0.5;
-
-            % % define the spatial grid
+            % define the spatial grid
+            % TODO: we can only accept grids where dx/dy/dz exist and are 
+            % identical (or infinite/nan) in all dimensions - error if not
             [~, sdims] = ismember('XZ', sscan.order);
             grid.size = sscan.size(sdims); % simulation size
-            grid.step = [mode(diff(sscan.x)), mode(diff(sscan.z))]; % simulation step size %TODO: warning if irregular?
+            grid.step = [mode(diff(sscan.x)), mode(diff(sscan.z))]; % simulation step size
             grid.origin = [sscan.x(1), sscan.z(1)]; % first value
 
             % determine other grid vars
-            ppw = kwargs.ppw;
-
-            dX = min(grid.step); % limit of spatial step size
-            fs = self.fs;         % data sampling frequency
-            cfl0 = (c0*(1/fs)/dX); % cfl at requested frequency
-            modT = ceil(cfl0 / cfl_min); % scaling for desired cfl
-            dT   = (1/fs)/modT;   % simulation sampling interval
-            cfl  = c0 * dT / dX;  % Courant-Friedrichs-Levi condition
+            dX   = min(grid.step);  % limit of spatial step size - will be the same in both dimensions
+            fs_  = self.fs;         % data sampling frequency
+            cfl0 = (c0*(1/fs_)/dX); % cfl at requested frequency
+            modT = ceil(cfl0 / kwargs.CFL); % scaling for desired cfl
+            dT   = (1/fs_)/modT;    % simulation sampling interval
+            cfl  = c0 * dT / dX;    % Courant-Friedrichs-Levi condition
+            ppw  = c0 / kwargs.f0 / dX; % points per wavelength
+            
 
             % DEBUG 1: this must be consistent with itself!!!
-            % CFL,c0,ppw,omega0 all go together!
+            % cfl,c0,ppw,omega0,dX,dY all go together!
             % at the end: conf.sim  = {c0,omega0,dur,ppw,cfl,maps2,xdcfw,nTic,modT};
 
             %% Define the Transducer
@@ -449,10 +445,10 @@ classdef UltrasoundSystem < handle
 
             %% Define the Transmit Pulse
 
-            pulse = self.sequence.pulse;
-            nTic = ceil(max(max(tau_tx_pix ./ dT))) + 2*ceil(pulse.duration ./ dT);
+            pulse_ = self.sequence.pulse;
+            nTic = ceil(max(max(tau_tx_pix ./ dT))) + 2*ceil(pulse_.duration ./ dT);
             nTic = nTic + (modT - mod(nTic, modT)) + 1; % make multiple of modT, + 1
-            n0 = floor(pulse.t0 / dT); % start time in time indices
+            n0 = floor(pulse_.t0 / dT); % start time in time indices
             t = (n0 + (0 : nTic - 1)) * dT; % transmit time axis
             icvec = self.sequence.pulse.fun(t);
 
@@ -481,41 +477,76 @@ classdef UltrasoundSystem < handle
             conf.sim = {c0,omega0,dur,ppw,cfl,maps,xdcfw,nTic,modT}; % args for full write function
             conf.tx  = icmat;  % transmit data
             conf.t0  = t0_xdc; % time delay offset
-            conf.fs  = fs;     % sampling frequency
+            conf.fs  = fs_;     % sampling frequency
             conf.tstart = n0*dT; % signal start time (0 is the peak)
             conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
-
         end
-    
-        function job = fullwaveJob(self, conf, simdir, clu)
+        
+        function [chd, conf] = fullwaveSim(self, target, sscan, varargin)
+            % FULLWAVESIM - Run a fullwave simulation
+            %
+            % chd = FULLWAVESIM(self, target, sscan, varargin)
+
+            % defaults
+            kwargs = struct(...
+                'simdir', fullfile(pwd, 'fwsim'), ...
+                'parcluster', parcluster('local'), ... parallel cluster
+                'f0', us.xdc.fc, ...    center frequency of the transmit / simulation
+                'CFL', 0.3, ...         minimum CFL
+                'txdel', 'cont' ...     delay models {'disc', 'cont'}
+                );
+
+            % parse inputs
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % create the configuration
+            conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'f0', 'CFL', 'txdel'}));
+            conf_args_ = struct2nvpair(conf_args);
+            conf = fullwaveConf(self, target, sscan, conf_args_{:});
+
+            % create a job to process it
+            job = UltrasoundSystem.fullwaveJob(conf, kwargs.simdir, kwargs.parcluster);
+
+            % submit the job
+            submit(job);
+
+            % wait for it to finish
+            wait(job);
+
+            % read in the data
+            chd = UltrasoundSystem.readFullwaveSim(kwargs.simdir);
+        end
+    end
+    methods(Static)
+        function job = fullwaveJob(conf, simdir, clu)
             % FULLWAVEJOB - Create a Fullwave simulation job.
             %
-            % job = FULLWAVEJOB(self, conf) creates a job to run the 
+            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf) creates a job to run the
             % fullwave simulation from conf.
-            % 
-            % job = FULLWAVEJOB(self, conf, simdir) uses the directory 
+            %
+            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf, simdir) uses the directory
             % simdir to store the simulation inputs and outputs.
             %
-            % job = FULLWAVEJOB(self, conf, simdir, clu) creates a job on
+            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf, simdir, clu) creates a job on
             % the parcluster clu. The parcluster must have access to the
-            % simulation directory simdir. The resource configurations for 
+            % simulation directory simdir. The resource configurations for
             % the parcluster clu should be setup prior to this call to
             % ensure enough RAM is present.
             %
             % Use 'submit' to submit the job.
-            % 
+            %
             % See also FULLWAVECONF PARCLUSTER PARALLEL.CLUSTER
 
             % parse inputs
-            if nargin < 4, clu = parcluster('local'); end
-            if nargin < 3, simdir = fullfile(pwd, 'fwsim'); end
+            if nargin < 3, clu = parcluster('local'); end
+            if nargin < 2, simdir = fullfile(pwd, 'fwsim'); end
 
             % make simulation directory
             mkdir(simdir);
 
             % Write Simulation Files
             write_fullwave_sim(simdir, conf.sim{:}); % all the .dat files
-	    src_folder = fileparts(mfilename('fullpath'));
+    	    src_folder = fileparts(mfilename('fullpath'));
             copyfile(fullfile(src_folder, '..', 'bin', 'fullwave2_executable'), simdir); % the executable
 
             % create a job
@@ -528,22 +559,22 @@ classdef UltrasoundSystem < handle
             % write the configuration variables we need for post-processing
             conf = rmfield(conf, ["sim", "tx"]); % remove large variables, save the rest
             save(fullfile(simdir, 'conf.mat'), "-struct", "conf");
-            
-	end
 
-        function chd = readFullwaveSim(self, simdir, conf)
+    	end
+
+        function chd = readFullwaveSim(simdir, conf)
             % READFULLWAVESIM - Create a ChannelData object from the simulation data.
             %
-            % chd = READFULLWAVESIM(simdir) creates a ChannelData object from the
+            % chd = ULTRASOUNDSYSTEM.READFULLWAVESIM(simdir) creates a ChannelData object from the
             % simulation files located in the directory simdir.
             %
-            % chd = READFULLWAVESIM(simdir, conf) uses the configuration file conf
+            % chd = ULTRASOUNDSYSTEM.READFULLWAVESIM(simdir, conf) uses the configuration file conf
             % rather than loading one from the simulation directory.
             %
             % See also RUNFULWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
 
             % see if we can find a conf file in the directory if not given to us
-            if nargin < 3
+            if nargin < 2
                 cfile = fullfile(simdir, 'conf.mat');
                 if exist(cfile, 'file'), conf = load(cfile, 'fs', 't0', 'tstart', 'outmap');
                 else, error('Unable to find configuration file.'); end
@@ -565,7 +596,6 @@ classdef UltrasoundSystem < handle
 
             % preallocate
             xm = cell(N,M);
-
             f = waitbar(0, 'Initializing ...');
             for m = 1:M
                 % update status
@@ -579,54 +609,14 @@ classdef UltrasoundSystem < handle
                 % average across sub-elements to get signal for a single receive element
                 for n = 1:N, xm{n,m} = mean(xm_((outmap == n),:),1)'; end % T x {N} x {M}
             end
-
             % set all values to have the same size
-            T = max(cellfun(@length, xm), [], 'all'); % maximum size
-            xm = cellfun(@(x) cat(1, x(:), zeros([T-length(x),1])), xm, 'UniformOutput', false); % expand to size T
-            xm = cell2mat(shiftdim(xm, -1)); % make datacube
+            xm = reshape(cat(1, xm{:}), [], N, M); % make datacube
 
             % Construct a Channel Data object
             chd = ChannelData('data', xm, 'fs', conf.fs, 't0', conf.t0 + conf.tstart);
 
             % cleanup
             if isvalid(f), delete(f); end
-        end
-
-        function chd = fullwaveSim(self, target, sscan, varargin)
-            % FULLWAVESIM - Run a fullwave simulation
-            %
-            % chd = FULLWAVESIM(self, target, sscan, varargin)
-
-            % defaults
-            kwargs = struct(...
-                'simdir', fullfile(pwd, 'fwsim'), ...
-                'parcluster', parcluster('local'), ... parallel cluster
-                'ppw', 15, ...          points per wavelength
-                'f0', us.xdc.fc, ...    center frequency of the transmit / simulation
-                'CFL', 0.3, ...         minimum CFL
-                'txdel', 'cont' ...     delay models {'disc', 'cont'}
-                );
-
-            % parse inputs
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
-
-            conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'ppw', 'f0', 'CFL', 'txdel'}));
-
-            % create the configuration
-            conf_args_ = struct2nvpair(conf_args);
-            conf = fullwaveConf(self, target, sscan, conf_args_{:});
-
-            % create a job to process it
-            job = self.fullwaveJob(conf, kwargs.simdir, kwargs.parcluster);
-
-            % submit the job
-            submit(job); 
-
-            % wait for it to finish
-            wait(job); 
-
-            % read in the data
-            chd = self.readFullwaveSim(kwargs.simdir);
         end
     end
 
