@@ -26,11 +26,15 @@ tmp = tempname();
 mkdir(tmp);
 cd(tmp);
 
+disp("Running from " + pwd());
 
 try % protect against not cleaning-up errors
+    % ensure that the output directory is in fact a directory
+    mkdir(fullfile(outdir));
+
     % write the data to file in the tmp directory
     fid = fopen('icmat.dat','w+');
-    fwrite(fid, icmat', 'float');
+    fwrite(fid, icmat, 'float');
     fclose(fid);
 
     % link to all input (.dat) files
@@ -46,13 +50,15 @@ try % protect against not cleaning-up errors
 
     % call exectuable (blocking)
     copyfile(fullfile(simdir, 'fullwave2_executable'))
-    err = system('./fullwave2_executable'); % TODO: not sure how to call from Windows/Mac?
+    [err, res] = system('./fullwave2_executable'); % TODO: not sure how to call from Windows/Mac?
+
+    disp("Received code " + err)
+    disp(res)
 
     % move output files to simulation output directory 
-    mkdir(fullfile(outdir));
     copyfile('genout.dat', fullfile(outdir));
 
-    % TODO: read data if an output was requested?
+    % TODO: get memory map for the data if an output was requested?
 
 catch ME, getReport(ME) % show the error
     
