@@ -477,6 +477,7 @@ classdef UltrasoundSystem < handle
             conf.sim = {c0,omega0,dur,ppw,cfl,maps,xdcfw,nTic,modT}; % args for full write function
             conf.tx  = icmat;  % transmit data
             conf.t0  = t0_xdc; % time delay offset
+            conf.f0  = kwargs.f0;     % simulation frequency
             conf.fs  = fs_;     % sampling frequency
             conf.tstart = n0*dT; % signal start time (0 is the peak)
             conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
@@ -490,10 +491,7 @@ classdef UltrasoundSystem < handle
             % defaults
             kwargs = struct(...
                 'simdir', fullfile(pwd, 'fwsim'), ...
-                'parcluster', parcluster('local'), ... parallel cluster
-                'f0', us.xdc.fc, ...    center frequency of the transmit / simulation
-                'CFL', 0.3, ...         minimum CFL
-                'txdel', 'cont' ...     delay models {'disc', 'cont'}
+                'parcluster', parcluster('local') ... parallel cluster
                 );
 
             % parse inputs
