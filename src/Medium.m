@@ -43,8 +43,9 @@ classdef Medium < handle
         
         % get sound speed map
         function [c, rho, BoA, alpha, alphap] = getPropertyMap(self, points)
-            % points is 3 x N x ...
-            assert(size(points,1) == 3)
+            
+            
+            assert(size(points,1) == 3) % points is 3 x N x ...
             
             % preallocate output matrix
             sz = size(points);
@@ -124,18 +125,24 @@ classdef Medium < handle
     
     end
     methods(Static)
-        function medium = Sampled(grid, c, rho, BoA, alpha, alphap0, varargin)
-            % MEDIUM/SAMPLED - Create a medium from sampled data
+        function medium = Sampled(scan, c, rho, BoA, alpha, alphap0, varargin)
+            % SAMPLED - Create a medium from an array
             %
-            % medium = Medium.SAMPLED(grid, c, rho, BoA, alpha, alphap0, varargin)
+            % medium = Medium.SAMPLED(scan, c, rho, BoA, alpha, alphap0)
+            % creates a Medium with the properties defined by the inputs.
+            % They must be empty to use the ambient/default parameters.
             %
-            % create a medium from the already sampled medium
-            %
-            % grid is {x, y, z} grid for sampling
+            % medium = Medium.SAMPLED(...,Name,Value) forwards following 
+            % arguments to the constructor.
             %
             % See also: MEDIUM/MEDIUM
 
             % TODO: use a Scan[Cartesian] instead of a grid
+            
+            if ~isa(scan, 'ScanCartesian')
+                error('Data must be defined on a ScanCartesian'); 
+            end
+            grid = {scan.x, scan.y, scan.z};
 
             nullfun = @(p) nan(size(sub(p,1,1)));
 
