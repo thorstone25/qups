@@ -359,6 +359,7 @@ else
             xmn = shiftdim(num2cell(x,  [1,6:ndims(x)]),1); % ({T} x N x M x 1 x 1 x {F x ...})
             amn = shiftdim(num2cell(apod, [1:3]),3); % ({I} x N x M)
             amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
+            Na = size(amn,1); % apodization size over receives
             parfor m = 1:M
                 yn = zeros([Isz, 1, 1], 'like', odataPrototype);
                 drn = num2cell(dr, [1]); % ({I} x N x 1)
@@ -367,7 +368,7 @@ else
                     tau = cinv .* (dvm{m} + drn{n});
 
                     % extract apodization
-                    a = bsub(amn(:,m), n, 1); % amn(n,m) || amn(1,m)
+                    a = sub(amn(:,m), min(n,Na), 1); % amn(n,m) || amn(1,m)
                     
                     % sample and output (I x 1 x 1)
                     yn = yn + a{1} .* cast(...
