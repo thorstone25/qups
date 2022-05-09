@@ -362,7 +362,7 @@ else
             Na = size(amn,1); % apodization size over receives
             parfor m = 1:M
                 yn = zeros([Isz, 1, 1], 'like', odataPrototype);
-                drn = num2cell(dr, [1]); % ({I} x N x 1)
+                drn = num2cell(dr, [1:3]); % ({I} x N x 1)
                 for n = 1:N
                     % time delay (I x 1 x 1)
                     tau = cinv .* (dvm{m} + drn{n});
