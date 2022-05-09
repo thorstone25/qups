@@ -2121,7 +2121,11 @@ classdef UltrasoundSystem < handle
             if isunix()
                 f = '/usr/local/cuda';
             else
-                error("No known default CUDA folder");
+                try
+                    f = uigetdir('C:/Program Files/','Path to CUDA Root (containing (bin/)');
+                catch
+                    error("No known default CUDA folder");
+                end
             end
         end
 
