@@ -3,7 +3,7 @@
 % 
 classdef Waveform < handle
     
-    properties(GetAccess=public, SetAccess=protected)
+    properties(GetAccess=public, SetAccess=public)
         fun = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
         t0 = 0                      % start time
         tend = 2 / 5e6              % end time
@@ -118,11 +118,13 @@ classdef Waveform < handle
                 case 'fun'
                     p = nextpow2(1e4);
                     N = 2^p;
-                    t = linspace(self.t0, self.tend, N).';
+                    fs = (N - 1)/(self.tend - self.t0);
+                    if isinf(fs), fs = 1e9; end % handle divide by zero
+                    t = self.getSampleTimes(fs);
                     v = self.sample(t);
                     w = abs(fftshift(fft(v,N,1),1));
-                    dt = mode(diff(t)); %#ok<PROPLC,CPROPLC>
-                    fs = 1 / dt; %#ok<PROPLC>
+                    % dt = mode(diff(t)); %#ok<PROPLC,CPROPLC>
+                    % fs = 1 / dt; %#ok<PROPLC>
                     k = (((0 : (N - 1)) / N ) - 1 / 2) * fs;
                 case 'samp'
                     t = self.getSampleTimes();
@@ -204,6 +206,19 @@ classdef Waveform < handle
         end
         
         function wv = conv(self, other, fs)
+            % CONV Waveform convolution
+            %
+            % wv = CONV(self, other) convoles 2 Waveform objects with
+            % matching sampling modes to form another Waveform
+            %
+            % wv = CONV(self, other, fs) uses an intermediate sampling
+            % frequency of fs when sampling the waveform to perform the 
+            % convolution.
+            %
+            % Note: this function needs to undergo more testing
+            %
+            % See also WAVEFORM/SAMPLE
+
             assert(isequal(self.mode, other.mode), "Both waveforms must have matching sample type.")
             if self.mode == "samp" % sampled
                 if self.dt == other.dt % matching sampling frequency
@@ -216,10 +231,17 @@ classdef Waveform < handle
                     error('Cannot convolve waveforms with different sampling freuqencies (not implemented)');
                 end
             else
-                % make a convolution function, using the sampling freuqency
-                % fs
-                k = (floor(self.t0*fs) : ceil(self.tend*fs)) / fs; % 1 x K
-                f = @(t) reshape(self.fun(t(:) - k) * other.fun(k'), size(t));
+                % make a convolution function, using the sampling freuqency fs
+                if self.t0 == self.tend
+                    % this is a delta function: use the identity
+                    f = @(t) self.sample(0) * other.sample(t);
+                elseif other.t0 == other.tend
+                    % that is a delta function: use the identity
+                    f = @(t) other.sample(0) * self.sample(t);
+                else
+                    k = (floor((self.t0+other.t0)*fs) : ceil((self.tend+other.tend)*fs)) / fs; % 1 x K
+                    f = @(t) reshape(self.sample(t(:) - k) * other.sample(k'), size(t));
+                end
                 wv = Waveform('fun', f, 't0', self.t0 + other.t0, 'tend', self.tend + other.tend);
             end
         end
