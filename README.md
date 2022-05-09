@@ -6,9 +6,18 @@ QUPS is intended to be an abstract, lightweight, readable tool for simulation an
 The easiest way to get started is to open and run [`example.mlx`](example.mlx) or [`example_.m`](example_.m) and interact with the simulation and beamforming examples. There are plenty of comments highlighting the different methods supported by the interface. You will need to separately download the simulator packages that you wish to use. Don't forget to add them to your path!
 
 ### Compatibility
-QUPS targets MATLAB R2020b and later on linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
+QUPS targets MATLAB R2020b and later on Linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
 
-If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
+#### Windows Compilation
+Compilation on Windows has been tested with the following dependencies:
+* Windows 10 x64
+* Matlab R2020a
+* CUDA 10.2 and associated samples
+* Visual Studio 2017
+
+During initial setup, the user will be prompted to point to the appropriate paths to assist with compilation of the underlying CUDA binaries. 
+
+If you have trouble compiling on any platform, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
 ## Documentation
 QUPS is (partially) internally documented following MATLAB conventions. This means you can use `doc` on any class and `help` on any class or method with `help classname/methodname` or `help classname.methodname`.
