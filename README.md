@@ -40,7 +40,7 @@ QUPS objects, classes, and functions adhere to some conventions to make prototyp
 | Angle | Degrees |
 
 #### Dimensions
- 
+
 | Property | Standard | 
 | ------ | ------ |
 | Position | {x,y,z} in dimension 1 |
@@ -59,11 +59,10 @@ Note that this transmit sequence definition is likely to result in data with var
 #### Broadcasting
 Utilities are provided to assist in writing readable, broadcasting code. The `sub` utility allows you to conveniently slice one dimension while the utility `swapdim`  as well as the built-in `shiftdim` and `permute` functions are useful for placing data in broadcasting dimensions.
 
-Dimensions are used to implicitly broadcast operations, allowing you to limit memory and computational demand for simple workflows. For example, the apodization argument for the `DAS` method takes in an argument of size I1 x I2 x I3 x N x M where {I1,I2,I3} is the size of the scan, N is the number of receivers, and M is the number of transmits. This can be a huge array, easily over 100GB! However, in many cases we may only need 2 or 3 of these dimensions. 
+Dimensions are used to implicitly broadcast operations, allowing you to limit memory and computational demand for simple workflows. For example, the apodization argument for the `DAS` method takes in an argument of size $I_1 \times I_2 \times I_3 \times N \times M$ where $\{I_1,I_2,I_3\}$ is the size of the scan, $N$ is the number of receivers, and $M$ is the number of transmits. This can be a huge array, easily over 100GB! However, in many cases we may only need 2 or 3 of these dimensions. 
 
-For example, to evaluate a multi-monostatic configuration given a set of FSA data, we simply create an array of size 1 x 1 x 1 x N x M and apply identity matrix weights.
+For example, to evaluate a multi-monostatic configuration given a set of FSA data, we simply create an array of size $1 \times 1 \times 1 \times N \times M$ and apply identity matrix weights.
 ```
 apod = shiftdim( (1:N)' == (1:M), -3); % we can leave this as a binary type!
 ```
-
 
