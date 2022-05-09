@@ -369,17 +369,17 @@ classdef UltrasoundSystem < handle
             % FULLWAVECONF - Generate a Fullwave simulation configuration
             %
             % conf = FULLWAVECONF(self, targ, scan) creates a simulation
-            % configuration struct to be used with [] to simulate the
-            % response from the Target targ using the simulation region
+            % configuration struct to be used with fullwaveJob to simulate 
+            % the response from the Target targ using the simulation region
             % in the ScanCartesian sscan.
             %
-            %
+            % See also ULTRASOUNDSYSTEM/FULLWAVEJOB
 
             % kwarg defaults
             kwargs = struct(...
                 'f0', self.xdc.fc, ...    center frequency of the transmit / simulation
                 'CFL', 0.5, ...         minimum CFL
-                'txdel', 'cont' ...     delay models {'disc', 'cont'}
+                'txdel', 'terp' ...     delay models {'disc', 'cont', 'terp'}
                 );
 
             % name-value pairs
@@ -407,7 +407,7 @@ classdef UltrasoundSystem < handle
             modT = ceil(cfl0 / kwargs.CFL); % scaling for desired cfl
             dT   = (1/fs_)/modT;    % simulation sampling interval
             cfl  = c0 * dT / dX;    % Courant-Friedrichs-Levi condition
-            ppw  = c0 / kwargs.f0 / dX; % points per wavelength
+            ppw  = c0 / kwargs.f0 / dX; % points per wavelength - determines grid spacing
             
 
             % DEBUG 1: this must be consistent with itself!!!
@@ -427,11 +427,7 @@ classdef UltrasoundSystem < handle
             i = logical(xdcfw.incoords(:,4)); % find non-zero indices - they map to an element
             tau_tx_pix(i,:) = tau_tx(xdcfw.incoords(i,4),:); % apply synchronized delays
 
-            % 0-base the delays for the sim
-            t0_xdc = min(min(tau_tx_pix));
-            tau_tx_pix = (tau_tx_pix - t0_xdc); % discretized delays in seconds
-
-
+            
             %% Define the Transmit Apodization
 
             % get apodization per element
@@ -442,29 +438,30 @@ classdef UltrasoundSystem < handle
             i = logical(xdcfw.incoords(:,4)); % find non-zero indices - they map to an element
             tx_apod(i,:) = apod(xdcfw.incoords(i,4),:); % apply synchronized delays
 
-
             %% Define the Transmit Pulse
-
-            pulse_ = self.sequence.pulse;
-            nTic = ceil(max(max(tau_tx_pix ./ dT))) + 2*ceil(pulse_.duration ./ dT);
-            nTic = nTic + (modT - mod(nTic, modT)) + 1; % make multiple of modT, + 1
-            n0 = floor(pulse_.t0 / dT); % start time in time indices
-            t = (n0 + (0 : nTic - 1)) * dT; % transmit time axis
-            icvec = self.sequence.pulse.fun(t);
-
+            t0_xdc = min(min(tau_tx_pix,[],1)); % reference true start time (1 x M)
+            tau_tx_pix = (tau_tx_pix - t0_xdc); % 0-base the delays for the sim (I x M)
+            tau_tx_max = ceil(max(tau_tx_pix, [],'all') / dT) .* dT; % maxmium additional delay
+            wv_tx = conv(self.xdc.impulse, self.sequence.pulse, 10/dT); % get the waveform transmitted into the medium
+            wv_tx.tend = wv_tx.tend + tau_tx_max; % extend waveform to cover maximum delay
+            t = wv_tx.getSampleTimes(1/dT); % get discrete sampling times
+            nTic = numel(t); % number of transmit samples
+            
             % get transmit signal per input-pixel, time index, transmit for nTic time
-            % indices
+            % indices 
+            tau_tx_pix = shiftdim(tau_tx_pix,  -1); % 1 x nPxIn x nTx, nTx == M
             switch kwargs.txdel
                 % apply discrete shifts in time
-                case 'disc',  icmat = arrayfun(@(d) circshift(icvec(:), round(d ./ dT)), tau_tx_pix, 'UniformOutput', false);
-                    % resample the waveform
-                case 'cont', icmat = arrayfun(@(d) self.sequence.pulse.fun(t(:) - d), tau_tx_pix, 'UniformOutput', false);
+                case 'disc',  icmat = cell2mat(arrayfun(@(tau) circshift(wv_tx.sample(t(:)), round(tau ./ dT)), tau_tx_pix, 'UniformOutput', false));
+                    % continuous resampling of the waveform
+                case 'cont', icmat = cell2mat(arrayfun(@(tau) {wv_tx.sample(t(:) - tau)}, tau_tx_pix));
+                case 'terp' % interpolate, upsampling by 10x in time first
+                    t_up = wv_tx.getSampleTimes(10*fs_);
+                    icmat = interp1(t_up, wv_tx.sample(t_up), t(:) - tau_tx_pix, 'spline', 0); 
             end
 
-            % reshape and apply transmit apodization
-            icmat = cell2mat(shiftdim(icmat,  -1));  % (T' x nInPx x nTx)
-            icmat = icmat .* shiftdim(tx_apod,-1);
-
+            % apply transmit apodization
+            icmat = icmat .* shiftdim(tx_apod,-1); % (T' x nInPx x nTx)
 
             %% Define the Medium
             % get maps in X x 1 x Z
@@ -475,18 +472,19 @@ classdef UltrasoundSystem < handle
 
             %% Store the configuration variables
             conf.sim = {c0,omega0,dur,ppw,cfl,maps,xdcfw,nTic,modT}; % args for full write function
-            conf.tx  = icmat;  % transmit data
-            conf.t0  = t0_xdc; % time delay offset
+            conf.tx  = real(icmat);  % transmit data
+            conf.t0  = shiftdim(t0_xdc, -1); % time delay offset (1 x 1 x M)
             conf.f0  = kwargs.f0;     % simulation frequency
             conf.fs  = fs_;     % sampling frequency
-            conf.tstart = n0*dT; % signal start time (0 is the peak)
+            conf.tstart = t(1); % signal start time (0 is the peak)
             conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
         end
         
         function [chd, conf] = fullwaveSim(self, target, sscan, varargin)
             % FULLWAVESIM - Run a fullwave simulation
             %
-            % chd = FULLWAVESIM(self, target, sscan, varargin)
+            % chd = FULLWAVESIM(self, target, sscan) returns a ChannelData
+            % object 
 
             % defaults
             kwargs = struct(...

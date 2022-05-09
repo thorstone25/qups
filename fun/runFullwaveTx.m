@@ -34,7 +34,7 @@ try % protect against not cleaning-up errors
 
     % write the data to file in the tmp directory
     fid = fopen('icmat.dat','w+');
-    fwrite(fid, icmat, 'float');
+    fwrite(fid, real(icmat), 'float');
     fclose(fid);
 
     % link to all input (.dat) files
