@@ -10,7 +10,7 @@ classdef Waveform < handle
     end
     
     properties(GetAccess=public, SetAccess=protected)
-        samples = []                % sampled form of the waveform
+        samples = []         % sampled form of the waveform
         mode = 'fun'         % echo mode {*fun | samp}
         dt = []              % time resolution in sampled mode
     end
@@ -203,6 +203,26 @@ classdef Waveform < handle
             end
         end
         
+        function wv = conv(self, other, fs)
+            assert(isequal(self.mode, other.mode), "Both waveforms must have matching sample type.")
+            if self.mode == "samp" % sampled
+                if self.dt == other.dt % matching sampling frequency
+                wv = Waveform(...
+                    'samples', conv(self.samples, other.samples), ...
+                    'dt', self.dt, 't0', self.t0 + other.t0, ...
+                    'tend', self.tend + other.tend...
+                    );
+                else
+                    error('Cannot convolve waveforms with different sampling freuqencies (not implemented)');
+                end
+            else
+                % make a convolution function, using the sampling freuqency
+                % fs
+                k = (floor(self.t0*fs) : ceil(self.tend*fs)) / fs; % 1 x K
+                f = @(t) reshape(self.fun(t(:) - k) * other.fun(k'), size(t));
+                wv = Waveform('fun', f, 't0', self.t0 + other.t0, 'tend', self.tend + other.tend);
+            end
+        end
     end
     
     % get/set methods
