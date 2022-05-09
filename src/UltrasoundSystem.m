@@ -2082,8 +2082,18 @@ classdef UltrasoundSystem < handle
                     ));
                 
                 try
-                    s = system(com);
-                    if s, warning("Error recompiling code!"); else, disp("Success recompiling " + d.Source); end
+                    [s,out] = system(com);
+                    if s 
+                        warning("Error recompiling code!"); 
+                        if ~false % Verbosity toggle
+                            warning("CMD:");
+                            warning(com);
+                            disp();
+                            warning("OUTPUT:");
+                            warning(out);
+                        end
+                    else, disp("Success recompiling " + d.Source);
+                    end
                 catch
                     warning("Unable to recompile code!");
                 end
