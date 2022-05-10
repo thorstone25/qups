@@ -6,9 +6,18 @@ QUPS is intended to be an abstract, lightweight, readable tool for simulation an
 The easiest way to get started is to open and run [`example.mlx`](example.mlx) or [`example_.m`](example_.m) and interact with the simulation and beamforming examples. There are plenty of comments highlighting the different methods supported by the interface. You will need to separately download the simulator packages that you wish to use. Don't forget to add them to your path!
 
 ### Compatibility
-QUPS targets MATLAB R2020b and later on linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
+QUPS targets MATLAB R2020b and later on Linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
 
-If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
+#### Windows Compilation
+Compilation on Windows has been tested with the following dependencies:
+* Windows 10 x64
+* Matlab R2020a
+* CUDA 10.2 and associated samples
+* Visual Studio 2017
+
+During initial setup, the user will be prompted to point to the appropriate paths to assist with compilation of the underlying CUDA binaries. 
+
+If you have trouble compiling on any platform, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
 ## Documentation
 QUPS is (partially) internally documented following MATLAB conventions. This means you can use `doc` on any class and `help` on any class or method with `help classname/methodname` or `help classname.methodname`.
@@ -40,7 +49,7 @@ QUPS objects, classes, and functions adhere to some conventions to make prototyp
 | Angle | Degrees |
 
 #### Dimensions
- 
+
 | Property | Standard | 
 | ------ | ------ |
 | Position | {x,y,z} in dimension 1 |
@@ -59,11 +68,10 @@ Note that this transmit sequence definition is likely to result in data with var
 #### Broadcasting
 Utilities are provided to assist in writing readable, broadcasting code. The `sub` utility allows you to conveniently slice one dimension while the utility `swapdim`  as well as the built-in `shiftdim` and `permute` functions are useful for placing data in broadcasting dimensions.
 
-Dimensions are used to implicitly broadcast operations, allowing you to limit memory and computational demand for simple workflows. For example, the apodization argument for the `DAS` method takes in an argument of size I1 x I2 x I3 x N x M where {I1,I2,I3} is the size of the scan, N is the number of receivers, and M is the number of transmits. This can be a huge array, easily over 100GB! However, in many cases we may only need 2 or 3 of these dimensions. 
+Dimensions are used to implicitly broadcast operations, allowing you to limit memory and computational demand for simple workflows. For example, the apodization argument for the `DAS` method takes in an argument of size $I_1 \times I_2 \times I_3 \times N \times M$ where $\{I_1,I_2,I_3\}$ is the size of the scan, $N$ is the number of receivers, and $M$ is the number of transmits. This can be a huge array, easily over 100GB! However, in many cases we may only need 2 or 3 of these dimensions. 
 
-For example, to evaluate a multi-monostatic configuration given a set of FSA data, we simply create an array of size 1 x 1 x 1 x N x M and apply identity matrix weights.
+For example, to evaluate a multi-monostatic configuration given a set of FSA data, we simply create an array of size $1 \times 1 \times 1 \times N \times M$ and apply identity matrix weights.
 ```
 apod = shiftdim( (1:N)' == (1:M), -3); % we can leave this as a binary type!
 ```
-
 

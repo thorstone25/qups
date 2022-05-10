@@ -2071,19 +2071,30 @@ classdef UltrasoundSystem < handle
             for d = defs
                 % make full command
                 com = join(cat(1,...
-                    fullfile(cuda_folder,'bin/nvcc'), ...
-                    ['--ptx ' fullfile(src_folder, [d.Source])], ...
-                    ['-o ' fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx'))], ...
+                    escapeSpaces(fullfile(cuda_folder,'bin/nvcc')), ...
+                    d.ccbin,... for Windows
+                    ['--ptx ' escapeSpaces(fullfile(src_folder, [d.Source]))], ...
+                    ['-o ' escapeSpaces(fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx')))], ...
                     join("--" + d.CompileOptions),...
-                    join("-I" + d.IncludePath), ...
-                    join("-L" + d.Libraries), ...
+                    join("-I" + escapeSpaces(d.IncludePath)), ...
+                    join("-L" + escapeSpaces(d.Libraries)), ...
                     join("-W" + d.Warnings), ...
                     join("-D" + d.DefinedMacros)...
                     ));
                 
                 try
-                    s = system(com);
-                    if s, warning("Error recompiling code!"); else, disp("Success recompiling " + d.Source); end
+                    [s,out] = system(char(com));
+                    if s 
+                        warning("Error recompiling code!"); 
+                        if ~false % Verbosity toggle
+                            warning("CMD:");
+                            warning(com);
+                            warning(' ');
+                            warning("OUTPUT:");
+                            warning(out);
+                        end
+                    else, disp("Success recompiling " + d.Source);
+                    end
                 catch
                     warning("Unable to recompile code!");
                 end
@@ -2114,28 +2125,68 @@ classdef UltrasoundSystem < handle
             f = fileparts(mfilename('fullpath'));
         end
         
-        function f = getDefaultCUDAFolder()
-            %
+        function [f,f_samp] = getDefaultCUDAFolder()
+            % Environment variables could be problematic on Windows systems
+            % with multiple Cuda Installs (Not aware of Windows LMOD equivalent)
+            % Using manual definitions instead.
+            
+            %% Path Caching
+            % For some reason Matlab doesn't like making f & f_samp
+            % persistent...
+            persistent f_tmp f_samp_tmp;
 
-            % TODO: search for CUDA via environmental variables
-            if isunix()
-                f = '/usr/local/cuda';
-            else
-                error("No known default CUDA folder");
+            %% Default Paths
+            if isempty(f_tmp)
+                if isunix()
+                    f = '/usr/local/cuda';
+                    f_samp = fullfile(f,'samples');
+                else
+                    f = 'C:/Program Files/';
+                    f_samp = 'C:\ProgramData\NVIDIA Corporation\CUDA Samples\';
+                end
+            else % Load cached paths
+                f=f_tmp;
+                f_samp=f_samp_tmp;
             end
+            
+            %% Manual Path Lookup
+            try
+                assert(exist(fullfile(f,'bin'),'file')==7,...
+                'CUDA path does not contain bin/.  Double check definition')
+            catch
+                f = uigetdir(f,'Path to CUDA Root (containing (bin/)');
+            end
+            try
+                assert(exist(fullfile(f_samp,'0_Simple/'),'file')==7,...
+            'CUDA Samples path does not contain 0_Simple/.  Double check definition')
+            catch
+                f_samp = uigetdir(f_samp,'Path to CUDA Samples (containing (0_Simple/)');
+            end
+            
+            %% Final sanity checks in case of PEBKAC
+            assert(exist(fullfile(f,'bin'),'file')==7,...
+                'CUDA path does not contain bin/.  Double check definition')
+            assert(exist(fullfile(f_samp,'0_Simple/'),'file')==7,...
+            'CUDA path does not contain 0_Simple/.  Double check definition')
+            
+            %% Cache variable for future runs
+            f_tmp = f;
+            f_samp_tmp = f_samp;
         end
 
-        function d = genCUDAdef_beamform(cuda_folder)
-            % no halp :(
+        function d = genCUDAdef_beamform(cuda_folder,cuda_samples)
 
             % CUDA folder
-            if nargin < 1, cuda_folder = UltrasoundSystem.getDefaultCUDAFolder(); end
+            if nargin < 1, [cuda_folder,cuda_samples] = UltrasoundSystem.getDefaultCUDAFolder(); end
 
             % filename
             d.Source = 'bf.cu';
-
+            if ~exist('cuda_samples','var')
+                cuda_samples = fullfile(cuda_folder,'samples'); % Ubuntu default
+            end
             d.IncludePath = {... include folders
-                fullfile(cuda_folder, 'samples/common/inc'), ...
+                
+                fullfile(cuda_samples, 'common/inc'), ...
                 };
 
             d.Libraries = {...
@@ -2145,6 +2196,23 @@ classdef UltrasoundSystem < handle
             d.CompileOptions = {...  compile options
                 "use_fast_math",...
                 };
+            d.ccbin = [];
+            if ispc
+                %% Need to manually link to Visual Studio binary
+                % Probably a better way to do this, but it works
+                % Tested in VS 2017
+                persistent ccbin
+                if ~(exist(ccbin,'file')==2)
+                    [fn,fp] = uigetfile('cl.exe',...
+                    'Visual Studio path: <VS>/<year>/Community/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe',...
+                    'C:/Program Files (x86)');
+                    fpn = fullfile(fp,fn);
+                    assert(exist(fpn,'file')==2,'cl.exe not found. Check Visual Studio Path');
+                    ccbin = sprintf('%s',fpn);
+                end
+                % d.CompileOptions{end+1} = ['ccbin ' escapeSpaces(ccbin)]; % Doesn't work, requires 1 dash
+                d.ccbin = [' -ccbin ' escapeSpaces(ccbin)];
+            end
 
             d.Warnings = {... warnings
                 "no-deprecated-gpu-targets"...
@@ -2178,6 +2246,22 @@ classdef UltrasoundSystem < handle
             % generate for msfms3d - same files, different structure
             d(2).Source = 'msfm3d.c';
         end
+    end
+end
+
+% Ain't nobody got time for pointless OOP scoping shenanigans...
+function out_str = escapeSpaces(in_str)
+    esc = @(s) sprintf('"%s"',s);
+    switch class(in_str)
+        case 'char'
+            out_str = esc(in_str);
+        case 'string'
+            % Reshaping is for string arrays
+            out_str=reshape(esc(in_str(:)),size(in_str)); 
+        case 'cell'
+            out_str = cellfun(esc,in_str,'UniformOutput',false);
+        otherwise
+            error('Unsupported class %s', class(in_str))
     end
 end
 

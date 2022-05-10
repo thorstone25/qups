@@ -1603,6 +1603,11 @@ inline __device__ __host__ double clamp(double f, double a, double b)
 {
     return fmax(a, fmin(f, b));
 }
+inline __device__ __host__ double clamp(double f, float a, float b)
+{ // Windows hack
+    return clamp(f,double(a),double(b));
+}
+
 inline __device__ __host__ int clamp(int f, int a, int b)
 {
     return max(a, min(f, b));
