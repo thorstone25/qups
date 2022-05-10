@@ -576,6 +576,7 @@ classdef ChannelData < matlab.mixin.Copyable
                     yord = [1, 2:Dn, Dn-1+(2:Dx)]; % full dimension size
                     yord(nsing) = Dn+nsing-1; % swap out entries of ntau that are singular
                     yord(Dn+nsing-1) = nsing; % corresponding to where x is non-singular
+                    if isequal(yord, [1]), yord(2) = 2; end %#ok<NBRAK2> % special case: [1,] -> [1,] not accepted by MATLAB
                     y = cellfun(@(y) {permute(y, yord)}, y); % and permute it down
 
                     % output is now (Tp x N x M x F x ...) in principal,

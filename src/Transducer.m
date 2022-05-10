@@ -427,7 +427,7 @@ classdef (Abstract) Transducer < handle
         
         function b = get.bw_frac(self), b = diff(self.bw) ./ self.fc; end
         
-        function set.bw_frac(self, bf), self.bw = mean(self.bw) + [-1 1]/2 * bf; end
+        function set.bw_frac(self, bf), self.bw = mean(self.bw) + mean(self.bw)*[-1 1]/2 * bf; end
         
         function o = get.origin(self), o = - self.offset; end
         
