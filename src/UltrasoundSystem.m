@@ -2086,6 +2086,74 @@ classdef UltrasoundSystem < handle
                 end
             end
         end
+        function recompileCUDAJIT(self, chd)
+            % RECOMPILECUDAJIT - Just-in-time recompilation
+            %
+            % RECOMPILECUDAJIT(self) recompiles the beamforming and
+            % interpolation cuda executables for a the current scan,
+            % transducer, and transmit sequence.
+            %
+            % After calling this function, objects representing a
+            % different size of data will have unexpected results. Use
+            % UltrasoundSystem/recompileCUDA to reset the binaries.
+            % 
+            % RECOMPILECUDAJIT(self, chd) additionally uses a fixed size
+            % ChannelData.
+            % 
+            % See also ULTRASOUNDSYSTEM/RECOMPILECUDA
+            
+            % src file folder
+            src_folder = UltrasoundSystem.getSrcFolder();
+            
+            % get the other sizes for beamform.m
+            VS = ~(self.sequence.type == "PW"); % whither virtual source
+            Isz = self.scan.size; % size of the scan
+            N = self.xdc.numel; % number of receiver elements
+            M = self.sequence.numPulse; % number of transmits
+            assert(~isnan(M) && M > 0); % M must be defined
+            
+            % get all source code definitions
+            defs = UltrasoundSystem.getCUDAFileDefs();
+            
+            % add the defined macros
+            defs.DefinedMacros = {...
+                "VS="+VS,... virtual source model
+                "N="+N,... elements
+                "M="+M,... transmits
+                "I1="+Isz(1),... pixel dim 1
+                "I2="+Isz(2),... pixel dim 2
+                "I3="+Isz(3) ... pixel dim 3
+                };
+            
+            % if T is static, add it
+            if nargin >= 2
+                defs.DefinedMacros = [defs.DefinedMacros, ...
+                    {"T="+chd.T}, ... number of time samples
+                    ];
+            end
+            
+            % compile each
+            for d = defs
+                % make full command
+                com = join(cat(1,...
+                    "nvcc ", ...
+                    "--ptx " + fullfile(src_folder, d.Source), ...
+                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx')), ...
+                    join("--" + d.CompileOptions),...
+                    join("-I" + d.IncludePath), ...
+                    join("-L" + d.Libraries), ...
+                    join("-W" + d.Warnings), ...
+                    join("-D" + d.DefinedMacros)...
+                    ));
+                
+                try
+                    s = system(com);
+                    if s, warning("Error recompiling code!"); else, disp("Success recompiling " + d.Source); end
+                catch
+                    warning("Unable to recompile code!");
+                end
+            end
+        end
     end
     methods(Static)
         function defs = getCUDAFileDefs()
