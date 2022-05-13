@@ -2053,13 +2053,10 @@ classdef UltrasoundSystem < handle
             end
    
         end
-        function recompileCUDA(self, cuda_folder)
+        function recompileCUDA(self)
             % RECOMPILECUDA(self, cuda_folder)
             %
             %
-            
-            % CUDA folder: defaults to default install location
-            if nargin < 2, cuda_folder = UltrasoundSystem.getDefaultCUDAFolder(); end
             
             % src file folder
             src_folder = UltrasoundSystem.getSrcFolder();
@@ -2071,9 +2068,9 @@ classdef UltrasoundSystem < handle
             for d = defs
                 % make full command
                 com = join(cat(1,...
-                    fullfile(cuda_folder,'bin/nvcc'), ...
-                    ['--ptx ' fullfile(src_folder, [d.Source])], ...
-                    ['-o ' fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx'))], ...
+                    "nvcc ", ...
+                    "--ptx " + fullfile(src_folder, d.Source), ...
+                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx')), ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
                     join("-L" + d.Libraries), ...
@@ -2091,15 +2088,12 @@ classdef UltrasoundSystem < handle
         end
     end
     methods(Static)
-        function defs = getCUDAFileDefs(cuda_folder)
+        function defs = getCUDAFileDefs()
             % no halp :(
             
-            % CUDA folder
-            if nargin < 1, cuda_folder = UltrasoundSystem.getDefaultCUDAFolder(); end
-
             % get all source code definitions
             defs = [...
-                UltrasoundSystem.genCUDAdef_beamform(cuda_folder),...
+                UltrasoundSystem.genCUDAdef_beamform(),...
                 ];
         end
 
@@ -2114,28 +2108,13 @@ classdef UltrasoundSystem < handle
             f = fileparts(mfilename('fullpath'));
         end
         
-        function f = getDefaultCUDAFolder()
-            %
-
-            % TODO: search for CUDA via environmental variables
-            if isunix()
-                f = '/usr/local/cuda';
-            else
-                error("No known default CUDA folder");
-            end
-        end
-
-        function d = genCUDAdef_beamform(cuda_folder)
+        function d = genCUDAdef_beamform()
             % no halp :(
-
-            % CUDA folder
-            if nargin < 1, cuda_folder = UltrasoundSystem.getDefaultCUDAFolder(); end
 
             % filename
             d.Source = 'bf.cu';
 
             d.IncludePath = {... include folders
-                fullfile(cuda_folder, 'samples/common/inc'), ...
                 };
 
             d.Libraries = {...
@@ -2149,7 +2128,7 @@ classdef UltrasoundSystem < handle
             d.Warnings = {... warnings
                 "no-deprecated-gpu-targets"...
                 };
-
+            
             d.DefinedMacros = {... macro definitions
                 ..."T=5", "M=3", "N=1", "I=6"...
                 ...["T","M","N","I"] + "=" + string([1e3, 2e3, 4e3, 3e3])
