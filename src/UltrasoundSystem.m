@@ -2,10 +2,10 @@ classdef UltrasoundSystem < handle
     
     % objects
     properties
-        tx
-        rx
-        sequence
-        scan
+        tx          % Transducer object (transmit)
+        rx          % Transducer object (receive)
+        sequence    % Sequence object
+        scan        % Scan object
     end
     
     % parameters
@@ -15,8 +15,8 @@ classdef UltrasoundSystem < handle
     
     properties(Dependent)
         fc                  % central operating frequency (Hz)
-        xdc                 % if a single transducer
-        pulse               % transmit signal, if only one
+        xdc                 % Transducer object (if receive and transmit are identical)
+        pulse               % Waveform object (from the Sequence)
     end
     
     properties(Hidden,SetAccess=protected)
@@ -619,7 +619,34 @@ classdef UltrasoundSystem < handle
     % SIMUS calls
     methods
         function chd = simus(self, target, varargin)
-            % no halp :(
+            % SIMUS - Simulate channel data via MUST
+            %
+            % chd = SIMUS(self, target) simulates the Target target and
+            % returns a ChannelData object chd. By default it runs on the
+            % current parpool object returned by gcp
+            %
+            % chd = SIMUS(...,'dims', D, ...) selects the number of 
+            % dimensions for the simulation. D must be one of {2, 3, []*}. 
+            % If D is empty, the dimensions are chosen based on the point 
+            % targets.
+            %
+            % chd = SIMUS(...,'periods', T, ...) selects the number of
+            % periods of the tone burst. 
+            %
+            % chd = SIMUS(...,'interp', method, ...) selects the method of
+            % interpolation to use when synthesizing transmits from the
+            % full-synthetic-aperture data.
+            %
+            % chd = SIMUS(...,'parcluster', clu, ...) selects the
+            % parcluster for parfor to run on for each transmit. It must 
+            % either be a type of parcluster, parpool, or 0 for no 
+            % parcluster. The default is the parpool returned by gcp. 
+            %
+            % chd = SIMUS(...,'device', d, ...) selects the device to run
+            % on. 
+            %
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL
+            % ULTRASOUNDSYSTEM/FOCUSTX
             
             % defaults
             % TODO: forward arguments to params or opt as appropriate
@@ -702,21 +729,20 @@ classdef UltrasoundSystem < handle
 
     % Field II calls
     methods(Access=public)
-        function [chd] = calc_scat_all(self, target, element_subdivisions, varargin)
-            % [chd] = calc_scat_all(self, target, element_subdivisions)
+        function chd = calc_scat_all(self, target, element_subdivisions, varargin)
+            % CALC_SCAT_ALL - Simulate channel data via FieldII
+            %
+            % chd = CALC_SCAT_ALL(self, target) simulates the Target target
+            % and returns a ChannelData object chd.
             % 
-            % function to compute the full synthetic aperture data using
-            % Field II.
+            % chd = CALC_SCAT_ALL(self, target, element_subdivisions)
+            % specifies the number of subdivisions in width and height for 
+            % each element.
             %
-            % Inputs:
-            %   - target:               a Target object
-            %   - element_subdivisions: 2 x 1 vector of subdivisions per
-            %                           transducer element (optional)
+            % chd = CALC_SCAT_ALL(..., 'interp', method) specifies the
+            % interpolation methods for the transmit synthesize.
             %
-            % Outputs:
-            %   - time (T x 1):             time sample values (s)
-            %   - voltages (T x M x N):     voltage samples (pure)
-            % where T -> time, M -> transmitters, N -> receivers
+            % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
             
             % defaults
             kwargs = struct('interp', 'linear');
@@ -1510,14 +1536,18 @@ classdef UltrasoundSystem < handle
     
     % Beamforming
     methods(Access=public)
-        function [B, X, Y, Z] = DAS(self, chd, c0, rcvfun, varargin)
-            % DAS Delay and sum
+        function b = DAS(self, chd, c0, rcvfun, varargin)
+            % DAS - Delay and sum
             %
             % b = DAS(us, chd, c0) performs delay-and-sum beamforming on 
             % the ChannelData chd using an assumed sound speed of c0. The
             % ChannelData must conform to the delays given by the Sequence 
             % model in us.sequence. The output is defined on the Scan 
-            % object us.scan. Additional frames in the ChannelData are 
+            % object us.scan.
+            % 
+            % b = DAS(us, chd, c0, rcvfun) specifies the receive aperture
+            % reduction function (defaults to summation)
+            %
             % 
             % Inputs:
             %  chd      - A ChannelData object  
@@ -1529,11 +1559,23 @@ classdef UltrasoundSystem < handle
             %            {'single'* | 'double'}
             %  device - GPU device index: -1 for default gpu, 0 for cpu, n
             %           to select (and reset!) a gpuDevice.
+            %  interp - select a method of interpolation for the transmit
+            %           synthesis
+            %  apod   - define the apodization. The apodization is defined
+            %           as a 5D compatible array across 
+            %           I1 x I2 x I3 x N x M where N is the number of 
+            %           receivers, M is the number of transmits, and I[1-3]
+            %           are the dimensions according to us.scan. Typically,
+            %           apod should be singleton in at least two or three
+            %           dimensions.
+            %
             %
             % outputs:
             %   - X\Y\Z:    3D coordinates of the output
             %   - B:        B-mode image
             
+            % TODO: switch to using a struct kwargs to facilitate later
+            % using the arguments blocks for R2020b+
             % default name-value pair arguments
             prec = 'single';
             device = int64(-1 * logical(gpuDeviceCount)); % {0 | -1} -> {CPU | GPU}
@@ -1591,14 +1633,14 @@ classdef UltrasoundSystem < handle
             % beamform and collapse the aperture
             if nargin < 5 || isempty(rcvfun)
                 % beamform the data (I1 x I2 x I3 x 1 x 1 x F x ...)
-                B = beamform('DAS', pos_args{:}, dat_args{:}, ext_args{:});
+                b = beamform('DAS', pos_args{:}, dat_args{:}, ext_args{:});
             else
                 % beamform the data (I1 x I2 x I3 x N x 1 x F x ...) -> (I1 x I2 x I3 x 1 x 1 x F x ...)
-                B = rcvfun(beamform('SYN', pos_args{:}, dat_args{:}, ext_args{:}), 4);
+                b = rcvfun(beamform('SYN', pos_args{:}, dat_args{:}, ext_args{:}), 4);
             end
 
             % move higher dimensions back down (I1 x I2 x I3 x F x ...)
-            B = permute(B, [1:3,6:ndims(B),4:5]);
+            b = permute(b, [1:3,6:ndims(b),4:5]);
         end
         
         function chd = focusTx(self, chd0, seq, varargin)
@@ -1747,6 +1789,8 @@ classdef UltrasoundSystem < handle
             %   - X\Y\Z:    3D coordinates of the output
             %   - B:        B-mode image
             
+            
+            warning('This function is currently unsupported');
             % default name-value pair arguments
             prec = 'single';
             device = int64(-1 * logical(gpuDeviceCount)); % {0 | -1} -> {CPU | GPU}
@@ -1821,13 +1865,14 @@ classdef UltrasoundSystem < handle
         function b = matrixbf(self, chd, c0)
             % MATRIXBF Matrix beamformer
             %
-            % b = matrixbf(self, chd)
-            % 
-            % 
+            % b = MATRIXBF(self, chd, c0)
+            %             
             % See also ULTRASOUNDSYSTEM/DAS ULTRASOUNDSYSTEM/FOCUSTX
 
             % TODO: include apodization, device, other keyword arguments
 
+            warning('This function is currently unsupported.'); 
+            
             % options
             kwargs.fthresh = -40; % threshold for including frequencies
 
@@ -2025,11 +2070,22 @@ classdef UltrasoundSystem < handle
     % helper functions
     methods
         function recompile(self), recompileMex(self); recompileCUDA(self); end
+        % RECOMPILE - Recompile mex and CUDA files
+        %
+        % RECOMPILE(self) recompiles all mex binaries and CUDA files and 
+        % stores them in self.tmp_folder. 
+        %
+        % See also ULTRASOUNDSYSTEM/RECOMPILECUDA ULTRASOUNDSYSTEM/RECOMPILEMEX
         function recompileMex(self)
-            % RECOMPILEMEX(self)
+            % RECOMPILEMEX - Recompile mex files
             %
+            % RECOMPILEMEX(self) recompiles all mex binaries and stores
+            % them in self.tmp_folder.
             %
-                     
+            % See also ULTRASOUNDSYSTEM/RECOMPILECUDA
+            % ULTRASOUNDSYSTEM/RECOMPILE
+            
+            
             defs = UltrasoundSystem.getMexFileDefs();
 
             % compile each definition
@@ -2054,9 +2110,13 @@ classdef UltrasoundSystem < handle
    
         end
         function recompileCUDA(self)
-            % RECOMPILECUDA(self, cuda_folder)
+            % RECOMPILECUDA - Recompile CUDA ptx files
             %
+            % RECOMPILECUDA(self) recompiles all CUDA files and stores
+            % them in self.tmp_folder.
             %
+            % See also ULTRASOUNDSYSTEM/RECOMPILEBFCONST
+            % ULTRASOUNDSYSTEM/RECOMPILE ULTRASOUNDSYSTEM/RECOMPILEMEX
             
             % src file folder
             src_folder = UltrasoundSystem.getSrcFolder();
@@ -2104,7 +2164,8 @@ classdef UltrasoundSystem < handle
             % RECOMPILEBFCONST(self, chd) additionally uses a fixed size
             % ChannelData object.
             % 
-            % See also ULTRASOUNDSYSTEM/RECOMPILECUDA
+            % See also ULTRASOUNDSYSTEM/RECOMPILECUDA 
+            % ULTRASOUNDSYSTEM/RECOMPILE 
             
             % src file folder
             src_folder = UltrasoundSystem.getSrcFolder();
@@ -2173,6 +2234,8 @@ classdef UltrasoundSystem < handle
         end
 
         function defs = getMexFileDefs()
+            % no halp :(
+            
             % get all source code definitions
             defs = [...
                 UltrasoundSystem.genMexdef_msfm(), ... % both msfm files
