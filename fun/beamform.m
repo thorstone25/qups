@@ -255,7 +255,9 @@ if device
     [T, M, N, kI, nF, Isz] = deal(tmp{:});
     
     % set constant args
-    k.setConstantMemory('T', T, 'M', M, 'N', N, 'I', kI, 'VS', VS, 'I1', Isz(1), 'I2', Isz(2), 'I3', Isz(3));
+    k.setConstantMemory('I', kI); % gauranteed
+    try k.setConstantMemory('T', T); end % if not const compiled with ChannelData
+    try k.setConstantMemory('M', M, 'N', N, 'VS', VS, 'I1', Isz(1), 'I2', Isz(2), 'I3', Isz(3)); end % if not const compiled
     
     % set kernel size
     k.ThreadBlockSize = nThreads;

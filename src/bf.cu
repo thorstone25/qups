@@ -1,49 +1,6 @@
 # include "helper_math.h" // vector math
 
-// data sizes: I -> pixels, M -> transmitters, N -> receivers, 
-// T -> time samples, F -> Frames, S -> signal
-        
-# ifndef T
-__constant__ size_t T;
-# endif
-# ifndef M
-__constant__ size_t M;
-# endif
-# ifndef N
-__constant__ size_t N;
-# endif
-# ifndef I
-__constant__ size_t I;
-# endif
-# ifndef F
-__constant__ size_t F;
-# endif
-# ifndef S
-__constant__ size_t S;
-# endif
-
-# ifndef I1
-__constant__ size_t I1;
-# endif
-# ifndef I2
-__constant__ size_t I2;
-# endif
-# ifndef I3
-__constant__ size_t I3;
-# endif
-
-// integral params
-# ifndef W
-__constant__ size_t W; // temporal integration width (one-sided)
-# endif
-# ifndef D
-__constant__ size_t D; // number of points in the spatial integration
-# endif
-
-// Beamforming transmit mode: focal point or plane-wave
-# ifndef VS
-__constant__ bool VS; // whither virtual source mode
-# endif
+# include "sizes.cu" // size defines
 
 # include "interpd.cu" // samplers using constant sizing
 
@@ -123,6 +80,7 @@ __global__ void DASf(float2 * __restrict__ y,
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     // get image coordinates
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
     const size_t i1 = (tid             % I1); // index in I1
     const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
     const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
@@ -134,6 +92,9 @@ __global__ void DASf(float2 * __restrict__ y,
     const float3 * pv = reinterpret_cast<const float3*>(Pv); // 3 x M
     const float3 * nv = reinterpret_cast<const float3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
     // temp vars
     const float2 zero_v = make_float2(0.0f);
     float rf, dv, dr;
@@ -149,7 +110,7 @@ __global__ void DASf(float2 * __restrict__ y,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -180,6 +141,7 @@ __global__ void DAS(double2 * __restrict__ y,
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     // get image coordinates
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
     const size_t i1 = (tid             % I1); // index in I1
     const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
     const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
@@ -191,6 +153,9 @@ __global__ void DAS(double2 * __restrict__ y,
     const double3 * pv = reinterpret_cast<const double3*>(Pv); // 3 x M
     const double3 * nv = reinterpret_cast<const double3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
     // temp vars
     const double2 zero_v = make_double2(0.0);
     double rf, dv, dr;
@@ -206,7 +171,7 @@ __global__ void DAS(double2 * __restrict__ y,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -273,6 +238,7 @@ __global__ void SYNf(float2 * __restrict__ y,
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     // get image coordinates (Isz)
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
     const size_t i1 = (tid             % I1); // index in I1
     const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
     const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
@@ -284,6 +250,9 @@ __global__ void SYNf(float2 * __restrict__ y,
     const float3 * pv = reinterpret_cast<const float3*>(Pv); // 3 x M
     const float3 * nv = reinterpret_cast<const float3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
     // temp vars
     const float2 zero_v = make_float2(0.0f);
     float rf, dv, dr;
@@ -299,7 +268,7 @@ __global__ void SYNf(float2 * __restrict__ y,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -332,6 +301,7 @@ __global__ void SYN(double2 * __restrict__ y,
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     // get image coordinates
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
     const size_t i1 = (tid             % I1); // index in I1
     const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
     const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
@@ -343,6 +313,9 @@ __global__ void SYN(double2 * __restrict__ y,
     const double3 * pv = reinterpret_cast<const double3*>(Pv); // 3 x M
     const double3 * nv = reinterpret_cast<const double3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
     // temp vars
     const double2 zero_v = make_double2(0.0);
     double rf, dv, dr;
@@ -358,7 +331,7 @@ __global__ void SYN(double2 * __restrict__ y,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -423,6 +396,7 @@ __global__ void BFf(float2 * __restrict__ y,
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     // get image coordinates
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
     const size_t i1 = (tid             % I1); // index in I1
     const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
     const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
@@ -434,6 +408,9 @@ __global__ void BFf(float2 * __restrict__ y,
     const float3 * pv = reinterpret_cast<const float3*>(Pv); // 3 x M
     const float3 * nv = reinterpret_cast<const float3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
     // temp vars
     const float2 zero_v = make_float2(0.0f);
     float rf, dv, dr;
@@ -449,7 +426,7 @@ __global__ void BFf(float2 * __restrict__ y,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -480,6 +457,7 @@ __global__ void BF(double2 * __restrict__ y,
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
 
     // get image coordinates
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
     const size_t i1 = (tid             % I1); // index in I1
     const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
     const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
@@ -491,6 +469,9 @@ __global__ void BF(double2 * __restrict__ y,
     const double3 * pv = reinterpret_cast<const double3*>(Pv); // 3 x M
     const double3 * nv = reinterpret_cast<const double3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
     // temp vars
     const double2 zero_v = make_double2(0.0f);
     double rf, dv, dr;
@@ -506,7 +487,7 @@ __global__ void BF(double2 * __restrict__ y,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -574,6 +555,9 @@ __global__ void delaysf(float * __restrict__ tau,
     const float3 * pv = reinterpret_cast<const float3*>(Pv); // 3 x M
     const float3 * nv = reinterpret_cast<const float3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, I = QUPS_I;
+
     // temp vars
     float dv, dr;
     float3 rv;
@@ -587,7 +571,7 @@ __global__ void delaysf(float * __restrict__ tau,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
@@ -615,6 +599,9 @@ __global__ void delays(double * __restrict__ tau,
     const double3 * pv = reinterpret_cast<const double3*>(Pv); // 3 x M
     const double3 * nv = reinterpret_cast<const double3*>(Nv); // 3 x M
     
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, I = QUPS_I;
+
     // temp vars
     double dv, dr;
     double3 rv;
@@ -628,7 +615,7 @@ __global__ void delays(double * __restrict__ tau,
                 // 2-way virtual path distance
                 rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
                 
-                dv = VS ? // tx path length
+                dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 

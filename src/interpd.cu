@@ -17,31 +17,17 @@ limitations under the License.
 */
 
 # include "helper_math.h" // vector math
+        
+# include "sizes.cu" // size defines
 
 // Modified for use as a stand-alone ptx
 // data is (T x N x F)
 // sample times are (I x N x M)
-// # ifndef T
-// __constant__ size_t T;
-// # endif
-// # ifndef I
-// __constant__ size_t I;
-// # endif
-// # ifndef N
-// __constant__ size_t N;
-// # endif
-// # ifndef M
-// __constant__ size_t M;
-// # endif
-// # ifndef F
-// __constant__ size_t F;
-// # endif
-
 
 /// @brief Device function for nearest-neighbor interpolation
 __device__ float2 nearestf(const float2 * x, float tau, float2 no_v) {
     const int ti = (int) roundf(tau); // round to nearest integer
-    return (0 <= ti && ti < T) ? x[ti] : no_v;
+    return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
 }
 
 /// @brief Device function for linear interpolation
@@ -53,7 +39,7 @@ __device__ float2 linearf(const float2 * x, float tau, float2 no_v) {
     const int ti = (int) tf; 
                 
     // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < T) ? lerp(x[ti + 1], x[ti], tau) : no_v;
+    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti + 1], x[ti], tau) : no_v;
 }
 
 /// @brief Device function for cubic Hermite interpolation
@@ -62,7 +48,7 @@ __device__ float2 cubicf(const float2 * x, float tau, float2 no_v) {
   float u = modff(tau, &tf);  // u is the fractional part, xf the integer part
   const int ti = (int) tf;
   
-  if (!(0 <= (ti - 1) && (ti + 2) < T))
+  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
 
   float2 s0 = x[ti - 1];
@@ -96,7 +82,7 @@ __device__ float2 lanczos3f(const float2 * x, float tau, float2 no_v) {
   float u = modff(tau, &xf);  // u is the fractional part, xf the integer part
   const int ti = (int) xf;
   
-  if (!(0 <= (ti - 1) && (ti + 2) < T))
+  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
   
   float2 s0 = x[ti - 1];
@@ -113,7 +99,7 @@ __device__ float2 lanczos3f(const float2 * x, float tau, float2 no_v) {
 /// @brief Device function for nearest-neighbor interpolation
 __device__ double2 nearest(const double2 * x, double tau, double2 no_v) {
     const int ti = (int) roundf(tau); // round to nearest integer
-    return (0 <= ti && ti < T) ? x[ti] : no_v;
+    return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
 }
 
 /// @brief Device function for linear interpolation
@@ -125,7 +111,7 @@ __device__ double2 linear(const double2 * x, double tau, double2 no_v) {
     const int ti = (int) tf; 
                 
     // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < T) ? lerp(x[ti + 1], x[ti], tau) : no_v;
+    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti + 1], x[ti], tau) : no_v;
 }
 
 /// @brief Device function for cubic Hermite interpolation
@@ -134,7 +120,7 @@ __device__ double2 cubic(const double2 * x, double tau, double2 no_v) {
   double u = modf(tau, &tf);  // u is the fractional part, xf the integer part
   const int ti = (int) tf;
   
-  if (!(0 <= (ti - 1) && (ti + 2) < T))
+  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
 
   double2 s0 = x[ti - 1];
@@ -168,7 +154,7 @@ __device__ double2 lanczos3(const double2 * x, double tau, double2 no_v) {
   double u = modf(tau, &xf);  // u is the fractional part, xf the integer part
   const int ti = (int) xf;
   
-  if (!(0 <= (ti - 1) && (ti + 2) < T))
+  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
   
   double2 s0 = x[ti - 1];
@@ -213,10 +199,13 @@ __global__ void interpdf(float2 * __restrict__ y,
     const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
     float2 no_v = make_float2(0.0f, 0.0f);
 
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
+
     // if valid sample, for each tx/rx
-    if(i < I && n < N && f < F){
+    if(i < QUPS_I && n < QUPS_N && f < F){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // per transmit
+        for(size_t m = 0; m < QUPS_M; ++m){ // per transmit
             y[i + n*I + m*N*I + f*M*N*I] = samplef(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
         }
     }
@@ -248,6 +237,10 @@ __global__ void interpd(double2 * __restrict__ y,
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
     const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
     double2 no_v = make_double2(0.0, 0.0);
+
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
+
 
     // if valid sample, for each tx/rx
     if(i < I && n < N && f < F){

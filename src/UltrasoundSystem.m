@@ -2086,19 +2086,23 @@ classdef UltrasoundSystem < handle
                 end
             end
         end
-        function recompileCUDAJIT(self, chd)
-            % RECOMPILECUDAJIT - Just-in-time recompilation
+        function recompileBFCONST(self, chd)
+            % RECOMPILEBFCONST - Constant size compilation for beamforming
             %
-            % RECOMPILECUDAJIT(self) recompiles the beamforming and
-            % interpolation cuda executables for a the current scan,
-            % transducer, and transmit sequence.
-            %
-            % After calling this function, objects representing a
-            % different size of data will have unexpected results. Use
-            % UltrasoundSystem/recompileCUDA to reset the binaries.
+            % RECOMPILEBFCONST(self) recompiles the beamforming cuda 
+            % executables for the current scan, transducer, and 
+            % transmit sequence. 
             % 
-            % RECOMPILECUDAJIT(self, chd) additionally uses a fixed size
-            % ChannelData.
+            % Using a fixed data size triggers compiler-level optimizations
+            % that can improve performance for iterative calls.
+            %
+            % After calling this function, calls with a different size of 
+            % data will have unexpected results. Use
+            % UltrasoundSystem/recompileCUDA to reset the binaries to
+            % handle variable sizes.
+            % 
+            % RECOMPILEBFCONST(self, chd) additionally uses a fixed size
+            % ChannelData object.
             % 
             % See also ULTRASOUNDSYSTEM/RECOMPILECUDA
             
@@ -2113,22 +2117,24 @@ classdef UltrasoundSystem < handle
             assert(~isnan(M) && M > 0); % M must be defined
             
             % get all source code definitions
-            defs = UltrasoundSystem.getCUDAFileDefs();
+            defs = UltrasoundSystem.genCUDAdef_beamform();
             
             % add the defined macros
-            defs.DefinedMacros = {...
+            defs.DefinedMacros = cat(1, ...
+                defs.DefinedMacros, ... keep the current defs
+                "QUPS_" + {... prepend 'QUPS_'
                 "VS="+VS,... virtual source model
                 "N="+N,... elements
                 "M="+M,... transmits
                 "I1="+Isz(1),... pixel dim 1
                 "I2="+Isz(2),... pixel dim 2
                 "I3="+Isz(3) ... pixel dim 3
-                };
+                }');
             
-            % if T is static, add it
+            % if T is provided, include it
             if nargin >= 2
-                defs.DefinedMacros = [defs.DefinedMacros, ...
-                    {"T="+chd.T}, ... number of time samples
+                defs.DefinedMacros = [defs.DefinedMacros; ...
+                    {"T="+chd.T}; ... number of time samples
                     ];
             end
             
@@ -2136,8 +2142,8 @@ classdef UltrasoundSystem < handle
             for d = defs
                 % make full command
                 com = join(cat(1,...
-                    "nvcc ", ...
-                    "--ptx " + fullfile(src_folder, d.Source), ...
+                    "nvcc --ptx ", ...
+                    fullfile(src_folder, d.Source) + " ", ...
                     "-o " + fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx')), ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
@@ -2162,6 +2168,7 @@ classdef UltrasoundSystem < handle
             % get all source code definitions
             defs = [...
                 UltrasoundSystem.genCUDAdef_beamform(),...
+                UltrasoundSystem.genCUDAdef_interpd(),...
                 ];
         end
 
@@ -2180,27 +2187,44 @@ classdef UltrasoundSystem < handle
             % no halp :(
 
             % filename
-            d.Source = 'bf.cu';
+            d.Source = {...
+                'bf.cu', ...
+                }';
 
-            d.IncludePath = {... include folders
-                };
-
-            d.Libraries = {...
-                ...
-                };
+            d.IncludePath = {}; % include folders
+            d.Libraries = {}; % libraries
 
             d.CompileOptions = {...  compile options
-                "use_fast_math",...
+                'use_fast_math',...
                 };
 
             d.Warnings = {... warnings
-                "no-deprecated-gpu-targets"...
+                'no-deprecated-gpu-targets'...
                 };
             
-            d.DefinedMacros = {... macro definitions
-                ..."T=5", "M=3", "N=1", "I=6"...
-                ...["T","M","N","I"] + "=" + string([1e3, 2e3, 4e3, 3e3])
+            d.DefinedMacros = {};
+        end
+
+        function d = genCUDAdef_interpd()
+            % no halp :(
+
+            % filename
+            d.Source = {...
+                'interpd.cu', ...
+                }';
+
+            d.IncludePath = {}; % include folders
+            d.Libraries = {}; % libraries
+
+            d.CompileOptions = {...  compile options
+                'use_fast_math',...
                 };
+
+            d.Warnings = {... warnings
+                'no-deprecated-gpu-targets'...
+                };
+            
+            d.DefinedMacros = {};
         end
 
         function d = genMexdef_msfm()
