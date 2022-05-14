@@ -14,7 +14,7 @@ classdef (Abstract) Transducer < handle
     % properties(GetAccess=public, SetAccess=protected)
     properties(GetAccess=public, SetAccess=public)
         fc = 5e6        % center frequency
-        bw = 3e6        % bandwidth
+        bw = [3.5e6 6.5e6] % bandwidth
         width = 1.19e-4 % width of an element (m)
         height = 6e-3   % height of an element (m)
         numel = 128     % number of elements
