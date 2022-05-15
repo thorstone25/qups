@@ -249,6 +249,7 @@ classdef UltrasoundSystem < handle
                 ptc_rx = self.rx.getFieldIIBaryCenters(element_subdivisions);
             end
             
+            % TODO: directly convolve the Waveform objects
             % get the Tx/Rx impulse response function ( T' x 1)
             tx_impulse_waveform = self.tx.impulse;
             t_tx = tx_impulse_waveform.getSampleTimes(self.fs);

@@ -60,6 +60,8 @@ if isempty(rdms), F = 1; else, F = prod(size(x, rdms)); end
 x = permute(x, ord);
 t = permute(t, ord);
 
+% TODO: enable non-ptx track via interp1 call
+
 % grab the kernel reference
 issingle = @(x) strcmp(class(x), 'single') || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), 'single'); %#ok<STISA> 
 if issingle(x) || issingle(t)
