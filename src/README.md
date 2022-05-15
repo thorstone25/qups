@@ -1,0 +1,54 @@
+## Class Structure
+QUPS utilizes flexible abstract objects and definitions in order to preserve code re-usability. The following base classes are used to provide the majority of the functionality:
+
+| Class | Main Properties | Main Methods |
+| ------ | ------ | ------ | 
+| `Transducer` | numel  | positions() |
+| `Sequence` | numPulse | delays(), apodization() |
+| `Scan` | size | getImagingGrid() |
+| `ChannelData` | data, t0, fs | sample() |
+| `Target` | c0, rho0 | getPropertyMap() |
+
+All of these classes provide an overloaded `plot` or `imagesc` method for easy visualization. 
+
+A synthesis class `UltrasoundSystem` is provided to combine the `Transducer`, `Scan` and `Sequence` classes, simulate `ChannelData` from a `Target`, or beamform `ChannelData` into a b-mode image, which is just a regular MATLAB array ;) - you can use `Scan/imagesc` to display it.
+
+## Data Format
+QUPS objects, classes, and functions adhere to some conventions to make prototyping easier.
+
+### Units
+
+| Measure | Unit | 
+| ------ | ------ |
+| Position | Meters |
+| Time | Seconds |
+| Angle | Degrees |
+
+### Dimensions
+ 
+| Property | Standard | 
+| ------ | ------ |
+| Position | {x,y,z} in dimension 1 |
+| rf-data | time x receive x transmit |
+
+### Time `t = 0`
+
+| Sequence Type | Definition | 
+| ------ | ------ |
+| Full-Synthetic Aperture (FSA) | Peak is centered on the firing element |
+| Plane Wave (PW) | Wavefront centered on the origin (0,0,0) |
+| Virtual Source (VS) | Peak is centered on the focus |
+
+Note that this transmit sequence definition is likely to result in data with varying start times across multiple transmits and a negative start time i.e. _before_ time 0. This is explicitly supported! Simply create a definition of `t0` of size 1 x 1 x M where M is the number of transmits that aligns the data.
+
+### Broadcasting
+Utilities are provided to assist in writing readable, broadcasting code. The `sub` utility allows you to conveniently slice one dimension while the utility `swapdim`  as well as the built-in `shiftdim` and `permute` functions are useful for placing data in broadcasting dimensions.
+
+Dimensions are used to implicitly broadcast operations, allowing you to limit memory and computational demand for simple workflows. For example, the apodization argument for the `DAS` method takes in an argument of size I1 x I2 x I3 x N x M where {I1,I2,I3} is the size of the scan, N is the number of receivers, and M is the number of transmits. This can be a huge array, easily over 100GB! However, in many cases we may only need 2 or 3 of these dimensions. 
+
+For example, to evaluate a multi-monostatic configuration given a set of FSA data, we simply create an array of size 1 x 1 x 1 x N x M and apply identity matrix weights.
+```
+apod = shiftdim( (1:N)' == (1:M), -3); % we can leave this as a binary type!
+```
+
+

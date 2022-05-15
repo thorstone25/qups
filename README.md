@@ -1,69 +1,29 @@
 # QUPS: Quick Ultrasound Processing &amp; Simulation
 
-QUPS (pronounced "CUPS") is intended to be an abstract, lightweight, readable tool for simulation and processing of pulse-echo ultrasound data to support prototyping. It provides a flexible, high-level representation of transducers, scattering media, and accelerated implementations of common signal processing functions. Currently, QUPS can use multiple simulation tools as a backend including [k-Wave](http://www.k-wave.org/index.php), [MUST](https://www.biomecardio.com/MUST/documentation.html), and [FieldII](https://www.field-ii.dk/) and can read/write to a [USTB](https://www.ustb.no/) format.
+QUPS (pronounced "CUPS") is intended to be an abstract, lightweight, readable tool for prototyping simulation and processing of pulse-echo ultrasound data. It provides a flexible, high-level representation of transducers, scattering media, and accelerated implementations of common signal processing functions. Currently, QUPS can use multiple simulation tools as a backend including [k-Wave](http://www.k-wave.org/index.php), [MUST](https://www.biomecardio.com/MUST/documentation.html), and [FieldII](https://www.field-ii.dk/) and can read/write to a [USTB](https://www.ustb.no/) format.
 
 ## Getting Started
 The easiest way to get started is to open and run [`example.mlx`](example.mlx) or [`example_.m`](example_.m) and interact with the simulation and beamforming examples. There are plenty of comments highlighting the different methods supported by the interface. You will need to separately download the simulator packages that you wish to use. Don't forget to add them to your path!
 
-### Compatibility
+## Documentation
+QUPS is (partially) internally documented following MATLAB conventions. This means you can use `help` or `doc` on any class or method with `help classname` or `help classname/methodname` or `help classname.methodname`. To see all the available classes, from the qups folder, use `help src` or `doc src`. 
+
+## Compatibility
 QUPS targets MATLAB R2020b and later on linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
 
 If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
-## Documentation
-QUPS is (partially) internally documented following MATLAB conventions. This means you can use `doc` on any class and `help` on any class or method with `help classname/methodname` or `help classname.methodname`.
+### Extensions
+All extensions to QUPS are optional, but must be installed separately from their respective sources.
 
-### Structure
-QUPS utilizes flexible abstract objects and definitions in order to preserve code re-usability. The following base classes are used to provide the majority of the functionality:
+| Extension | Installation |
+| ------ | ------ | 
+| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | add folder to path with `addpath`|
+| [FieldII](https://www.field-ii.dk/)   | add folder to path with `addpath`|
+| [k-Wave](http://www.k-wave.org/index.php) | add folder to path with `addpath` |
+| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | add folder to path with `addpath` (see issues[#2](https://github.com/thorstone25/qups/issues/2))|
+| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | `!nvcc -V` must run from MATLAB |
 
-| Class | Main Properties | Main Methods |
-| ------ | ------ | ------ | 
-| `Transducer` | numel  | positions() |
-| `Sequence` | numPulse | delays(), apodization() |
-| `Scan` | size | getImagingGrid() |
-| `ChannelData` | data, t0, fs | sample() |
-| `Target` | c0, rho0 | getPropertyMap() |
-
-All of these classes provide an overloaded `plot` or `imagesc` method for easy visualization. 
-
-A synthesis class `UltrasoundSystem` is provided to combine the `Transducer`, `Scan` and `Sequence` classes, simulate `ChannelData` from a `Target`, or beamform `ChannelData` into a b-mode image, which is just a regular MATLAB array ;) - you can use `Scan/imagesc` to display it.
-
-### Data Format
-QUPS objects, classes, and functions adhere to some conventions to make prototyping easier.
-
-#### Units
-
-| Measure | Unit | 
-| ------ | ------ |
-| Position | Meters |
-| Time | Seconds |
-| Angle | Degrees |
-
-#### Dimensions
- 
-| Property | Standard | 
-| ------ | ------ |
-| Position | {x,y,z} in dimension 1 |
-| rf-data | time x receive x transmit |
-
-#### Time `t = 0`
-
-| Sequence Type | Definition | 
-| ------ | ------ |
-| Full-Synthetic Aperture (FSA) | Peak is centered on the firing element |
-| Plane Wave (PW) | Wavefront centered on the origin (0,0,0) |
-| Virtual Source (VS) | Peak is centered on the focus |
-
-Note that this transmit sequence definition is likely to result in data with varying start times across multiple transmits and a negative start time i.e. _before_ time 0. This is explicitly supported! Simply create a definition of `t0` of size 1 x 1 x M where M is the number of transmits that aligns the data.
-
-#### Broadcasting
-Utilities are provided to assist in writing readable, broadcasting code. The `sub` utility allows you to conveniently slice one dimension while the utility `swapdim`  as well as the built-in `shiftdim` and `permute` functions are useful for placing data in broadcasting dimensions.
-
-Dimensions are used to implicitly broadcast operations, allowing you to limit memory and computational demand for simple workflows. For example, the apodization argument for the `DAS` method takes in an argument of size I1 x I2 x I3 x N x M where {I1,I2,I3} is the size of the scan, N is the number of receivers, and M is the number of transmits. This can be a huge array, easily over 100GB! However, in many cases we may only need 2 or 3 of these dimensions. 
-
-For example, to evaluate a multi-monostatic configuration given a set of FSA data, we simply create an array of size 1 x 1 x 1 x N x M and apply identity matrix weights.
-```
-apod = shiftdim( (1:N)' == (1:M), -3); % we can leave this as a binary type!
-```
-
+#### CUDA Extension
+If you can run `!nvcc -V` in MATLAB, you're all set! If you have difficulty getting nvcc to work in MATLAB, you may need to figure out which environment paths are required for your CUDA installation. Running `setup CUDA` will attempt to do this for you, but may fail if you have an unexpected installation. If you can run `nvcc` from a command-line interface per the CUDA installation instructions, try launching MATLAB from the same terminal (in [Linux](https://www.mathworks.com/help/matlab/ref/matlablinux.html)) or the Command Prompt (in [Windows](https://www.mathworks.com/help/matlab/ref/matlabwindows.html)). Then, use `getenv PATH` to display the PATH environmental variable. If you note any discrepancies, you can try adding them to the system path with `setenv('PATH', fullfile(getenv('PATH'), pathsep, NEW_PATH))`.
 
