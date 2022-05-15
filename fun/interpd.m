@@ -6,9 +6,9 @@ function y = interpd(x, t, dim, interp, extrapval)
 % operations across the data. In other words, the data is formatted into
 % the following:
 %
-%   x is (T x N' x F')
-%   t is (I x N' x M')
-%   y is (I x N' X M' X F')
+%   x is (T x N' x      F')
+%   t is (I x N' x M'     )
+%   y is (I x N' x M' x F')
 %
 % Sampling is performed in the dimension matching I/T, element-wise in N' 
 % (where matched) and broadcasted across M' and F' such that x(k,n',m',f')  
@@ -69,7 +69,7 @@ else
     suffix = "";
 end
 
-k = parallel.gpu.CUDAKernel('bf.ptx', 'interpd.cu', 'interpd' + suffix); % TODO: fix path
+k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); % TODO: fix path
 k.setConstantMemory('I', uint64(I), 'T', uint64(T), 'N', uint64(N), 'M', uint64(M), 'F', uint64(F));
 k.ThreadBlockSize = k.MaxThreadsPerBlock; % why not?
 k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), N, F]; 
