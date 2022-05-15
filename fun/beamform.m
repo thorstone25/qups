@@ -64,6 +64,7 @@ function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
 % 
 % See also ULTRASOUNDSYSTEM/DAS CHANNELDATA/SAMPLE INTERP1
 
+% TODO: switch to kwargs struct to support arguments block
 % default parameters
 VS = true;
 odataPrototype = complex(zeros(0, 'like', x));
@@ -81,7 +82,7 @@ else
     posType = 'double';
 end
 if gpuDeviceCount && any(cellfun(@(v)isa(v, 'gpuArray'), {Pi, Pr, Pv, Nv, x}))
-    device = -1; % default GPU
+    device = -1; % GPU
 else
     device = 0; % CPU
 end
@@ -148,7 +149,7 @@ per_cell = {'UniformOutput', false};
 % TODO: support doing this with non-scalar t0 definition
 x = permute(x, [1:3,(max(3,ndims(x))+[1,2]),4:ndims(x)]); % (T x N x M x 1 x 1 x F x ...)
     
-if device
+if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
 
     % match position precision to inputData precision
     if ~strcmp(idataType, posType) && ~strcmp(fun, 'delays'), 

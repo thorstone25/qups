@@ -505,8 +505,10 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % dispatch
             assert(chd.tdim == 1, 'Time must be in the first dimension of the data.'); % TODO: generalize this restriction if necessary
-            if (isa(chd.data, 'gpuArray') && ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
-                    % interpolate on the gpu if we can
+            if (isa(chd.data, 'gpuArray') ... 
+                    && ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
+                    && logical(exist('interpd.ptx', 'file'))
+                    % interpolate on the gpu via ptx if we can
                     y = interpd(chd.data, (tau - chd.t0) * chd.fs, 1, interp, 0); 
 
             elseif interp == "freq"
