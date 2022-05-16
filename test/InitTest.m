@@ -13,7 +13,7 @@ classdef InitTest < matlab.unittest.TestCase
         % Shared setup for the entire test class
         function setupQUPS(test, par, cache, gpu)
             cd(InitTest.proj_folder); % setup relative to here
-            setup(par{:}, gpu{:}, cache{:});
+            setup(par{:}, gpu{:}, cache{:}); % setup with each option combo should work
         end
     end
     methods(TestClassTeardown)
@@ -60,6 +60,17 @@ classdef InitTest < matlab.unittest.TestCase
             % initializes without arguments
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(UltrasoundSystem(), IsInstanceOf('UltrasoundSystem'));
+        end
+        function inittarg(test)
+            % INITTARG - Assert that a Target and it's subclasses
+            % initialize without arguments
+            
+            % TODO: this will be reorganized so the Medium/Scatterers are
+            % subclasses of Target, at which point the test must be changed
+            import matlab.unittest.constraints.IsInstanceOf;
+            test.assertThat(Scatterers(), IsInstanceOf('Scatterers'));
+            test.assertThat(Medium(), IsInstanceOf('Medium'));
+            test.assertThat(Target(), IsInstanceOf('Target'));
         end
     end
 
