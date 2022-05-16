@@ -2,42 +2,30 @@ classdef InitTest < matlab.unittest.TestCase
     % INITTEST - Initialization tests class
     %
     % This class test that all objects initialize properly
-    methods(TestClassSetup)
+
+    properties(ClassSetupParameter)
+        par   = struct('no_parpool', {{}}, 'def_parpool', {{'parallel'}});
+        cache = struct('no_cache', {{}}, 'cache', {{'cache'}});
+        gpu   = struct('no_ptx', {{}}, 'ptx', {{'CUDA'}});
+    end
+
+    methods(TestClassSetup, ParameterCombination = 'exhaustive')
         % Shared setup for the entire test class
-        function setupQUPS(test)
+        function setupQUPS(test, par, cache, gpu)
             cd(InitTest.proj_folder); % setup relative to here
-            setup; % basic setup should be run
+            setup(par{:}, gpu{:}, cache{:});
         end
     end
     methods(TestClassTeardown)
         function teardownQUPS(test)
             cd(InitTest.proj_folder); 
             teardown; % basic teardown should run
+            try delete(gcp('nocreate')); end % undo parpool if exists
         end
     end
 
     methods(TestMethodSetup)
         % Setup for each test
-    end
-
-    properties(TestParameter)
-        par   = struct('none', {{}}, 'some', {{'parallel'}});
-        cache = struct('none', {{}}, 'some', {{'cache'}});
-        gpu   = struct('none', {{}}, 'some', {{'CUDA'}});
-    end
-
-    methods(Test, ParameterCombination = 'exhaustive')
-        % Initialization test methods
-
-        % TODO: write an actual test script for SETUP that
-        % * accounts for when no parpool exists prior
-        %   whether in teardown or repeated call
-        % * tests that the proper folders are added to the path
-        function initQUPS(test, par, gpu, cache)
-            % INITQUPS - Assert that the QUPS setup scripts run
-            cd(InitTest.proj_folder); % move to project folder
-            setup(par{:}, gpu{:}, cache{:});
-        end
     end
     methods(Test)
         function initxdc(test)
@@ -79,5 +67,4 @@ classdef InitTest < matlab.unittest.TestCase
         % PROJ_FOLDER - Identifies the base folder for the project
         function f = proj_folder(), f = fullfile(fileparts(mfilename('fullpath')), '..'); end
     end
-
 end
