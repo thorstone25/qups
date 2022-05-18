@@ -1,31 +1,47 @@
+% SCAN - Imaging region definition
+%
+% The Scan class stores definitions for the imaging region. A Scan
+% provides a method to return the image pixel coordinates as an ND-array of
+% up to 3 dimensions as well as the row vectors for each individual
+% dimension. It also provides convenience methods for defining apodization
+% array defined for the Scan.
+% 
+% Scan is an abstract class. To instantiate a Scan, create a
+% ScanCartesian or a ScanPolar.
+% 
+% See also SCANCARTESIAN SCANPOLAR
+
 classdef Scan < matlab.mixin.Copyable
     properties(Abstract)
-        order
+        % dimension of change for the pixels
+        %
+        % order = 'ABC' represents that scan.a varies in dimension 1,
+        % scan.b varies in dimension 2, etc. 
+        %
+        % This is relevant for calls to scan.getImagingGrid() which returns
+        % the cartesian coordinates each as a 3D-array.
+        order   % dimension of change for the pixels
     end
     
     % dependent parameters
     properties(Abstract, Dependent)
-        size
-        nPix
+        size        % size of each dimension of the generated pixels
+        nPix        % total number of pixels
     end
     
     % get/set & constructor
     methods(Abstract)
-        
-        setImagingGrid(self, xb, yb, zb)
-        
         % GETUSTBSCAN - Return a USTB/UFF compatible uff.scan object
         %
         % scan = GETUSTBSCAN(self) returns a uff.scan object
         %
         % See also UFF.SCAN
         scan = getUSTBScan(self)
-        
     end
         
     % imaging computations
     methods(Abstract)
-        % SCAN/GETIMAGINGGRID - get the multidimensional grid for imaging
+        % GETIMAGINGGRID - get the multidimensional grid for imaging
         %
         % [X, Y, Z, sz] = GETIMAGINGGRID(self) returns the
         % multidimensional arrays corresponding to the positions of the
@@ -110,7 +126,7 @@ classdef Scan < matlab.mixin.Copyable
             % MULTILINEAPODIZATION Create multi-line apodization array
             %
             % apod = MULTILINEAPODIZATION(self, seq) creates an ND-array
-            % to mask delayed data using the transmit sequence seq in order
+            % to mask delayed data using the transmit Sequence seq in order
             % to form an image using scanlines.
             % 
             % Multilne apodization is determined by linearly weighing
@@ -175,7 +191,28 @@ classdef Scan < matlab.mixin.Copyable
         end
     
         function apod = translatingApertureApodization(self, seq, rx, tol)
-            % no halp
+            % TRANSLATINGAPERTUREAPODIZATION Create translating aperture apodization array
+            %
+            % apod = TRANSLATINGAPERTUREAPODIZATION(self, seq, rx,tol) 
+            % creates  an ND-array to mask delayed data using the transmit 
+            % Sequence seq and the receive Transducer rx in order to form 
+            % the corresponding image with a limited translating aperture 
+            % of size tol.
+            %
+            % For a ScanCartesian, rx must be a TransducerArray and the 
+            % aperture is limited to receive elements that are within tol 
+            % of the focus laterally. 
+            % 
+            % For a ScanPolar, rx must be a TransducerConvex and seq must 
+            % be a SequenceRadial. The aperture is limited to receive 
+            % elements that are within tol of the focus in azimuth. 
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % See also SCAN/SCANLINEAPODIZATION
+
 
             % extract lateral or angle of transmit in order to compare
             if isa(self, 'ScanCartesian')
@@ -202,7 +239,27 @@ classdef Scan < matlab.mixin.Copyable
         end
 
         function apod = apertureGrowthApodization(self, seq, rx, f, Dmax)
-            % no halp
+            % APERTUREGROWTHAPODIZATION Create an aperture growth aperture apodization array
+            %
+            % apod = APERTUREGROWTHAPODIZATION(self, seq, rx) creates an 
+            % ND-array to mask delayed data using the transmit Sequence seq
+            % and the receive Transducer rx in order to form the 
+            % corresponding image that shrinks the receive aperture at
+            % shallower depths in order to maintain a minimum f-number.
+            %
+            % For a ScanCartesian, rx must be a TransducerArray and the 
+            % aperture is limited to receive elements that are within tol 
+            % of the focus laterally. 
+            % 
+            % For a ScanPolar, rx must be a TransducerConvex and seq must 
+            % be a SequenceRadial. The aperture is limited to receive 
+            % elements that are within tol of the focus in azimuth. 
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % See also SCAN/SCANLINEAPODIZATION
 
             % defaults
             if nargin < 5, Dmax = Inf; end
@@ -237,7 +294,19 @@ classdef Scan < matlab.mixin.Copyable
         end
 
         function apod = acceptanceAngleApodization(self, seq, rx, theta)
-            % no halp
+            % ACCEPTANCEANGLEAPODIZATION Create an acceptance angle apodization array
+            %
+            % apod = ACCEPTANCEANGLEAPODIZATION(self, seq, rx, theta) 
+            % creates an ND-array to mask delayed data using the transmit 
+            % Sequence seq and the receive Transducer rx in order to form 
+            % the corresponding image that for each pixel only includes
+            % receivers with a limited pixel to receiver angle.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % See also SCAN/SCANLINEAPODIZATION
 
             % defaults
             if nargin < 4, theta = 45; end
@@ -271,7 +340,7 @@ classdef Scan < matlab.mixin.Copyable
 
     methods
         function h = imagesc(self, b, varargin)
-            % SCAN/IMAGESC - Overload of imagesc
+            % IMAGESC - Overload of imagesc
             %
             % h = IMAGESC(b) displays the data b on the Scan.
             %
@@ -307,6 +376,18 @@ classdef Scan < matlab.mixin.Copyable
         end
 
         function h = plot(self, varargin)
+            % PLOT - Overload of plot
+            %
+            % h = PLOT(self) plots the pixels of the Scan onto the current 
+            % axes and returns the plot handle(s) in h.
+            %
+            % h = PLOT(self, ax) plot on the axes handle ax.
+            %
+            % h = PLOT(..., Name, Value, ...) passes the following
+            % name/value pairs to the built-in plot function
+            %
+            % See also PLOT
+
             % determine the axis
             if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
                 hax = varargin{1}; varargin(1) = []; % delete this input

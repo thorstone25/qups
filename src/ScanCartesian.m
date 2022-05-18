@@ -1,34 +1,52 @@
+% SCANCARTESIAN - Defines an imaging region with Cartesian coordinates
+%
+% The ScanCartesian class defines a Scan for Cartesian image coordinates.
+%
+% The Scan class stores definitions for the imaging region. A Scan
+% provides a method to return the image pixel coordinates as an ND-array of
+% up to 3 dimensions as well as the row vectors for each individual
+% dimension. It also provides convenience methods for defining apodization
+% array defined for the Scan.
+%
+% See also SCAN SCANPOLAR
 classdef ScanCartesian < Scan
     properties
-        x = 1e-3*linspace(-20,20,128) % image x values
-        y = 0                         % image y values
-        z = 1e-3*linspace(0,40,128)   % image z values
+        x = 1e-3*linspace(-20,20,128) % image x values (m)
+        y = 0                         % image y values (m)
+        z = 1e-3*linspace(0,40,128)   % image z values (m)
         order = 'ZXY';                % order of the dimensions for display
     end
     
     % dependent parameters
     properties(Dependent)
         size                % size of the final image
-        xb                  % image bounds in x
-        yb                  % image bounds in y
-        zb                  % image bounds in z
-        nPix                 % number of pixels in the imaging grid
+        xb                  % image bounds in x (m)
+        yb                  % image bounds in y (m)
+        zb                  % image bounds in z (m)
+        nPix                % number of pixels in the imaging grid
     end
     
     properties(Dependent, Hidden)
         nx                  % number of samples in x
         ny                  % number of samples in y
         nz                  % number of samples in z
-        res                 % resolution in 3D
-        resx                % resolution in x
-        resy                % resolution in y
-        resz                % resolution in z
+        res                 % resolution in all coordinates
+        resx                % resolution in x (m)
+        resy                % resolution in y (m)
+        resz                % resolution in z (m)
     end
     
     % get/set & constructor
     methods
         % constructor
         function self = ScanCartesian(varargin)
+            % SCANCARTESIAN - Construct a ScanCartesian
+            %
+            % scan = SCANCARTESIAN(Name,Value,...) constructs a
+            % ScanCartesian using name/value pairs.
+            %
+            % See also SCANPOLAR
+
             % initialize with name-value pairs
             for i = 1:2:nargin
                 self.(varargin{i}) = varargin{i+1};
@@ -37,9 +55,21 @@ classdef ScanCartesian < Scan
         
         % image defs
         function setImagingGrid(self, x, y, z)
+            % SETIMAGINGGRID - Set image axes directly
+            %
+            % SETIMAGINGGRID(self, x, y, z) sets the image grid row vectors
+            % for the ScanCartesian self in all coordinates.
+            %
+            % See also SETIMAGINGBOUNDS
             [self.x, self.y, self.z] = deal(x, y, z);
         end
         function setImagingBounds(self, x, y, z)
+            % SETIMAGINGBOUNDS - Set image axes boundaries
+            %
+            % SETIMAGINGBOUNDS(self, x, y, z) sets the image grid bounds 
+            % for the ScanCartesian self in all coordinates.
+            %
+            % See also SETIMAGINGGRID
             [self.xb, self.yb, self.zb] = deal(x, y, z);
         end
         function scan = getUSTBScan(self)
@@ -65,6 +95,8 @@ classdef ScanCartesian < Scan
         end
                 
         function setImageGridOnTarget(self, target, margin)
+            % SETIMAGEGRIDONTARGET - Set imaging grid to surround a Target
+            %
             % sets the imaging grid around the boundary of target leaves
             % unchanged the number of points on the grid, so the resolution
             % may change whenever this function is called
@@ -88,6 +120,15 @@ classdef ScanCartesian < Scan
         end
     
         function ord = getPermuteOrder(self)
+            % GETPERMUTEORDER - Get the permutation of 'XYZ'
+            %
+            % ord = GETPERMUTEORDER(self) returns the permutation of the
+            % scan.
+            % 
+            % This functon is likely to be deprecated.
+            %
+            %
+
             ord = arrayfun(@(c) find(c == 'XYZ'), self.order);
         end
 
@@ -135,9 +176,11 @@ classdef ScanCartesian < Scan
         function set.yb(self, b), self.y = linspace(min(b), max(b), self.ny); end
         function set.zb(self, b), self.z = linspace(min(b), max(b), self.nz); end
         function xlim(self, xb), self.xb = xb; end
+        % set boundaries in x
         function ylim(self, yb), self.yb = yb; end
+        % set boundaries in y
         function zlim(self, zb), self.zb = zb; end
-
+        % set boundaries in z
 
         % get resolution
         function r = get.resx(self), r = diff(self.xb) / (self.nx - 1); end
