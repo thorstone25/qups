@@ -113,6 +113,8 @@ classdef ChannelData < matlab.mixin.Copyable
         % cast underlying type to double
         function chd = singleT(chd) , chd = applyFun2Props(chd, @single); end
         % cast underlying type to single
+        function chd =   halfT(chd) , chd = applyFun2Data (chd, @half); end
+        % cast underlying type to half
         function chd =  int64T(chd) , chd = applyFun2Data (chd, @int64); end
         % cast underlying type to int64
         function chd = uint64T(chd) , chd = applyFun2Data (chd, @uint64); end
@@ -143,6 +145,8 @@ classdef ChannelData < matlab.mixin.Copyable
         % convert to a double array
         function x = single(chd), x = single(chd.data); end
         % convert to a single array
+        function x =   half(chd), x =   half(chd.data); end
+        % convert to a half array
         function x =  int64(chd), x =  int64(chd.data); end
         % convert to a int64 array
         function x = uint64(chd), x = uint64(chd.data); end
@@ -660,11 +664,11 @@ classdef ChannelData < matlab.mixin.Copyable
             d = self.data(:,:,m); 
 
             % choose to show real part or dB magnitude
-            if isinteger(d), d = double(d); end % cast integer types for abs
+            if isnumeric(d), d = double(d); end % cast integer types for abs, half types for imagesc
             if ~isreal(d), d = mod2db(d); end
 
             % get the time axes for this channel
-            t = sub(self.time, num2cell(i), [3:dims]); %#ok<NBRAK> 
+            t = double(sub(self.time, num2cell(i), [3:dims])); %#ok<NBRAK> 
 
             % choose which dimensions to show
             axes_args = {'XData', 1:self.N, 'YData', t};
@@ -692,7 +696,7 @@ classdef ChannelData < matlab.mixin.Copyable
             for f = 1:prod(size(self.data,3:ndims(self.data)))
                 if ~isvalid(ax), break; end % quit if handle destroyed
                 h = imagesc(self, f, ax, varargin{:});
-                drawnow limitrate; pause(1/5);
+                drawnow limitrate; pause(1/20);
             end
         end
     end
