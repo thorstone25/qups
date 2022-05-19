@@ -128,12 +128,14 @@ classdef UltrasoundSystem < handle
             self.tmp_folder = tempname; % gives a folder usually in /tmp
             mkdir(self.tmp_folder); % make the folder
             addpath(self.tmp_folder); % this should let us shadow any other binaries
-            
+
             % copy code or recompile it
+            if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
             defs = self.getCUDAFileDefs();
             fls = arrayfun(@(d) string(strrep(d.Source, 'cu', 'ptx')), defs);
             s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
             if any(~s), self.recompileCUDA(); end % attempt to recompile code
+            end
             
             % copy code or recompile it
             % TODO: generalize to mex extension for other machines (with 
@@ -2070,11 +2072,12 @@ classdef UltrasoundSystem < handle
     
     % helper functions
     methods
-        function recompile(self), recompileMex(self); recompileCUDA(self); end
+        function recompile(self), recompileMex(self); if gpuDeviceCount, recompileCUDA(self); end, end
         % RECOMPILE - Recompile mex and CUDA files
         %
         % RECOMPILE(self) recompiles all mex binaries and CUDA files and 
-        % stores them in self.tmp_folder. 
+        % stores them in self.tmp_folder. If there are no MATLAB compatible
+        % GPUs, it does not attempt to recompile CUDA files.
         %
         % See also ULTRASOUNDSYSTEM/RECOMPILECUDA ULTRASOUNDSYSTEM/RECOMPILEMEX
         function recompileMex(self)
