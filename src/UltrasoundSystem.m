@@ -1,3 +1,22 @@
+% ULTRASOUNDSYSTEM - Complete ultrasound system description
+%
+% The ULTRASOUNDSYSTEM class is a synthesis class containing the properties
+% describing a medical ultrasound system and providing methods to simulate
+% channel data or beamform channel data. The complete system is described
+% by the transmit and receive Transducer, the transmit Sequence, and the
+% Scan defining the region for simulation or beamforming.
+%
+% Multiple simulators are supported, but must be installed by the user. 
+% They include:
+% 
+% * simus via MUST
+% * calc_scat_all via FieldII
+% * kspaceFirstOrderND via K-wave
+% * fullwaveSim via Fullwave
+% 
+% 
+% See also TRANSDUCER SEQUENCE SCAN TARGET CHANNELDATA
+
 classdef UltrasoundSystem < handle
     
     % objects
@@ -10,17 +29,17 @@ classdef UltrasoundSystem < handle
     
     % parameters
     properties
-        fs = 40e6           % system sampling frequency (Hz)
+        fs = 40e6   % simulation sampling frequency (Hz)
     end
     
     properties(Dependent)
-        fc                  % central operating frequency (Hz)
+        fc                  % central operating frequency (from the Transducer) (Hz)
         xdc                 % Transducer object (if receive and transmit are identical)
         pulse               % Waveform object (from the Sequence)
     end
     
     properties(Hidden,SetAccess=protected)
-        tmp_folder
+        tmp_folder          % temporary folder for compiled binaries
     end
         
     % get/set & constructor
@@ -32,6 +51,8 @@ classdef UltrasoundSystem < handle
             % us = UltrasoundSystem(Name,Value,...) constructs an
             % UltrasoundSystem object using name value pairs. It's the
             % recommended method of construction.
+            %
+            
             
             % initialize Target / Transducer array
             xdc_args = {};
@@ -163,16 +184,20 @@ classdef UltrasoundSystem < handle
         function sub_div = getLambdaSubDiv(self, p, c, ap)
             % GETLAMBDASUBDIV - Get subelement divisions
             % 
-            % sub_div = GETLAMBDASUBDIV(self, p, c, ap)
-            % returns the element subdivision vector corresponding to a
-            % proportion p of the wavelength given a medium or speed of
-            % sound. In other words, for 
+            % sub_div = GETLAMBDASUBDIV(self, p, c) returns the element 
+            % subdivision vector corresponding to a proportion p of the 
+            % wavelength given sound speed c (m/s).
+            % 
+            % sub_div = GETLAMBDASUBDIV(self, p, c, ap) specifies the
+            % aperture ap. Must be one of {'rx'*, 'tx', 'xdc'}
+            %
+            % 
             
             if(nargin < 4), ap = 'rx'; end
             if isa(c, 'Medium'), c = c.c0; end
             
             % get wavelength
-            lam = c / self.fc;
+            lam = c / self.(ap).fc;
             
             % get length of proportion of lam
             dp = lam * p;
@@ -234,6 +259,8 @@ classdef UltrasoundSystem < handle
             method = 'interpn';
             interp_method = 'linear';
             
+            % parse inputs
+            % TODO: switch to kwargs properties
             for i = 1:2:numel(varargin)
                 switch lower(varargin{i})
                     case 'device', device = varargin{i+1};
@@ -484,10 +511,14 @@ classdef UltrasoundSystem < handle
         end
         
         function [chd, conf] = fullwaveSim(self, target, sscan, varargin)
-            % FULLWAVESIM - Run a fullwave simulation
+            % FULLWAVESIM - Simulate channel data via Fullwave
             %
-            % chd = FULLWAVESIM(self, target, sscan) returns a ChannelData
-            % object 
+            % chd = FULLWAVESIM(self, target, sscan) simulates the Target 
+            % target on the simulation grid sscan and returns a ChannelData
+            % object chd. The simulation scan should be large and fine 
+            % enough that all elements of the Transducer can be placed.
+            %
+            % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDERND
 
             % defaults
             kwargs = struct(...
@@ -562,7 +593,7 @@ classdef UltrasoundSystem < handle
     	end
 
         function chd = readFullwaveSim(simdir, conf)
-            % READFULLWAVESIM - Create a ChannelData object from the simulation data.
+            % READFULLWAVESIM - Create a ChannelData object from the fullwave simulation.
             %
             % chd = ULTRASOUNDSYSTEM.READFULLWAVESIM(simdir) creates a ChannelData object from the
             % simulation files located in the directory simdir.
@@ -570,7 +601,7 @@ classdef UltrasoundSystem < handle
             % chd = ULTRASOUNDSYSTEM.READFULLWAVESIM(simdir, conf) uses the configuration file conf
             % rather than loading one from the simulation directory.
             %
-            % See also RUNFULWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
+            % See also RUNFULLWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
 
             % see if we can find a conf file in the directory if not given to us
             if nargin < 2
@@ -824,26 +855,33 @@ classdef UltrasoundSystem < handle
     % k-Wave calls
     methods(Access=public)
         function [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] = getkWaveGrid(self, target, varargin)
-            % [kgrid, PML_size, origin, grid_size, step] = getkWaveGrid(self, target)
+            % GETKWAVEGRID - Create a kWaveGrid for the Target
+            % 
+            % [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, 
+            % kmedium] = GETKWAVEGRID(self, target) creates a kWaveGrid
+            % kgrid for the given Target target and also returns the 
+            % selected sizing for the perfectly matched layers (PML) and 
+            % the corresponding sizing and offset for the absolute
+            % coordinate system.
             %
-            % function to create a kWaveGrid object for a given Target.
+            % This signature (inputs/outputs) is likely to change.
             %
             % Inputs:
-            %   - target:       a Target object
+            %   target -       a Target object
             %
             % Name-Value Pair Inputs:
-            %   - dims:         number of dimensions (default = 2)
+            %   dims -         number of dimensions (default = 2)
             %
-            %   - PML_min:      minimum PML size (default = 4)
+            %   PML_min -      minimum PML size (default = 4)
             %
-            %   - PML_max:      minimum PML size (default = 48)
+            %   PML_max -      minimum PML size (default = 48)
             %
-            %   - CLF_max:      maximum CFL: the kgrid will use a physical
+            %   CLF_max -      maximum CFL: the kgrid will use a physical
             %                   and temporal spacing beneath this value
             %                   that is a ratio of the sampling frequency
             %                   (default = 0.25)
             %
-            %   - buffer (3 x 2):   3 x 2 array specifying computational 
+            %   buffer(3 x 2) - 3 x 2 array specifying computational 
             %                   buffer to provide spacing from the other 
             %                   objects including the transmitter, 
             %                   receiver, and target objects. This is the 
@@ -852,33 +890,36 @@ classdef UltrasoundSystem < handle
             %                   [xlo, xhi; ylo, yhi, zlo, zhi] 
             %                   (default = repmat(5e-3, [3,2]) )
             %
-            %   - resolution-ratio: sets the ratio of grid spacing to
+            %   resolution-ratio - sets the ratio of grid spacing to
             %                   spatial wavelength assuming a given a 
             %                   reference speed of sound from the target
             %                   (default = 0.25)
             %
-            %   - reference-sound-speed: overrides the reference sound
+            %   reference-sound-speed - overrides the reference sound
             %                   speed for the resolution ratio. 
             %                   (default = target.c0)
             %
             % Outputs:
-            %   - kgrid:            a kWaveGrid object
+            %   kgrid -            a kWaveGrid object
             %
-            %   - PML_size (3 x 1): the chosen PML size that minimizes the
+            %   PML_size (3 x 1) - the chosen PML size that minimizes the
             %                       maximum prime number within PML-min and
             %                       PML-max
             %
-            %   - origin (3 x 1):   cartesian grid origin to recover the
+            %   kgrid_origin (3 x 1) - cartesian grid origin to recover the
             %                       original coordinates when using
             %                       kgrid.{x|y|z} or similar functions
             %
-            %   - grid_size (3 x 1): size of the computational grid, 
+            %   kgrid_size (3 x 1) - size of the computational grid, 
             %                       without the PML. The size is 1 for
             %                       sliced dimensions
             %
-            %   - step (3 x 1):     descritization size in each dimension
+            %   kgrid_step (3 x 1) - descritization size in each dimension
             %                       in meters. The size is inf for sliced
             %                       dimensions
+            %   kmedium            - kWave compatible medium structure
+            %
+            % 
             
             % defaults 
             lam_res = 0.25; % default resolution as proportion of wavelength
@@ -891,6 +932,7 @@ classdef UltrasoundSystem < handle
             pb_u = zeros([3,0]); % default user provided bounds
             
             % override defaults with name-value pairs
+            % TODO: switch to kwargs properties
             for i = 1:2:nargin-2
                 switch varargin{i}
                     case 'dims'
@@ -913,7 +955,7 @@ classdef UltrasoundSystem < handle
             end
                         
             % operate at ratio of lambda min in x/y/z
-            lam = c0 ./ (max(self.xdc.fc) + self.xdc.bw*[-1,1]/2);
+            lam = c0 ./ max(max(self.rx.bw, self.tx.bw));
             [dx, dy, dz] = deal(lam_res * min(lam));
             dp = [dx;dy;dz]; % vector difference
             
@@ -924,7 +966,7 @@ classdef UltrasoundSystem < handle
             % get total min/max bounds for the transducers and the target
             pb_t = target.getBounds(); % get min/max bounds of the target
             pb_tx = self.tx.bounds(); % get min/max bounds of the tx
-            pb_rx = self.rx.bounds(); % get min/max bounds of the tx
+            pb_rx = self.rx.bounds(); % get min/max bounds of the rx
             pb_all = cat(2, pb_t, pb_tx, pb_rx, pb_u); % min/max bounds for all objects
             pb = [min(pb_all,[],2), max(pb_all,[],2)]; % reduce
             
@@ -995,7 +1037,7 @@ classdef UltrasoundSystem < handle
         end        
         
         function [ksource, tsig, sig0] = getKWaveSource(self, kgrid, kgrid_origin, el_sub_div, c0)
-            % ULTRASOUNDSYSTEM/GETKWAVESOURCE - Create a k-wave compatible source structures
+            % GETKWAVESOURCE - Create a k-wave compatible source structures
             % 
             % [ksource, tsig, sig0] = GETKWAVESOURCE(self, kgrid, kgrid_origin, el_sub_div, c0)
             % creates k-Wave compatible source structures.
@@ -1244,7 +1286,27 @@ classdef UltrasoundSystem < handle
         end
         
         function [resp, t_resp] = getKWaveReceive(self, kgrid, ksensor, sens_map, sensor_data, c0, varargin)
+            % GETKWAVERECEIVE - Get the received response from the simulation
             %
+            % [resp, t_resp] = GETKWAVERECEIVE(self, kgrid, ksensor, sens_map, sensor_data, c0)
+            % takes the kWaveGrid kgrid, the kWaveSensor ksensor, the
+            % transducer sensitivity map sens_map, a reference sound speed 
+            % c0, and the received data sensor_data and creates the element
+            % response resp and it's time axes t_resp.
+            %
+            % [...] = GETKWAVERECEIVE(..., Name, Value, ...) additionally
+            % specifies options via name/value pairs.
+            %
+            % Inputs:
+            %   device - GPU selection. 0 for no GPU, -1 to use the
+            %            currently selected GPU, or n to select and reset 
+            %            the GPU with id n in MATLAB.
+            %   interp - interpolation method. Interpolation is provided by
+            %   griddedInterpolant. This behaviour is likely to change.
+            %
+            % This signature (inputs/outputs) is likely to change.
+            % 
+            % See also TRANSDUCER/GETKWAVESENSOR GRIDDEDINTERPOLANT
 
             % set defaults
             kwargs.device = []; % use native type = -1 * logical(gpuDeviceCount); % use available gpu
@@ -1362,8 +1424,40 @@ classdef UltrasoundSystem < handle
             end
         end
     
-        function [chd, cgrid]= kspaceFirstOrderND(self, target, element_subdivisions, varargin)
+        function [chd, cgrid] = kspaceFirstOrderND(self, target, element_subdivisions, varargin)
+            % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
+            % 
+            % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
+            % target and returns a ChannelData object chd via k-Wave.
             %
+            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions)
+            % uses the 1x2 array of element_subdivisions to subdivide the
+            % elements prior to placing them on the simulation grid.
+            %
+            % [chd, cgrid] = kspaceFirstOrderND(...) also returns a
+            % structure with the coordinate transforms from the kWaveGrid. 
+            % This behaviour is likely to be deprecated
+            %
+            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions, 
+            % Name, Value, ... ) specifies name value pairs.
+            %
+            % Inputs:
+            %     PML_min - minimum (one-sided) PML size
+            %     PML_max - maximum (one-sided) PML size
+            %     CFL_max - maximum cfl number (for stability)
+            %     buffer - x/y/z computational buffer (3 x 2)
+            %     resolution_ratio - grid resolution as proportion of wavelength
+            %     dims - dimensionality of the simulation (one of {2*,3})
+            %     parcluster - parallel cluster for running simulations (use 0 for no cluster)
+            %     bounds - minimum boundaries of the sim (3 x 2)
+            %
+            % Other Name/Value pairs that are valid for kWave's
+            % kspaceFirstOrderND functions are valid here with the
+            % exception of the PML definition
+            %
+            %
+            % See also ULTRASOUNDSYSTEM/FULLWAVESIM
+
 
             % setup a default keyword arguments structure
             kwargs = struct( ...
@@ -1519,6 +1613,7 @@ classdef UltrasoundSystem < handle
             % get timing (T x 1 x M) -> (T x 1)
             t_resp   = mode(cell2mat(shiftdim(out(:,2), -2)), 3);
 
+            % TODO: make reports optional
             fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
 
             % get time axis
@@ -1761,15 +1856,14 @@ classdef UltrasoundSystem < handle
         end
         
         function [B, X, Y, Z] = DASEikonal(self, chd, medium, cgrid, rcvfun, varargin)
-            % function to perform delay and sum beamforming on SAR data
-            % inputs:
-            %   - time (T x 1) or {2}:  time sample values or a start time, 
-            %                           frequency pair (s) | (s, Hz)
-            %   - resp (T x M x N):     voltage samples (pure)
-            %   - medium:               Medium object
-            %   - rcvfun:               Receive aperture accumulation
-            %                           (defaults to a summation)
-            %   - cgrid:                A structure defining the grid on
+            % DASEIKONAL - Delay and sum FSA data with an assumed sound speed
+            %
+            % Inputs:
+            %   chd -                   ChannelData object of FSA data
+            %   medium -                Medium object
+            %   rcvfun -                Receive aperture accumulation function
+            %                           (defaults to summation)
+            %   cgrid -                 A structure defining the grid on
             %                           which to calculate the speed of
             %                           sound using the Medium object.
             %     cgrid.origin (3 x 1)  The origin of the grid in x/y/z
@@ -1781,16 +1875,17 @@ classdef UltrasoundSystem < handle
             %     cgrid.size   (3 x 1)  The number of grid points in each
             %                           dimension. 1 for a sliced dimension
             %                           
-            %   Name-value pair arguments
-            %   - prec:                 compute precision of the positions
+            %   Name/Value pair arguments:
+            %   prec -                 compute precision of the positions
             %                           {'single'* | 'double'}
-            %   - device:               GPU device index: -1 for default
-            %                           gpu, 0 for cpu, 1-4 for device index
-            % where T -> time, M -> transmitters, N -> receivers
+            %   device -               GPU device index: -1 for default
+            %                           gpu, 0 for cpu, n for device index
             %
-            % outputs:
-            %   - X\Y\Z:    3D coordinates of the output
-            %   - B:        B-mode image
+            % Outputs:
+            %   B -        B-mode image
+            %   X\Y\Z -    3D coordinates of the output
+            %
+            % See also DAS
             
             
             warning('This function is currently unsupported');
@@ -1865,10 +1960,14 @@ classdef UltrasoundSystem < handle
             B = reshape(B, image_size);        
         end
     
-        function b = matrixbf(self, chd, c0)
-            % MATRIXBF Matrix beamformer
+        function b = adjointbf(self, chd, c0)
+            % ADJOINTBF - Adjoint method beamformer
             %
-            % b = MATRIXBF(self, chd, c0)
+            % b = ADJOINTBF(self, chd) beamforms the ChannelData chd using
+            % an adjoint method.
+            % 
+            % b = ADJOINTBF(self, chd, c0) uses an assumed sound speed c0
+            % for the green's functions. The default is 1540 (m/s).
             %             
             % See also ULTRASOUNDSYSTEM/DAS ULTRASOUNDSYSTEM/FOCUSTX
 
@@ -1878,6 +1977,9 @@ classdef UltrasoundSystem < handle
             
             % options
             kwargs.fthresh = -40; % threshold for including frequencies
+
+            % parse inputs
+            if nargin < 3, c0 = 1540; end
 
             % move the data to the frequency domain, being careful to
             % preserve the time axis
@@ -1955,8 +2057,9 @@ classdef UltrasoundSystem < handle
         end    
     end
     
-    % Receive Aperture beamforming methods: operate along dimension 2
-    methods(Static)
+    % Receive Aperture beamforming methods: operate along rx dimension
+    % These should be either moved or deprecrated
+    methods(Static, Hidden)
         function z = rcvDefault(x, dim)
             if nargin < 2, dim = 2; end
             z = UltrasoundSystem.rcvSum(x, dim);
@@ -2070,7 +2173,7 @@ classdef UltrasoundSystem < handle
         function set.pulse(self, c), self.sequence.pulse = c; end
     end
     
-    % helper functions
+    % recompilation helper functions
     methods
         function recompile(self), recompileMex(self); if gpuDeviceCount, recompileCUDA(self); end, end
         % RECOMPILE - Recompile mex and CUDA files
@@ -2226,7 +2329,8 @@ classdef UltrasoundSystem < handle
             end
         end
     end
-    methods(Static)
+    % source file recompilation definitions
+    methods(Static,Hidden)
         function defs = getCUDAFileDefs()
             % no halp :(
             
