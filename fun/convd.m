@@ -1,22 +1,25 @@
 function [C, lags] = convd(A, B, dim, shape, varargin)
-
-% [C, lags] = convd(A, B, dim, shape, varargin)
-% single-dimension GPU enable convolution. 
-% C = convd(A, B) computes the convolution of A with B in dimension 1. A 
+% CONVD - GPU-enabled Convolution in one dimension
+%
+% C = CONVD(A, B) computes the convolution of A with B in dimension 1. A 
 %   and B may differ in size in dimension 1 only. All other dimensions must
 %   be of equal size.
-% C = convd(A, B, dim) executes in dimension "dim" instead of dimension 1
-% C = convd(..., shape) selects the shape of the returned convolution. Can 
+% C = CONVD(A, B, dim) executes in dimension "dim" instead of dimension 1
+% C = CONVD(..., shape) selects the shape of the returned convolution. Can 
 %   be one of {'full'*|'same'|'valid'}. The default is 'full'.
-% C = convd(..., shape, 'device', dev) selects which gpu device to use. 
+% C = CONVD(..., 'device', dev) selects which gpu device to use. 
 %   dev = -1 specifies the device returned by gpuDevice() 
 %   dev = n where 1 <= n <= gpuDeviceCount selects device n.
 %   dev = 0 specifies no device and operates in native MATLAB code (default) 
 %
-% [C, lags] = convd(...) returns the lags of y in the same dimension as the
+% [C, lags] = CONVD(...) returns the lags of y in the same dimension as the
 % computation.
 % 
 % To select default behaviour, pass an empty argument.
+%
+% See also CONV CONV2 CONVN
+
+% TODO: switch to kwargs structure
 
 % parse the inputs and set defaults
 if nargin < 3 || isempty(dim), dim = 1; end
@@ -95,8 +98,8 @@ if device
     
     % specify the kernel
     kern = parallel.gpu.CUDAKernel(...
-        fullfile(src.folder, [src.name '.ptx']),...
-        fullfile(src.folder, [src.name '.cu']), ...
+        [src.name '.ptx'],... % must be on the path
+        fullfile(src.folder, [src.name '.cu']), ... % must be in source
         ['conv' suffix]);
     
     % setup the execution size
@@ -124,19 +127,9 @@ if device
     
 else
     % vectorized MATLAB on CPU - perform convolution manually for vectors
-    % - parfor handles implicit allocation and avoids data copies
-    % z = zeros(sz, 'like', To); 
+    % parfor handles implicit allocation and avoids data copies
 
-    %{
-    for (l = (0:(L-1)))
-        [i, j] = deal(int32(0), int32(l0 - l)); % start indices for this lag
-        R = max(M - 0 - 1, N - j - 1); % range of indices for this lag
-        I = i : (i + R); % all x indices in range
-        J = j : (j + R); % all y indices in range
-        val = (0 <= I & I < M & 0 <= J & J < N); % valid indices
-        z(1+l,:) = sum(x(1+I(val),:) .* conj(y(1+J(val),:)), 1); % convolution
-    end
-    %}
+    % TODO: use the current pool if not on a GPU
     
     % just for-loop it
     parfor (s = 1:S, 0), z(:,s) = conv(x(:,s), y(:,s), shape); end

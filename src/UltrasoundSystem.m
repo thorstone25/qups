@@ -52,7 +52,7 @@ classdef UltrasoundSystem < handle
             % UltrasoundSystem object using name value pairs. It's the
             % recommended method of construction.
             %
-            
+
             
             % initialize Target / Transducer array
             xdc_args = {};
@@ -2338,6 +2338,7 @@ classdef UltrasoundSystem < handle
             defs = [...
                 UltrasoundSystem.genCUDAdef_beamform(),...
                 UltrasoundSystem.genCUDAdef_interpd(),...
+                UltrasoundSystem.genCUDAdef_convd(),...                
                 ];
         end
 
@@ -2382,6 +2383,28 @@ classdef UltrasoundSystem < handle
             % filename
             d.Source = {...
                 'interpd.cu', ...
+                }';
+
+            d.IncludePath = {}; % include folders
+            d.Libraries = {}; % libraries
+
+            d.CompileOptions = {...  compile options
+                'use_fast_math',...
+                };
+
+            d.Warnings = {... warnings
+                'no-deprecated-gpu-targets'...
+                };
+            
+            d.DefinedMacros = {};
+        end
+
+        function d = genCUDAdef_convd()
+            % no halp :(
+
+            % filename
+            d.Source = {...
+                'conv_cuda.cu', ...
                 }';
 
             d.IncludePath = {}; % include folders
