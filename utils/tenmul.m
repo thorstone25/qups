@@ -1,24 +1,31 @@
 function z = tenmul(y, x, i, m)
-% TENMUL Tensor multiplication
+% TENMUL - Tensor multiplication
 %
 % z = TENMUL(y, x, i, m) multiplies the tensors x and y using dimensions i
 % as the inner dimensions (inner-product), m as the matching dimensions
 % to be point-wise multiplied(hadamard), and the rest of the dimensions are
-% assumed to be the outer dimensions (outer-product). All outer dimensions
-% must be singelton in either x or y.
+% assumed to be the outer dimensions (outer-product). 
 % 
+% The inner-product dimension is multiplied and summed via matrix
+% multiplication. The output is singleton in this dimension. All outer 
+% dimensions must be singelton in either x or y.
+%
 % Example:
 %
 % x = rand([4, 3, 1, 1, 5]); 
 % y = rand([4, 1, 2, 1, 5]); 
-% z = tenmul(y, x, 1, 5); % z is size [1, 3, 2, 1, 5]  
+% z = tenmul(y, x, 1, 5); % matrix multiply in dim 1
+% assert(isequal(size(z), [1, 3, 2, 1, 5]))
+%
+% See also PAGEMTIMES PERMUTE SWAPDIM
 
 % TODO: make sure i, m are row vectors within dims of x, y
+% TODO: handle empty cases better i.e. i or m is empty.
 
 % all dims
 d = max(ndims(x), ndims(y));
 
-% hack: is i or m is empty, force it to a singleton dimension
+% hack: if i or m is empty, force it to a singleton dimension
 if nargin < 4 || isempty(m), m = d + 1; d = d + 1; end % expand up one      dimension
 if nargin < 3 || isempty(i), i = m + 1; d = d + 1; end % expand up one more dimension
 
