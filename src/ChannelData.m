@@ -444,7 +444,7 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also CHANNELDATA/SAMPLE 
 
-
+            if isscalar(chd.t0), chd = copy(chd); end % short-circuit
             if nargin < 2, interp = 'cubic'; end % default interpolation
             if nargin < 3, t0_ = min(chd.t0, [], 'all'); end % get global start time
             toff = chd.t0 - t0_; % get offset across upper dimensions
