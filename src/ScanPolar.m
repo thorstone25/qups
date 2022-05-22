@@ -83,6 +83,7 @@ classdef ScanPolar < Scan
             og = self.origin;
             [Z, X, Y] = pol2cart(deg2rad(A), R, Y);
             [X, Y, Z] = deal(X + og(1), Y + og(2), Z + og(3));
+            if nargout == 1, X = {X, Y, Z}; end
         end
         function [R, A, Y, sz] = getImagingGridPolar(self)
             % GETIMAGINGGRIDPOLAR - Return ND-arrays of cartesian coordinates
@@ -91,6 +92,9 @@ classdef ScanPolar < Scan
             % multidimensional arrays R, A, and Y corresponding to the 
             % polar pixel coordinates of the ScanPolar self and the size of
             % the Scan sz.
+            %
+            % G = GETIMAGINGGRID(self) returns the R/A/Y arrays in a 1 x 3
+            % cell (as in G = {R, A, Y}).
             %
             % Outputs:
             %   R -    r coordinate (m)
@@ -109,6 +113,7 @@ classdef ScanPolar < Scan
             [R, A, Y] = deal(grid{:}); % send to variables
             sz = self.size; % output image size
             assert(all(size(R,1:3) == sz), 'Internal error: size mismatch.') %#ok<CPROP> 
+            if nargout == 1, R = {R, A, Y}; end % pack if 1 output requested
         end
                 
         function setImageGridOnTarget(self, target, margin)

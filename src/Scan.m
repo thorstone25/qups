@@ -45,12 +45,15 @@ classdef Scan < matlab.mixin.Copyable
         %
         % [X, Y, Z, sz] = GETIMAGINGGRID(self) returns the
         % multidimensional arrays corresponding to the positions of the
-        % imaging grid and the size of the arrays
+        % imaging grid and the size of the arrays.
         %
-        % The dimensions of change for each variable is given by the
+        % G = GETIMAGINGGRID(self) returns the X/Y/Z arrays in a 1 x 3
+        % cell (as in G = {X, Y, Z}).
+        %
+        % The dimension of change for each variable is given by the
         % 'order' property of the Scan
         %
-        % outputs:
+        % Outputs:
         %   - X:    x coordinate (m)
         %   - Y:    y coordinate (m)
         %   - Z:    z coordinate (m)
@@ -196,8 +199,8 @@ classdef Scan < matlab.mixin.Copyable
             % apod = TRANSLATINGAPERTUREAPODIZATION(self, seq, rx,tol) 
             % creates  an ND-array to mask delayed data using the transmit 
             % Sequence seq and the receive Transducer rx in order to form 
-            % the corresponding image with a limited translating aperture 
-            % of size tol.
+            % the corresponding image with a translating aperture of size 
+            % tol.
             %
             % For a ScanCartesian, rx must be a TransducerArray and the 
             % aperture is limited to receive elements that are within tol 

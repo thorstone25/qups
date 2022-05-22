@@ -24,6 +24,9 @@ classdef ScanCartesian < Scan
         yb                  % image bounds in y (m)
         zb                  % image bounds in z (m)
         nPix                % number of pixels in the imaging grid
+        dx                  % step size in x if linearly spaced (m)
+        dy                  % step size in y if linearly spaced (m)
+        dz                  % step size in z if linearly spaced (m)
     end
     
     properties(Dependent, Hidden)
@@ -92,6 +95,7 @@ classdef ScanCartesian < Scan
             [X, Y, Z] = deal(grid{:}); % send to variables
             sz = self.size; % output image size
             assert(all(size(X,1:3) == sz), 'Internal error: size mismatch.') %#ok<CPROP> 
+            if nargout == 1, X = {X, Y, Z}; end % pack if 1 output requested
         end
                 
         function setImageGridOnTarget(self, target, margin)
@@ -181,6 +185,11 @@ classdef ScanCartesian < Scan
         % set boundaries in y
         function zlim(self, zb), self.zb = zb; end
         % set boundaries in z
+
+        % get step size - Inf for scalar axes, NaN if not regularly spaced
+        function d = get.dx(self), d = uniquetol(diff(self.x)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dy(self), d = uniquetol(diff(self.y)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dz(self), d = uniquetol(diff(self.z)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
         % get resolution
         function r = get.resx(self), r = diff(self.xb) / (self.nx - 1); end
