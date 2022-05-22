@@ -41,7 +41,62 @@ classdef Medium < handle
             end
         end
         
-        % get sound speed map
+        function [c, rho, BoA, alpha, alphap] = props(self, scan, prop)
+            % PROPS - Return the properties of the medium
+            %
+            % c = PROPS(self, scan) returns the sound speed of the Medium
+            % defined on the Scan scan.
+            % 
+            % [c, rho] = PROPS(...) also returns the density of the Medium.
+            %
+            % [c, rho, BoA] = PROPS(...) also returns the non-linearity
+            % paramemter B/A (B over A). If undefined, the values are all
+            % NaN.
+            %
+            % [c, rho, BoA, alpha] = PROPS(...) also returns the
+            % attenuation parameter alpha.
+            % 
+            % [c, rho, BoA, alpha, alphap] = PROPS(...) also returns the
+            % global attenuation power law parameter alphap. This usage may
+            % be deprecated
+            %
+            % [p1, p2, ...] = PROPS(self, scan, PROP) returns the requested
+            % properties of PROP only. PROP must be a string array
+            % containing the names of the output property variables 
+            % (e.g. ["c", "rho"]).
+            % 
+            % See also TARGET ARGN GETPROPERTYMAP
+
+            % parse inputs
+            if nargin >= 3, prop = string(prop); end % enforce string 
+
+            % get the grid points on the scan
+            pts = scan.getImagingGrid(); 
+
+            % stack points in the first dimension
+            pts = cellfun(@(x) {shiftdim(x, -1)}, pts);
+            pts = cat(1, pts{:});
+
+            % get property map for all points (dimensions are shifted on
+            % output)
+            nms = ["c", "rho", "BoA", "alpha", "alphap"]; % property names
+            prps(1,:) = cellstr(nms);
+            [prps{2,:}] = getPropertyMap(self, pts); % values
+            prps = struct(prps{:}); %#ok<NASGU> % make a struct for easier output mapping
+
+            % remap outputs based on prop input
+            % TODO: there's gotta be a better way to get dynamic variables
+            % ... or we can just use varargout
+            if nargout == 1 && nargin >= 3
+                for i = 1:numel(prop) % map each requested output
+                    eval(nms(i) + "=prps.('" + prop(i) + "');"); 
+                end
+            else % map all outputs directly
+                for n = nms, eval(n + "=prps.('" + n + "');"); end
+            end
+        end
+
+        % get properties map
         function [c, rho, BoA, alpha, alphap] = getPropertyMap(self, points)
             
             
@@ -112,6 +167,7 @@ classdef Medium < handle
                 end
             end
             
+            % TODO: sizing should be handled outside of this function
             % restore sizing
             c      = shiftdim(c     , 1);
             rho    = shiftdim(rho   , 1);
@@ -205,8 +261,7 @@ classdef Medium < handle
             % See also SCAN/IMAGESC, IMAGESC
 
             % get the imaging grid
-            grd = cell(1,3); % to gather X, Y, Z
-            [grd{:}] = scan.getImagingGrid();
+            grd = scan.getImagingGrid();
 
             % shift dimensions to 1 x ...
             grd = cellfun(@(x) shiftdim(x, -1), grd, 'UniformOutput', false);
