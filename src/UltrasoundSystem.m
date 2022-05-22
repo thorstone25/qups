@@ -1960,16 +1960,17 @@ classdef UltrasoundSystem < handle
             B = reshape(B, image_size);        
         end
     
-        function b = adjointbf(self, chd, c0)
-            % ADJOINTBF - Adjoint method beamformer
+        function b = bfAdjoint(self, chd, c0)
+            % BFADJOINT - Adjoint method beamformer
             %
-            % b = ADJOINTBF(self, chd) beamforms the ChannelData chd using
+            % b = BFADJOINT(self, chd) beamforms the ChannelData chd using
             % an adjoint method.
             % 
-            % b = ADJOINTBF(self, chd, c0) uses an assumed sound speed c0
+            % b = BFADJOINT(self, chd, c0) uses an assumed sound speed c0
             % for the green's functions. The default is 1540 (m/s).
             %             
             % See also ULTRASOUNDSYSTEM/DAS ULTRASOUNDSYSTEM/FOCUSTX
+            % ULTRASOUNDSYSTEM/BFEIKONAL
 
             % TODO: include apodization, device, other keyword arguments
 
@@ -2055,6 +2056,127 @@ classdef UltrasoundSystem < handle
             % revert to normal dimensions
             b = shiftdim(b,4); % [I] x ...
         end    
+
+        function b = bfEikonal(self, chd, medium, cscan, varargin)
+            % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
+            %
+            % b = BFEIKONAL(self, chd, medium) creates a b-mode 
+            % image b from the ChannelData chd and Medium medium using the 
+            % delays given by the solution to the eikonal equation. The 
+            % equation is solved via the fast marching method.
+            % 
+            % b = BFEIKONAL(self, chd, medium, cscan) defines the Medium on
+            % the ScanCartesian cscan rather than on the UltrasoundSystem
+            % scan property.
+            %
+            % b = BFEIKONAL(..., Name,Value, ...) defines additional
+            % parameters via Name/Value pairs
+            %
+            % Inputs:
+            %   interp     - interpolation method for griddedInterpolant and ChannelData methods
+            %   parcluster - Parcluster object    
+            % 
+            % See also DAS 
+
+            % if not given a new Scan, use the UltrasoundSystem Scan
+            if nargin < 3 || isempty(cscan), cscan = self.scan; end
+
+            % ensure that the cscan is on Cartesian coordinates
+            assert(isa(cscan, 'ScanCartesian'), "The medium Scan must be a ScanCartesian (given a " + class(cscan) + ").");
+
+            % defaults
+            kwargs.interp = 'linear';
+            kwargs.parcluster = gcp('nocreate');
+
+            % set input options
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % get cluster
+            clu = kwargs.parcluster;
+            if isempty(clu) || isa(clu, 'parallel.ThreadPool'), clu = 0; end % run on CPU
+
+            % get worker transfer function
+            if(isempty(clu) || clu == 0)
+                 constfun = @(x) struct('Value', x);
+            else,constfun = @parallel.pool.Constant;
+            end
+
+            % get the grid definition
+            dp = [cscan.dx, cscan.dy, cscan.dz]; % step size each dim
+            grd = {cscan.x, cscan.y, cscan.z}; % grid definition
+            nsdims = (~isinf(dp)); % non-singleton dimensions
+            dp = uniquetol(dp(nsdims)); % spatial step size
+            ord = cscan.getPermuteOrder(); % order of grid
+            sel = ord(ismember(ord, find(nsdims))); % selection of grid indices
+            grd = grd(sel); % re-order and trim the grid
+            
+            % check the grid spacing is identical in non-singleton 
+            % dimensions
+            assert(numel(dp) == 1, ...
+                'The cgrid must have equally sized steps in all non-singleton dimensions.'...
+                );
+
+            % check the data is FSA and matches transmit / receive
+            % transducers
+            assert(self.tx.numel == chd.M, 'Number of transmits must match number of transmitter elements.')
+            assert(self.rx.numel == chd.N, 'Number of receives must match number of receiver elements.')
+
+            % get the transmit, receive
+            Pv = self.tx.positions();
+            Pr = self.rx.positions();
+            
+            % get the sound speed in the Medium
+            c = props(medium, cscan, 'c');
+
+            % convert positions to sound speed grid coordinates (1-based)
+            og = [cscan.x(1); cscan.y(1); cscan.z(1)];
+            [Pvc, Prc] = dealfun(@(x) sub((x - og) ./ dp, sel, 1) + 1, Pv, Pr); % ([2|3] x [N|M])
+
+            % enforce type and send data to workers maybe
+            cnorm = constfun(double(gather(c ./ dp)));
+
+            % get one-way delays within the field then generate samplers, using
+            % reduced dimensions ([M|N] x {Cx x Cy x Cz})
+            gi_opts = {'cubic', 'none'};
+            tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
+            parfor (m = 1:chd.M, clu)
+                % fprintf('tx %i\n', m);
+                [tau_map_tx] = msfm(squeeze(cnorm.Value), double(Pvc(:,m))); %#ok<PFBNS> % travel time to each point
+                tx_samp{m} = griddedInterpolant(grd, tau_map_tx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
+            end
+            parfor (n = 1:chd.N, clu)
+                % fprintf('rx %i\n', n);
+                [tau_map_rx] = msfm(squeeze(cnorm.Value), double(Prc(:,n))); %#ok<PFBNS> % travel time to each point
+                rx_samp{n} = griddedInterpolant(grd, tau_map_rx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
+            end
+            fprintf('\nEikonal time delays completed in %0.3f seconds.\n', toc(tt));
+
+            % get the imaging grid
+            gi = self.scan.getImagingGrid(); % {I1 x I2 x I3} each
+            gi = gi(sel); % select and trim dimensions 
+
+            % splice
+            sz = self.scan.size; % original size
+            interp_method = kwargs.interp; 
+
+            % TODO: include apodization on receive
+            % TODO: allow options to specify summation
+            % sample for each tx/rx
+            chd = rectifyt0(chd); % TODO: use an indexing function on the object to handle t0 subtleties
+            b = 0; % initialize
+            for (m = 1:chd.M) % for each transmit
+                tau_tx = tx_samp{m}(gi{:}); % transmit delay
+                parfor (n = 1:chd.N, clu) % for each receive %TODO: avoid parfor with GPUs
+                    chd_ = copy(chd); 
+                    chd_.data = sub(chd_.data, {n,m}, [2,3]); % splice TODO: splice object, not just data
+                    tau = tau_tx + rx_samp{n}(gi{:}); %#ok<PFBNS> % get sample time (I1 x I2 x I3)
+                    b = b + chd_.sample(tau(:), interp_method); % sample ([I1 x I2 x I3] x 1 x 1 x F x ...)
+                end
+            end
+
+            % unfold lower dimensions to image sizing (I1 x I2 x I3 x F x ...)
+            b = reshape(b, [sz, size(b,4:max(4,ndims(b)))]); 
+        end
     end
     
     % Receive Aperture beamforming methods: operate along rx dimension
