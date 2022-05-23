@@ -635,6 +635,7 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % % Show the data in the frequency domain in MHz
             % figure; 
+            % 
             % imagesc(fft(chd), 1, 'YData', 1e-6*chd.fs*(0:chd.T-1)/chd.T)
             %
             % See also IMAGESC
@@ -698,6 +699,58 @@ classdef ChannelData < matlab.mixin.Copyable
                 h = imagesc(self, f, ax, varargin{:});
                 drawnow limitrate; pause(1/20);
             end
+        end
+
+        function gif(chd, filename, h, varargin)
+            % GIF - Write the ChannelData to a GIF file
+            %
+            % GIF(chd, filename) writes the ChannelData chd to the file
+            % filename.
+            %
+            % GIF(chd, filename, h) updates the image handle h rather than
+            % creating a new image. Use imagesc to create an image handle.
+            % You can then format the figure prior to calling this
+            % function.
+            %
+            % Example:
+            % sz = [2^8, 2^6, 2^6];
+            % x = complex(rand(sz), rand(sz)) - (0.5 + 0.5i);
+            % chd = angle(ChannelData('data', x));
+            % figure;
+            % h = imagesc(chd, 1);
+            % colormap hsv; 
+            % colorbar;
+            % gif(chd, 'random_phase.gif', h);
+            %
+            % See also IMAGESC ANIMATE
+
+            % defaults
+            kwargs = struct('LoopCount', Inf, 'DelayTime', 1/15);
+
+            % parse inputs
+            for i = 1:2:numel(varargin), kwargs.(varargin{1}) = varargin{i+1}; end
+
+            % if no image handle, create a new image
+            if nargin < 3, h = imagesc(chd, 1); end
+            
+            x = chd.data; % all data
+            M_ = prod(size(x, 3:min(3,ndims(x)))); % all slices
+
+            % get image frames
+            % TODO: there's some weird bug where the size is randomly off 
+            % by 10 pixels here? Can I work around it?
+            for m = M_:-1:1, h.CData(:) = x(:,:,m); fr{m} = getframe(h.Parent.Parent); end
+            
+            % get color space for the image
+            [~, map] = rgb2ind(fr{1}.cdata, 256, 'nodither');
+
+            % get all image data
+            im = cellfun(@(fr) {rgb2ind(fr.cdata,map,'nodither')}, fr);
+            im = cat(4, im{:});
+
+            % forward to imwrite
+            nvkwargs = struct2nvpair(kwargs);
+            imwrite(im, map, filename, nvkwargs{:});
         end
     end
 
