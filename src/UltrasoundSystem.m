@@ -716,7 +716,7 @@ classdef UltrasoundSystem < handle
             % transducer)
             p = {getSIMUSParam(target), getSIMUSParam(self.xdc)};
             p = cellfun(@struct2nvpair, p, 'UniformOutput', false);
-            p = cat(1, p{:});
+            p = cat(2, p{:});
             p = struct(p{:});
 
             % set transmit sequence ... the only way we can
@@ -1402,6 +1402,7 @@ classdef UltrasoundSystem < handle
                 
                 % apply delay via convolution with a
                 % shifted impulse response function
+                % TODO: check that the signs here are okay
                 if(~rx_imp_is_delta) % rx impulse not a delta: delay the impulse
                     imp_samp = rx_imp.sample(t_rx - delays); %#ok<PFBNS> % (T_data x nSubEl)
                     resp_samp = convd(resp_samp, imp_samp, 1, 'full', 'device', device); % (T_resp x nSubEl)
@@ -1411,7 +1412,7 @@ classdef UltrasoundSystem < handle
                         'Use a small rect function to avoid this. ']);
                     imp_samp = vec(rx_imp.sample(t_rx)); % (T_data x nSubEl)
                     conv_samp = convn(resp_samp, imp_samp, 'full'); % (T_resp x nSubEl) % GPU OOM?
-                    conv_sampler = griddedInterpolant(t_resp, zeros([T_resp,1], 'like', t_resp), interp, 'none');
+                    conv_sampler = griddedInterpolant(t_resp, zeros([T_resp,1], 'like', t_resp), 'linear', 'none');
                     resp_samp = zeros([T_resp, nSubEl], 'like', conv_samp);
                     for i = nSubEl:-1:1
                         conv_sampler.Values(:) = conv_samp(:,i);
@@ -1964,7 +1965,7 @@ classdef UltrasoundSystem < handle
             % BFADJOINT - Adjoint method beamformer
             %
             % b = BFADJOINT(self, chd) beamforms the ChannelData chd using
-            % an adjoint method.
+            % an adjoint matrix method.
             % 
             % b = BFADJOINT(self, chd, c0) uses an assumed sound speed c0
             % for the green's functions. The default is 1540 (m/s).
@@ -2073,10 +2074,15 @@ classdef UltrasoundSystem < handle
             % parameters via Name/Value pairs
             %
             % Inputs:
-            %   interp     - interpolation method for griddedInterpolant and ChannelData methods
-            %   parcluster - Parcluster object    
+            %   interp     - interpolation method for ChannelData methods
+            %   parcluster - Parcluster object
+            %   apod       - apodization - must be a size I1 x I2 x I3 x N
+            %                x M array where [I1 x I2 x I3] is the size of
+            %                the scan property, N is the number of receive
+            %                elements and M is the number of transmitter
+            %                elements.
             % 
-            % See also DAS 
+            % See also DAS BFADJOINT
 
             % if not given a new Scan, use the UltrasoundSystem Scan
             if nargin < 3 || isempty(cscan), cscan = self.scan; end
@@ -2087,6 +2093,7 @@ classdef UltrasoundSystem < handle
             % defaults
             kwargs.interp = 'linear';
             kwargs.parcluster = gcp('nocreate');
+            kwargs.apod = 1;
 
             % set input options
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
@@ -2164,18 +2171,21 @@ classdef UltrasoundSystem < handle
             % sample for each tx/rx
             chd = rectifyt0(chd); % TODO: use an indexing function on the object to handle t0 subtleties
             b = 0; % initialize
+            [Na, Ma] = size(kwargs.apod, 4:5);
+            hw = waitbar(0,'Beamforming ...'); % create a wait bar
             for (m = 1:chd.M) % for each transmit
                 tau_tx = tx_samp{m}(gi{:}); % transmit delay
+                apod_tx = sub(kwargs.apod, min(m, Ma), 5); % recieve apodization per transmit
                 parfor (n = 1:chd.N, clu) % for each receive %TODO: avoid parfor with GPUs
+                    a = sub(apod_tx, min(n, Na), 4); % receive apodization per receive
                     chd_ = copy(chd); 
                     chd_.data = sub(chd_.data, {n,m}, [2,3]); % splice TODO: splice object, not just data
                     tau = tau_tx + rx_samp{n}(gi{:}); %#ok<PFBNS> % get sample time (I1 x I2 x I3)
-                    b = b + chd_.sample(tau(:), interp_method); % sample ([I1 x I2 x I3] x 1 x 1 x F x ...)
+                    b = b + a .* reshape(chd_.sample(tau(:), interp_method), sz); % sample (I1 x I2 x I3 x F x ...)
                 end
+                if isvalid(hw), waitbar(m/chd.M, hw); end % update if not closed
             end
-
-            % unfold lower dimensions to image sizing (I1 x I2 x I3 x F x ...)
-            b = reshape(b, [sz, size(b,4:max(4,ndims(b)))]); 
+            if isvalid(hw), close(hw); end % close if not closed
         end
     end
     
