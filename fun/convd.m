@@ -4,13 +4,20 @@ function [C, lags] = convd(A, B, dim, shape, varargin)
 % C = CONVD(A, B) computes the convolution of A with B in dimension 1. A 
 %   and B may differ in size in dimension 1 only. All other dimensions must
 %   be of equal size.
+% 
 % C = CONVD(A, B, dim) executes in dimension "dim" instead of dimension 1
-% C = CONVD(..., shape) selects the shape of the returned convolution. Can 
-%   be one of {'full'*|'same'|'valid'}. The default is 'full'.
+% 
+% C = CONVD(A, B, dim, shape) selects the shape of the output. Must be one 
+%   of {'full'*|'same'|'valid'}. The default is 'full'.
+% 
 % C = CONVD(..., 'device', dev) selects which gpu device to use. 
-%   dev = -1 specifies the device returned by gpuDevice() 
+%   dev = -1 specifies the current device (returned by gpuDevice())
 %   dev = n where 1 <= n <= gpuDeviceCount selects device n.
 %   dev = 0 specifies no device and operates in native MATLAB code (default) 
+%
+% C = CONVD(..., 'parcluster', clu) performs the convolution in parallel on
+%   the parcluster clu. The default is the current parallel pool. If the
+%   data is on a GPU, the cluster object is not used.
 %
 % [C, lags] = CONVD(...) returns the lags of y in the same dimension as the
 % computation.
@@ -19,32 +26,28 @@ function [C, lags] = convd(A, B, dim, shape, varargin)
 %
 % See also CONV CONV2 CONVN
 
-% TODO: switch to kwargs structure
-
 % parse the inputs and set defaults
 if nargin < 3 || isempty(dim), dim = 1; end
 if nargin < 4 || isempty(shape), shape = 'full'; end
-device = 0;
+
+% defaults
+kwargs.device = 0; 
+kwargs.parcluster = gcp('nocreate'); 
 
 % get optional inputs
-for i = 1:2:numel(varargin)
-    switch varargin{i}
-        case 'device'
-            device = varargin{i+1};
-    end
-end
+for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
 % permute so that dim becomes the first dimension
 % flip 2nd arg on CPU so that stride is positive
 ord = [dim, setdiff(1:max(ndims(A), dim), dim)];
-x =      permute(A, ord); % shared-copy?
-y = flip(permute(B, ord),1); % shared-copy?
+x = permute(A, ord); % shared-copy?
+y = permute(B, ord); % shared-copy?
 
 % check data sizes
 sz_x = size(x);
 sz_y = size(y);
 assert(numel(sz_x) == numel(sz_y) && all(sz_x(2:end) == sz_y(2:end)),...
-    'Incompatible sizes.');
+    "Incompatible sizes [" + join(string(size(sz_x))+",") + "], and [" + join(string(size(sz_y))+",") + "].");
 
 % get computation/output data type and precision
 complex_type = ~isreal(A) || ~isreal(B);
@@ -79,28 +82,29 @@ L = numel(lags); % number of lags
 S = prod(sz_x(2:end)); % number of slices
 sz = [L, sz_x(2:end)]; % output is lags by size of A
 
-% operate on GPU
-if device
-    if device > 0
-        g = gpuDevice(device); % access a specific gpu device
-    else
-        g = gpuDevice; % access the current gpu device
-    end
-    
+% specify the kernel file
+src.folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
+src.name = 'conv_cuda';
+
+% initialize the GPU if requested
+if kwargs.device > 0
+    g = gpuDevice(kwargs.device); % access a specific gpu device
+elseif kwargs.device < 0
+    g = gpuDevice; % access the current gpu device
+end
+
+% whether/how to operate on GPU
+if kwargs.device && exist([src.name '.ptx'], 'file')
     % get the kernel suffix
     suffix = '';
     if complex_type, suffix = [suffix 'c']; end
     if single_type,  suffix = [suffix 'f']; end
     
-    % the kernel file
-    src.folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
-    src.name = 'conv_cuda';
-    
     % specify the kernel
     kern = parallel.gpu.CUDAKernel(...
         [src.name '.ptx'],... % must be on the path
         fullfile(src.folder, [src.name '.cu']), ... % must be in source
-        ['conv' suffix]);
+        ['conv' suffix]); % function name in the kernel
     
     % setup the execution size
     lags_per_thread = g.MaxThreadsPerBlock;
@@ -122,22 +126,27 @@ if device
         case 'valid', z = sub(x, 1:L, 1); % implicit pre-allocation - z will be smaller than x
     end
         
-    % queue the kernel
-    z = kern.feval(x, y, z);
+    % run the kernel
+    z = kern.feval(x, flip(y,1), z); % y is flipped for the kernel
     
 else
     % vectorized MATLAB on CPU - perform convolution manually for vectors
     % parfor handles implicit allocation and avoids data copies
 
-    % TODO: use the current pool if not on a GPU
+    % move to GPU if requested
+    if kwargs.device, [x, y] = deal(gpuArray(x), gpuArray(y)); end
+
+    % Use the current pool if not on a GPU
+    clu = kwargs.parcluster;
+    if isempty(clu) || isa(x, 'gpuArray') || isa(y, 'gpuArray'), clu = 0; end
     
-    % just for-loop it
-    parfor (s = 1:S, 0), z(:,s) = conv(x(:,s), y(:,s), shape); end
+    % for-loop it in, parallel if a pool exists
+    parfor (s = 1:S, clu), z(:,s) = conv(x(:,s), y(:,s), shape); end
 end
 
 % cast to output type / dimensions - try to use implicit in-place assignment
 z = ipermute(reshape(z, sz), ord);
 z = cast(z, 'like', To); 
 C = z; % shared-copy
-lags = ipermute(lags, ord);
+lags = ipermute(lags, ord); % put lags in same dimensions as operation
 
