@@ -29,9 +29,9 @@ classdef Sequence < handle
     
     properties
         type = 'FSA'            % {'FSA', 'PW', 'VS'}
-        focus = [0;0;0]         % (3 x S) array specifying the focal point or plane-wave direction (m)
+        focus = zeros([3,0]);   % (3 x S) array specifying the focal point or plane-wave direction (m)
         c0 = 1540               % sound speed for the transmit delays (m/s)
-        pulse = Waveform.Delta()% ([1|N] x [1|S]) transmit Waveform (array)
+        pulse = Waveform.Delta()% transmit Waveform
     end
     
     properties(Dependent)
@@ -65,7 +65,7 @@ classdef Sequence < handle
             % where xdc is a QUPS transducer and t0 is the start time in
             % the QUPS coordinate system.
             %
-            % See also Transducer/getUSTBProbe
+            % See also TRANSDUCER/GETUSTBPROBE
 
 
             % initialize all wave objects
@@ -225,11 +225,7 @@ classdef Sequence < handle
             self.focus = f;
         end
         function f = get.focus(self)
-            if any(ismember(self.type, ["FSA", "full-synthetic-aperture"]))
-                f = zeros([3,0]);
-            else
-                f = self.focus;
-            end
+            f = self.focus;
         end
     end
 
