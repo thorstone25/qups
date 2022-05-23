@@ -8,11 +8,12 @@ classdef Scatterers < handle
         BoA_scat = ones([1, 0]) % scatterring non-linearity as a 1 x S vector
         alpha_scat = ones([1, 0]) % scatterring attenuating factor power as a 1 x S vector
         alphap_scat = ones([1, 0])  % scatterring attenuating power as a 1 x S vector
-        scat_mode = 'ratio'     % mode of scattering, either absolute, or 
-                                % proportional to medium reference properties 
-                                % {'ratio*' | 'abs'}
+        % mode of scattering, either absolute, or
+        % proportional to medium reference properties
+        % {'ratio*' | 'abs'}
+        scat_mode = 'ratio'
     end
-    
+
     properties(Dependent, Hidden)
         xb  % x bounds as a 1 x 2 vector
         yb  % y bounds as a 1 x 2 vector
@@ -53,13 +54,8 @@ classdef Scatterers < handle
             
 
         end
-        function n = numScat(self)
-            n = numel(self.amp);
-        end
-        
-        function bounds = getBounds(self)
-            bounds = cat(1, self.xb, self.yb, self.zb);
-        end
+        function n = numScat(self), n = numel(self.amp); end
+        function bounds = getBounds(self), bounds = cat(1, self.xb, self.yb, self.zb); end
     end
 
     %
@@ -68,8 +64,8 @@ classdef Scatterers < handle
             % MODMAP - Modification map 
             % 
             % [ind_prop, c, rho, BonA, alpha_coeff] = MODMAP(self, points)
-            % returns the indices and properties to modify a the given
-            % points to include the scatterers and their scatterering
+            % returns the indices and properties to modify a Medium at the 
+            % given points to include the scatterers and their scatterering
             % properties.
             %
             % See also MEDIUM/GETPROPERTYMAP
@@ -112,7 +108,7 @@ classdef Scatterers < handle
     % plot methods
     methods 
         function h = plot(self, varargin)
-            % SCATTERERS/PLOT - overload the plot function
+            % PLOT - overload the plot function
             % 
             % PLOT(self) plots the locations of the Scatterers self.
             %

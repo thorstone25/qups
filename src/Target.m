@@ -51,7 +51,7 @@ classdef Target < Medium & Scatterers
         
         % get kWave compatible medium struct
         function kmedium = getKWaveMedium(self, kgrid, korigin)
-            % kmedium = getKWaveMedium(self, kgrid, korigin)
+            % kmedium = GETKWAVEMEDIUM(self, kgrid, korigin)
             %
             %   function to create a kWave compatible medium structure for
             %   a given Target.
