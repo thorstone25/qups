@@ -13,10 +13,11 @@
 %% 
 % * Create linear and curvilinear (convex) transducers
 % * Define full-synthetic-aperture, focused, diverging, or plane-wave transmits
-% * Beamform to create a b-mode image
+% * Beamform using traditional delay-and-sum, the eikonal equation, or the adjoint 
+% method to create a b-mode image
 % * Simulate point targets (via MUST or FieldII) or distributed media (via k-Wave)
 %% 
-% Please submit issues or feature requests via <https://github.com/thorstone25/qups/issues 
+% Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
 % 
 % 
@@ -30,7 +31,7 @@
 %#ok<*BDLGI> ignore casting numbers to logical values
 device = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
 % setup;  % add all the necessary paths
-setup parallel cache; % start a parpool for faster processing | recompile and cache local mex/CUDA binaries
+setup parallel CUDA cache; % start a parpool for faster processing & setup CUDA paths & recompile and cache local mex/CUDA binaries
 
 try hw = waitbar(0, 'test', 'Visible', 'off'); close(hw); end %#ok<TRYNC> % R2021b bug - errors on first call
 %% 
@@ -55,9 +56,9 @@ end
 % Choose the simulation region
 % Make sure it covers the target and the transducer!
 
-switch "large"
-    case 'small', tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 16), 'z', linspace(  0e-3, 60e-3, 16));
-    case 'large', tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 16), 'z', linspace(-30e-3, 60e-3, 16));
+switch "small"
+    case 'small', tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 1+40*2^3), 'z', linspace(  0e-3, 60e-3, 1+60*2^3));
+    case 'large', tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 1+100*2^1), 'z', linspace(-30e-3, 60e-3, 1+90*2^1));
 end
 % Choose a transmit sequence
 % For linear transducers only!
@@ -150,6 +151,7 @@ set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
 
 % Construct an UltrasoundSystem object, combining all of these properties
 us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
+us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 * us.fc
 
 % Simulate a point target
 % run on CPU to use spline interpolation
@@ -177,7 +179,6 @@ chd = singleT(chd); % use less data
 chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC 
 if device, chd = gpuArray(chd); end % move data to GPU
 if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
-% chd = rectifyt0(chd, 'linear'); % linearly resample if needed to align t0 time axis
 
 % Run a simple DAS algorithm
 switch class(xdc)
@@ -188,7 +189,7 @@ switch seq.type
     case "VS", 
 
 %% 
-% Choose an apodization method for Virtual Source (VS) transmits
+% Choose an apodization method for Virtual Source (VS) transmit sequences
 
         switch "none"
             case 'multiline', apod = multilineApodization(us.scan, us.sequence);
@@ -197,15 +198,30 @@ switch seq.type
             case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.8);
             case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
             case 'none', apod = 1;
-        end        
+        end
+
+%% 
+% Choose an apodization method for Full Synthetic Aperture (FSA) transmit sequences
+
+    case "FSA"
+        us.sequence.focus = us.tx.positions(); % set the sequence foci to be the location of the transmitters for these profiles
+        switch "none"
+            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 19.8*scale);
+            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.8);
+            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
+            case 'none', apod = 1;
+        end
+        
     otherwise, apod = 1; % apodization profiles for plane-wave/FSA not implemented :(
 end
 
 switch "DAS"
     case "DAS"
-        b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'cubic', 'apod', apod); % use a delay-and-sum beamformer
-    case "matrix"
-        b = matrixbf(us, chd, targ.c0); % use a matrix beamformer
+        b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'spline', 'apod', apod); % use a delay-and-sum beamformer
+    case "Adjoint"
+        b = bfAdjoint(us, chd, targ.c0); % use an adjoint matrix method
+    case "Eikonal"
+        b = bfEikonal(us, chd, targ, tscan, 'interp', 'linear', 'apod', apod); % use the eikonal equation
 end
 
 % show the image
