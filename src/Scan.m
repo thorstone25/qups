@@ -268,9 +268,13 @@ classdef Scan < matlab.mixin.Copyable
             if nargin < 5, Dmax = Inf; end
             if nargin < 4, f = 1.5; end
 
-            % soft validate the transmit sequence type: it should be focused
-            if seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + seq.type + ". This may produce unexpected results."...
+            % soft validate the transmit sequence and transducer types.
+            if ~isa(rx, 'TransducerArray'), warning(...
+                    "Expected Transducer to be a TransducerArray but instead got a " + class(rx) + ". This may produce unexpected results."...
+                    )
+            end
+            if ~any(seq.type == ["VS", "FSA"]), warning(...
+                    "Expected sequence type to be VS or FSA but instead got " + seq.type + ". This may produce unexpected results."...
                     );
             end
 
@@ -314,9 +318,13 @@ classdef Scan < matlab.mixin.Copyable
             % defaults
             if nargin < 4, theta = 45; end
 
-            % soft validate the transmit sequence type: it should be focused
-            if seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + seq.type + ". This may produce unexpected results."...
+            % soft validate the transmit sequence and transducer types.
+            if ~isa(rx, 'TransducerArray'), warning(...
+                    "Expected Transducer to be a TransducerArray but instead got a " + class(rx) + ". This may produce unexpected results."...
+                    )
+            end
+            if ~any(seq.type == ["VS", "FSA"]), warning(...
+                    "Expected sequence type to be VS or FSA but instead got " + seq.type + ". This may produce unexpected results."...
                     );
             end
 
@@ -332,7 +340,7 @@ classdef Scan < matlab.mixin.Copyable
             % Zi = shiftdim(self.z(:), zdim-1+1); % (I1 x I2 x I3)
             [Xi, ~, Zi] = self.getImagingGrid(); % (I1 x I2 x I3)
 
-            % restrict to points where the angel is less than theta at the
+            % restrict to points where the angle is less than theta at the
             % receiver
             thi = atan2d(Xi - sub(Pn2,1,1), Zi - sub(Pn2,3,1)); % angle at which the ray hits the element
             apod = abs(thi - thn) <= theta; % (I1 x I2 x I3 x N x M)
