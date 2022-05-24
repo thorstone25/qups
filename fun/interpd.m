@@ -10,9 +10,9 @@ function y = interpd(x, t, dim, interp, extrapval)
 %   t is (I x N' x M'     )
 %   y is (I x N' x M' x F')
 %
-% Sampling is performed in the dimension matching I/T, element-wise in N' 
-% (where matched) and broadcasted across M' and F' such that x(k,n',m',f')  
-% = x(k,n',f') and t(i,n',m',f') = t(i,n',m'). 
+% Sampling is performed in the dimension matching I/T, element-wise in N'
+% (where matched) and broadcasted across M' and F' such that x(k,n',m',f')
+% = x(k,n',f') and t(i,n',m',f') = t(i,n',m').
 %
 % x is 0-base indexed implicitly i.e. x(1) in MATLAB <-> t == 0
 %
@@ -21,8 +21,8 @@ function y = interpd(x, t, dim, interp, extrapval)
 %
 % y = INTERPD(x, t, dim, interp) specifies the interpolation method. It
 % must be one of {"nearest", "linear"*,"cubic","lanczos3"}.
-% 
-% y = INTERPD(x, t, dim, interp, extrapval) uses extrapval as the 
+%
+% y = INTERPD(x, t, dim, interp, extrapval) uses extrapval as the
 % extrapolation value when outside of the domain of t.
 %
 % See also INTERPN INTERP1
@@ -60,37 +60,63 @@ if isempty(rdms), F = 1; else, F = prod(size(x, rdms)); end
 x = permute(x, ord);
 t = permute(t, ord);
 
-% TODO: enable non-ptx track via interp1 call
+% use ptx on gpu if available or use native MATLAB
+if exist('interpd.ptx', 'file') && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') )
+    % grab the kernel reference
+    issingle = @(x) strcmp(class(x), 'single') || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), 'single'); %#ok<STISA>
+    if issingle(x) || issingle(t)
+        [x, t] = deal(single(x), single(t));
+        suffix = "f";
+    else
+        suffix = "";
+    end
 
-% grab the kernel reference
-issingle = @(x) strcmp(class(x), 'single') || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), 'single'); %#ok<STISA> 
-if issingle(x) || issingle(t)
-    [x, t] = deal(single(x), single(t));
-    suffix = "f"; 
+    k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); % TODO: fix path
+    k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
+    k.ThreadBlockSize = k.MaxThreadsPerBlock; % why not?
+    k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), N, F];
+
+    % translate the interp flag
+    switch interp
+        case "nearest", flagnum = 0;
+        case "linear",  flagnum = 1;
+        case "cubic",   flagnum = 2;
+        case "lanczos3",flagnum = 3;
+        otherwise, error('Interp option not recognized: ' + string(interp));
+    end
+
+    % sample
+    osz = [I, max(size(t,ddms), size(x,ddms))];
+    x = complex(x); % enforce complex type
+    y = repmat(cast(extrapval, 'like', x), osz);
+    y = k.feval(y, x, t, flagnum); % compute
+
 else
-    suffix = "";
+    % get new dimension mapping
+    [~, tmp] = cellfun(@(x) ismember(x, ord), {dim, mdms, rdmst, rdmsx}, 'UniformOutput',false);
+    [Tdim, Ndim, Mdim, Fdim] = deal(tmp{:});
+
+    % compute using interp1, performing for each matching dimension
+    pdims = [Tdim, Mdim, Fdim]; % pack all except matching dims
+    [xc, tc] = deal(num2cell(x, pdims), num2cell(t, pdims));
+    parfor(i = 1:numel(xc), 0), y{i} = interp1(xc{i},tc{i},interp,extrapval); end
+
+    % fold the non-singleton dimensions of x back down into the singleton
+    % dimensions of the output
+    if isempty(Mdim), Dt = 1; else, Dt = max(Mdim(size(t,Mdim) ~= 1)); end % max non-singleton dim in t
+    if isempty(Fdim), Dx = 1; else, Dx = max(Fdim(size(x,Fdim) ~= 1)); end % max non-singleton dim in x
+    nsing = 1+find(size(t,2:maxdims) == 1); % where t singular in dims of x
+    % swap out entries of t that are singular corresponding to where x is non-singular
+    y = cellfun(@(y) {swapdim(y, nsing, Dt+nsing-1)}, y);
+    y = cat(maxdims+1, y{:}); % unpack Ndims in upper dimensions
+    if ~isempty(Ndim), lsz = size(t,Ndim); else, lsz = []; end % forward empty
+    y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
+    y = swapdim(y,Ndim,maxdims+(1:numel(Ndim))); % fold upper dimensions back into original dimensions
+
 end
-
-k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); % TODO: fix path
-k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
-k.ThreadBlockSize = k.MaxThreadsPerBlock; % why not?
-k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), N, F]; 
-
-% translate the interp flag
-switch interp
-    case "nearest", flagnum = 0;
-    case "linear",  flagnum = 1;
-    case "cubic",   flagnum = 2;
-    case "lanczos3",flagnum = 3;
-end
-
-% sample
-osz = [I, max(size(t,ddms), size(x,ddms))];
-x = complex(x); % enforce complex type
-y = repmat(cast(complex(extrapval), 'like', x), osz);
-y = k.feval(y, complex(x), t, flagnum); % compute
 
 % place back in prior dimensions
 y = ipermute(y, ord);
+
 
 
