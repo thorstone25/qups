@@ -72,7 +72,7 @@ else
 end
 
 k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); % TODO: fix path
-k.setConstantMemory('I', uint64(I), 'T', uint64(T), 'N', uint64(N), 'M', uint64(M), 'F', uint64(F));
+k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
 k.ThreadBlockSize = k.MaxThreadsPerBlock; % why not?
 k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), N, F]; 
 

@@ -256,9 +256,9 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     [T, M, N, kI, nF, Isz] = deal(tmp{:});
     
     % set constant args
-    k.setConstantMemory('I', kI); % gauranteed
-    try k.setConstantMemory('T', T); end % if not const compiled with ChannelData
-    try k.setConstantMemory('M', M, 'N', N, 'VS', VS, 'I1', Isz(1), 'I2', Isz(2), 'I3', Isz(3)); end % if not const compiled
+    k.setConstantMemory('QUPS_I', kI); % gauranteed
+    try k.setConstantMemory('QUPS_T', T); end % if not const compiled with ChannelData
+    try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
     
     % set kernel size
     k.ThreadBlockSize = nThreads;
