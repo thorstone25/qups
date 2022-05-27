@@ -91,9 +91,9 @@ while i <= nargin % go through arguments sequentially
                 else % search for cl.exe within MSVC default install directories
                     p2 = getenv('VCToolsInstallDir');
                     if isfolder(p2)
-                        p2 = fullfile(p2, 'bin', 'HostX86','x64', 'cl.exe');
+                        p2 = fullfile(p2, 'bin', 'Hostx86','x64');
                     else
-                        l = dir(fullfile('C:\Program Files*\Microsoft Visual Studio*','**','HostX86','x64', 'cl.exe'));
+                        l = dir(fullfile('C:\Program Files*\Microsoft Visual Studio*','**','Hostx86','x64', 'cl.exe'));
                         if ~isempty(l) % we found at least one
                             p2 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
                         else % nothing found
