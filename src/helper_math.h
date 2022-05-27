@@ -2034,7 +2034,7 @@ inline __device__ __host__ float4 smoothstep(float4 a, float4 b, float4 x)
 
 inline __device__ __host__ double smoothstep(double a, double b, double x)
 {
-    double y = clamp((x - a) / (b - a), 0.0f, 1.0f);
+    double y = clamp((x - a) / (b - a), 0.0, 1.0);
     return (y*y*(3.0f - (2.0f*y)));
 }
 inline __device__ __host__ double2 smoothstep(double2 a, double2 b, double2 x)
