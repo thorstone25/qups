@@ -75,28 +75,38 @@ while i <= nargin % go through arguments sequentially
                         if ~isempty(l) % we found at least one
                             p1 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
                         else % nothing found
-                            p1 = repmat("", [0, 1]); % empty string
+                            p1 = repmat("", [1, 0]); % empty string
                         end
                     end
                 end
-                if ~isempty(p1) || ~exist(fullfile(p1, 'nvcc.exe')), warning("nvcc not found at " + p1); end
+                if isempty(p1),                          warning("nvcc not found.")
+                elseif ~exist(fullfile(p1, 'nvcc.exe')), warning("nvcc not found at " + p1); 
+                end
+                p1 = string(p1); % enforce string type for casting/sizing
                 
                 % MSVC find cl.exe
                 if i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
                     p2 = varargin{i+1}; % store user path
                     i = i + 1; % move to next argument
                 else % search for cl.exe within MSVC default install directories
-                    l = dir(fullfile('C:\Program Files (x86)\Microsoft Visual Studio *','**', 'cl.exe'));                
-                    if ~isempty(l) % we found at least one
-                        p2 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
-                    else % nothing found
-                        p2 = repmat("", [0, 1]); % empty string
+                    p2 = getenv('VCToolsInstallDir');
+                    if isfolder(p2)
+                        p2 = fullfile(p2, 'bin', 'HostX86','x64', 'cl.exe');
+                    else
+                        l = dir(fullfile('C:\Program Files*\Microsoft Visual Studio*','**','HostX86','x64', 'cl.exe'));
+                        if ~isempty(l) % we found at least one
+                            p2 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
+                        else % nothing found
+                            p2 = repmat("", [1, 0]); % empty string
+                        end
                     end
                 end
-                if ~isempty(p2) || ~exist(fullfile(p2, 'cl.exe')), warning("cl not found at " + p2); end
+                if isempty(p2),                        warning("cl not found.");
+                elseif ~exist(fullfile(p2, 'cl.exe')), warning("cl not found at " + p2); end
+                p2 = string(p2); % enforce string type for casting/sizing
                 
                 % join nvcc and CUDA paths (if they exist)
-                p = strjoin([(pathsep + p1); (pathsep + p2)],'');                
+                p = strjoin([(pathsep + p1), (pathsep + p2)],'');                
                 
             else 
                 error('CUDA compilation paths undefined if not unix or pc.');
