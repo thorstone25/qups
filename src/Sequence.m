@@ -29,7 +29,7 @@ classdef Sequence < handle
     
     properties
         type = 'FSA'            % {'FSA', 'PW', 'VS'}
-        focus = zeros([3,0]);   % (3 x S) array specifying the focal point or plane-wave direction (m)
+        focus = zeros([3,1]);   % (3 x S) array specifying the focal point or plane-wave direction (m)
         c0 = 1540               % sound speed for the transmit delays (m/s)
         pulse = Waveform.Delta()% transmit Waveform
     end
