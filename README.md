@@ -9,7 +9,7 @@ The easiest way to get started is to open and run [`example.mlx`](example.mlx) o
 QUPS is (partially) internally documented following MATLAB conventions. This means you can use `help` or `doc` on any class or method with `help classname` or `help classname/methodname` or `help classname.methodname`. To see all the available classes, from the qups folder, use `help src` or `doc src`. 
 
 ## Compatibility
-QUPS targets MATLAB R2020b and later on linux. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
+QUPS targets MATLAB R2020b and later. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
 
 If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
@@ -31,5 +31,5 @@ If you can run `nvcc` from a terminal or command-line interface per the CUDA ins
 
 ##### Windows
 On Windows you must include the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. 
-Then, in MATLAB, set these paths with `setenv('CUDA_PATH', YOUR_CUDA_PATH'); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`. Then run `setup CUDA`. From here the proper paths should be added. If they are not, please submit an issue.
+Then, in MATLAB, set these paths with `setenv('CUDA_PATH', YOUR_CUDA_PATH); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`. Then run `setup CUDA`. From here the proper paths should be added. If they are not, please submit an issue.
 
