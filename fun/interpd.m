@@ -20,7 +20,8 @@ function y = interpd(x, t, dim, interp, extrapval)
 % dimension 1
 %
 % y = INTERPD(x, t, dim, interp) specifies the interpolation method. It
-% must be one of {"nearest", "linear"*,"cubic","lanczos3"}.
+% must be one of {"nearest", "linear"*,"cubic","lanczos3"} or any option 
+% supported by interp1.
 %
 % y = INTERPD(x, t, dim, interp, extrapval) uses extrapval as the
 % extrapolation value when outside of the domain of t.
@@ -61,7 +62,9 @@ x = permute(x, ord);
 t = permute(t, ord);
 
 % use ptx on gpu if available or use native MATLAB
-if exist('interpd.ptx', 'file') && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') )
+if exist('interpd.ptx', 'file') ...
+        && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') ) ...
+        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
     % grab the kernel reference
     issingle = @(x) strcmp(class(x), 'single') || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), 'single'); %#ok<STISA>
     if issingle(x) || issingle(t)
@@ -99,7 +102,7 @@ else
     % compute using interp1, performing for each matching dimension
     pdims = [Tdim, Mdim, Fdim]; % pack all except matching dims
     [xc, tc] = deal(num2cell(x, pdims), num2cell(t, pdims));
-    parfor(i = 1:numel(xc), 0), y{i} = interp1(xc{i},tc{i},interp,extrapval); end
+    parfor(i = 1:numel(xc), 0), y{i} = interp1(xc{i},1+tc{i},interp,extrapval); end
 
     % fold the non-singleton dimensions of x back down into the singleton
     % dimensions of the output

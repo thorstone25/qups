@@ -39,7 +39,7 @@ __device__ float2 linearf(const float2 * x, float tau, float2 no_v) {
     const int ti = (int) tf; 
                 
     // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti + 1], x[ti], tau) : no_v;
+    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti], x[ti + 1], tau) : no_v;
 }
 
 /// @brief Device function for cubic Hermite interpolation
@@ -111,7 +111,7 @@ __device__ double2 linear(const double2 * x, double tau, double2 no_v) {
     const int ti = (int) tf; 
                 
     // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti + 1], x[ti], tau) : no_v;
+    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti], x[ti + 1], tau) : no_v;
 }
 
 /// @brief Device function for cubic Hermite interpolation
