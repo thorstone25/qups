@@ -625,18 +625,21 @@ classdef ChannelData < matlab.mixin.Copyable
             % h = IMAGESC(self, m) displays transmit m of the channel data 
             % and returns the handle h.
             %
-            % h = IMAGESC(self, m, 'YData', yax) uses the yax for the
+            % h = IMAGESC(self, m, ax) uses the axes ax instead of the axes
+            % returned by gca. 
+            %
+            % h = IMAGESC(..., 'YData', yax) uses the yax for the
             % y-axis instead of the time domain.
             % 
-            % h = IMAGESC(self, m, Name, Value, ...) passes the followin
+            % h = IMAGESC(..., Name, Value, ...) passes the following
             % arguments to the imagesc function.
             %
             % Example:
             %
             % % Show the data in the frequency domain in MHz
+            % f = chd.fs*(0:chd.T-1)/chd.T; % frequency axis
             % figure; 
-            % 
-            % imagesc(fft(chd), 1, 'YData', 1e-6*chd.fs*(0:chd.T-1)/chd.T)
+            % imagesc(fft(chd), 1, 'YData', 1e-6*f);
             %
             % See also IMAGESC
 
