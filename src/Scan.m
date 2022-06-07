@@ -250,6 +250,13 @@ classdef Scan < matlab.mixin.Copyable
             % corresponding image that shrinks the receive aperture at
             % shallower depths in order to maintain a minimum f-number.
             %
+            % apod = APERTUREGROWTHAPODIZATION(self, seq, rx, f) uses an
+            % f-number of f to limit the aperture. The default is 1.5.
+            % 
+            % apod = APERTUREGROWTHAPODIZATION(self, seq, rx, f, Dmax)
+            % restricts the maximum size of the aperture to Dmax. The
+            % default is Inf.
+            % 
             % For a ScanCartesian, rx must be a TransducerArray and the 
             % aperture is limited to receive elements that are within tol 
             % of the focus laterally. 
