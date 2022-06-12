@@ -155,7 +155,7 @@ us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 *
 
 % Simulate a point target
 % run on CPU to use spline interpolation
-switch "SIMUS"
+switch "Greens"
     case 'FieldII', chd0 = calc_scat_all(us, targ, [1,1], 'device', device, 'interp', 'cubic'); % use FieldII, 
     case 'SIMUS'  , chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'freq'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
     case 'Greens' , chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a Greens function with a GPU if available!
@@ -236,54 +236,5 @@ if ~isa(scan, 'ScanCartesian')
     bc_im = (scanConvert(scan, mod2db(b), scanc)); % interpolate in dB - could also do abs, as long as it's not complex!
 
     imagesc(scanc, bc_im, [-80, 0] + max(bc_im(bc_im < Inf)));
-    colormap gray; colorbar;
-end
-%% Run a k-Wave Sim (requires k-Wave)
-
- 
-% Note: For a FSA acquisition, that means 1 sim per element!
-
-% use some low-res simulation parameters 
-% Takes about 1 min per sim, 1 sim per tx
-bds = cat(1,tscan.xb, tscan.yb, tscan.zb);
-kwv_args = {'dims', 2, 'CFL_max', 0.5, 'resolution_ratio', 0.25, 'PML_min', 2^4, 'PML_max', 2^6, ... 
-    'bounds', bds, 'PlotSim', false ...
-    };
-if device, chd1 = kspaceFirstOrderND(us, targ, [1,1], kwv_args{:}); % use just a single sub-element for speed
-else,      chd1 = kspaceFirstOrderND(us, targ, [1,1], kwv_args{:}, 'DataCast', 'single'); end
-% Show the data
-
-chd = copy(chd1);
-% chd.data(chd.time < 20e-6,:,:) = nan; % normalize display to data after 20us 
-figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis([-80 0] + mod2db(max(chd.data(:), [], 'omitnan')))
-xlabel('Channel'); ylabel('Time (s)');
-for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = mod2db(chd.data(:,:,m)); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
-%% Create an image 
-
- 
-% Precondition the data
-chd = copy(chd1);
-chd = singleT(chd); % use less data
-chd.data(chd.time < 10e-6 | chd.time > 50e-6,:,:) = 0; % clear direct feedback
-chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC bias
-if device, chd = gpuArray(chd); end % move data to GPU
-if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
-chd = rectifyt0(chd, 'linear'); % linearly resample if needed to align t0 time axis
-
-% Run a simple DAS algorithm
-b = DAS(us, chd, struct('c0', targ.c0), [], 'device', -1, 'interp', 'linear');
-
-% show the image
-b_im = mod2db(b); % convert to power in dB
-figure; imagesc(scan, b_im, [-60, 0] + max(b_im(:))); % display with 60dB dynamic range
-colormap gray; colorbar;
-%% Scan Convert for a Sector Scan
-
-if ~isa(scan, 'ScanCartesian')
-    scanc = scanCartesian(scan); % mind the caps! this gives us a ScanCartesian
-    [scanc.nx, scanc.nz] = deal(2^9); % don't change boundaries, but increase resolution
-    bc_im = (scanConvert(scan, mod2db(b), scanc)); % interpolate in dB - could also do abs, as long as it's not complex!
-
-    imagesc(scanc, bc_im, [-60, 0] + max(bc_im(bc_im < Inf)));
     colormap gray; colorbar;
 end
