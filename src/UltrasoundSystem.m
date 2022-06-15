@@ -852,9 +852,10 @@ classdef UltrasoundSystem < handle
         end        
     end
     
-    % k-Wave calls
+    % k-Wave calls (old)
     methods(Access=public)
-        function [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] = getkWaveGrid(self, target, varargin)
+        function [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] ...
+                = getkWaveGrid(self, target, varargin)
             % GETKWAVEGRID - Create a kWaveGrid for the Target
             % 
             % [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, 
@@ -1631,6 +1632,235 @@ classdef UltrasoundSystem < handle
             % Create a channel data object
             chd = ChannelData('t0', sub(time,1,1), 'data', voltages, 'fs', fs_);
         end
+    end
+
+    % k-Wave calls (new)
+    methods
+        function chd = kspaceFirstOrder(self, target, sscan, varargin)
+            % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
+            % 
+            % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
+            % target and returns a ChannelData object chd via k-Wave.
+            %
+            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions)
+            % uses the 1x2 array of element_subdivisions to subdivide the
+            % elements prior to placing them on the simulation grid.
+            %
+            % [chd, cgrid] = kspaceFirstOrderND(...) also returns a
+            % structure with the coordinate transforms from the kWaveGrid. 
+            % This behaviour is likely to be deprecated
+            %
+            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions, 
+            % Name, Value, ... ) specifies name value pairs.
+            %
+            % Inputs:
+            %     PML_min - minimum (one-sided) PML size
+            %     PML_max - maximum (one-sided) PML size
+            %     CFL_max - maximum cfl number (for stability)
+            %     buffer - x/y/z computational buffer (3 x 2)
+            %     resolution_ratio - grid resolution as proportion of wavelength
+            %     dims - dimensionality of the simulation (one of {2*,3})
+            %     parcluster - parallel cluster for running simulations (use 0 for no cluster)
+            %     bounds - minimum boundaries of the sim (3 x 2)
+            %
+            % Other Name/Value pairs that are valid for kWave's
+            % kspaceFirstOrderND functions are valid here with the
+            % exception of the PML definition
+            %
+            %
+            % See also ULTRASOUNDSYSTEM/FULLWAVESIM
+
+
+            % setup a default keyword arguments structure
+            kwargs = struct( ...
+                'PML', [20 56], ... (one-sided) PML size range
+                'CFL_max', 0.25, ... maximum cfl number (for stability)
+                'parcluster', 0, ... parallel cluster for running simulations (use 0 for no cluster)
+                'DataCast', 'gpuArray-single',...
+                'DataRecast', false, ...
+                'LogScale', true, ...
+                'MovieName', 'kwave-sim', ...
+                'PlotPML', false, ...
+                'PlotSim', false, ...
+                'RecordMovie', false, ...
+                'Smooth', true ...
+                );
+
+            % defaults
+            if nargin < 3 || isempty(element_subdivisions), 
+                element_subdivisions = self.getLambdaSubDiv(kwargs.resolution_ratio, target.c0); 
+            end
+
+            % store NV pair arguments into kwargs
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % get arguments for the grid object
+            % kgrid_args = kwargs; % all input arguments
+            % gfields = {'PML_min', 'PML_max', 'CFL_max', 'CFL_max', 'resolution_ratio', 'dims', 'bounds'}; % grid args
+            % kgrid_args = rmfield(kgrid_args , setdiff(fieldnames(kgrid_args), intersect(fieldnames(kgrid_args), gfields))); % isolate grid args
+            % kgrid_args = struct2nvpair(kgrid_args);
+
+            % get a kWaveGrid object ( also outputs the medium,
+            % because it needs to set the CFL number )
+            % TODO: use a Scan definition to define the region for the
+            % simulation
+            % [kgrid, kgrid_PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] ...
+            %   = self.getkWaveGrid(medium, kgrid_args{:});
+
+            % get the translated / permuted grid sizing
+            % cgrid = struct(...
+            %     'origin', kgrid_origin([2,3,1]) + [kgrid.y_vec(1); kgrid.z_vec(1); kgrid.x_vec(1);], ...
+            %     'step'  , kgrid_step([2,3,1]), ...
+            %     'size'  , kgrid_size([2,3,1]) ...
+            %     );
+
+            % get subdivision length
+            % el_sub_div = element_subdivisions;
+
+            % get the kWaveGrid
+            [kgrid, Npml]= getkWaveGrid(sscan, 'PML', kwargs.PML);
+
+            % get the medium
+            kmedium = getMediumKWave(target, sscan);
+
+            % set the time axis
+            dt_cfl_max = kwargs.CFL_max * min([sscan.dz, sscan.dz, sscan.dy]) / max(kmedium.sound_speed,[],'all');
+            
+            % use a time step that aligns with the sampling frequency
+            dt_us = inv(self.fs);
+            cfl_ratio = dt_cfl_max / dt_us;
+        
+            if cfl_ratio < 1
+                warning('Upsampling the kWave time step for an acceptable CFL.');
+                time_step_ratio = ceil(inv(cfl_ratio));
+            % else % TODO: do or don't downsample? Could be set for temporal reasons
+            %     time_step_ratio = inv(floor(cfl_ratio));
+            end
+            kgrid.dt = dt_us / time_step_ratio;
+
+            % kgrid to sscan coordinate translation mapping
+            kgrid_origin = cellfun(@median, {sscan.z, sscan.x, sscan.y});
+
+            % TODO: set the end time maybe? optional input argument?
+
+            % define the sensor on the grid
+            el_sub_div = [1,1]; % I think this is the easiest case to test?
+            [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
+
+            % create the full sensor mask as the combination of all of the elements
+            ksensor.mask = false;
+            for el = 1:self.rx.numel, ksensor.mask = ksensor.mask | ksensor_rx{el}.mask; end
+
+            % define the source signal(s) for each transmit in the pulse sequence
+            [ksource, t_sig, sig] = self.getKWaveSource(kgrid, kgrid_origin, el_sub_div, target.c0);
+
+            % check the size of the temporal response and
+            % maximum number of subelements. An array of this size
+            % will be created
+            nSubel = max(sum(arrayfun(@(s) numel(s.mask_indices), sens_map), 1), [], 2);
+            warning(sprintf('Using up to %i subelements for %i points in time (%0.2fGB / %0.2fGB single/double (complex) temp variables)', nSubel, kgrid.Nt, prod(kgrid.Nt * nSubel) * 2 * [4, 8] / 2^30))
+
+            %% Submit a k-wave simulation for each transmit
+            tt_kwave = tic;
+
+            % lam_min_grid_spac = min(kmedium.sound_speed,[],'all') / (self.us.xdc.fc + 0.5*self.us.xdc.bw);
+            % lam_max_temp_freq = min(kmedium.sound_speed,[],'all') / max([kgrid.dx, kgrid.dy, kgrid.dz]) / 2;
+            fprintf('There are %i points in the grid which is %0.3f megabytes per grid variable.\n', ...
+                kgrid.total_grid_points, kgrid.total_grid_points*4/2^20);
+
+
+            % strip all other arguments from input
+            nonkwfields = {'PML','CFL_max', 'parcluster' }; % not kWave args
+            kwave_args = rmfield(kwargs, nonkwfields); % forward all others
+            
+            % set global arguments
+            kwave_args.PMLInside = false;
+            kwave_args.PMLSize = Npml(1:kgrid.dim);
+            
+            % set per pulse properities
+            kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
+            for puls = 1:self.sequence.numPulse
+                if(isfield(kwave_args(puls), 'MovieName'))
+                    kwave_args(puls).MovieName = char(kwave_args(puls).MovieName + sprintf("_pulse%2.0i",puls));
+                end
+            end
+
+            % select function
+            switch kgrid.dim
+                case 1, kspaceFirstOrderND_ = @kspaceFirstOrder1D;
+                case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2D;
+                case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3D;
+                otherwise, error("Unsupported dimension size (" + kgrid.dim  +").");
+            end
+
+            % get all arguments
+            kwave_args_ = arrayfun(...
+                @(pulse) struct2nvpair(kwave_args(pulse)), ...
+                1:self.sequence.numPulse, ...
+                'UniformOutput', false ...
+                );
+
+            out = cell(self.sequence.numPulse, 2);
+            [c0, Np] = deal(target.c0, self.sequence.numPulse);
+            parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
+                % TODO: make this part of some 'info' logger or something
+                fprintf('\nComputing pulse %i of %i\n', puls, Np);
+                tt_pulse = tic;
+
+                % prealloc
+                outp = cell(1,2);
+
+                % simulate
+                sensor_data = kspaceFirstOrderND_(kgrid, kmedium, ksource{puls}, ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
+
+                % Process the simulation data
+                [outp{1}, outp{2}] = self.getKWaveReceive(kgrid, ksensor, sens_map, sensor_data, c0); %#ok<PFBNS>
+
+                % enforce on the CPU - save to output var
+                outp = cellfun(@gather, outp, 'UniformOutput', false);
+                [out{puls,:}] = deal(outp{:});
+
+                % report timing
+                % TODO: make this part of some 'info' logger or something
+                fprintf('\nFinished pulse %i of %i\n', puls, Np);
+                toc(tt_pulse)
+            end
+
+            % create ChannelData objects
+            chds = cellfun(@(x, t) ChannelData('data', x, 't0', t(1), 'fs', self.fs * time_step_ratio), out(:,1), out(:,2));
+
+            % concatenate over transmits (not natively implemented yet)
+            % chd = cat(3, chds); % -> TODO: native in ChannelData 
+            T = max([chds.T]); % maximum length simulation
+            chds = arrayfun(@(chds)zeropad(chds,0,T - chds.T), chds); % make all the same length
+            chd = ChannelData('t0', cat(3,chds.t0), 'fs', unique([chds.fs]), 'data', cat(3, chds.data));
+
+            % TODO: make reports optional
+            fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
+
+
+            % get voltages (T x N x M)
+            % voltages = cast(cell2mat(shiftdim(out(:,1), -2)), 'single');
+
+            % get timing (T x 1 x M) -> (T x 1)
+            % t_resp   = mode(cell2mat(shiftdim(out(:,2), -2)), 3);
+
+            % get time axis
+            % time = t_resp + min(t_sig);
+
+            % get numerically correct frequency
+            % fs_ = 1 ./ kgrid.dt;
+            % if fs_ > self.fs, %#ok<BDSCI> % fs_ is scalar
+            %     fs_ = self.fs * round(fs_ / self.fs); % use the rounded upsampling factor
+            % else
+            %     fs_ = self.fs / round(self.fs / fs_); % use the rounded downsampling factor
+            % end
+
+            % Create a channel data object
+            % chd = ChannelData('t0', sub(time,1,1), 'data', voltages, 'fs', self.fs * time_step_ratio);
+
+        end
+    
     end
     
     % Beamforming
