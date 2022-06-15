@@ -2392,11 +2392,10 @@ classdef UltrasoundSystem < handle
             gi = self.scan.getImagingGrid(); % {I1 x I2 x I3} each
             gi = gi(sel); % select and trim dimensions 
 
-            % splice
+            % splice args
             sz = self.scan.size; % original size
             interp_method = kwargs.interp; 
 
-            % TODO: include apodization on receive
             % TODO: allow options to specify summation
             % sample for each tx/rx
             chd = rectifyt0(chd); % TODO: use an indexing function on the object to handle t0 subtleties
@@ -2406,12 +2405,13 @@ classdef UltrasoundSystem < handle
             for (m = 1:chd.M) % for each transmit
                 tau_tx = tx_samp{m}(gi{:}); % transmit delay
                 apod_tx = sub(kwargs.apod, min(m, Ma), 5); % recieve apodization per transmit
+                chd_tx = sub(chd, m, chd.mdim); % select transmit 
+                chds = splice(chd_tx, chd.ndim); % splice receive
                 parfor (n = 1:chd.N, clu) % for each receive %TODO: avoid parfor with GPUs
                     a = sub(apod_tx, min(n, Na), 4); % receive apodization per receive
-                    chd_ = copy(chd); 
-                    chd_.data = sub(chd_.data, {n,m}, [2,3]); % splice TODO: splice object, not just data
                     tau = tau_tx + rx_samp{n}(gi{:}); %#ok<PFBNS> % get sample time (I1 x I2 x I3)
-                    b = b + a .* reshape(chd_.sample(tau(:), interp_method), sz); % sample (I1 x I2 x I3 x F x ...)
+                    tau = shiftdim(tau(:), 1-chds(n).tdim); % move image to align with time dimension
+                    b = b + a .* reshape(sample(chds(n), tau, interp_method), sz); % sample (I1 x I2 x I3 x F x ...)
                 end
                 if isvalid(hw), waitbar(m/chd.M, hw); end % update if not closed
             end
