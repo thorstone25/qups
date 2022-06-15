@@ -2216,21 +2216,22 @@ classdef UltrasoundSystem < handle
             % move the data to the frequency domain, being careful to
             % preserve the time axis
             K = round(chd.T); % DFT length
-            f = chd.fs * (0 : K - 1)' / K; % frequency axis
+            f = shiftdim(chd.fs * (0 : K - 1)' / K, 1-chd.tdim); % frequency axis
             df = chd.fs * 1 / K; % frequency step size
-            x = fft(chd.data,K,1); % K x N x M x ...
+            x = fft(chd.data,K,chd.tdim); % K x N x M x ...
             x = x .* exp(-2i*pi*f.*chd.t0); % re-align time axis
 
             % choose frequencies to evaluate
-            xmax = max(x, [], 1); % maximum value per trace
+            xmax = max(x, [], chd.tdim); % maximum value per trace
             f_val = mag2db(abs(x)) - mag2db(abs(xmax)) >= kwargs.fthresh; % threshold 
             f_val = f_val & f < chd.fs / 2; % positive frequencies only
             f_val = (any(f_val, 2:ndims(x))); % evaluate any freqs across aperture/frames that is above threshold
             
             % get the pixel positions
+            D = 1+max(3, gather(ndims(chd.data))); % >= 4
             Pi = cell(3,1);
             [Pi{:}] = self.scan.getImagingGrid();
-            Pi = cellfun(@(x) {shiftdim(x, -4)}, Pi); % place I in dims 5-7
+            Pi = cellfun(@(x) {shiftdim(x, -D)}, Pi); % place I past max data dims 5-7
             Pi = cat(1,Pi{:}); % 3 x 1 x 1 x 1 x [I]
             
             % get the delays for the transmit/receive green's matrix
@@ -2262,8 +2263,10 @@ classdef UltrasoundSystem < handle
                 if isvalid(h), waitbar(k/K/2, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
 
                 % select frequency
-                xk = shiftdim(x(k,:,:,:,:,:),1); % data, in freq. domain (N x V x ...)
-                % TODO: adapt for multiple frames
+                xk = shiftdim(sub(x,k,1),1); % data, in freq. domain (N x V x ...)
+                
+                % TODO: adapt for data out of order
+                % TODO: adapt for tall types
 
                 % compute the greens functions on transmit/receive
                 G_tx = w_tx.^(k-1); % 1 x M x 1 x 1 x [I]
@@ -2284,8 +2287,8 @@ classdef UltrasoundSystem < handle
             end           
             if isvalid(h), close(h); end
 
-            % revert to normal dimensions
-            b = shiftdim(b,4); % [I] x ...
+            % revert to image dimensions
+            b = shiftdim(b,D); % [I] x ...
         end    
 
         function b = bfEikonal(self, chd, medium, cscan, varargin)
@@ -2416,6 +2419,116 @@ classdef UltrasoundSystem < handle
                 if isvalid(hw), waitbar(m/chd.M, hw); end % update if not closed
             end
             if isvalid(hw), close(hw); end % close if not closed
+        end
+    
+        function b = bfDAS(self, chd, c0, varargin)
+            % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
+            %
+            % b = BFEIKONAL(self, chd, medium) creates a b-mode 
+            % image b from the ChannelData chd and Medium medium using the 
+            % delays given by the solution to the eikonal equation. The 
+            % equation is solved via the fast marching method.
+            % 
+            % b = BFEIKONAL(self, chd, medium, cscan) defines the Medium on
+            % the ScanCartesian cscan rather than on the UltrasoundSystem
+            % scan property.
+            %
+            % b = BFEIKONAL(..., Name,Value, ...) defines additional
+            % parameters via Name/Value pairs
+            %
+            % Inputs:
+            %   interp     - interpolation method for ChannelData methods
+            %   parcluster - Parcluster object
+            %   apod       - apodization - must be a size I1 x I2 x I3 x N
+            %                x M array where [I1 x I2 x I3] is the size of
+            %                the scan property, N is the number of receive
+            %                elements and M is the number of transmitter
+            %                elements.
+            % 
+            % See also DAS BFADJOINT
+
+            % defaults
+            kwargs.interp = 'linear';
+            kwargs.parcluster = gcp('nocreate');
+            kwargs.apod = 1;
+
+            % set input options
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % parse inputs
+            if ~isnumeric(c0), c0 = c0.c0; end
+
+            % get cluster
+            clu = kwargs.parcluster;
+            if isempty(clu) || isa(chd.data, 'gpuArray'), clu = 0; end % run on CPU by default
+
+            % get image pixels, outside of range of data
+            Pi = self.scan.getImagingGrid();
+            Pi = cellfun(@(x) shiftdim(x, -1), Pi, 'UniformOutput',false);
+            Pi = cat(1, Pi{:}); % 3 x I1 x I2 x I3
+
+            % get the transmit, receive
+            Pr = self.rx.positions(); % receiver positions
+
+            % get virtual source or plane wave geometries
+            switch self.sequence.type
+                case 'FSA'
+                    [Pv, Nv] = deal(self.tx.positions(), [0;0;1]);
+                case 'VS'
+                    [Pv, Nv] = deal(self.sequence.focus, [0;0;1]);
+                case 'PW'
+                    [Pv, Nv] = deal([0;0;0], self.sequence.focus); % TODO: use origin property in tx sequence
+            end
+            Pr = swapdim(Pr,2,5); % move N to dim 5
+            [Pv, Nv] = deal(swapdim(Pv,2,6), swapdim(Nv,2,6)); % move M to dim 6
+
+            % get receive delays
+            dr = vecnorm(Pi - Pr,2,1); % 1 x I1 x I2 x I3 x N x 1
+                
+            % transmit sensing vector
+            dv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
+            switch self.sequence.type, 
+                case {'VS', 'FSA'}, dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
+                case {'PW'}, dv = sum(dv .* Nv, 1);
+            end % 1 x I1 x I2 x I3 x 1 x M
+
+            % bring to I1 x I2 x I3 x 1 x M
+            [dv, dr] = deal(shiftdim(dv,1), shiftdim(dr,1));
+
+            % splice args
+            sz = self.scan.size; % original size
+            apod = kwargs.apod; % apodization (I1 x I2 x I3 x N x M)
+            interp_method = kwargs.interp; 
+            cinv = 1 ./ c0;
+            % M = chd.M;
+
+            % TODO: allow options to specify summation
+            % sample for each tx/rx
+            % TODO: fully support tall data by doing these permutations
+            % in a different order to avoid permuting the tall
+            % dimension perhaps by
+            % * splicing in the tall dimension?
+            % * moving the image dimensions beyond the data dimensions and
+            %   operating there
+            assert(ismember('T', chd.ord(1:3)), 'The time dimension must be in one of the first 3 dimensions.');
+            b = 0; % initialize
+            [Na, Ma] = size(kwargs.apod, 4:5);
+            chds = splice(chd, chd.mdim); % splice transmit
+            tsz = [prod(sz), chd.N, 1]; % size to vectorize I dimensions
+            tord = [chd.tdim, chd.ndim, chd.mdim]; % order to move to ChannelData dims
+            % hw = waitbar(0,'Beamforming ...'); % create a wait bar
+            % for m = 1:chd.M
+            parfor (m = 1:chd.M, clu) % for each transmit
+                tau = cinv .* (dv(:,:,:,:,m) + dr); % get sample times (I1 x I2 x I3 x N)
+                tau = permute(reshape(tau, tsz), tord); % move to permutation of (I x N x M) - I placed in time dim, N/M aligned with ChannelData
+                y = sample(chds(m), tau, interp_method); % (perm(I x N x M) x F x ...)
+                y = ipermute(y, [tord, 4:gather(ndims(y))]); % I x N x M x F x ...
+                y = reshape(y, [sz, size(y,2:gather(ndims(y)))]); % I1 x I2 x I3 x N x M x F x ...
+                a = sub(apod, min(m, Ma), 5); % recieve apodization (I1 x I2 x I3 x N)
+                b = b + sum(a .* y, 4); % sample (I1 x I2 x I3 x N x M x F x ...)
+                % if isvalid(hw), waitbar(m/M, hw); end % update if not closed
+            end
+            % if isvalid(hw), close(hw); end % close if not closed
         end
     end
     
