@@ -75,6 +75,10 @@ classdef ScanCartesian < Scan
             % See also SETIMAGINGGRID
             [self.xb, self.yb, self.zb] = deal(x, y, z);
         end
+    end
+
+    % USTB interface methods
+    methods
         function scan = getUSTBScan(self)
             scan = uff.linear_scan(...
                 'x_axis', self.x, ...
@@ -82,7 +86,44 @@ classdef ScanCartesian < Scan
                 );
         end
     end
-        
+
+    % k-Wave interface methods
+    methods
+        function [kgrid, Npml] = getkWaveGrid(scan, varargin)
+            % GETKWAVEGRID - Create a kWaveGrid object
+            %
+            % [kgrid, offset] = GETKWAVEGRID(self, medium, varargin) 
+            % creates a kWaveGrid kgrid and the offset between the grid and
+            % the original coordinates of the Scan
+            %
+            %
+
+            % defaults
+            kwargs.PML = [4 48]; % 1x1 or 1x2 vector of PML size or range bounds
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % choose PML size
+            PML_buf = @(n) (argmin(arrayfun(@(a)max(factor(n+2*a)), kwargs.PML(1):kwargs.PML(end))) + kwargs.PML(1) - 1);
+            Npml = arrayfun(PML_buf, scan.size); % PML size in each dim
+
+            % translate into additional outputs in kwave format
+            ind_map = [3,1,2]; % UltrasoundSystem to k-wave coordinate mapping ('ZXY')
+            [~, o] = ismember(scan.order, 'ZXY'); % should be 1st, 2nd, 3rd
+            assert(all(o == (1:numel(o))), 'The Scan must have order ''ZXY'''); % QUPS -> k-Wave mapping
+            
+            % get the grid sizing with k-Wave mapping
+            kgrid_args(1,:) = num2cell(scan.size); % size args
+            kgrid_args(2,:) = num2cell([scan.dz, scan.dx, scan.dy]); % step args
+            dims = find(scan.size ~= 1, 1, 'last'); % dimension given by last non-singleton dimension
+            
+            % create a kWaveGrid
+            kgrid_args = kgrid_args(:,1:dims);
+            kgrid = kWaveGrid(kgrid_args{:});
+        end
+    end
+
+
+
     % imaging computations
     methods
         function [X, Y, Z, sz] = getImagingGrid(self)
