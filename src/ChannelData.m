@@ -32,7 +32,7 @@ classdef ChannelData < matlab.mixin.Copyable
         t0 = 0  % start time (1 x 1 x [1|M] x [1|F] x ...)
         fs = 1  % sampling freuqency (scalar)
     end
-    properties(SetAccess=protected,GetAccess=public)
+    properties(Access=public)
         ord = 'TNM'; % data order: T: time, N: receive, M: transmit
     end
     properties (Dependent)
@@ -49,7 +49,7 @@ classdef ChannelData < matlab.mixin.Copyable
     % constructor/destructor
     methods
         function self = ChannelData(varargin)
-            % CHANNELDATA/CHANNELDATA - Construct a channel data object
+            % CHANNELDATA - Construct a ChannelData object
             %
             % ChannelData(Name1, Value1, ...) constructs a channel data
             % object via name/value pairs.
@@ -64,7 +64,7 @@ classdef ChannelData < matlab.mixin.Copyable
     % copyable overloads
     methods(Access=protected)
         function chd = copyElement(self)
-            chd = ChannelData('data',self.data,'fs', self.fs,'t0',self.t0);
+            chd = ChannelData('data',self.data,'fs', self.fs,'t0',self.t0,'ord',self.ord);
         end
     end
 
@@ -78,7 +78,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % channel data. USTB must be on the path.
             %
             % 
-            
+            self = rectifyDims(self); % make sure it's in order 'TNM' first
             channel_data = uff.channel_data(...
                 'sampling_frequency', self.fs, ...
                 'sound_speed', sequence.c0, ...
@@ -86,7 +86,6 @@ classdef ChannelData < matlab.mixin.Copyable
                 'probe', xdc.getUSTBProbe(), ...
                 'data', self.data(:,:,:,:) ... limit to 4 dimensions
                 );
-
         end
     end
 
@@ -97,6 +96,18 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs, chd.data] = deal(fun(chd.t0), fun(chd.fs), fun(chd.data));
         end
         function chd = applyFun2Data(chd, fun), chd = copy(chd); chd.data = fun(chd.data); end
+        function chd = applyFun2TimeDim(chd, fun, varargin),
+            d = chd.tdim; % dimension of operation
+            chd = copy(chd); % copy semantics
+            chd.data = matlab.tall.transform(@dim1fun,chd.data, varargin{:}); % apply function in dim 1; % set output data
+
+            % dim1 mapping function: dim d gets sent to dim 1 and back.
+            function x = dim1fun(x, varargin)
+                x = swapdim(x, d, 1); % send dim d to dim 1
+                x = fun(x, varargin{:}); % operate in dim 1
+                x = swapdim(x, d, 1); % send dim d back
+            end
+        end
     end
 
     % data type overloads
@@ -136,6 +147,9 @@ classdef ChannelData < matlab.mixin.Copyable
         function T = underlyingType(self), try T = underlyingType(self.data); catch, T = class(self.data); end, end % R2020b+ overload
         % underlying type of the data or class of the data
         function tf = isreal(self), tf = isreal(self.data); end
+        % whether the underlying data is real
+        function tf = istall(self), tf = istall(self.data); end
+        % whether the underlying data is tall
     end
     
     % implicit casting: functions that request a numeric type may call
@@ -206,11 +220,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % hard error if we aren't given a digitalFilter
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
 
-            % copy semantics
-            chd = copy(chd);
-
             % filter: always applied in dim 1
-            chd.data = filter(D, chd.data);
+            chd = applyFun2TimeDim(chd, @(x) filter(D, x));
 
             % adjust time axes
             chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
@@ -229,11 +240,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % hard error if we aren't given a digitalFilter
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
 
-            % copy semantics
-            chd = copy(chd);
-
             % filter: always applied in dim 1
-            chd.data = filtfilt(D, chd.data);
+            chd.data = applyFun2TimeDim(chd, @(x) filtfilt(D, x));
         end
         function chd = fftfilt(chd, D)
             % FFTFILT Filter data with a digitalFilter
@@ -248,12 +256,9 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % hard error if we aren't given a digitalFilter
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
-
-            % copy semantics
-            chd = copy(chd);
-
+            
             % filter: always applied in dim 1
-            chd.data(:,:) = fftfilt(D, chd.data(:,:));
+            chd = applyFun2TimeDim(chd, @(x) reshape(filtfilt(D, x(:,:)), size(x)));
 
             % adjust time axes
             chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
@@ -261,14 +266,14 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = hilbert(chd, varargin)
             % HILBERT - overloads the hilbert function
             %
-            % chd = hilbert(chd) applies the hilbert function to the data.
+            % chd = HILBERT(chd) applies the hilbert function to the data.
             %
-            % chd = hilbert(chd, ...) forwards arguments to MATLAB's 
-            % hilbert function
+            % chd = hilbert(chd, N) computes the N-point Hilbert transform. 
+            % The data is padded with zeros if it has less than N points, 
+            % and truncated if it has more.
             %
             % See also HILBERT
-            chd = copy(chd);
-            chd.data = hilbert(chd.data, varargin{:});
+            chd = applyFun2TimeDim(chd, @hilbert, varargin{:});
         end
         function chd = fft(chd, N, dim)
             % FFT - overload of fft
@@ -284,10 +289,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also FFT CHANNELDATA/FFTSHIFT
 
             % defaults
-            if nargin < 3, dim = 1; end
-            if nargin < 2, N = []; end
+            if nargin < 3, dim = chd.tdim; end
+            if nargin < 2 || isempty(N), N = size(chd.data, dim); end
+            if istall(chd) && dim == 1, error('Cannot compute fft in the tall dimension.'); end
             chd = copy(chd);
-            chd.data = fft(chd.data, N, dim); % take the fourier transform
+            chd.data = matlab.tall.transform(@fft, chd.data, N, dim); % take the fourier transform
         end
         function chd = fftshift(chd, dim)
             % FFTSHIFT - overload of fftshift
@@ -300,9 +306,10 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also FFTSHIFT CHANNELDATA/FFT 
 
-            if nargin < 2, dim = 1; end
+            if nargin < 2, dim = chd.tdim; end
+            if istall(chd) && dim == 1, error('Cannot compute fftshift in the tall dimension.'); end
             chd = copy(chd);
-            chd.data = fftshift(chd.data, dim);
+            chd.data = matlab.tall.transform(@fftshift, chd.data, dim);
         end
         function chd = ifft(chd, N, dim)
             % IFFT - overload of fft
@@ -320,10 +327,11 @@ classdef ChannelData < matlab.mixin.Copyable
 
 
             % defaults
-            if nargin < 3, dim = 1; end
-            if nargin < 2, N = []; end
+            if nargin < 3, dim = chd.tdim; end
+            if nargin < 2 || isempty(N), N = size(chd.data, dim); end
+            if istall(chd) && dim == 1, error('Cannot compute ifft in the tall dimension.'); end
             chd = copy(chd);
-            chd.data = ifft(chd.data, N, dim); % take the fourier transform
+            chd.data = matlab.tall.transform(@ifft, chd.data, N, dim); % take the fourier transform
         end
         function chd = ifftshift(chd, dim)
             % IFFTSHIFT - overload of fftshift
@@ -337,9 +345,10 @@ classdef ChannelData < matlab.mixin.Copyable
             % IFFTSHIFT undoes the effects of fftshift
             % 
             % See also IFFTSHIFT CHANNELDATA/IFFT 
-            if nargin < 2, dim = 1; end
+            if nargin < 2, dim = chd.tdim; end
+            if istall(chd) && dim == 1, error('Cannot compute ifftshift in the tall dimension.'); end
             chd = copy(chd);
-            chd.data = ifftshift(chd.data, dim);
+            chd.data = matlab.tall.transform(@ifftshift, chd.data, dim);
         end
         function chd = resample(chd, fs, varargin)
             % RESAMPLE - Resample the data in time
@@ -360,7 +369,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also RESAMPLE
 
             % save original data prototypes
-            [Tt, Tf, Td] = deal(chd.t0, chd.fs, zeros([0,0], 'like', chd.data));
+            [Tt, Tf, Td] = deal(chd.t0, chd.fs, cast(zeros([0,0]), 'like', chd.data));
             
             % Make new ChannelData (avoid modifying the original)
             chd = copy(chd);
@@ -372,8 +381,10 @@ classdef ChannelData < matlab.mixin.Copyable
             varargin(inum) = cellfun(@double, varargin(inum), 'UniformOutput', false);
 
             % resample in time - no support for other dims: fs is required arg
-            [y, ty] = resample(chd.data, chd.time, fs, varargin{:}, 'Dimension', 1);
-            [chd.fs, chd.t0, chd.data] = deal(fs, ty(1), y);            
+            % [y, ty] = resample(chd.data, chd.time, fs, varargin{:}, 'Dimension', chd.tdim);
+            % [chd.fs, chd.t0, chd.data] = deal(fs, ty(1), y);
+            y = matlab.tall.transform(@resample, chd.data, chd.time, fs, varargin{:}, 'Dimension', chd.tdim);
+            [chd.fs, chd.data] = deal(fs, y);
 
             % cast back to original type
             tmp = cellfun(@(x,T) cast(x, 'like', T), {chd.t0, chd.fs, chd.data}, {Tt, Tf, Td}, 'UniformOutput', false);
@@ -408,8 +419,11 @@ classdef ChannelData < matlab.mixin.Copyable
             assert(A >= 0 && B >= 0, 'Data append or prepend size must be positive.');
 
             chd = copy(chd); % copy semantics
-            chd.data(end+(B+A),:) = 0; % append A + B zeros in time to the data
-            chd.data = circshift(chd.data, B, 1); % shift B of the zeros to the front
+            % chd.data(end+(B+A),:) = 0; % append A + B zeros in time to the data
+            s = repmat({':'}, [1,gather(ndims(chd.data))]); % splice in all other dimensions
+            s{chd.tdim} = chd.T + (1:(B+A)); % expand by B+A in time dimension
+            chd.data = subsasgn(chd.data,substruct('()',s),0); % call assignment - set to zero
+            chd.data = matlab.tall.transform(@circshift, chd.data, B, chd.tdim); % shift B of the zeros to the front
             chd.t0 = chd.t0 - B ./ chd.fs; % shift start time for B of the zeros
         end
     
@@ -428,8 +442,10 @@ classdef ChannelData < matlab.mixin.Copyable
 
 
             f = chd.fs * ((0:chd.T-1)' ./ chd.T); % compute frequency axis
-            y = fft(chd, [], 1); % compute fft
-            fc = f(mode(argmax(abs(y.data), [], 1), 'all')); % select peak over receives/transmits
+            y = fft(chd, [], chd.tdim); % compute fft
+            z = argmax(abs(y.data), [], chd.tdim); % get peak over frequencies
+            z = matlab.tall.transform(@mode, z, 2:gather(ndims(y.data))); % mode over non-tall dims
+            fc = f(median(gather(z))); % select median over tall dims
         end
     
         function chd = rectifyt0(chd, interp, t0_)
@@ -452,8 +468,8 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = zeropad(chd,0,npad); % extend time-axes
             tau = chd.time + toff; % get delays to resample all traces
             y = chd.sample(tau, interp); % resample
-            chd = ChannelData('data', y, 't0', t0_, 'fs', chd.fs); % make new object
-
+            chd.data = y; % make new object
+            chd.t0 = t0_; % make new object
         end
     
         function y = sample(chd, tau, interp)
@@ -499,7 +515,7 @@ classdef ChannelData < matlab.mixin.Copyable
             if nargin < 3, interp = 'linear'; end
 
             % check condition that we can implicitly broadcast
-            for d = 2:ndims(tau)
+            for d = setdiff(1:gather(ndims(tau)), chd.tdim) % all dims except time must match
                 assert(any(size(tau,d) == size(chd.data,d)) || ...
                       any([size(tau,d)  , size(chd.data,d)] == 1), ...
                     'Delay size must match the data size (%i) or be singleton in dimension %i.',...
@@ -508,12 +524,19 @@ classdef ChannelData < matlab.mixin.Copyable
             end
 
             % dispatch
-            assert(chd.tdim == 1, 'Time must be in the first dimension of the data.'); % TODO: generalize this restriction if necessary
-            if (isa(chd.data, 'gpuArray') ... 
-                    && ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
-                    && logical(exist('interpd.ptx', 'file'))
-                    % interpolate on the gpu via ptx if we can
-                    y = interpd(chd.data, (tau - chd.t0) * chd.fs, 1, interp, 0); 
+            % assert(chd.tdim == 1, 'Time must be in the first dimension of the data.'); % TODO: generalize this restriction if necessary
+            if interp ~= "freq" % (isa(chd.data, 'gpuArray') ...
+                % && ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ...
+                % && logical(exist('interpd.ptx', 'file'))
+
+                % interpolate on the gpu via ptx if we can, else use
+                % optimized calls to interp1
+                ntau = (tau - chd.t0) * chd.fs; % sample delays (I x [1|N] x [1|M] x [1|F] x ...) (default order)
+                if istall(ntau) || istall(chd.data)
+                    y = matlab.tall.transform(@interpd, chd.data, ntau, chd.tdim, interp, 0);
+                else
+                    y = interpd(chd.data, ntau, chd.tdim, interp, 0);
+                end
 
             elseif interp == "freq"
                 % extend data if necessary
@@ -526,20 +549,26 @@ classdef ChannelData < matlab.mixin.Copyable
                 L = chd.T; % fft length
                 % l = (0:L-1)'; % make new time vector in sample dimension
                 d = max(ndims(x), ndims(ntau)); % find max dimension
-                ntau = swapdim(ntau, d+1, 1); % move sampling to next one, a free dimension
+                ntau = swapdim(ntau, d+1, chd.tdim); % move sampling to a free dimension
                 
                 % apply phase shifts and sum (code written serially to 
                 % request in-place operation from MATLAB)
-                x = fft(x, L, 1); % put data in freq domain (L x N x M x [1|F] x ... x I)
+                x = fft(x, L, chd.tdim); % put data in freq domain (L x N x M x [1|F] x ... x I)
                 wL = exp(2i*pi*ntau./L); % sampling steering vector (1 x [1|N] x [1|M] x [1|F] x ... x I)
-                xl = num2cell(x, 2:ndims(x)); % splice data in freq domain (L x {N x M x [1|F] x ... x I})
                 y = 0; % initialize accumulator
                 if isa(x, 'gpuArray') || isa(wL, 'gpuArray'), clu = 0; % avoid parfor on gpuArray
                 else, clu = gcp('nocreate'); if isempty(clu), clu = 0; end % otherwise, use current parpool   
                 end
-                parfor (l = (1:L), clu), y = y + wL.^(l-1) .* xl{l}; end % apply phase shift and sum over freq (1 x N x M x [1|F] x ... x I)
-                y = swapdim(y, 1, d+1); % move samples back to first dim (I x N x 1 x M' x F x ...)
-                                    
+                 % apply phase shift and sum over freq (1 x N x M x [1|F] x ... x I)
+                if istall(x) || istall(wL)
+                    l = shiftdim((1:L)', 1-chd.tdim); % each frequency index, in dim tdim
+                    y = matlab.tall.reduce(@(x,w,l) sum(w.^(l-1) .* x, chd.tdim), @(x)x, x, wL, l); % apply via map-reduce
+                else
+                    xl = num2cell(x, setdiff(1:ndims(x), chd.tdim)); % splice data in freq domain (L x {N x M x [1|F] x ... x I})
+                    parfor (l = (1:L), clu), y = y + wL.^(l-1) .* xl{l}; end % apply, 1 freq at a time
+                end
+                y = swapdim(y, chd.tdim, d+1); % move samples back to first dim (I x N x 1 x M' x F x ...)
+            %{        
             else % use interp1, iterating over matched dimensions, broadcasting otherwise
                     % convert to index based coordinates
                     ntau = (tau - chd.t0) * chd.fs; % get full size sample delays
@@ -592,6 +621,7 @@ classdef ChannelData < matlab.mixin.Copyable
                     if ~isempty(ldim), lsz = size(ntau,ldim); else, lsz = []; end % forward empty
                     y = reshape(y, [size(y,1:mxdim), lsz]); % restore data size in upper dimension
                     y = swapdim(y,ldim,mxdim+(1:numel(ldim))); % fold upper dimensions back into original dimensions
+                    %}
             end
         end
         
@@ -652,30 +682,34 @@ classdef ChannelData < matlab.mixin.Copyable
             end
 
             % get full data sizing
-            dims = max([ndims(self.data), ndims(self.time), 3]);
-            dsz = size(self.data, 3:dims);
-            tsz = size(self.time, 3:dims);
+            dims = gather(max(3, [ndims(self.data)])); % (minimum) number of dimensions
+            idims = [self.tdim, self.ndim]; % image dimensions
+            fdims = setdiff(1:dims, idims); % frame dimensions
+            dsz = gather(size(self.data, fdims)); % full size - data dimensions
+            tsz = gather(size(self.time, fdims));
 
             % we index the data linearly, but the time axes may be
             % implicitly broadcasted: we can use ind2sub to recover it's
             % sizing
-            i = cell([dims-3+1, 1]); 
-            [i{:}] = ind2sub(dsz, m); % get cell array of indices
-            i = min([i{:}], tsz); % restrict to size of self.time
+            ix = cell([numel(fdims), 1]); % indices of the frame for the data
+            [ix{:}] = ind2sub(dsz, gather(m)); % get cell array of indices
+            it = gather(min([ix{:}], tsz)); % restrict to size of self.time
+            ix = cellfun(@gather, ix, 'UniformOutput', false); % enforce on CPU
 
             % select the transmit/frame - we can only show first 2
-            % dimensions
-            d = self.data(:,:,m); 
+            % dimensions, time x rx
+            d = gather(sub(self.data, ix, fdims));
+            d = permute(d, [idims, fdims]); % move image dimensions down 
 
             % choose to show real part or dB magnitude
             if isnumeric(d), d = double(d); end % cast integer types for abs, half types for imagesc
             if ~isreal(d), d = mod2db(d); end
 
-            % get the time axes for this channel
-            t = double(sub(self.time, num2cell(i), [3:dims])); %#ok<NBRAK> 
+            % get the time axes for this frame
+            t = gather(double(sub(self.time, num2cell(it), fdims)));
 
             % choose which dimensions to show
-            axes_args = {'XData', 1:self.N, 'YData', t};
+            axes_args = {'XData', 1:self.N, 'YData', t}; % ndim, tdim labels
 
             % show the data
             h = imagesc(ax, d, axes_args{:}, varargin{:});
@@ -697,7 +731,7 @@ classdef ChannelData < matlab.mixin.Copyable
             end
 
             % now use the handle only
-            for f = 1:prod(size(self.data,3:ndims(self.data)))
+            for f = 1:gather(prod(size(self.data,3:max(3,gather(ndims(self.data))))))
                 if ~isvalid(ax), break; end % quit if handle destroyed
                 h = imagesc(self, f, ax, varargin{:});
                 drawnow limitrate; pause(1/20);
@@ -736,6 +770,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % if no image handle, create a new image
             if nargin < 3, h = imagesc(chd, 1); end
             
+            chd = rectifyDims(chd); % put in proper order
             x = chd.data; % all data
             M_ = prod(size(x, 3:min(3,ndims(x)))); % all slices
 
@@ -781,19 +816,99 @@ classdef ChannelData < matlab.mixin.Copyable
             self.t0 = t0_;
             self.fs = fs_;
         end
-        function t = get.time(self), t = cast(self.t0 + shiftdim((0 : gather(self.T) - 1)', self.tdim-1) ./ self.fs, 'like', real(self.data)); end % match data type, except always real
-        function T = get.T(self), T = size(self.data,self.tdim); end
-        function N = get.N(self), N = size(self.data,self.ndim); end
-        function M = get.M(self), M = size(self.data,self.mdim); end
-        function n = get.rxs(self), n=cast(shiftdim(1:self.N,0 ), 'like', real(self.data)); end
-        function m = get.txs(self), m=cast(shiftdim(1:self.M,-1), 'like', real(self.data)); end
+        function t = get.time(self), t = cast(self.t0 + shiftdim((0 : self.T - 1)', 1-self.tdim) ./ self.fs, 'like', real(self.data)); end % match data type, except always real
+        function T = get.T(self), T = gather(size(self.data,self.tdim)); end
+        function N = get.N(self), N = gather(size(self.data,self.ndim)); end
+        function M = get.M(self), M = gather(size(self.data,self.mdim)); end
+        function n = get.rxs(self), n=cast(shiftdim((1:self.N)',1-self.ndim), 'like', real(self.data)); end
+        function m = get.txs(self), m=cast(shiftdim((1:self.M)',1-self.mdim), 'like', real(self.data)); end
     end
 
-    % convenience functions (used internally for now)
+    % sizing functions (used to control tall behaviour and reshaping)
     properties(Hidden, Dependent)
         tdim
         ndim
         mdim
+    end
+    methods
+        function chds = splice(chd, dim)
+            assert(isscalar(dim), 'Dimension must be scalar!'); 
+
+            S = gather(size(chd.data, dim)); % slices
+            
+            % splice data and time axes
+            t = arrayfun(@(i) sub(chd.t0  , i, dim), 1:gather(size(chd.t0  ,dim)), 'UniformOutput',false);
+            x = arrayfun(@(i) sub(chd.data, i, dim), 1:gather(size(chd.data,dim)), 'UniformOutput',false);
+            
+            % make array of new ChannelData objects
+            chds = repmat(ChannelData('fs', chd.fs, 'ord', chd.ord), [S,1]); % new ChannelData objects
+            chds = arrayfun(@copy, shiftdim(chds, 1-dim)); % make unique and move to dimension dim
+            [chds.data] = deal(x{:}); % set data
+            [chds.t0  ] = deal(t{:}); % set start time(s)
+
+        end
+        function chd = sub(chd, ind, dim)
+            if ~iscell(ind), ind = {ind}; end % enforce cell syntax
+            tind = ind; % separate copy for the time indices
+            tind(size(chd.time,dim) == 1) = {1}; % set singleton
+            if any(dim == chd.tdim), t = chd.time; else, t = chd.t0; end % index in time if necessary
+            t0_   = sub(t, tind, dim); % extract
+            data_ = sub(chd.data, ind, dim); % extract
+            
+            chd = copy(chd); % copy semantics
+            chd.t0 = t0_; % assign
+            chd.data = data_; % assign
+
+        end
+        function chd = setOrder(chd, cord)
+            assert(...
+                length(cord) >= ndims(chd.data),...
+                'Number of dimension labels must be greater than or equal to the number of data dimensions.'...
+                ); 
+            assert(...
+                all(ismember('TMN', cord)), ...
+                "Dimension labels must contain 'T', 'N', and 'M'."...
+                );
+            chd.ord = cord; 
+        end
+        function chd = expandDims(chd, d)
+            chd = copy(chd); % copy semantics
+            nc = numel(chd.ord); % number of dimension labels
+            ccand = setdiff(char(double('F') + (0 : 2*(d-nc))), chd.ord); % get unique labels, starting with 'F'
+            chd.ord(nc+1:d) = ccand(1:d-nc);
+        end
+        function chd = truncateDims(chd)
+            nd = numel(chd.ord); % number of (labelled) dimensions
+            [~,o] = ismember('TMN', chd.ord); % position of necessary params
+            sdims = find(size(chd.data,1:nd) ~= 1); % singleton dims
+            kdims = sort(union(o, sdims)); % dims to keep: necessary or non-singleton
+            rdims = setdiff(1:nd, kdims); % dims to remove: all others
+            chd = permute(chd, [kdims, rdims]); % squeeze data down
+            chd.ord = chd.ord(kdims); % remove unnecesary dimensions 
+        end
+        function chd = swapdim(chd, i, o)
+            dord = 1:max([i,o,ndims(chd.data)]); % max possible dim
+            dord(i) = o; % swap
+            dord(o) = i; % swap
+            chd = permute(chd, dord); % move data dimensions
+        end
+        function chd = permute(chd, dord)
+            chd = expandDims(chd, max(dord)); % expand to have enough dim labels
+            chd = copy(chd); % copy semantics
+            chd.data = permute(chd.data, dord); % change data dimensions
+            chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
+        end
+        function [chd, dord] = rectifyDims(chd)
+            % RECTIFYDIMS - Set dimensions to default order
+            %
+            % chd = RECTIFYDIMS(chd) sets the dimension of the data to
+            % their default order
+            D = gather(max(numel(chd.ord), ndims(chd.data))); % number of dimensions
+            dord = arrayfun(@(o) find(chd.ord == o), 'TNM'); % want this order to start
+            dord = [dord, setdiff(1:D, dord)]; % make sure we have all dimensions accounted for
+            chd = permute(chd, dord); % set dims to match in lower dimensions
+            % chd = truncateDims(chd); % remove unnecessary dimensions
+        end
     end
     methods
         function d = get.tdim(self), d = find(self.ord == 'T'); end
