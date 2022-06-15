@@ -27,7 +27,7 @@ if ~iscell(ind), ind = {ind}; end
 assert(numel(ind) == numel(dim), "Must have as many dims as indices.") 
 
 % place ':' in all dimensions
-subs = cellstr(repmat(":", [1, max(ndims(x), max(dim))])); 
+subs = cellstr(repmat(":", [1, max(gather(ndims(x)), max(dim))])); 
 
 % replace ':' with index in selected dimensions
 for i = 1:numel(dim), subs{dim(i)} = ind{i}; end
