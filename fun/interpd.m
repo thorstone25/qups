@@ -89,7 +89,7 @@ if exist('interpd.ptx', 'file') ...
     end
 
     % sample
-    osz = [I, max(size(t,ddms), size(x,ddms))];
+    osz = [I, max(size(t,2:maxdims), size(x,2:maxdims))];
     x = complex(x); % enforce complex type
     y = repmat(cast(extrapval, 'like', x), osz);
     y = k.feval(y, x, t, flagnum); % compute
