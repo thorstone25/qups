@@ -180,6 +180,38 @@ classdef Medium < handle
         end
     
     end
+
+    % k-Wave interface
+    methods
+        function kmedium = getMediumKWave(self, scan)
+            % GETMEDIUMKWAVE - Get a kWave compatible medium struct
+            %
+            % kmedium = GETMEDIUMKWAVE(self, scan) creates a kWave
+            % compatible struct from the Medium self and the ScanCartesian
+            % scan.
+            %
+            %
+
+            % get properties in original dimensions
+            [c, rho, BoA, alpha] = self.props(scan);
+
+            % get k-Wave order
+            ord = arrayfun(@(d) find(d == scan.order), 'ZXY'); % place in this order for kWave
+
+            % move to k-Wave dimensions
+            [kmedium.sound_speed, kmedium.density, kmedium.BonA, kmedium.alpha_coeff] = ...
+                dealfun(@(x)permute(x, ord), c, rho, BoA, alpha);
+
+            % remove higher order terms if the coefficients are all 0s
+            if all(isnan(kmedium.alpha_coeff)), kmedium = rmfield(kmedium, "alpha_coeff"); end
+            if all(isnan(kmedium.BonA)), kmedium = rmfield(kmedium, "BonA"); end
+
+            % set alpha power if alpha coefficient is set
+            if isfield(kmedium, 'alpha_coeff'), kmedium.alpha_power = self.alphap0; end
+        end
+    end
+
+    % Easy constructor
     methods(Static)
         function medium = Sampled(scan, c, rho, BoA, alpha, alphap0, varargin)
             % SAMPLED - Create a medium from an array
@@ -188,45 +220,45 @@ classdef Medium < handle
             % creates a Medium with the properties defined by the inputs.
             % They must be empty to use the ambient/default parameters.
             %
-            % medium = Medium.SAMPLED(...,Name,Value) forwards following 
+            % medium = Medium.SAMPLED(...,Name,Value) forwards following
             % arguments to the constructor.
             %
             % See also: MEDIUM/MEDIUM
 
             % TODO: use a Scan[Cartesian] instead of a grid
-            
+
             if ~isa(scan, 'ScanCartesian')
-                error('Data must be defined on a ScanCartesian'); 
+                error('Data must be defined on a ScanCartesian');
             end
             grid = {scan.x, scan.y, scan.z};
 
             nullfun = @(p) nan(size(sub(p,1,1)));
 
-            if nargin >= 2 && ~isempty(c), 
+            if nargin >= 2 && ~isempty(c),
                 cterp = griddedInterpolant(grid, c, 'linear', 'none');
                 cfun = @(p) cterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 cfun = nullfun;
             end
-            if nargin >= 3 && ~isempty(rho), 
+            if nargin >= 3 && ~isempty(rho),
                 rterp = griddedInterpolant(grid, rho, 'linear', 'none');
                 rfun = @(p) rterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 rfun = nullfun;
             end
-            if nargin >= 4 && ~isempty(BoA), 
+            if nargin >= 4 && ~isempty(BoA),
                 bterp = griddedInterpolant(grid, BoA, 'linear', 'none');
                 bfun = @(p) bterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 bfun = nullfun;
             end
-            if nargin >= 5 && ~isempty(alpha), 
+            if nargin >= 5 && ~isempty(alpha),
                 aterp = griddedInterpolant(grid, alpha, 'linear', 'none');
                 afun = @(p) aterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 afun = nullfun;
             end
-            if nargin >= 6 && ~isempty(alphap0), 
+            if nargin >= 6 && ~isempty(alphap0),
                 apterp = griddedInterpolant(grid, alphap0, 'linear', 'none');
                 apfun = @(p) apterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
@@ -239,8 +271,10 @@ classdef Medium < handle
             % add perterbation
             medium.pertreg{end+1} = @(p) dealret(p, cfun, rfun, bfun, afun, apfun);
 
-        end    
+        end
     end
+
+    % visualization methods
     methods
         function h = imagesc(self, scan, varargin)
             % IMAGESC - Image the Medium (without scatterers)
