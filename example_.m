@@ -40,12 +40,14 @@ try hw = waitbar(0, 'test', 'Visible', 'off'); close(hw); end %#ok<TRYNC> % R202
 
 target_depth = 1e-3 * 30;
 switch "single"
-    case 'single', targ = Target('pos', [0;0;target_depth], 'c0', 1500); % simple point target
-    case 'array' , targ = Target('pos', [0;0;1] * 1e-3*(10:5:50), 'c0', 1500); % targets every 5mm
-    case 'diffuse', targ = Target('pos', 1e-3*[40;10;60].*([1;0;1].*rand(3,2501)-[0.5;0;0]), 'c0', 1500); % diffuse scattering
+    case 'single' , targ = Target('pos', [0;0;target_depth], 'c0', 1500); % simple point target
+    case 'array'  , targ = Target('pos', [0;0;1] * 1e-3*(10:5:50), 'c0', 1500); % targets every 5mm
+    case 'diffuse', N = 2501; % a random number of scatterers
+                    targ = Target('pos', 1e-3*[40;10;60].*([1;0;1].*rand(3,N)-[0.5;0;0]), 'amp', rand(1,N), 'c0', 1500); % diffuse scattering
 end
-targ.rho_scat = 2; % make density scatterers at 2x the density
-targ.scat_mode = 'ratio'; 
+% make scatterers twice the density
+targ.scat_mode = 'ratio';
+targ.rho_scat = 4; 
 % Choose a transducer
 
 switch "L11-5V"
@@ -67,11 +69,11 @@ if isa(xdc, 'TransducerArray')
     switch "FSA"
         case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
         case 'Plane-wave', 
-            [amin, amax, Na] = deal( -25 ,  25 , 26 );
+            [amin, amax, Na] = deal( -25 ,  25 , 11 );
             seq = SequenceRadial('type', 'PW', ...
                 'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
         case 'Focused', 
-            [xmin, xmax, Nx] = deal( -10 ,  10 , 21 );
+            [xmin, xmax, Nx] = deal( -10 ,  10 , 11 );
             seq = Sequence('type', 'VS', 'c0', targ.c0, ...
         'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
         ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
@@ -128,8 +130,22 @@ end
 %% 
 % 
 
+% create a distributed medium based on the point scatterers 
+% (this logic will later be implemented in a class)
+[c, rho] = props(targ, tscan, {'c', 'rho'});
+g = tscan.getImagingGrid(); g = cellfun(@(x){shiftdim(x,-1)}, g); g = cat(1, g{:});
+[i, cp, rhop] = targ.modMap(g);
+[c(i), rho(i)] = deal(cp, rhop);
+med = Medium.Sampled(tscan, c, rho);
+%% 
+% 
+
+
 % Show the transducer's impulse response
 % figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
+
+% Show the transmit signal - a single point means it's a delta function
+% figure; plot(seq.pulse, '.-'); title('Transmit signal');
 %  Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
@@ -157,8 +173,10 @@ us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 *
 % run on CPU to use spline interpolation
 switch "Greens"
     case 'FieldII', chd0 = calc_scat_all(us, targ, [1,1], 'device', device, 'interp', 'cubic'); % use FieldII, 
+    case 'FieldII-multi', chd0 = calc_scat_multi(us, targ, [1,1]); % use FieldII, 
     case 'SIMUS'  , chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'freq'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
     case 'Greens' , chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a Greens function with a GPU if available!
+    case 'kWave', chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 1/8, 'PML', [32 72], 'parcluster', 0); % run locally, and use an FFT friendly PML size
 end
 chd0
 
@@ -182,8 +200,8 @@ if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert 
 
 % Run a simple DAS algorithm
 switch class(xdc)
-    case 'TransducerArray' , scale = 1e-3;
-    case 'TransducerConvex', scale = 1;
+    case 'TransducerArray' , scale = 1e-3; % Definitions in millimeters
+    case 'TransducerConvex', scale = 1; % Definitions in degrees
 end
 switch seq.type
     case "VS", 
@@ -217,11 +235,13 @@ end
 
 switch "DAS"
     case "DAS"
-        b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'spline', 'apod', apod); % use a delay-and-sum beamformer
+        b = bfDAS(us, chd, targ.c0, 'apod', apod); % use a vanilla delay-and-sum beamformer
     case "Adjoint"
         b = bfAdjoint(us, chd, targ.c0); % use an adjoint matrix method
     case "Eikonal"
         b = bfEikonal(us, chd, targ, tscan, 'interp', 'linear', 'apod', apod); % use the eikonal equation
+    case "DAS-direct"
+        b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'spline', 'apod', apod); % use a specialized delay-and-sum beamformer
 end
 
 % show the image
