@@ -774,7 +774,8 @@ classdef UltrasoundSystem < handle
             % each element.
             %
             % chd = CALC_SCAT_ALL(..., 'interp', method) specifies the
-            % interpolation methods for the transmit synthesize.
+            % interpolation methods for the transmit synthesis. The method
+            % must be supported by focusTx.
             %
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
             
@@ -841,6 +842,115 @@ classdef UltrasoundSystem < handle
             % cleanup
             if field_started, evalc('field_end'); end
         end        
+
+        function chd = calc_scat_multi(self, target, element_subdivisions, varargin)
+            % CALC_SCAT_MULTI - Simulate channel data via FieldII
+            %
+            % chd = CALC_SCAT_MULTI(self, target) simulates the Target target
+            % and returns a ChannelData object chd.
+            %
+            % chd = CALC_SCAT_MULTI(self, target, element_subdivisions)
+            % specifies the number of subdivisions in width and height for
+            % each element.
+            %
+            % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
+
+            % helper function
+            vec = @(x) x(:); % column-vector helper function
+
+            % defaults
+            kwargs = struct('parcluster', gcp('nocreate'));
+
+            % load options
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+
+            % initialize field II
+            try
+                evalc('field_info');
+                field_started = false;
+            catch
+                field_init(-1);
+                field_started = true;
+            end
+
+            % get the Tx/Rx impulse response function / excitation function
+            wv_tx = self.tx.impulse; % transmitter impulse
+            wv_rx = self.rx.impulse; % receiver impulse
+            wv_pl = self.sequence.pulse;
+
+            % get the time axis (which passes through t == 0)
+            t_tx = wv_tx.getSampleTimes(self.fs);
+            t_rx = wv_rx.getSampleTimes(self.fs);
+            t_pl = wv_pl.getSampleTimes(self.fs);
+
+            % define the impulse and excitation pulse
+            tx_imp = gather(real(vec(wv_tx.fun(t_tx))'));
+            rx_imp = gather(real(vec(wv_rx.fun(t_rx))'));
+            tx_pls = gather(real(vec(wv_pl.fun(t_pl))'));
+
+            % get the apodization and time delays across the aperture
+            apod_tx = self.sequence.apodization(self.tx); % N x M
+            tau_tx = self.sequence.delays(self.tx); % N x M
+            tau_offset = min(tau_tx, [], 1); % (1 x M)
+            tau_tx = tau_tx - tau_offset; % 0-base the delays for FieldII
+
+            % choose the cluster to operate on: avoid running on ThreadPools
+            clu = kwargs.parcluster;
+            if isempty(clu) || isa(clu, 'parallel.ThreadPool'), clu = 0; end
+
+            % splice
+            [fs_, c0, pos, amp] = deal(self.fs, target.c0, target.pos, target.amp);
+            [tx_, rx_] = deal(self.tx, self.rx);
+            parfor (m = 1:self.sequence.numPulse, clu)
+
+                % (re)initialize field II
+                field_init(-1);
+
+                % set sound speed/sampling rate
+                set_field('fs', fs_);
+                set_field('c', c0);
+
+                % get Tx/Rx apertures
+                p_focal = [0;0;0];
+                Tx = tx_.getFieldIIAperture(p_focal.', element_subdivisions);
+                Rx = rx_.getFieldIIAperture(p_focal.', element_subdivisions);
+
+                % set the impulse response function / excitation function
+                xdc_impulse   (Tx, tx_imp);
+                xdc_impulse   (Rx, rx_imp);
+                xdc_excitation(Tx, tx_pls);
+
+                % nullify the response on the receive aperture
+                xdc_times_focus(Rx, 0,  zeros([1, rx_.numel])); % set the delays
+
+                % for each transmit, set the transmit time delays and
+                % apodization
+                xdc_times_focus(Tx, 0,  tau_tx(:,m)'); % set the delays
+                xdc_apodization(Tx, 0, apod_tx(:,m)'); % set the apodization
+                
+                % call the sim
+                [voltages{m}, ts(m)] = calc_scat_multi(Tx, Rx, pos.', amp.');
+            end
+
+            % adjust start time based on signal time definitions
+            t0 = ts + ... % start time from FieldII
+                (t_pl(1) + t_tx(1) + t_rx(1)) ... signal delays for impulse/excitation
+                + tau_offset ... 0-basing the delays across the aperture
+                ;
+
+            % create the output QUPS ChannelData object
+            chds = cellfun(@(x, t) ChannelData('data', x, 't0', t, 'fs', self.fs), ...
+                voltages, num2cell(t0));
+
+            % concatenate over transmits (not natively implemented yet)
+            % chd = cat(3, chds); % -> TODO: native in ChannelData 
+            T = max([chds.T]); % maximum length simulation
+            chds = arrayfun(@(chds)zeropad(chds,0,T - chds.T), chds); % make all the same length
+            chd = ChannelData('t0', cat(3,chds.t0), 'fs', unique([chds.fs]), 'data', cat(3, chds.data));
+
+            % cleanup
+            if field_started, evalc('field_end'); end
+        end
     end
     
     % k-Wave calls (old)
