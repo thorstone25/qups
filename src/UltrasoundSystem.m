@@ -890,7 +890,7 @@ classdef UltrasoundSystem < handle
 
             % get the apodization and time delays across the aperture
             apod_tx = self.sequence.apodization(self.tx); % N x M
-            tau_tx = self.sequence.delays(self.tx); % N x M
+            tau_tx = -self.sequence.delays(self.tx); % N x M
             tau_offset = min(tau_tx, [], 1); % (1 x M)
             tau_tx = tau_tx - tau_offset; % 0-base the delays for FieldII
 
