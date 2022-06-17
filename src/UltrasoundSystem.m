@@ -1774,6 +1774,7 @@ classdef UltrasoundSystem < handle
 
             % setup a default keyword arguments structure
             kwargs = struct( ...
+                'T', [], ... simulation time (s)
                 'PML', [20 56], ... (one-sided) PML size range
                 'CFL_max', 0.25, ... maximum cfl number (for stability)
                 'parcluster', 0, ... parallel cluster for running simulations (use 0 for no cluster)
@@ -1816,10 +1817,10 @@ classdef UltrasoundSystem < handle
             % get the kWaveGrid
             [kgrid, Npml]= getkWaveGrid(sscan, 'PML', kwargs.PML);
 
-            % get the medium
+            % get the kWave medium struct
             kmedium = getMediumKWave(target, sscan);
 
-            % set the time axis
+            % get the minimum necessary time step from the CFL
             dt_cfl_max = kwargs.CFL_max * min([sscan.dz, sscan.dz, sscan.dy]) / max(kmedium.sound_speed,[],'all');
             
             % use a time step that aligns with the sampling frequency
@@ -1829,21 +1830,19 @@ classdef UltrasoundSystem < handle
             if cfl_ratio < 1
                 warning('Upsampling the kWave time step for an acceptable CFL.');
                 time_step_ratio = ceil(inv(cfl_ratio));
-            % else % TODO: do or don't downsample? Could be set for temporal reasons
+            % else % TODO: do (or don't) downsample? Could be set for temporal reasons
             %     time_step_ratio = inv(floor(cfl_ratio));
             end
-            dt = dt_us / time_step_ratio;
-            Nt = 1 + floor(vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) .* target.c0);
-            kgrid.setTime(Nt, dt);
-
-
+            kgrid.dt = dt_us / time_step_ratio;
+            
             % kgrid to sscan coordinate translation mapping
             kgrid_origin = cellfun(@median, {sscan.z, sscan.x, sscan.y});
 
             % TODO: set the end time maybe? optional input argument?
 
             % define the sensor on the grid
-            el_sub_div = [1,1]; % I think this is the easiest case to test?
+            % el_sub_div = [1,1]; % I think this is the easiest case to test?
+            el_sub_div = [4,16]; % heuristic: should be generally enough to sample on the grid
             [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
 
             % create the full sensor mask as the combination of all of the elements
@@ -1852,6 +1851,13 @@ classdef UltrasoundSystem < handle
 
             % define the source signal(s) for each transmit in the pulse sequence
             [ksource, t_sig, sig] = self.getKWaveSource(kgrid, kgrid_origin, el_sub_div, target.c0);
+
+            % set the total simulation time: default to a single round trip at ambient speed
+            if isempty(kwargs.T)
+                kwargs.T = 2 * (vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) ./ target.c0);
+            end
+            Nt = 1 + floor((kwargs.T / kgrid.dt) + max(range(t_sig,1))); % number of steps in time
+            kgrid.setTime(Nt, kgrid.dt);
 
             % check the size of the temporal response and
             % maximum number of subelements. An array of this size
@@ -1862,27 +1868,21 @@ classdef UltrasoundSystem < handle
             %% Submit a k-wave simulation for each transmit
             tt_kwave = tic;
 
-            % lam_min_grid_spac = min(kmedium.sound_speed,[],'all') / (self.us.xdc.fc + 0.5*self.us.xdc.bw);
-            % lam_max_temp_freq = min(kmedium.sound_speed,[],'all') / max([kgrid.dx, kgrid.dy, kgrid.dz]) / 2;
             fprintf('There are %i points in the grid which is %0.3f megabytes per grid variable.\n', ...
                 kgrid.total_grid_points, kgrid.total_grid_points*4/2^20);
 
-
             % strip all other arguments from input
-            nonkwfields = {'PML','CFL_max', 'parcluster' }; % not kWave args
+            nonkwfields = {'T', 'PML','CFL_max', 'parcluster'}; % not kWave args
             kwave_args = rmfield(kwargs, nonkwfields); % forward all others
             
-            % set global arguments
+            % set global arguments: these are always overridden
             kwave_args.PMLInside = false;
             kwave_args.PMLSize = Npml(1:kgrid.dim);
             
-            % set per pulse properities
+            % make a new movie name for each pulse
             kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
-            for puls = 1:self.sequence.numPulse
-                if(isfield(kwave_args(puls), 'MovieName'))
-                    kwave_args(puls).MovieName = char(kwave_args(puls).MovieName + sprintf("_pulse%2.0i",puls));
-                end
-            end
+            mv_nm = {kwave_args.MovieName} + sprintf("_pulse%2.0i",1:self.sequence.numPulse);
+            [kwave_args.MovieName] = deal(mv_nm{:});
 
             % select function
             switch kgrid.dim
@@ -1933,30 +1933,10 @@ classdef UltrasoundSystem < handle
             T = max([chds.T]); % maximum length simulation
             chds = arrayfun(@(chds)zeropad(chds,0,T - chds.T), chds); % make all the same length
             chd = ChannelData('t0', cat(3,chds.t0), 'fs', unique([chds.fs]), 'data', cat(3, chds.data));
+            chd.t0 = chd.t0 +  sub(t_sig,1,1);
 
             % TODO: make reports optional
             fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
-
-
-            % get voltages (T x N x M)
-            % voltages = cast(cell2mat(shiftdim(out(:,1), -2)), 'single');
-
-            % get timing (T x 1 x M) -> (T x 1)
-            % t_resp   = mode(cell2mat(shiftdim(out(:,2), -2)), 3);
-
-            % get time axis
-            % time = t_resp + min(t_sig);
-
-            % get numerically correct frequency
-            % fs_ = 1 ./ kgrid.dt;
-            % if fs_ > self.fs, %#ok<BDSCI> % fs_ is scalar
-            %     fs_ = self.fs * round(fs_ / self.fs); % use the rounded upsampling factor
-            % else
-            %     fs_ = self.fs / round(self.fs / fs_); % use the rounded downsampling factor
-            % end
-
-            % Create a channel data object
-            % chd = ChannelData('t0', sub(time,1,1), 'data', voltages, 'fs', self.fs * time_step_ratio);
 
         end
     
