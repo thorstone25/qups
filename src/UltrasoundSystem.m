@@ -2477,25 +2477,38 @@ classdef UltrasoundSystem < handle
             % splice args
             sz = self.scan.size; % original size
             interp_method = kwargs.interp; 
+            apod = kwargs.apod;
 
-            % TODO: allow options to specify summation
-            % sample for each tx/rx
-            chd = rectifyt0(chd); % TODO: use an indexing function on the object to handle t0 subtleties
+            % get sample times for each tx/rx
+            tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all receive delays
+            tau_rx = cellfun(@(f) f(gi{:}), rx_samp, 'UniformOutput', false); % all receive delays
+            tau_rx = cat(4, tau_rx{:}); % use all at a time
+            chds = splice(chd, chd.mdim); % splice per transmit
+            
             b = 0; % initialize
-            [Na, Ma] = size(kwargs.apod, 4:5);
             hw = waitbar(0,'Beamforming ...'); % create a wait bar
             for (m = 1:chd.M) % for each transmit
-                tau_tx = tx_samp{m}(gi{:}); % transmit delay
-                apod_tx = sub(kwargs.apod, min(m, Ma), 5); % recieve apodization per transmit
-                chd_tx = sub(chd, m, chd.mdim); % select transmit 
-                chds = splice(chd_tx, chd.ndim); % splice receive
-                parfor (n = 1:chd.N, clu) % for each receive %TODO: avoid parfor with GPUs
-                    a = sub(apod_tx, min(n, Na), 4); % receive apodization per receive
-                    tau = tau_tx + rx_samp{n}(gi{:}); %#ok<PFBNS> % get sample time (I1 x I2 x I3)
-                    tau = shiftdim(tau(:), 1-chds(n).tdim); % move image to align with time dimension
-                    b = b + a .* reshape(sample(chds(n), tau, interp_method), sz); % sample (I1 x I2 x I3 x F x ...)
-                end
-                if isvalid(hw), waitbar(m/chd.M, hw); end % update if not closed
+                % extract the channel data for this transmit
+                chd_ = chds(m);
+
+                % make the eikonal delays algin with the channel data
+                tau = tau_rx + tau_tx{m}; % I1 x I2 x I3 x N x 1
+                tau = reshape(tau, [],1,1,chd_.N,1); % I x 1 x 1 x N x 1
+                tau = swapdim(tau, [1,4], [chd_.tdim, chd_.ndim]); % move to matching dimensions
+
+                % sample and unpack the data
+                % TODO: avoid moving in dim 1 in order to support tall arrays
+                y = sample(chd_, tau, interp_method); % sample in matching dims
+                y = swapdim(y, [1,4], [chd_.tdim, chd_.ndim]); % I x 1 x 1 x N x 1
+                y = reshape(y, [sz,chd_.N,1]); % I1 x I2 x I3 x N x 1
+
+                % extract the apodization
+                a = sub(apod, min(m, size(apod,5)), 5); % recieve apodization per transmit
+                b = b + sum(a * y, 4); % apply apodization and sum
+                
+                % TODO: allow options to specify summation
+            
+                if isvalid(hw), waitbar(m/chd_.M, hw); end % update if not closed
             end
             if isvalid(hw), close(hw); end % close if not closed
         end
