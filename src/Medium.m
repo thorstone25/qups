@@ -270,11 +270,11 @@ classdef Medium < handle
             else
                 afun = nullfun;
             end
+            % returns a scalar: cannot have a distributed power law
             if nargin >= 6 && ~isempty(alphap0),
-                apterp = griddedInterpolant(grid, szfun(alphap0), 'nearest', 'none');
-                apfun = @(p) apterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
+                apfun = @(p) alphap0; 
             else
-                apfun = nullfun;
+                apfun = @(p) nullfun(0);
             end
 
             % call constructor
