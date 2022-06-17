@@ -778,6 +778,9 @@ classdef UltrasoundSystem < handle
             %
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
             
+            % helper function
+            vec = @(x) x(:); % column-vector helper function
+
             % defaults
             kwargs = struct('interp', 'linear');
 
@@ -803,49 +806,37 @@ classdef UltrasoundSystem < handle
             Tx = self.tx.getFieldIIAperture(p_focal.', element_subdivisions);
             Rx = self.rx.getFieldIIAperture(p_focal.', element_subdivisions);
             
-            % set the Tx/Rx impulse response function
-            tx_impulse_waveform = self.tx.impulse();
-            t_tx = tx_impulse_waveform.getSampleTimes(self.fs);
-            tx_impulse_samples = reshape(tx_impulse_waveform.fun(t_tx), 1, []);
-            xdc_impulse(Tx, real(tx_impulse_samples));
+            % get the Tx/Rx impulse response function / excitation function
+            wv_tx = self.tx.impulse; % transmitter impulse
+            wv_rx = self.rx.impulse; % receiver impulse
+            wv_pl = self.sequence.pulse;
             
-            rx_impulse_waveform = self.rx.impulse();
-            t_rx = rx_impulse_waveform.getSampleTimes(self.fs);
-            rx_impulse_samples = reshape(rx_impulse_waveform.fun(t_rx), 1, []);
-            xdc_impulse(Rx, real(rx_impulse_samples));
+            % get the time axis (which passes through t == 0)
+            t_tx = wv_tx.getSampleTimes(self.fs);
+            t_rx = wv_rx.getSampleTimes(self.fs);
+            t_pl = wv_pl.getSampleTimes(self.fs);
             
-            % set the waveform
-            %%% TODO: handle multiple chirps in the sequence
-            signal_waveform = self.sequence.pulse.copy(); % leave the original intact
-            signal_samples  = reshape(signal_waveform.toSampled(self.fs), 1, []);
-            xdc_excitation(Tx, real(signal_samples));
+            % set the impulse response function / excitation function
+            xdc_impulse   (Tx, real(vec(wv_tx.fun(t_tx))'));
+            xdc_impulse   (Rx, real(vec(wv_rx.fun(t_rx))'));
+            xdc_excitation(Tx, real(vec(wv_pl.fun(t_pl))'));
             
             % call the sim
             down_sampling_factor = 1;
             [voltages, start_time] = calc_scat_all(Tx, Rx, ...
                 target.pos.', target.amp.', down_sampling_factor);
             
-            % number of samples in time
-            T = size(voltages,1);
-            
-            % create the time vector
-            waveform_start = signal_waveform.t0 + t_tx(1) + t_rx(1);
-            time = (0:T-1)' * (1 / self.fs) + (start_time + waveform_start);
-            
-            % reduce precision to save RAM
-            time = single(time);
-            voltages = single(voltages);
+            % adjust start time based on signal time definitions
+            t0 = start_time + t_pl(1) + t_tx(1) + t_rx(1);
             
             % reshape to T x N x M
-            M = self.tx.numel;
-            N = self.rx.numel;
-            voltages = reshape(voltages, [T N M]);
+            voltages = reshape(voltages, [], self.rx.numel, self.tx.numel);
 
             % create the output QUPS ChannelData object
-            chd_ = ChannelData('data', voltages, 't0', time(1), 'fs', self.fs);
+            chd = ChannelData('data', voltages, 't0', t0, 'fs', self.fs);
 
             % synthesize linearly
-            [chd] = self.focusTx(chd_, self.sequence, 'interp', kwargs.interp);
+            chd = self.focusTx(chd, self.sequence, 'interp', kwargs.interp);
 
             % cleanup
             if field_started, evalc('field_end'); end
