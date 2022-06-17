@@ -136,8 +136,8 @@ classdef Medium < handle
                         % MATLAB does not promise the number of outputs,
                         % nor provide a convenient way of figuring that out
                         % from the function handle itself: so we just try 
-                        % % up to 5 outputs until we get it right
-                        for nfout = 1:5
+                        % 5 outputs down to 1 until we get it right
+                        for nfout = 5:-1:1
                             out = cell(1, nfout);
                             try
                                 [out{:}] = fun(points);
@@ -154,12 +154,12 @@ classdef Medium < handle
                         [c_r, rho_r, BoA_r, alpha_r, alphap_r] = deal(out_{:});
                         
                         % set the value for valid points
-                        ind = ~isnan(c_r) & ~isnan(rho_r) & ~isnan(BoA_r) & ~isnan(alpha_r) & ~isnan(alphap_r);
-                        if nfout >= 1, c(ind)      = c_r(ind);      end
-                        if nfout >= 2, rho(ind)    = rho_r(ind);    end
-                        if nfout >= 3, BoA(ind)    = BoA_r(ind);    end
-                        if nfout >= 4, alpha(ind)  = alpha_r(ind);  end
-                        if nfout >= 5, alphap(ind) = alphap_r(ind); end
+                        ind = cellfun(@isnan, {c_r, rho_r, BoA_r, alpha_r, alphap_r}, 'UniformOutput', false);
+                        if nfout >= 1, c(~ind{1})      = c_r(~ind{1});      end
+                        if nfout >= 2, rho(~ind{2})    = rho_r(~ind{2});    end
+                        if nfout >= 3, BoA(~ind{3})    = BoA_r(~ind{3});    end
+                        if nfout >= 4, alpha(~ind{4})  = alpha_r(~ind{4});  end
+                        if nfout >= 5, alphap(~ind{5}) = alphap_r(~ind{5}); end
                     end
 
                     % update the number of arguments modified
@@ -247,31 +247,31 @@ classdef Medium < handle
             nullfun = @(p) nan(size(sub(p,1,1)));
 
             if nargin >= 2 && ~isempty(c),
-                cterp = griddedInterpolant(grid, szfun(c), 'linear', 'none');
+                cterp = griddedInterpolant(grid, szfun(c), 'nearest', 'none');
                 cfun = @(p) cterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 cfun = nullfun;
             end
             if nargin >= 3 && ~isempty(rho),
-                rterp = griddedInterpolant(grid, szfun(rho), 'linear', 'none');
+                rterp = griddedInterpolant(grid, szfun(rho), 'nearest', 'none');
                 rfun = @(p) rterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 rfun = nullfun;
             end
             if nargin >= 4 && ~isempty(BoA),
-                bterp = griddedInterpolant(grid, szfun(BoA), 'linear', 'none');
+                bterp = griddedInterpolant(grid, szfun(BoA), 'nearest', 'none');
                 bfun = @(p) bterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 bfun = nullfun;
             end
             if nargin >= 5 && ~isempty(alpha),
-                aterp = griddedInterpolant(grid, szfun(alpha), 'linear', 'none');
+                aterp = griddedInterpolant(grid, szfun(alpha), 'nearest', 'none');
                 afun = @(p) aterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 afun = nullfun;
             end
             if nargin >= 6 && ~isempty(alphap0),
-                apterp = griddedInterpolant(grid, szfun(alphap0), 'linear', 'none');
+                apterp = griddedInterpolant(grid, szfun(alphap0), 'nearest', 'none');
                 apfun = @(p) apterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 apfun = nullfun;
@@ -305,16 +305,9 @@ classdef Medium < handle
             % to the built-in IMAGESC function
             %
             % See also SCAN/IMAGESC, IMAGESC
-
-            % get the imaging grid
-            grd = scan.getImagingGrid();
-
-            % shift dimensions to 1 x ...
-            grd = cellfun(@(x) shiftdim(x, -1), grd, 'UniformOutput', false);
-            grd = cat(1,grd{:}); % 3 x ...
             
             % compute the properties on the grid
-            [c, rho, BoA, alpha, alphap] = self.getPropertyMap(grd);
+            [c, rho, BoA, alpha, alphap] = self.props(scan);
 
             x = c; % default
             i = 1; % manual iteration
