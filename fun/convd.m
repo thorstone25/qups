@@ -94,7 +94,7 @@ elseif kwargs.device < 0
 end
 
 % whether/how to operate on GPU
-if kwargs.device && exist([src.name '.ptx'], 'file')
+if ~isempty(kwargs.device) && kwargs.device && exist([src.name '.ptx'], 'file')
     % get the kernel suffix
     suffix = '';
     if complex_type, suffix = [suffix 'c']; end
