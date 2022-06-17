@@ -1787,11 +1787,6 @@ classdef UltrasoundSystem < handle
                 'Smooth', true ...
                 );
 
-            % defaults
-            if nargin < 3 || isempty(element_subdivisions), 
-                element_subdivisions = self.getLambdaSubDiv(kwargs.resolution_ratio, target.c0); 
-            end
-
             % store NV pair arguments into kwargs
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
@@ -1837,7 +1832,10 @@ classdef UltrasoundSystem < handle
             % else % TODO: do or don't downsample? Could be set for temporal reasons
             %     time_step_ratio = inv(floor(cfl_ratio));
             end
-            kgrid.dt = dt_us / time_step_ratio;
+            dt = dt_us / time_step_ratio;
+            Nt = 1 + floor(vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) .* target.c0);
+            kgrid.setTime(Nt, dt);
+
 
             % kgrid to sscan coordinate translation mapping
             kgrid_origin = cellfun(@median, {sscan.z, sscan.x, sscan.y});
