@@ -232,34 +232,46 @@ classdef Medium < handle
             end
             grid = {scan.x, scan.y, scan.z};
 
+            % we'll need to expand the grid if a dimension is singular
+            sdims = cellfun(@numel, grid) == 1;
+            repfun = @(x) repmat(x, 1+sdims); % 1 replicate if singular
+
+            % we'll need to reorder from scan size to 'XYZ' and expand 
+            ord = arrayfun(@(c) find(c ==  scan.order),'XYZ');
+            szfun  = @(x) repfun(permute(x, ord));
+            
+            % expand the grid: ideally the user does this somehow
+            grid(sdims) = cellfun(@(x) (x + [-1,1]), grid(sdims), 'UniformOutput', false);
+
+            % no property function
             nullfun = @(p) nan(size(sub(p,1,1)));
 
             if nargin >= 2 && ~isempty(c),
-                cterp = griddedInterpolant(grid, c, 'linear', 'none');
+                cterp = griddedInterpolant(grid, szfun(c), 'linear', 'none');
                 cfun = @(p) cterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 cfun = nullfun;
             end
             if nargin >= 3 && ~isempty(rho),
-                rterp = griddedInterpolant(grid, rho, 'linear', 'none');
+                rterp = griddedInterpolant(grid, szfun(rho), 'linear', 'none');
                 rfun = @(p) rterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 rfun = nullfun;
             end
             if nargin >= 4 && ~isempty(BoA),
-                bterp = griddedInterpolant(grid, BoA, 'linear', 'none');
+                bterp = griddedInterpolant(grid, szfun(BoA), 'linear', 'none');
                 bfun = @(p) bterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 bfun = nullfun;
             end
             if nargin >= 5 && ~isempty(alpha),
-                aterp = griddedInterpolant(grid, alpha, 'linear', 'none');
+                aterp = griddedInterpolant(grid, szfun(alpha), 'linear', 'none');
                 afun = @(p) aterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 afun = nullfun;
             end
             if nargin >= 6 && ~isempty(alphap0),
-                apterp = griddedInterpolant(grid, alphap0, 'linear', 'none');
+                apterp = griddedInterpolant(grid, szfun(alphap0), 'linear', 'none');
                 apfun = @(p) apterp(sub(p,1,1), sub(p,2,1), sub(p,3,1));
             else
                 apfun = nullfun;
