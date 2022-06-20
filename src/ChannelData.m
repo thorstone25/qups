@@ -96,16 +96,15 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs, chd.data] = deal(fun(chd.t0), fun(chd.fs), fun(chd.data));
         end
         function chd = applyFun2Data(chd, fun), chd = copy(chd); chd.data = fun(chd.data); end
-        function chd = applyFun2TimeDim(chd, fun, varargin),
-            d = chd.tdim; % dimension of operation
+        function chd = applyFun2Dim(chd, fun, dim, varargin),
             chd = copy(chd); % copy semantics
-            chd.data = matlab.tall.transform(@dim1fun,chd.data, varargin{:}); % apply function in dim 1; % set output data
+            chd.data = matlab.tall.transform(@dimfun, chd.data, varargin{:}); % apply function in dim 1; % set output data
 
             % dim1 mapping function: dim d gets sent to dim 1 and back.
-            function x = dim1fun(x, varargin)
-                x = swapdim(x, d, 1); % send dim d to dim 1
+            function x = dimfun(x, varargin)
+                x = swapdim(x, 1, dim); % send dim d to dim 1
                 x = fun(x, varargin{:}); % operate in dim 1
-                x = swapdim(x, d, 1); % send dim d back
+                x = swapdim(x, 1, dim); % send dim d back
             end
         end
     end
@@ -206,80 +205,94 @@ classdef ChannelData < matlab.mixin.Copyable
                 'DesignMethod', 'window' ...
                 );
         end
-        function chd = filter(chd, D)
+        function chd = filter(chd, D, dim)
             % FILTER Filter data with a digitalFilter
             %
             % chd = FILTER(chd, D) filters the channel data with the
-            % digitalFilter D. Use DESIGNFILT to design a digital filter
+            % digitalFilter D. Use DESIGNFILT to design a digital filter.
+            %
+            % chd = FILTER(chd, D, dim) applies the filter in dimension
+            % dim. The default is the time dimension.
             %
             % See also DESIGNFILT DIGITALFILTER FILTER
-
-            % data must be in dim 1! but we don't check for this, just
-            % require it
 
             % hard error if we aren't given a digitalFilter
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
 
+            % defaults
+            if nargin < 3, dim = chd.tdim; end
+
             % filter: always applied in dim 1
-            chd = applyFun2TimeDim(chd, @(x) filter(D, x));
+            chd = applyFun2Dim(chd, @(x) filter(D, x), dim);
 
             % adjust time axes
-            chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+            if dim == chd.tdim
+                chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+            end
         end
-        function chd = filtfilt(chd, D)
+        function chd = filtfilt(chd, D, dim)
             % FILTFILT Filter data with a digitalFilter
             %
             % chd = FILTFILT(chd, D) filters the channel data with the
             % digitalFilter D. Use DESIGNFILT to design a digital filter
             %
+            % chd = FILTFILT(chd, D, dim) applies the filter in dimension
+            % dim. The default is the time dimension.
+            %
             % See also DESIGNFILT DIGITALFILTER FILTFILT
-
-            % data must be in dim 1! but we don't check for this, just
-            % require it
 
             % hard error if we aren't given a digitalFilter
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
 
+            % defaults
+            if nargin < 3, dim = chd.tdim; end
+
             % filter: always applied in dim 1
-            chd.data = applyFun2TimeDim(chd, @(x) filtfilt(D, x));
+            chd = applyFun2Dim(chd, @(x) cast(filtfilt(D, double(x)), 'like', x), dim);
         end
-        function chd = fftfilt(chd, D)
+        function chd = fftfilt(chd, D, dim)
             % FFTFILT Filter data with a digitalFilter
             %
             % chd = FFTFILT(chd, D) filters the channel data with the
             % digitalFilter D. Use DESIGNFILT to design a digital filter
             %
+            % chd = FFTFILT(chd, D, dim) applies the filter in dimension
+            % dim. The default is the time dimension.
+            %
             % See also DESIGNFILT DIGITALFILTER FFTFILT
-
-            % data must be in dim 1! but we don't check for this, just
-            % require it
 
             % hard error if we aren't given a digitalFilter
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
             
+            % defaults
+            if nargin < 3, dim = chd.tdim; end
+
             % filter: always applied in dim 1
-            chd = applyFun2TimeDim(chd, @(x) reshape(filtfilt(D, x(:,:)), size(x)));
+            chd = applyFun2Dim(chd, @(x) reshape(cast(fftfilt(D, double(x(:,:))), 'like', x), size(x)), dim);
 
             % adjust time axes
-            chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+            if dim == chd.tdim
+                chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+            end
         end
         function chd = hilbert(chd, varargin)
             % HILBERT - overloads the hilbert function
             %
-            % chd = HILBERT(chd) applies the hilbert function to the data.
+            % chd = HILBERT(chd) applies the hilbert function to the data
+            % in the time dimension.
             %
             % chd = hilbert(chd, N) computes the N-point Hilbert transform. 
             % The data is padded with zeros if it has less than N points, 
             % and truncated if it has more.
             %
             % See also HILBERT
-            chd = applyFun2TimeDim(chd, @hilbert, varargin{:});
+            chd = applyFun2Dim(chd, @hilbert, chd.tdim, varargin{:});
         end
         function chd = fft(chd, N, dim)
             % FFT - overload of fft
             %
             % chd = FFT(chd) computes the fft of the channel data along the 
-            % time axis. The time axes is unchanged.
+            % time axis. The time and frequency axes are unchanged.
             %
             % chd = FFT(chd, N) computes the N-point fft.
             %
