@@ -845,6 +845,33 @@ classdef ChannelData < matlab.mixin.Copyable
     end
     methods
         function chds = splice(chd, dim)
+            % SPLICE - Split the ChannelData into an array of ChannelDatas
+            % 
+            % chds = SPLICE(chd, dim) returns an array of ChannelData
+            % objects chds where each element contains a slice of the data
+            % in dimensions dim. It is useful for iterating over
+            % ChannelData without explicitly indexing the data and time
+            % dimensions manually. 
+            %
+            % Example:
+            % 
+            % % Create data
+            % [T, N, M] = deal(2^10, 8, 8);
+            % t = (0 : T - 1)'; % time axis
+            % f = shiftdim((M/2 : 0.5 : M - 1/2) / M / 2, -1); % frequencies per transmit (normalized)
+            % x = sinpi(2 .* f .* t); % sinusoids
+            % w = randn([T, N, M]); % white noise
+            % chd = ChannelData('data', x + w, 't0', t(1), 'fs', 1);
+            % 
+            % % Estimate the central frequency for each transmit
+            % chds = splice(chd, chd.mdim); % splice per transmit
+            % for m = 1:chd.M, fc(m) = estfc(chds(m)); end % estimate per transmit
+            % figure; plot(1:chd.M, [f(:), fc(:)], '.-'); 
+            % title('Estimated frequency per transmit');
+            % legend({'True', 'Estimated'});
+            % 
+            % See also SUB
+            
             assert(isscalar(dim), 'Dimension must be scalar!'); 
 
             S = gather(size(chd.data, dim)); % slices
@@ -915,7 +942,9 @@ classdef ChannelData < matlab.mixin.Copyable
             % RECTIFYDIMS - Set dimensions to default order
             %
             % chd = RECTIFYDIMS(chd) sets the dimension of the data to
-            % their default order
+            % their default order of time x receive x transmit x ...
+            %
+
             D = gather(max(numel(chd.ord), ndims(chd.data))); % number of dimensions
             dord = arrayfun(@(o) find(chd.ord == o), 'TNM'); % want this order to start
             dord = [dord, setdiff(1:D, dord)]; % make sure we have all dimensions accounted for
