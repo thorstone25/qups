@@ -2270,7 +2270,7 @@ classdef UltrasoundSystem < handle
             B = reshape(B, image_size);        
         end
     
-        function b = bfAdjoint(self, chd, c0)
+        function b = bfAdjoint(self, chd, c0, varargin)
             % BFADJOINT - Adjoint method beamformer
             %
             % b = BFADJOINT(self, chd) beamforms the ChannelData chd using
@@ -2288,30 +2288,50 @@ classdef UltrasoundSystem < handle
             
             % options
             kwargs.fthresh = -40; % threshold for including frequencies
+            kwargs.apod = 1; % apodization
+            kwargs.Nfft = chd.T; % FFT-length
 
             % parse inputs
-            if nargin < 3, c0 = 1540; end
+            if nargin < 3 || isempty(c0), c0 = 1540; end
+
+            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % move the data to the frequency domain, being careful to
             % preserve the time axis
-            K = round(chd.T); % DFT length
+            K = kwargs.Nfft; % DFT length
             f = shiftdim(chd.fs * (0 : K - 1)' / K, 1-chd.tdim); % frequency axis
             df = chd.fs * 1 / K; % frequency step size
             x = fft(chd.data,K,chd.tdim); % K x N x M x ...
-            x = x .* exp(-2i*pi*f.*chd.t0); % re-align time axis
+            x = x .* exp(-2i*pi*f.*chd.t0); % phase shift to re-align time axis
 
             % choose frequencies to evaluate
             xmax = max(x, [], chd.tdim); % maximum value per trace
-            f_val = mag2db(abs(x)) - mag2db(abs(xmax)) >= kwargs.fthresh; % threshold 
+            f_val = mod2db(x) - mod2db(xmax) >= kwargs.fthresh; % threshold 
             f_val = f_val & f < chd.fs / 2; % positive frequencies only
-            f_val = (any(f_val, 2:ndims(x))); % evaluate any freqs across aperture/frames that is above threshold
+            f_val = any(f_val, setdiff(1:ndims(x), chd.tdim)); % evaluate only freqs across aperture/frames that is above threshold
             
             % get the pixel positions
-            D = 1+max(3, gather(ndims(chd.data))); % >= 4
-            Pi = cell(3,1);
-            [Pi{:}] = self.scan.getImagingGrid();
+            D = max(3, gather(ndims(chd.data))); % >= 4
+            Pi = self.scan.getImagingGrid();
             Pi = cellfun(@(x) {shiftdim(x, -D)}, Pi); % place I past max data dims 5-7
             Pi = cat(1,Pi{:}); % 3 x 1 x 1 x 1 x [I]
+
+            % get the receive apodization, spliced if it can be applied
+            apod = kwargs.apod;
+            [a_n, a_m, a_mn] = deal(1);
+            if all(size(apod, 1:3) == 1) % image is scalar, apply to data
+                a_mn = shiftdim(apod, 3); % N x V
+            elseif size(apod, 4) == 1 % receive is scalar, apply over tx
+                ord = [D+(1:4), 2]; % send dims 1-5 here
+                ord = [ord, setdiff(1:max(ord, 5), ord)]; % complete set of dimensions
+                a_m = ipermute(apod, ord); % 1 x V x 1 x 1 x [I] x 1
+            elseif size(apod, 5) == 1 % transmit is scalar, apply over rx
+                ord = [D+(1:3), 2]; % send dims 1-4 here
+                ord = [ord, setdiff(1:max(ord, 5), ord)]; % complete set of dimensions
+                a_n = ipermute(apod, ord); % 1 x N x 1 x 1 x [I]
+            else % none of the following is true: this request is excluded for now
+                error('Unable to apply apodization due to size constraints. Apodization must be scalar in the transmit dimension, receive dimension, or all image dimensions.')
+            end
             
             % get the delays for the transmit/receive green's matrix
             % kernels
@@ -2342,22 +2362,25 @@ classdef UltrasoundSystem < handle
                 if isvalid(h), waitbar(k/K/2, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
 
                 % select frequency
-                xk = shiftdim(sub(x,k,1),1); % data, in freq. domain (N x V x ...)
+                % xk = shiftdim(sub(x,k,1),1); % data, in freq. domain (N x V x ...)
+                xk = permute(sub(x,k,chd.tdim), [chd.ndim, chd.mdim, chd.tdim, 4:D]);
                 
                 % TODO: adapt for data out of order
                 % TODO: adapt for tall types
 
                 % compute the greens functions on transmit/receive
                 G_tx = w_tx.^(k-1); % 1 x M x 1 x 1 x [I]
-                G_rx = w_rx.^(k-1); % 1 x M x 1 x 1 x [I]
+                G_rx = w_rx.^(k-1); % 1 x N x 1 x 1 x [I]
 
                 % compute the inverse steering vector on transmit
                 T_tx = apod_tx .* w_steer.^(k-1); % M x V
                 A_tx = pagemtimes(G_tx, T_tx); % 1 x V x 1 x 1 x [I]
                 Ainv_tx = pagetranspose(A_tx); % V x 1 x 1 x 1 x [I] % make a column vector
+                Ainv_tx = Ainv_tx ./ vecnorm(Ainv_tx, 2, 1); % normalize the power
                 
-                % delay and sum the data for this frequency
-                yn = pagemtimes(conj(G_rx), xk); % 1 x V x 1 x 1 x [I]
+                % apodize, delay, and sum the data for this frequency
+                % only 1 a_* will contain the apodization
+                yn = a_m .* pagemtimes(a_n .* conj(G_rx), a_mn .* xk); % 1 x V x 1 x 1 x [I]
                 y  = pagemtimes(yn, conj(Ainv_tx)); % 1 x 1 x 1 x 1 x [I]
                 
                 % integrate over all frequencies
@@ -2366,8 +2389,9 @@ classdef UltrasoundSystem < handle
             end           
             if isvalid(h), close(h); end
 
-            % revert to image dimensions
-            b = shiftdim(b,D); % [I] x ...
+            % move to image dimensions
+            % b = shiftdim(b,D); % [I] x ...
+            b = swapdim(b, 1:3, D+(1:3));
         end    
 
         function b = bfEikonal(self, chd, medium, cscan, varargin)
@@ -2484,10 +2508,14 @@ classdef UltrasoundSystem < handle
             tau_rx = cellfun(@(f) f(gi{:}), rx_samp, 'UniformOutput', false); % all receive delays
             tau_rx = cat(4, tau_rx{:}); % use all at a time
             chds = splice(chd, chd.mdim); % splice per transmit
+            D = max(3, ndims(chd.data)); % data dimensions
+            ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
+            ord = [ord, setdiff(1:max(ord), ord)];
             
+            % TODO: allow summation argument to preserve tx/rx dimension
             b = 0; % initialize
             hw = waitbar(0,'Beamforming ...'); % create a wait bar
-            for (m = 1:chd.M) % for each transmit
+            for m = 1:chd.M % for each transmit
                 % extract the channel data for this transmit
                 chd_ = chds(m);
 
@@ -2497,20 +2525,25 @@ classdef UltrasoundSystem < handle
                 tau = swapdim(tau, [1,4], [chd_.tdim, chd_.ndim]); % move to matching dimensions
 
                 % sample and unpack the data
-                % TODO: avoid moving in dim 1 in order to support tall arrays
                 y = sample(chd_, tau, interp_method); % sample in matching dims
-                y = swapdim(y, [1,4], [chd_.tdim, chd_.ndim]); % I x 1 x 1 x N x 1
-                y = reshape(y, [sz,chd_.N,1]); % I1 x I2 x I3 x N x 1
+                y = swapdim(y, chd_.tdim, D+1); % perm(1 x N x 1) [x F x ... ] x I
+                y = reshape(y, [size(y,1:D), sz]); % perm(1 x N x 1) [x F x ... ] x I1 x I2 x I3
 
                 % extract the apodization
-                a = sub(apod, min(m, size(apod,5)), 5); % recieve apodization per transmit
-                b = b + sum(a * y, 4); % apply apodization and sum
+                a = sub(apod, min(m, size(apod,5)), 5); % recieve apodization per transmit (I1 x I2 x I3 x N x 1)
+                a = ipermute(a, ord); % move apodization into matching dimensions  perm(1 x N x 1) [x 1 x ... ] x I1 x I2 x I3
+
+                % apply apodization and sum over receives
+                % TODO: allow options to specify (i.e. skip) summation
+                b = b + sum(a .* y, chd_.ndim); 
                 
-                % TODO: allow options to specify summation
-            
                 if isvalid(hw), waitbar(m/chd_.M, hw); end % update if not closed
             end
             if isvalid(hw), close(hw); end % close if not closed
+
+            % move image output into lower dimension
+            if istall(b), b = gather(b); end % we have to gather tall arrays to place anything in dim 1
+            b = swapdim(b, 1:3, D+(1:3)); % move image dimensions down
         end
     
         function b = bfDAS(self, chd, c0, varargin)
