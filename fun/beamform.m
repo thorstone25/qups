@@ -215,9 +215,9 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     expand_inputs();
     
     % data sizing
-    [T, N, M] = size(x);
-    I = numel(Pi) / 3; % guaranteed 3D
+    [T, N, M] = size(x, 1:3);
     Isz = size(Pi, 2:4); % I1 x I2 x I3 == I
+    I = prod(Isz);
 
     % get stride for apodization
     Iasz = size(apod,1:5);
@@ -318,9 +318,9 @@ else
     expand_inputs();
     
     % data sizing
-    [T, N, M] = size(x);
-    I = numel(Pi) / 3;
+    [T, N, M] = size(x, 1:3);
     Isz = size(Pi,2:4);
+    I = prod(Isz);
     
     % cast to integers
     tmp = cellfun(@uint64, {T,N,M,I}, per_cell{:});
@@ -463,9 +463,9 @@ end
         % data sizing
         if strcmp(fun, 'delays')
             [T, N, M] = deal(0);
-            [~, Mv] = size(Pv);
-            [~, Mnv] = size(Nv);
-            [~, Nr] = size(Pr);
+            [Mv] = size(Pv,2);
+            [Mnv] = size(Nv,2);
+            [Nr] = size(Pr,2);
             Isz = size(Pi, 2:4);
             I = prod(Isz);
 
@@ -475,10 +475,10 @@ end
             if Mv  == 1, Pv   = repmat(Pv,1,M);     Mv  = M; end
             if Mnv == 1, Nv   = repmat(Nv,1,M);     Mnv = M; end
         else
-            [T, N, M] = size(x);
-            [~, Mv] = size(Pv);
-            [~, Mnv] = size(Nv);
-            [~, Nr] = size(Pr);
+            [T, N, M] = size(x, 1:3);
+            [Mv] = size(Pv,2);
+            [Mnv] = size(Nv,2);
+            [Nr] = size(Pr,2);
             Isz = size(Pi, 2:4);
             Iasz = size(apod, 1:5);
             I = prod(Isz);
