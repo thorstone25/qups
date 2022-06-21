@@ -2547,30 +2547,27 @@ classdef UltrasoundSystem < handle
         end
     
         function b = bfDAS(self, chd, c0, varargin)
-            % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
+            % BFDAS - Delay-and-sum beamformer
             %
-            % b = BFEIKONAL(self, chd, medium) creates a b-mode 
-            % image b from the ChannelData chd and Medium medium using the 
-            % delays given by the solution to the eikonal equation. The 
-            % equation is solved via the fast marching method.
+            % b = BFDAS(self, chd, c0) creates a b-mode image b from the 
+            % ChannelData chd and sound speed c0 (m/s). 
             % 
-            % b = BFEIKONAL(self, chd, medium, cscan) defines the Medium on
-            % the ScanCartesian cscan rather than on the UltrasoundSystem
-            % scan property.
-            %
-            % b = BFEIKONAL(..., Name,Value, ...) defines additional
-            % parameters via Name/Value pairs
-            %
-            % Inputs:
-            %   interp     - interpolation method for ChannelData methods
-            %   parcluster - Parcluster object
-            %   apod       - apodization - must be a size I1 x I2 x I3 x N
-            %                x M array where [I1 x I2 x I3] is the size of
-            %                the scan property, N is the number of receive
-            %                elements and M is the number of transmitter
-            %                elements.
+            % b = BFDAS(..., 'interp', method) uses method for 
+            % interpolation. Support is provided by the ChannelData/sample
+            % method. The default is 'linear'.
             % 
-            % See also DAS BFADJOINT
+            % b = BFDAS(..., 'apod', A) uses the ND-array A for
+            % apodization. A must be broadcastable to size 
+            % I1 x I2 x I3 x N x M where I1 x I2 x I3 is the size of the
+            % image, N is the number of receivers, and M is the number of
+            % transmits. The default is 1.
+            % 
+            % b = BFDAS(..., 'parcluster', clu) uses the cluster clu for
+            % parallelization. The default is the current parallel pool.
+            % Setting clu = 0 avoids using a parallel cluster or pool. Use
+            % this when operating on a GPU or if memory usage explodes.
+            % 
+            % See also DAS BFADJOINT CHANNELDATA/SAMPLE PARCLUSTER
 
             % defaults
             kwargs.interp = 'linear';
@@ -2637,7 +2634,7 @@ classdef UltrasoundSystem < handle
             %   operating there
             assert(ismember('T', chd.ord(1:3)), 'The time dimension must be in one of the first 3 dimensions.');
             b = 0; % initialize
-            [Na, Ma] = size(kwargs.apod, 4:5);
+            [Na, Ma] = size(apod, 4:5);
             chds = splice(chd, chd.mdim); % splice transmit
             tsz = [prod(sz), chd.N, 1]; % size to vectorize I dimensions
             tord = [chd.tdim, chd.ndim, chd.mdim]; % order to move to ChannelData dims
