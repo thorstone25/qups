@@ -987,12 +987,16 @@ inline __host__ __device__ void operator-=(uint4 &a, uint b)
 
 inline __host__ __device__ float2 operator*(float2 a, float2 b)
 {
-    return make_float2(a.x * b.x, a.y * b.y);
+    // return make_float2(a.x * b.x, a.y * b.y);
+    return make_float2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
 }
 inline __host__ __device__ void operator*=(float2 &a, float2 b)
 {
-    a.x *= b.x;
-    a.y *= b.y;
+    const float2 c = a * b;
+    a.x = c.x;
+    a.y = c.y;
+    // a.x *= b.x;
+    // a.y *= b.y;
 }
 inline __host__ __device__ float2 operator*(float2 a, float b)
 {
@@ -1010,7 +1014,8 @@ inline __host__ __device__ void operator*=(float2 &a, float b)
 
 inline __host__ __device__ double2 operator*(double2 a, double2 b)
 {
-    return make_double2(a.x * b.x, a.y * b.y);
+    // return make_double2(a.x * b.x, a.y * b.y);
+    return make_double2(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
 }
 inline __host__ __device__ void operator*=(double2 &a, double2 b)
 {
@@ -1027,8 +1032,11 @@ inline __host__ __device__ double2 operator*(double b, double2 a)
 }
 inline __host__ __device__ void operator*=(double2 &a, double b)
 {
-    a.x *= b;
-    a.y *= b;
+    const double2 c = a * b;
+    a.x = c.x;
+    a.y = c.y;
+    // a.x *= b;
+    // a.y *= b;
 }
 
 inline __host__ __device__ int2 operator*(int2 a, int2 b)
