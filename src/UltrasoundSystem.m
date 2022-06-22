@@ -1944,7 +1944,7 @@ classdef UltrasoundSystem < handle
     
     % Beamforming
     methods(Access=public)
-        function b = DAS(self, chd, c0, rcvfun, varargin)
+        function b = DAS(self, chd, c0, varargin)
             % DAS - Delay and sum
             %
             % b = DAS(us, chd, c0) performs delay-and-sum beamforming on 
@@ -1953,15 +1953,14 @@ classdef UltrasoundSystem < handle
             % model in us.sequence. The output is defined on the Scan 
             % object us.scan.
             % 
-            % b = DAS(us, chd, c0, rcvfun) specifies the receive aperture
+            % b = DAS(us, chd, c0) specifies the receive aperture
             % reduction function (defaults to summation)
             %
             % 
             % Inputs:
             %  chd      - A ChannelData object  
             %  c0       - A sound speed, or any object with a .c0 property
-            %  rcvfun   - Receive aperture accumulation function (defaults 
-            %             to summation)
+            %
             % Name/Value pair arguments
             %  prec -  compute precision of the positions 
             %            {'single'* | 'double'}
@@ -1977,6 +1976,13 @@ classdef UltrasoundSystem < handle
             %           apod should be singleton in at least two or three
             %           dimensions.
             %
+            %  keep_rx - whether to keep the receive dimension rather than
+            %           sum. The default is false.
+            %
+            %  keep_tx - whether to keep the transmit dimension rather than
+            %           sum. The default is false. If keep_tx is true, then
+            %           keep_rx must also be true.
+            %
             %
             % outputs:
             %   - X\Y\Z:    3D coordinates of the output
@@ -1989,6 +1995,8 @@ classdef UltrasoundSystem < handle
             device = int64(-1 * logical(gpuDeviceCount)); % {0 | -1} -> {CPU | GPU}
             apod = 1;
             interp_args = {};
+            sumtx = true;
+            sumrx = true; 
             
             % name-value pairs
             for n = int64(1):2:numel(varargin)
@@ -2000,9 +2008,17 @@ classdef UltrasoundSystem < handle
                     case 'interp'
                         interp_args = varargin(n:n+1);
                     case 'apod', apod = varargin{n+1}; 
+                    case 'keep_tx', sumtx = ~varargin{n+1};
+                    case 'keep_rx', sumrx = ~varargin{n+1};
                     otherwise
                         error('Unrecognized name-value pair');
                 end
+            end
+
+            % if we want to keep tx, we must keep rx too because of
+            % available DAS functions
+            if ~sumtx && sumrx
+                error('Unable to keep transmit dimension but not receive dimension. Try bfDAS.'); 
             end
 
             % accept c0 as a value, or an object with a c0 property
@@ -2039,15 +2055,15 @@ classdef UltrasoundSystem < handle
             end
 
             % beamform and collapse the aperture
-            if nargin < 5 || isempty(rcvfun)
-                % beamform the data (I1 x I2 x I3 x 1 x 1 x F x ...)
-                b = beamform('DAS', pos_args{:}, dat_args{:}, ext_args{:});
-            else
-                % beamform the data (I1 x I2 x I3 x N x 1 x F x ...) -> (I1 x I2 x I3 x 1 x 1 x F x ...)
-                b = rcvfun(beamform('SYN', pos_args{:}, dat_args{:}, ext_args{:}), 4);
+            if      sumtx &&  sumrx, fun = 'DAS'; 
+            elseif  sumtx && ~sumrx, fun = 'SYN'; 
+            elseif ~sumtx && ~sumrx, fun = 'BF';
             end
 
-            % move higher dimensions back down (I1 x I2 x I3 x F x ...)
+            % beamform the data (I1 x I2 x I3 x N x M x F x ...)
+            b = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
+
+            % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
             b = permute(b, [1:3,6:ndims(b),4:5]);
         end
         
@@ -2573,6 +2589,8 @@ classdef UltrasoundSystem < handle
             kwargs.interp = 'linear';
             kwargs.parcluster = gcp('nocreate');
             kwargs.apod = 1;
+            kwargs.keep_rx = false;
+            kwargs.keep_tx = false; 
 
             % set input options
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
@@ -2622,7 +2640,8 @@ classdef UltrasoundSystem < handle
             apod = kwargs.apod; % apodization (I1 x I2 x I3 x N x M)
             interp_method = kwargs.interp; 
             cinv = 1 ./ c0;
-            % M = chd.M;
+            sumtx = ~kwargs.keep_tx;
+            sumrx = ~kwargs.keep_rx;
 
             % TODO: allow options to specify summation
             % sample for each tx/rx
@@ -2647,10 +2666,19 @@ classdef UltrasoundSystem < handle
                 y = ipermute(y, [tord, 4:gather(ndims(y))]); % I x N x M x F x ...
                 y = reshape(y, [sz, size(y,2:gather(ndims(y)))]); % I1 x I2 x I3 x N x M x F x ...
                 a = sub(apod, min(m, Ma), 5); % recieve apodization (I1 x I2 x I3 x N)
-                b = b + sum(a .* y, 4); % sample (I1 x I2 x I3 x N x M x F x ...)
+                z = a .* y; % sample and apodize (I1 x I2 x I3 x N x 1 x F x ...)
+                if sumrx, z = sum(z, 4); end % sum over rx (if requested)
+                if sumtx, bm{m} = []; else; bm{m} = z; end % store tx to combine later (if requested)
+                if sumtx, b = b + z; end % sum tx here (if requested)
                 % if isvalid(hw), waitbar(m/M, hw); end % update if not closed
             end
             % if isvalid(hw), close(hw); end % close if not closed
+            if ~sumtx, b = cat(5, bm{:}); end % combine all transmits
+
+            % reshape to place data dimensions lower, and aperture
+            % dimensions at the end
+            % TODO: adapt (or avoid) for tall arrays
+            b = permute(b, [1:3,6:ndims(b),4,5]); % ([I] x F x ... x N x M)
         end
     end
     
