@@ -280,26 +280,30 @@ classdef Scan < matlab.mixin.Copyable
                     "Expected Transducer to be a TransducerArray but instead got a " + class(rx) + ". This may produce unexpected results."...
                     )
             end
-            if ~any(seq.type == ["VS", "FSA"]), warning(...
-                    "Expected sequence type to be VS or FSA but instead got " + seq.type + ". This may produce unexpected results."...
-                    );
-            end
+            
+            % if aligning to transmit, we expect VS or FSA
+            % if ~any(seq.type == ["VS", "FSA"]), warning(...
+            %         "Expected sequence type to be VS or FSA but instead got " + seq.type + ". This may produce unexpected results."...
+            %         );
+            % end
 
             % TODO: generalize to polar
             % get the transmit foci lateral position, M in dim 6
-            Pv = swapdim(sub(seq.focus,1:3,1), 2, 6); 
+            % Pv = swapdim(sub(seq.focus,1:3,1), 2, 6); 
 
             % get the receiver lateral positions, N in dim 5
             Pn = swapdim(sub(rx.positions,1:3,1), 2, 5); % (3 x 1 x 1 x 1 x N)
 
-            % get the points as a vairance in depth
+            % get the pixel positions in the proper dimensions
+            xdim = find(self.order == 'X');
             zdim = find(self.order == 'Z');
-            Zi = shiftdim(self.z(:), zdim-1+1); % (1 x I1 x I2 x I3)
-            % Zi = [0;0;1] .* Zi; % (3 x I1 x I2 x I3)
+            Xi = shiftdim(self.x(:), 1-xdim-1); % (1 x I1 x I2 x I3)
+            Zi = shiftdim(self.z(:), 1-zdim-1); % (1 x I1 x I2 x I3)
 
             % get the equivalent aperture width (one-sided) and pixel depth
-            d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
-            z = Zi - 0; % depth w.r.t. beam origin
+            % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
+            d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
+            z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
             apod = z > f * abs(2*d) ; % restrict the f-number
             apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
 
