@@ -844,14 +844,17 @@ classdef ChannelData < matlab.mixin.Copyable
         mdim
     end
     methods
-        function chds = splice(chd, dim)
+        function chds = splice(chd, dim, bsize)
             % SPLICE - Split the ChannelData into an array of ChannelDatas
             % 
             % chds = SPLICE(chd, dim) returns an array of ChannelData
             % objects chds where each element contains a slice of the data
             % in dimensions dim. It is useful for iterating over
             % ChannelData without explicitly indexing the data and time
-            % dimensions manually. 
+            % dimensions manually.
+            %
+            % chds = SPLICE(chd, dim, bsize) uses a maximum block size of 
+            % bsize to partition the ChannelData objects. The default is 1.
             %
             % Example:
             % 
@@ -873,18 +876,25 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also SUB
             
             assert(isscalar(dim), 'Dimension must be scalar!'); 
+            if nargin < 3, bsize = 1; end
 
-            S = gather(size(chd.data, dim)); % slices
-            
+            % S = gather(size(chd.data, dim)); % slices
+            St = gather(size(chd.t0  ,dim)); % size in t
+            Sx = gather(size(chd.data,dim)); % size in x
+            it = num2cell((0:bsize:St-1) + (1:bsize)',1); % index up to maximum t
+            ix = num2cell((0:bsize:Sx-1) + (1:bsize)',1); % index up to maximum x
+            it{end}(it{end} > St) = []; % restrict to actual max t
+            ix{end}(ix{end} > Sx) = []; % restrict to actual max x
+
             % splice data and time axes
-            t = arrayfun(@(i) sub(chd.t0  , i, dim), 1:gather(size(chd.t0  ,dim)), 'UniformOutput',false);
-            x = arrayfun(@(i) sub(chd.data, i, dim), 1:gather(size(chd.data,dim)), 'UniformOutput',false);
+            t = cellfun(@(i) sub(chd.t0  , i, dim), it, 'UniformOutput',false);
+            x = cellfun(@(i) sub(chd.data, i, dim), ix, 'UniformOutput',false);
             
             % make array of new ChannelData objects
-            chds = repmat(ChannelData('fs', chd.fs, 'ord', chd.ord), [S,1]); % new ChannelData objects
+            chds = repmat(ChannelData('fs', chd.fs, 'ord', chd.ord), [max(numel(t),numel(x)),1]); % new ChannelData objects
             chds = arrayfun(@copy, shiftdim(chds, 1-dim)); % make unique and move to dimension dim
-            [chds.data] = deal(x{:}); % set data
             [chds.t0  ] = deal(t{:}); % set start time(s)
+            [chds.data] = deal(x{:}); % set data
 
         end
         function chd = sub(chd, ind, dim)
