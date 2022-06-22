@@ -275,18 +275,34 @@ classdef ChannelData < matlab.mixin.Copyable
                 chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
             end
         end
-        function chd = hilbert(chd, varargin)
+        function chd = hilbert(chd, N, dim)
             % HILBERT - overloads the hilbert function
             %
             % chd = HILBERT(chd) applies the hilbert function to the data
             % in the time dimension.
             %
-            % chd = hilbert(chd, N) computes the N-point Hilbert transform. 
+            % chd = HILBERT(chd, N) computes the N-point Hilbert transform. 
             % The data is padded with zeros if it has less than N points, 
             % and truncated if it has more.
             %
+            % chd = HILBERT(chd, N, dim) operates in dimension dim. The
+            % default is the time dimension.
+            %
             % See also HILBERT
-            chd = applyFun2Dim(chd, @hilbert, chd.tdim, varargin{:});
+
+            % parse inputs
+            if nargin < 3, dim = chd.tdim; end
+            if nargin < 2 || isempty(N), N = size(chd.data, dim); end
+
+            % use MATLAB's optimized implementation
+            % chd = applyFun2Dim(chd, @hilbert, chd.tdim, varargin{:});
+            
+            % apply natively to support half type
+            chd = fft(chd, N, chd.tdim); % send to freq domain
+            Nd2 = floor(N/2); % number of postive/negative frequencies
+            w = [1; 2*ones([Nd2-1,1]); 1+mod(N,2); zeros([N-Nd2-1,1])]; % hilbert weight vector
+            chd.data = chd.data .* shiftdim(w, 1-chd.tdim); % apply 
+            chd = ifft(chd, N, chd.tdim);
         end
         function chd = fft(chd, N, dim)
             % FFT - overload of fft
