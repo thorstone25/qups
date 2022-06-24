@@ -1,9 +1,10 @@
-# include "helper_math.h" // vector math
+// # include "helper_math.h" // vector math
 
-# include "sizes.cu" // size defines
+// # include "sizes.cu" // size defines
 
 # include "interpd.cu" // samplers using constant sizing
 
+// # include "half2_math.h" // vector math for half types only 
 
 
 /* Creates the positions for a linear array aperture given it's description
@@ -20,7 +21,7 @@
 *
 *
 */ 
-        
+
 __global__ void pos_step_rng_lenf(float3 * Pn, const float3 Pn0, const float3 dPn){
     const uint idx = threadIdx.x + blockIdx.x * blockDim.x;
     Pn[idx] = Pn0 + idx * dPn;
@@ -97,7 +98,8 @@ __global__ void DASf(float2 * __restrict__ y,
             
     // temp vars
     const float2 zero_v = make_float2(0.0f);
-    float rf, dv, dr;
+    float2 w;
+    float rf, dv, dr, tau;
     float2 val, pix = zero_v;
     float3 rv;
 
@@ -117,13 +119,15 @@ __global__ void DASf(float2 * __restrict__ y,
                 dr = length(pi[tid] - pr[n]); // rx path length
 
                 // data/time index number
-                rf = (cinv * (dv + dr) - t0) * fs;
+                tau = (cinv * (dv + dr) - t0);
+                w = make_float2(1.0f, 0.0f); // TODO: enable demod: make_float2(cospi(2*fs/4*tau), -sinpi(2*fs/4*tau));
+                rf =  tau * fs;
 
                 // sample the trace
                 val = samplef(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // accumulate tx here: add to pixel value
-                pix += val * a[abase + n * astride[3] + m * astride[4]];
+                pix += val * w * a[abase + n * astride[3] + m * astride[4]];
             }
         }
         y[tid] = pix; // output value 
@@ -158,7 +162,8 @@ __global__ void DAS(double2 * __restrict__ y,
             
     // temp vars
     const double2 zero_v = make_double2(0.0);
-    double rf, dv, dr;
+    double2 w;
+    double rf, dv, dr, tau;
     double2 val, pix = zero_v;
     double3 rv;
 
@@ -178,18 +183,87 @@ __global__ void DAS(double2 * __restrict__ y,
                 dr = length(pi[tid] - pr[n]); // rx path length
 
                 // data/time index number
-                rf = (cinv * (dv + dr) - t0) * fs;
+                tau = (cinv * (dv + dr) - t0);
+                w = make_double2(1.0,0.0); // TODO: enable demod: make_double2(cospi(2*fs/4*tau), -sinpi(2*fs/4*tau));
+                rf =  tau * fs;
 
                 // sample the trace
                 val = sample(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
 
                 // accumulate tx here: add to pixel value
-                pix += val * a[abase + n * astride[3] + m * astride[4]];
+                pix += val * w * a[abase + n * astride[3] + m * astride[4]];
             }            
         }
         y[tid] = pix; // output value
     }
 }
+
+__global__ void DASh(ushort2 * __restrict__ y, 
+    const float * __restrict__ Pi, const float * __restrict__ Pr, 
+    const float * __restrict__ Pv, const float * __restrict__ Nv, 
+	const ushort2 * __restrict__ a, const size_t * astride, 
+    const ushort2 * __restrict__ x, const int iflag,
+	const float t0, const float fs, const float cinv) {
+
+    // get starting index of this pixel
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+
+    // get image coordinates
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
+    const size_t i1 = (tid             % I1); // index in I1
+    const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
+    const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
+    const size_t abase = i1 * astride[0] + i2 * astride[1] + i3 * astride[2]; // base index for this pixel
+
+    // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
+    const float3 * pi = reinterpret_cast<const float3*>(Pi); // 3 x I
+    const float3 * pr = reinterpret_cast<const float3*>(Pr); // 3 x N
+    const float3 * pv = reinterpret_cast<const float3*>(Pv); // 3 x M
+    const float3 * nv = reinterpret_cast<const float3*>(Nv); // 3 x M
+
+    
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+            
+    // temp vars
+    const half2 zero_v = make_half2(0.f, 0.f);
+    half2 w;
+    float rf, dv, dr, tau;
+    half2 val, pix = zero_v;
+    float3 rv;
+
+    // if valid pixel, for each tx/rx
+    if(tid < I){
+        # pragma unroll
+        for(size_t m = 0; m < M; ++m){
+            # pragma unroll
+            for(size_t n = 0; n < N; ++n){
+                // 2-way virtual path distance
+                rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
+                
+                dv = QUPS_VS ? // tx path length
+                    copysign(length(rv), dot(rv, nv[m])) // virtual source
+                    : dot(rv, nv[m]); // plane wave
+                
+                dr = length(pi[tid] - pr[n]); // rx path length
+
+                // data/time index number
+                tau = (cinv * (dv + dr) - t0);
+                w = make_half2(1.0f, 0.0f); // TODO: enable demod: make_half2(cospi(2*fs/4*tau), -sinpi(2*fs/4*tau));
+                rf =  tau * fs;
+
+                // sample the trace
+                val = sampleh(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0
+
+                // accumulate tx here: add to pixel value
+                pix += val * w * u2h(a[abase + n * astride[3] + m * astride[4]]);
+            }
+        }
+        y[tid] = h2u(pix); // output value 
+    }
+}
+
+
 
 /*
 * Delay the given data at the given pixels and sum over transmits

@@ -73,8 +73,10 @@ apod = ones(1, 'like', x);
 isType = @(c,T) isa(c, T) || isa(c, 'gpuArray') && strcmp(classUnderlying(c), T);
 if isType(x, 'single')
     idataType = 'single';
-else
+elseif isType(x, 'double')
     idataType = 'double';
+elseif isType(x, 'half')
+    idataType = 'half'; 
 end
 if any(cellfun(@(c) isType(c, 'single'), {Pi, Pr, Pv, Nv}))
     posType = 'single';
@@ -152,9 +154,9 @@ x = permute(x, [1:3,(max(3,ndims(x))+[1,2]),4:ndims(x)]); % (T x N x M x 1 x 1 x
 if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
 
     % match position precision to inputData precision
-    if ~strcmp(idataType, posType) && ~strcmp(fun, 'delays'), 
+    if ~strcmp(idataType, posType) && ~strcmp(fun, 'delays') 
         warning('Position data type will match the input data type.');
-        idataType = posType; 
+        posType = idataType;
     end
 
     % warn if non-linear interp was requested
@@ -172,12 +174,10 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % load the kernel
     src_folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
     
-    postfix = '';
     switch idataType
-        case 'single'
-            postfix = [postfix 'f'];
-        case 'double'
-            postfix = postfix;
+        case 'half', postfix = 'h';
+        case 'single', postfix = 'f';
+        case 'double', postfix = '';
     end
     
     % currently selected gpu device handle
@@ -204,9 +204,15 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         [fun, postfix]);
     
     % send constant data to GPU
+    if idataType == "half"  % HACK: make half types uint16
+    dprototype = complex(gpuArray(zeros(0, 'uint16')));
+    pprototype = gpuArray(zeros(0, 'single'));
+    if isa(x, 'half'), x = storedInteger(x); apod = storedInteger(half(apod)); end
+    if isa(odataPrototype, 'half'), odataPrototype = uint16(odataPrototype); end
+    else
     dprototype = complex(gpuArray(zeros(0, idataType)));
     pprototype = gpuArray(zeros(0, idataType));
-    
+    end
     x = cast(x, 'like', dprototype);
     [tmp] = cellfun(@(p)cast(p, 'like', pprototype), {Pi, Pr, Pv, Nv}, per_cell{:});
     [Pi, Pr, Pv, Nv,] = deal(tmp{:});
@@ -303,6 +309,8 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     y = sub(y,1:I,1); % trim the junk
     y = reshape(y, [Isz, size(y,2), size(y,3), fsz]); % I1 x I2 x I3 x [1|N] x [1|M] x F x ...
     
+    % if it's a half type, move it back to MATLAB
+    if idataType == "half", y = half.typecast(gather(y)); end
 else
     
     % cast constant data on CPU
@@ -351,6 +359,11 @@ else
     
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3]); % pack for I
+
+    % HACK: promote data/time to single if it's a half type 
+    % until MATLAB support it natively
+    % TODO: switch to interpd.m and offload typing responsibility there?
+    if isa(x, 'half'), [x,t] = deal(single(x), single(t)); end
 
     switch fun
         case 'delays'
@@ -403,13 +416,13 @@ else
             end
             
         case 'BF'
-            % time delay (I x N x M)
+            % time delay ([I] x N x M)
             tau = cinv .* (dv + dr);
 
             % set size of x
             xmn = permute(x, [1,4,5,2,3,6:ndims(x)]); % (T x 1 x 1 x N x M x {F x ...})
             
-            % sample and output (I x N x M)
+            % sample and output ([I] x N x M)
             y = cell2mat(cellfun(... 
                 @(x, tau, a) cast(...
                 a .* interp1(t, x, tau, interp_type, 0), ...

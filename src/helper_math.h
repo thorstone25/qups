@@ -25,10 +25,16 @@
  *  by default. 
  */
 
+
 #ifndef HELPER_MATH_H
 #define HELPER_MATH_H
 
 #include "cuda_runtime.h"
+
+#define __CUDA_NO_HALF2_OPERATORS__ // block half2 vector math operators
+#include <cuda_fp16.h> // define half/half2 types
+#include "half2_math.h" // define half2 vector math here, using complex multiplication
+// note: half2 types restricted to compute capability 5.3
 
 typedef unsigned int uint;
 typedef unsigned short ushort;
@@ -984,6 +990,19 @@ inline __host__ __device__ void operator-=(uint4 &a, uint b)
 ////////////////////////////////////////////////////////////////////////////////
 // multiply
 ////////////////////////////////////////////////////////////////////////////////
+inline __host__ __device__ half2 operator*(half2 a, half b)
+{
+    return make_half2(a.x * b, a.y * b);
+}
+inline __host__ __device__ half2 operator*(half b, half2 a)
+{
+    return make_half2(b * a.x, b * a.y);
+}
+inline __host__ __device__ void operator*=(half2 &a, half b)
+{
+    a.x = a.x * b;
+    a.y = a.y * b;
+}
 
 inline __host__ __device__ float2 operator*(float2 a, float2 b)
 {
@@ -1019,8 +1038,9 @@ inline __host__ __device__ double2 operator*(double2 a, double2 b)
 }
 inline __host__ __device__ void operator*=(double2 &a, double2 b)
 {
-    a.x *= b.x;
-    a.y *= b.y;
+    const double2 c = a * b;
+    a.x = c.x;
+    a.y = c.y;
 }
 inline __host__ __device__ double2 operator*(double2 a, double b)
 {
@@ -1564,6 +1584,14 @@ inline __host__ __device__ uint4 max(uint4 a, uint4 b)
 // - linear interpolation between a and b, based on value t in [0, 1] range
 ////////////////////////////////////////////////////////////////////////////////
 
+inline __device__ __host__ half lerp(half a, half b, half t)
+{
+    return a + t*(b-a);
+}
+inline __device__ __host__ half2 lerp(half2 a, half2 b, half t)
+{
+    return a + t*(b-a);
+}
 inline __device__ __host__ float lerp(float a, float b, float t)
 {
     return a + t*(b-a);

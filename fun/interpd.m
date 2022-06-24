@@ -30,9 +30,9 @@ function y = interpd(x, t, dim, interp, extrapval)
 %
 
 %% validate dimensions
-if nargin < 5, extrapval = nan; end
-if nargin < 4, interp = 'linear'; end
-if nargin < 3, dim = 1; end
+if nargin < 5 || isempty(extrapval), extrapval = nan; end
+if nargin < 4 || isempty(interp),    interp = 'linear'; end
+if nargin < 3 || isempty(dim),       dim = 1; end
 assert(isreal(t)); % sampling at a real data type
 assert(isscalar(extrapval), 'Only a scalar value accepted for extrapolation.');
 
@@ -65,16 +65,24 @@ t = permute(t, ord);
 if exist('interpd.ptx', 'file') ...
         && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') ) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
-    % grab the kernel reference
-    issingle = @(x) strcmp(class(x), 'single') || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), 'single'); %#ok<STISA>
-    if issingle(x) || issingle(t)
-        [x, t] = deal(single(x), single(t));
-        suffix = "f";
+    
+    % determine the data type
+    isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T); 
+    if     isftype(x, 'double')
+        suffix = "" ; [x,t] = dealfun(@double, x, t); enc = false;
+    elseif isftype(x, 'single')
+        suffix = "f"; [x,t] = dealfun(@single, x, t); enc = false;
+    elseif isftype(x, 'half'  )
+        suffix = "h"; [x,t] = deal(storedInteger(x), single(t)); enc = true; % HACK: send to uint16 
+    elseif isftype(x, 'uint16') % HACK: assume it's an alias for half type on GPU
+        suffix = "h"; [x,t] = deal(x, single(t)); enc = false;
     else
-        suffix = "";
+        warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
+        suffix = "f" ;
     end
 
-    k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); % TODO: fix path
+    % grab the kernel reference
+    k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); 
     k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
     k.ThreadBlockSize = k.MaxThreadsPerBlock; % why not?
     k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), N, F];
@@ -94,20 +102,29 @@ if exist('interpd.ptx', 'file') ...
     y = repmat(cast(extrapval, 'like', x), osz);
     y = k.feval(y, x, t, flagnum); % compute
 
+    % convert halfs back to original type
+    if enc, y = half.typecast(y); end
+
 else
     % get new dimension mapping
     [~, tmp] = cellfun(@(x) ismember(x, ord), {dim, mdms, rdmst, rdmsx}, 'UniformOutput',false);
     [Tdim, Ndim, Mdim, Fdim] = deal(tmp{:});
 
+    % promote half types
+    if isa(x, 'half'), [xc, tc] = deal(single(x), single(t)); % promote until MATLAB's half type is native
+    elseif isa(x, 'uint16'), [xc, tc] = deal(single(half.typecast(x)), single(t)); % assume uint16 is an alias for the half type
+    else [xc, tc] = deal(x,t); % keep original otherwise
+    end
+    
     % compute using interp1, performing for each matching dimension
     pdims = [Tdim, Mdim, Fdim]; % pack all except matching dims
-    [xc, tc] = deal(num2cell(x, pdims), num2cell(t, pdims));
+    [xc, tc] = deal(num2cell(xc, pdims), num2cell(tc, pdims));
     parfor(i = 1:numel(xc), 0), y{i} = interp1(xc{i},1+tc{i},interp,extrapval); end
 
     % fold the non-singleton dimensions of x back down into the singleton
     % dimensions of the output
     if isempty(Mdim), Dt = 1; else, Dt = max(Mdim(size(t,Mdim) ~= 1)); end % max non-singleton dim in t
-    if isempty(Fdim), Dx = 1; else, Dx = max(Fdim(size(x,Fdim) ~= 1)); end % max non-singleton dim in x
+    % if isempty(Fdim), Dx = 1; else, Dx = max(Fdim(size(x,Fdim) ~= 1)); end % max non-singleton dim in x
     nsing = 1+find(size(t,2:maxdims) == 1); % where t singular in dims of x
     % swap out entries of t that are singular corresponding to where x is non-singular
     y = cellfun(@(y) {swapdim(y, nsing, Dt+nsing-1)}, y);
@@ -115,7 +132,7 @@ else
     if ~isempty(Ndim), lsz = size(t,Ndim); else, lsz = []; end % forward empty
     y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
     y = swapdim(y,Ndim,maxdims+(1:numel(Ndim))); % fold upper dimensions back into original dimensions
-
+    y = cast(y, 'like', x); % return to original type (if it was promoted)
 end
 
 % place back in prior dimensions
