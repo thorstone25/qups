@@ -424,6 +424,8 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = imag(chd)    , chd = applyFun2Data (chd, @imag); end
         function chd = abs(chd)     , chd = applyFun2Data (chd, @abs); end
         function chd = angle(chd)   , chd = applyFun2Data (chd, @angle); end
+        function chd = rad2deg(chd) , chd = applyFun2Data (chd, @rad2deg); end
+        function chd = deg2rad(chd) , chd = applyFun2Data (chd, @deg2rad); end
         function chd = mag2db(chd)  , chd = applyFun2Data (chd, @mag2db); end
         function chd = mod2db(chd)  , chd = applyFun2Data (chd, @mod2db); end
     end
@@ -778,6 +780,9 @@ classdef ChannelData < matlab.mixin.Copyable
             % You can then format the figure prior to calling this
             % function.
             %
+            % GIF(..., Name, Value, ...) forwards Name/Value pairs to
+            % imwrite. 
+            %
             % Example:
             % sz = [2^8, 2^6, 2^6];
             % x = complex(rand(sz), rand(sz)) - (0.5 + 0.5i);
@@ -786,7 +791,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % h = imagesc(chd, 1);
             % colormap hsv; 
             % colorbar;
-            % gif(chd, 'random_phase.gif', h);
+            % gif(chd, 'random_phase.gif', h, 'DelayTime', 1/20);
             %
             % See also IMAGESC ANIMATE
 
@@ -860,6 +865,31 @@ classdef ChannelData < matlab.mixin.Copyable
         mdim
     end
     methods
+        function chd = join(chds, dim)
+            % JOIN - Merge an array of ChannelData objects
+            %
+            % chd = JOIN(chds, dim) merges the ChannelData array chds into
+            % a single ChannelData objects chd in dimension dim of the
+            % data. 
+            % 
+            % The temporal dimension is expanded as needed. All other
+            % dimensions must be an identical size or empty. The sampling 
+            % frequency must be identical.
+            %
+            % The start time t0 must be either full in dimension dim or 
+            % identical in dimension dim for all ChannelData objects.
+            %
+            % See also CHANNELDATA/SPLICE
+
+            assert(isalmostn([chds.fs], repmat(median([chds.fs]), [1,numel(chds)]))); % sampling frequency must be identical
+            assert(all(string(chds(1).ord) == {chds.ord})); % data orders are identical
+
+            T_ = max([chds.T]); % maximum length of data
+            chds = arrayfun(@(chds) zeropad(chds,0,T_ - chds.T), chds); % make all the same length
+            chd = ChannelData('t0', cat(dim,chds.t0), 'fs', median([chds.fs]), 'data', cat(dim, chds.data)); % combine
+            if all(chd.t0 == sub(chd.t0,1,dim),'all'), chd.t0 = sub(chd.t0,1,dim); end % simplify for identical t0
+
+        end
         function chds = splice(chd, dim, bsize)
             % SPLICE - Split the ChannelData into an array of ChannelDatas
             % 
@@ -889,7 +919,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % title('Estimated frequency per transmit');
             % legend({'True', 'Estimated'});
             % 
-            % See also SUB
+            % See also CHANNELDATA/JOIN SUB
             
             assert(isscalar(dim), 'Dimension must be scalar!'); 
             if nargin < 3, bsize = 1; end
