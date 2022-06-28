@@ -26,6 +26,9 @@ function [C, lags] = convd(A, B, dim, shape, varargin)
 %
 % See also CONV CONV2 CONVN
 
+% TODO: update this for tall variables?
+% TODO: extend for half type
+
 % parse the inputs and set defaults
 if nargin < 3 || isempty(dim), dim = 1; end
 if nargin < 4 || isempty(shape), shape = 'full'; end
@@ -39,13 +42,14 @@ for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
 % permute so that dim becomes the first dimension
 % flip 2nd arg on CPU so that stride is positive
-ord = [dim, setdiff(1:max(ndims(A), dim), dim)];
+D = max(ndims(A),ndims(B)); % number of dimensions in the data
+ord = [dim, setdiff(1:max(D, dim), dim)];
 x = permute(A, ord); % shared-copy?
 y = permute(B, ord); % shared-copy?
 
 % check data sizes
-sz_x = size(x);
-sz_y = size(y);
+sz_x = size(x, 1:D);
+sz_y = size(y, 1:D);
 assert(numel(sz_x) == numel(sz_y) && all(sz_x(2:end) == sz_y(2:end)),...
     "Incompatible sizes [" + join(string(size(sz_x))+",") + "], and [" + join(string(size(sz_y))+",") + "].");
 
