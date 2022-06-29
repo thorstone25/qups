@@ -1,15 +1,29 @@
 function z = slsc(x, dim, L, method, varargin)
 % SLSC - Short-lag Spatial Coherence 
 %
-% z = SLSC(x) computes the short-lag spatial coherence (SLSC) across the
-% data x. x can be any ND-array.
+% INPUTS:
+%       x       - input data with the dimensions [tx, rx, ??]
+%       dim     - Aperture dimension (default 2)
+%       L       - max number of lags to use (default 10)
+%       method  - method for normalization of input data (default ensamble)
+%   
+% OPTIONAL INPUTS:
+%   
 %
-% z = SLSC(x, dim) operate in dimension dim. The default is 2.
+% OUTPUTS:
+%       z       - SLSC image
+%
+% EXAMPLE USE:
+%
+%       z = SLSC(x)                 computes the short-lag spatial coherence (SLSC) 
+%                                   across the data x. x can be any ND-array.
+%
+%       z = SLSC(x, dim)            operate in dimension dim. The default is 2.
 % 
-% z = SLSC(x, dim, L) uses up to L lags
+%       z = SLSC(x, dim, L)         uses up to L lags
 % 
-% z = SLSC(x, dim, L, method) uses the specified method. Must be one of
-% {"ensemble"* | "average"}.
+%       z = SLSC(x, dim, L, method) uses the specified method. Must be one of
+%                                   {"ensemble"* | "average"}.
 % 
 % References:
 % D. Hyun, A. C. Crowley and J. J. Dahl, 
