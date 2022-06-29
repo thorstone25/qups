@@ -31,9 +31,8 @@
 %#ok<*BDLGI> ignore casting numbers to logical values
 device = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
 % setup;  % add all the necessary paths
-setup parallel CUDA cache; % start a parpool for faster processing & setup CUDA paths & recompile and cache local mex/CUDA binaries
-
-try hw = waitbar(0, 'test', 'Visible', 'off'); close(hw); end %#ok<TRYNC> % R2021b bug - errors on first call
+% setup parallel; % start a parpool for faster CPU processing
+setup CUDA cache;  % setup CUDA paths & recompile and cache local mex/CUDA binaries
 %% 
 %% Create a simple simulation
 % Choose a Target
@@ -47,7 +46,7 @@ switch "single"
 end
 % make scatterers twice the density
 targ.scat_mode = 'ratio';
-targ.rho_scat = 4; 
+targ.rho_scat = 2; 
 % Choose a transducer
 
 switch "L11-5V"
@@ -59,14 +58,18 @@ end
 % Make sure it covers the target and the transducer!
 
 switch "small"
-    case 'small', tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 1+40*2^3), 'z', linspace(  0e-3, 60e-3, 1+60*2^3));
-    case 'large', tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 1+100*2^1), 'z', linspace(-30e-3, 60e-3, 1+90*2^1));
+    case 'small', tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 40*2^4), 'z', linspace(  -4e-3, 36e-3, 40*2^4));
+    case 'large', tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 100*2^4), 'z', linspace(-30e-3, 70e-3, 100*2^4));
 end
+
+% point per wavelength - aim for >2 for a simulation
+ppw = c0/xdc.fc/min([tscan.dx, tscan.dz]); 
+
 % Choose a transmit sequence
 % For linear transducers only!
 
 if isa(xdc, 'TransducerArray') 
-    switch "FSA"
+    switch "Focused"
         case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
         case 'Plane-wave', 
             [amin, amax, Na] = deal( -25 ,  25 , 11 );
@@ -132,14 +135,12 @@ end
 
 % create a distributed medium based on the point scatterers 
 % (this logic will later be implemented in a class)
-[c, rho] = props(targ, tscan, {'c', 'rho'});
-g = tscan.getImagingGrid(); g = cellfun(@(x){shiftdim(x,-1)}, g); g = cat(1, g{:});
-[i, cp, rhop] = targ.modMap(g);
-[c(i), rho(i)] = deal(cp, rhop);
-med = Medium.Sampled(tscan, c, rho);
+s_rad = max([tscan.dx, tscan.dz]); %, 260e-6); % scatterer radius
+nextdim = @(p) ndims(p) + 1;
+ifun = @(p) any(vecnorm(p - swapdim(targ.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p));
+med = Medium('c0', targ.c0, 'rho0', targ.rho0, 'pertreg', {{ifun, [targ.c0*targ.c_scat, targ.rho0*targ.rho_scat]}});
 %% 
 % 
-
 
 % Show the transducer's impulse response
 % figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
@@ -149,9 +150,12 @@ med = Medium.Sampled(tscan, c, rho);
 %  Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
-imagesc(targ, tscan); colorbar; % show the background medium for the simulation/imaging region
+switch "sound-speed"
+    case 'sound-speed', imagesc(med, tscan, 'c'  ); colorbar; % show the background medium for the simulation/imaging region
+    case 'density',     imagesc(med, tscan, 'rho'); colorbar; % show the background medium for the simulation/imaging region
+end
 plot(xdc, 'r+', 'DisplayName', 'Elements'); % elements
-hps = plot(scan, 'y.', 'MarkerSize', 0.5, 'DisplayName', 'Image'); % the imaging points
+hps = plot(scan, 'w.', 'MarkerSize', 0.5, 'DisplayName', 'Image'); % the imaging points
 switch seq.type % show the transmit sequence
     case 'PW', plot(seq, 3e-2, 'k.', 'DisplayName', 'Tx Sequence'); % scale the vectors for the plot
     otherwise, plot(seq, 'k.', 'DisplayName', 'Tx Sequence'); % plot focal points, if they exist
@@ -174,14 +178,14 @@ us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 *
 switch "Greens"
     case 'FieldII', chd0 = calc_scat_all(us, targ, [1,1], 'device', device, 'interp', 'cubic'); % use FieldII, 
     case 'FieldII-multi', chd0 = calc_scat_multi(us, targ, [1,1]); % use FieldII, 
-    case 'SIMUS'  , chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'freq'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
+    case 'SIMUS'  , chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'cubic'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
     case 'Greens' , chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a Greens function with a GPU if available!
-    case 'kWave', chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 1/8, 'PML', [32 72], 'parcluster', 0); % run locally, and use an FFT friendly PML size
+    case 'kWave', chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parcluster', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
 end
 chd0
 
 % display the channel data across the transmits
-chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in dB
+chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in decibels
 figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis(gather([-80 0] + (max(chd.data(chd.data < inf)))))
 xlabel('Channel'); ylabel('Time (s)'); ylim([min(chd.time(:)), max(chd.time(:))]);
 for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); h.YData(:) = chd.time(:,:,min(m,size(chd.time,3))); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
@@ -195,6 +199,8 @@ for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); h.YData
 chd = chd0;
 chd = singleT(chd); % use less data
 chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC 
+D = chd.getPassbandFilter(xdc.bw, 25); % get a passband filter for the transducer bandwidth
+chd = filter(chd, D); % apply passband filter for transducer bandwidth
 if device, chd = gpuArray(chd); end % move data to GPU
 if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
 
@@ -229,24 +235,37 @@ switch seq.type
             case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
             case 'none', apod = 1;
         end
-        
-    otherwise, apod = 1; % apodization profiles for plane-wave/FSA not implemented :(
-end
 
-switch "DAS"
+%% 
+% Choose an apodization method for Plane Wave (PW) transmit sequences
+
+    case "PW"
+        switch "none"
+            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 2);
+            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 20); 
+            case 'none', apod = 1;
+        end
+        
+        
+    otherwise, apod = 1; % apodization profiles for plane-wave not implemented :(
+end
+%% 
+% Choose a beamforming method
+
+switch "DAS-direct"
     case "DAS"
-        b = bfDAS(us, chd, targ.c0, 'apod', apod); % use a vanilla delay-and-sum beamformer
+        b = bfDAS(us, chd, targ.c0, 'apod', apod, 'interp', 'cubic'); % use a vanilla delay-and-sum beamformer
     case "Adjoint"
-        b = bfAdjoint(us, chd, targ.c0); % use an adjoint matrix method
+        b = bfAdjoint(us, chd, targ.c0, 'apod', apod, 'fthresh', -20); % use an adjoint matrix method
     case "Eikonal"
-        b = bfEikonal(us, chd, targ, tscan, 'interp', 'linear', 'apod', apod); % use the eikonal equation
+        b = bfEikonal(us, chd, targ, tscan, 'apod', apod, 'interp', 'cubic'); % use the eikonal equation
     case "DAS-direct"
-        b = DAS(us, chd, struct('c0', targ.c0), [], 'device', device, 'interp', 'spline', 'apod', apod); % use a specialized delay-and-sum beamformer
+        b = DAS(us, chd, targ.c0, 'apod', apod, 'interp', 'cubic', 'device', device); % use a specialized delay-and-sum beamformer
 end
 
 % show the image
 b_im = mod2db(b); % convert to power in dB
-figure; imagesc(scan, b_im, [-80, 0] + max(b_im(:))); % display with 80dB dynamic range
+figure; imagesc(scan, b_im(:,:,1), [-80, 0] + max(b_im(:))); % display with 80dB dynamic range
 colormap gray; colorbar;
 %% Scan Convert for a Sector Scan
 

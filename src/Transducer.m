@@ -262,6 +262,68 @@ classdef (Abstract) Transducer < handle
         end
     end
 
+    methods %(Abstract)
+        % karray = kWaveArray(self, og, varargin)
+        function karray = kWaveArray(self, dim, og, varargin)
+        % KWAVEARRAY - Create a kWaveArray object from the Transducer
+        %
+        % karray = KWAVEARRAY(self, dim, og) creates a kWaveArray from the
+        % Transducer self defined on a kWaveGrid with dim dimensions and 
+        % origin og.
+        %
+        % karray = KWAVEARRAY(..., Name, Value, ...) forwards Name/Value
+        % pair arguments to the kWaveArrray constructor.
+        %
+        % Inputs:
+        %   Axisymmetric
+        %   BLITolerance
+        %   BLIType
+        %   UpsamplingRate
+        % 
+        % See also KWAVEARRAY
+
+        %{
+    end
+
+    methods
+        %}
+        % function karray = kWaveArray(self, og, varargin)
+            
+            % TODO: set axisymmetric if it makes sense
+            % TODO: allow input argument to specify dimensions
+            
+            % initialize
+            karray = kWaveArray(varargin{:}); 
+
+            % get positions and orientations
+            p = self.positions; % TODO: translate the entire array?
+            [th, phi] = self.orientations;
+            n = self.numel;
+
+            % build the rotation vectors
+            % v = [cosd(phi); cosd(phi); sind(phi)] .* [cosd(th); sind(th); 1];
+            rot = [phi; th; th] .* [1;1;0];
+
+            % convert to kWaveGrid coorindates: axial x lateral x elevation
+            switch dim
+                case 2, % we only rotate in x-z plane
+                    [p, rot] = deal(p([3,1  ],:), rot(2,:)); 
+                    [arr_off, arr_rot] = deal(-og(1:2), 0);
+                case 3, 
+                    [p, rot] = deal(p([3,1,2],:), rot([3,1,2],:)); % I think this is right?
+                    [arr_off, arr_rot] = deal(-og(1:3), [0;0;0]);
+                otherwise, error("Wrong number of dimensions (" + dim + "). An array requires 2 or 3 dimensions.");
+            end
+
+            % add each element to the array
+            for i = 1:n
+                karray.addRectElement(p(:,i), self.width, self.height, rot(:,i));
+            end
+
+            karray.setArrayPosition(arr_off, arr_rot);
+        end
+    end
+
     % fullwave functions
     methods (Abstract)
         % GETFULLWAVETRANSDUCER - define a fullwave transducer structure
