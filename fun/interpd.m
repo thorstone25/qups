@@ -75,10 +75,8 @@ if exist('interpd.ptx', 'file') ...
         suffix = "" ; [x,t] = dealfun(@double, x, t);
     elseif isftype(x, 'single')
         suffix = "f"; [x,t] = dealfun(@single, x, t);
-    elseif isftype(x, 'half'  )
-        suffix = "h"; [x,t] = deal(storedInteger(x), single(t));% HACK: send to uint16 
-    elseif isftype(x, 'uint16') && ishalf % it's an alias for half type on GPU
-        suffix = "h"; [x,t] = deal(x, single(t));
+    elseif isftype(x, 'halfT'  )
+        suffix = "h"; [x,t] = dealfun(@(x)gpuArray(halfT(x)), x, t); % custom type
     else
         warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
         suffix = "f" ;
@@ -99,12 +97,23 @@ if exist('interpd.ptx', 'file') ...
         otherwise, error('Interp option not recognized: ' + string(interp));
     end
 
-    % sample
+    % condition inputs/outputs
     osz = [I, max(size(t,2:maxdims), size(x,2:maxdims))];
     x = complex(x); % enforce complex type
-    y = repmat(cast(extrapval, 'like', x), osz);
-    y = k.feval(y, x, t, flagnum); % compute
+    switch suffix
+        case "h" % halfT type
+            y = complex(gpuArray(halfT(repelem(extrapval,osz))));
+            [y_,x_,t_] = dealfun(@(x)x.val, y,x,t);
+        otherwise % others
+            y = repmat(cast(extrapval, 'like', x), osz);
+            [y_,x_,t_] = deal(y,x,t);
+    end
 
+    % sample
+    y_ = k.feval(y_, x_, t_, flagnum); % compute
+
+    % restore type
+    switch suffix, case "h", y.val = y; otherwise y = y_; end
 else
     % get new dimension mapping
     [~, tmp] = cellfun(@(x) ismember(x, ord), {dim, mdms, rdmst, rdmsx}, 'UniformOutput',false);

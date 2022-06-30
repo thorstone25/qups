@@ -1,4 +1,4 @@
-function y = wsinterpd(x, t, dim, w, interp, extrapval, varargin)
+function y = wsinterpd(x, t, dim, w, sdim, interp, extrapval, varargin)
 % WSINTERPD GPU-enabled interpolation in one dimension
 %
 % y = WSINTERPD(x, t) interpolates the data x at the indices t. It uses the
@@ -22,28 +22,23 @@ function y = wsinterpd(x, t, dim, w, interp, extrapval, varargin)
 % y = WSINTERPD(x, t, dim, w) applies the weighting matrix after sampling the
 % the data. The default is 1.
 %
-% y = WSINTERPD(x, t, dim, w, interp) specifies the interpolation method. It
-% must be one of {"nearest", "linear"*,"cubic","lanczos3"} or any option 
-% supported by interp1.
+% y = WSINTERPD(x, t, dim, w, sdim) sums the data in the dimension(s) sdim
+% after the weighting matrix has been applied. The default is [].
 %
-% y = WSINTERPD(x, t, dim, w, interp, extrapval) uses extrapval as the
+% y = WSINTERPD(x, t, dim, w, sdim, interp) specifies the interpolation 
+% method. It must be one of {"nearest", "linear"*,"cubic","lanczos3"} or 
+% any option supported by interp1.
+%
+% y = WSINTERPD(x, t, dim, w, sdim, interp, extrapval) uses extrapval as the
 % extrapolation value when outside of the domain of t.
 %
 % See also INTERPN INTERP1 INTERPD
 %
 
-%% parse inputs
-kwargs.msum = false;
-kwargs.fsum = false;
-
-for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
-
-msum = kwargs.msum;
-fsum = kwargs.fsum;
-
 %% validate dimensions
-if nargin < 6 || isempty(extrapval), extrapval = nan; end
-if nargin < 5 || isempty(interp),    interp = 'linear'; end
+if nargin < 7 || isempty(extrapval), extrapval = nan; end
+if nargin < 6 || isempty(interp),    interp = 'linear'; end
+if nargin < 5 || isempty(sdim),      sdim = []; end 
 if nargin < 4 || isempty(w        ), w = 1; end
 if nargin < 3 || isempty(dim),       dim = 1; end
 assert(isreal(t)); % sampling at a real data type
@@ -58,10 +53,18 @@ rdmsx = ddms(xsz ~= tsz & tsz == 1); % outer dim for x
 rdmst = ddms(xsz ~= tsz & xsz == 1); % outer dim for t
 rdms = union(rdmsx, rdmst); % all outer dimensions
 
+% remove summation in singleton dimensions
+if ~isempty(sdim), sdim(size(x,sdim) == 1 & size(t,sdim) == 1) = []; end
+
 % set the data order: sampling dimensions, broadcasting dimensions,
 % replicating dimensions (in t, then in x)
 ord = [dim, mdms, rdmst, rdmsx]; % this should be all of the dimensions
 assert(isempty(setxor(ord, 1:maxdims)), 'Unable to identify all dimensions: this is a bug.');
+assert(all(...
+    size(w,1:maxdims) == 1 | ...
+    size(w,1:maxdims) == max(size(x,1:maxdims), size(t,1:maxdims)) ...
+    ), 'The weighting vector w must have dimensions compatible with the data and may not broadcast.' ...
+    );
 
 % get the data sizing
 T = size(x, dim);
@@ -70,34 +73,22 @@ N = prod(esize(t, mdms));
 M = prod(esize(t, rdms));
 F = prod(esize(x, rdms));
 
-% GPU-only --------------------------
-% set w to be compatible with t in all vectorized dimensions
-assert(any(size(w,dim) == [1,I]))
-if ~isempty(mdms) && ~all(size(w, mdms) == 1) && all(size(t, mdms) ~= size(w, mdms)) 
-    for d = mdms, w = w + shiftdim(zeros([size(t,d),1]), 1-d); end
-end
-if ~isempty(rdmst) && ~all(size(w, rdmst) == 1) && all(size(t, rdmst) ~= size(w, rdmst))
-    for d = rdmst, w = w + shiftdim(zeros([size(t,d),1]), 1-d); end
-end
-if ~isempty(rdmsx) && ~all(size(w, rdmsx) == 1) && all(size(x, rdmsx) ~= size(w, rdmsx))
-    for d = rdmsx, w = w + shiftdim(zeros([size(t,d),1]), 1-d); end
-end
-
-% all stride dimensions
-dim_set = {dim,mdms,rdmst,rdmsx};
-
-% get weighting strides
-wstride = cellfun(@(d)prod(esize(w,d)), dim_set);
-assert(all(wstride == 1 | wstride == [I,N,M,F]), 'Unable to cast to full size: this is a bug.');
-wstride = cumprod([1,wstride(1:end-1)]) .* (wstride ~= 1); % get the stride for successive indices
-% GPU only ------------------------------
-
 % move the input data to the proper dimensions for the GPU kernel
 x = permute(x, ord);
 t = permute(t, ord);
 w = permute(w, ord);
-mdims = (ismember(ord, rdmst)); % dims for M
-fdims = (ismember(ord, rdmsx)); % dims for F
+
+S = maxdims; % number of (full) dimensions
+dsizes = [I, max(size(t,2:S), size(x,2:S))]; % data sizes in new dimensions
+sdimo = arrayfun(@(d)find(d==ord), sdim); % new dimensions of summation
+
+% get stride for weighting 
+wstride = size(w,1:S);
+wstride = cumprod([1, wstride(1:end-1)]) .* (wstride ~= 1);
+
+% get stride for output
+osz = dsizes; osz(sdimo) = 1; % these dimensions are summed
+ystride = cumprod([1, osz(1:end-1)]) .* (osz ~= 1);
 
 % function to determine type
 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
@@ -121,7 +112,10 @@ if exist('interpd.ptx', 'file') ...
 
     % grab the kernel reference
     k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'wsinterpd' + suffix); 
-    k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
+    k.setConstantMemory( ...
+        'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
+        'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F) ...
+        );
     k.ThreadBlockSize = k.MaxThreadsPerBlock; % why not?
     k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), N, F];
 
@@ -135,9 +129,6 @@ if exist('interpd.ptx', 'file') ...
     end
 
     % sample
-    osz = [I, max(size(t,2:maxdims), size(x,2:maxdims))];
-    if msum, osz(mdims) = 1; end % M is collapsed
-    if fsum, osz(fdims) = 1; end % F is collapsed
     [x,w] = deal(complex(x), complex(w)); % enforce complex type
     switch suffix
         case "h", 
@@ -149,7 +140,7 @@ if exist('interpd.ptx', 'file') ...
             y_ = cast(zeros(osz), 'like', x_);
     end
      % zeros: uint16(0) == storedInteger(half(0)), so this is okay
-    y_ = k.feval(y_, w_, x_, t_, wstride, (~msum), (~fsum), flagnum); % compute
+    y_ = k.feval(y_, w_, x_, t_, dsizes, wstride, ystride, flagnum); % compute
 
     % for halfT, store the data back in the output
     switch suffix, case "h", y.val = y_; otherwise, y = y_; end
@@ -166,28 +157,34 @@ else
     % get the dimensions after using interp1
     if isempty(Mdim), Dt = 1; else, Dt = max(Mdim(size(t,Mdim) ~= 1)); end % max non-singleton dim in t
     % if isempty(Fdim), Dx = 1; else, Dx = max(Fdim(size(x,Fdim) ~= 1)); end % max non-singleton dim in x
-    nsing = 1+find(size(t,2:maxdims) == 1); % where t singular in dims of x
 
     % identify outer dimensions for summing
-    dsum = 1+ndims(xc)+ndims(tc); % scalar dimension - avoid sum over empty dims
-    if msum, dsum = [dsum, Mdim]; end % tmp dimension for time
-    if fsum, dsum = [dsum, Dt-1+Fdim]; end % tmp dimension for data
-    w = swapdim(w, Fdim, Dt-1+Fdim); % move into upper dimensions
+    dsume = 1+ndims(xc)+ndims(tc); % add a scalar dimension - avoid sum over empty dims
+    dsume = [dsume,      sdimo(~ismember(sdimo, Fdim))]; % add dimensions that aren't shifted high (external)
+    dsumi = [dsume, Dt-1+sdimo( ismember(sdimo, Fdim))]; % add dimensions that are    shifted high (internal only)
+    w = swapdim(w, Fdim, Dt-1+Fdim); % move weights into shifted upper dimensions
+
+    % on CPU, force w to be full for matching dimensions by adding zeros
+    % TODO: remove this by making a hybrid approach: instead of saving to
+    % cells, expand the NDarray and add atomically
+    for d = Ndim, w = w + shiftdim(zeros([size(x,d),1]),1-d); end
     
     % compute using interp1, performing for each matching dimension,
     % weighting and summing over outer dimensions as requested
-    pdims = [Tdim, Mdim, Fdim]; % pack all except matching dims
-    [xc, tc] = deal(num2cell(xc, pdims), num2cell(tc, pdims));
-    parfor(i = 1:numel(xc), 0), y{i} = sum(w .* interp1(xc{i},1+tc{i},interp,extrapval), dsum, 'omitnan'); end
+    pdims = [Tdim, Mdim, Fdim, Dt-1+Fdim]; % pack all except matching dims
+    [xc, tc, wc] = deal(num2cell(xc, pdims), num2cell(tc, pdims), num2cell(w, pdims));
+    parfor(i = 1:numel(xc), 0), y{i} = sum(wc{i} .* interp1(xc{i},1+tc{i},interp,extrapval), dsumi, 'omitnan'); end
 
     % fold the non-singleton dimensions of x back down into the singleton
     % dimensions of the output
     % swap out entries of t that are singular corresponding to where x is non-singular
+    nsing = 1+find(size(t,2:maxdims) == 1); % where t singular in dims of x
     y = cellfun(@(y) {swapdim(y, nsing, Dt+nsing-1)}, y);
     y = cat(maxdims+1, y{:}); % unpack Ndims in upper dimensions
     if ~isempty(Ndim), lsz = size(t,Ndim); else, lsz = []; end % forward empty
     y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
     y = swapdim(y,Ndim,maxdims+(1:numel(Ndim))); % fold upper dimensions back into original dimensions
+    y = sum(y, dsume, 'omitnan'); % sum across matching dimensions too
     
     % demote for half types
     if isftype(x, 'halfT'), y = halfT(y); end % convert half types back
