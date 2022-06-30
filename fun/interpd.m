@@ -1,4 +1,4 @@
-function y = interpd(x, t, dim, interp, extrapval)
+function y = interpd(x, t, dim, interp, extrapval, ishalf)
 % INTERPD GPU-enabled interpolation in one dimension
 %
 % y = INTERPD(x, t) interpolates the data x at the indices t. It uses the
@@ -30,6 +30,7 @@ function y = interpd(x, t, dim, interp, extrapval)
 %
 
 %% validate dimensions
+if nargin < 6 || isempty(ishalf)   , ishalf = isa(x, 'half'); end
 if nargin < 5 || isempty(extrapval), extrapval = nan; end
 if nargin < 4 || isempty(interp),    interp = 'linear'; end
 if nargin < 3 || isempty(dim),       dim = 1; end
@@ -61,21 +62,23 @@ if isempty(rdms), F = 1; else, F = prod(size(x, rdms)); end
 x = permute(x, ord);
 t = permute(t, ord);
 
+% function to determine type
+isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
+
 % use ptx on gpu if available or use native MATLAB
 if exist('interpd.ptx', 'file') ...
         && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') ) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
     
     % determine the data type
-    isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T); 
     if     isftype(x, 'double')
-        suffix = "" ; [x,t] = dealfun(@double, x, t); enc = false;
+        suffix = "" ; [x,t] = dealfun(@double, x, t);
     elseif isftype(x, 'single')
-        suffix = "f"; [x,t] = dealfun(@single, x, t); enc = false;
+        suffix = "f"; [x,t] = dealfun(@single, x, t);
     elseif isftype(x, 'half'  )
-        suffix = "h"; [x,t] = deal(storedInteger(x), single(t)); enc = true; % HACK: send to uint16 
-    elseif isftype(x, 'uint16') % HACK: assume it's an alias for half type on GPU
-        suffix = "h"; [x,t] = deal(x, single(t)); enc = false;
+        suffix = "h"; [x,t] = deal(storedInteger(x), single(t));% HACK: send to uint16 
+    elseif isftype(x, 'uint16') && ishalf % it's an alias for half type on GPU
+        suffix = "h"; [x,t] = deal(x, single(t));
     else
         warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
         suffix = "f" ;
@@ -102,17 +105,14 @@ if exist('interpd.ptx', 'file') ...
     y = repmat(cast(extrapval, 'like', x), osz);
     y = k.feval(y, x, t, flagnum); % compute
 
-    % convert halfs back to original type
-    if enc, y = half.typecast(y); end
-
 else
     % get new dimension mapping
     [~, tmp] = cellfun(@(x) ismember(x, ord), {dim, mdms, rdmst, rdmsx}, 'UniformOutput',false);
     [Tdim, Ndim, Mdim, Fdim] = deal(tmp{:});
 
     % promote half types
-    if isa(x, 'half'), [xc, tc] = deal(single(x), single(t)); % promote until MATLAB's half type is native
-    elseif isa(x, 'uint16'), [xc, tc] = deal(single(half.typecast(x)), single(t)); % assume uint16 is an alias for the half type
+    if isftype(x, 'half'), [xc, tc] = dealfun(@single, x, t); % promote until MATLAB's half type is native
+    elseif isftype(x, 'uint16') && ishalf, [xc, tc] = deal(gpuArray(single(half.typecast(gather(x)))), single(t)); % uint16 is an alias for the gpuhalf type
     else [xc, tc] = deal(x,t); % keep original otherwise
     end
     
@@ -132,7 +132,11 @@ else
     if ~isempty(Ndim), lsz = size(t,Ndim); else, lsz = []; end % forward empty
     y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
     y = swapdim(y,Ndim,maxdims+(1:numel(Ndim))); % fold upper dimensions back into original dimensions
-    y = cast(y, 'like', x); % return to original type (if it was promoted)
+    
+    % demote for half types
+    if isftype(x, 'uint16') && ishalf, y = storedInteger(half(y));  % convert half types back to alias
+    elseif isftype(x, 'half'), y = cast(y, 'like', x); % return to original type (if it was promoted)
+    end
 end
 
 % place back in prior dimensions
