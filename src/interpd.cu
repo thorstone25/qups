@@ -291,18 +291,22 @@ __global__ void interpdh(ushort2 * __restrict__ y,
     const ushort2 * __restrict__ x, const unsigned short * __restrict__ tau, const int flag) {
 
     // get sampling index
-    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     const half2 no_v = make_half2(0.0f, 0.0f);
 
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
 
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+
     // if valid sample, for each tx/rx
-    if(i < QUPS_I && n < QUPS_N && f < F){
+    if(i < I && n < N && m < M){
         # pragma unroll
-        for(size_t m = 0; m < QUPS_M; ++m){ // per transmit
+        for(size_t f = 0; f < F; ++f){ // per transmit
             y[i + n*I + m*N*I + f*M*N*I] = h2u(sampleh(&x[n*T + f*N*T], u2h(tau[i + n*I + m*I*N]), flag, no_v));
         }
     }
@@ -315,22 +319,26 @@ __global__ void wsinterpdh(ushort2 * __restrict__ y,
     ) {
 
     // get sampling index
-    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     const half2 no_v = make_half2(0.0f, 0.0f);
 
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
     size_t k,l,sz; // weighting / output indexing
 
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+
     // cast MATLAB alias to CUDA half type
     half2 * yh = reinterpret_cast<half2 *>(y);
 
     // if valid sample, per each i,n,f
-    if(i < I && n < N && f < F){
+    if(i < I && n < N && m < M){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // for m
+        for(size_t f = 0; f < F; ++f){ // for m
             // global index
             const size_t j = (i + n*I + m*N*I + f*N*I*M);
 
@@ -382,18 +390,22 @@ __global__ void interpdf(float2 * __restrict__ y,
     const float2 * __restrict__ x, const float * __restrict__ tau, const int flag) {
 
     // get sampling index
-    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     float2 no_v = make_float2(0.0f, 0.0f);
 
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
 
-    // if valid sample, for each tx/rx
-    if(i < QUPS_I && n < QUPS_N && f < F){
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+    
+    // if valid sample, for each time index
+    if(i < I && n < N && m < M){
         # pragma unroll
-        for(size_t m = 0; m < QUPS_M; ++m){ // per transmit
+        for(size_t f = 0; f < F; ++f){ // per frame of data
             y[i + n*I + m*N*I + f*M*N*I] = samplef(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
         }
     }
@@ -406,19 +418,23 @@ __global__ void wsinterpdf(float2 * __restrict__ y,
     ) {
 
     // get sampling index
-    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     float2 no_v = make_float2(0.0f, 0.0f);
 
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
     size_t k,l,sz; // weighting / output indexing
 
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+    
     // if valid sample, per each i,n,f
-    if(i < I && n < N && f < F){
+    if(i < I && n < N && m < M){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // for m
+        for(size_t f = 0; f < F; ++f){ // for m
             // global index
             const size_t j = (i + n*I + m*N*I + f*N*I*M);
 
@@ -468,19 +484,22 @@ __global__ void interpd(double2 * __restrict__ y,
     const double2 * __restrict__ x, const double * __restrict__ tau, const int flag) {
 
     // get sampling index
-    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     double2 no_v = make_double2(0.0, 0.0);
 
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
 
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
 
-    // if valid sample, for each tx/rx
-    if(i < I && n < N && f < F){
+    // if valid sample, for each sample index
+    if(i < I && n < N && m < M){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // per transmit
+        for(size_t f = 0; f < F; ++f){ // loop over data
             y[i + n*I + m*N*I + f*M*N*I] = sample(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
         }
     }
@@ -493,19 +512,23 @@ __global__ void wsinterpd(double2 * __restrict__ y,
     ) {
 
     // get sampling index
-    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    // const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
     double2 no_v = make_double2(0.0, 0.0);
     
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
     size_t k,l,sz; // weighting / output indexing
 
-    // if valid sample, per each i,n,f
-    if(i < I && n < N && f < F){
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+    
+    // if valid sample, per each i,n,m (indexing the time delays)
+    if(i < I && n < N && m < M){
         # pragma unroll
-        for(size_t m = 0; m < M; ++m){ // for m
+        for(size_t f = 0; f < F; ++f){ // loop over the frames of data
             // global index
             const size_t j = (i + n*I + m*N*I + f*N*I*M);
 
