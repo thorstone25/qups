@@ -242,7 +242,11 @@ classdef UltrasoundSystem < handle
             %   the current GPU. 0 selects a cpu. n where n > 0 selects and
             %   resets a GPU
             %
-            %   - method    interpolation method {'interpn'* | 'griddedInterpolant'}
+            %   - method    interpolator {'interpn'* | 'griddedInterpolant'}
+            %   - interp    interpolation method: must be supported by the
+            %               interpolator
+            %   - block_size number of scatterers to compute at a time.
+            %               Default is 1
             %
             % Outputs:
             %   - time (T x 1):             time sample values (s)
@@ -258,6 +262,7 @@ classdef UltrasoundSystem < handle
             device = -logical(gpuDeviceCount());
             method = 'interpn';
             interp_method = 'linear';
+            block_size = 1;
             
             % parse inputs
             % TODO: switch to kwargs properties
@@ -266,6 +271,7 @@ classdef UltrasoundSystem < handle
                     case 'device', device = varargin{i+1};
                     case 'method', method = varargin{i+1};
                     case 'interp', interp_method = varargin{i+1};
+                    case 'block_size', block_size = varargin{i+1};
                 end
             end
             
@@ -317,7 +323,7 @@ classdef UltrasoundSystem < handle
 
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), self.rx.numel, self.tx.numel, prod(element_subdivisions));
-            x   = zeros([T N M]);
+            x   = zeros([1 T N M]);
 
             % splice
             c0  = target.c0;
@@ -351,8 +357,11 @@ classdef UltrasoundSystem < handle
 
             % for each tx/rx pair, extra subelements ...
             % TODO: parallelize where possible
+            svec = num2cell((1:block_size)' + (0:block_size:target.numScat-1), 1);
+            svec{end} = svec{end}(svec{end} <= target.numScat);
+            S = numel(svec); % number of scatterer blocks
             w = waitbar(0);
-            for s = 1:target.numScat
+            for sv = 1:S, s = svec{sv}; % vector of indices
             for em = 1:E
                 for en = 1:E
                     % unpack indexing (MATLAB optimization)
@@ -361,29 +370,67 @@ classdef UltrasoundSystem < handle
                     % compute time delays
                     % TODO: do this via ray-path propagation through a
                     % medium
-                    % 1 x S x N x M x 1 x 1
-                    r_rx = vecnorm(sub(pos,s,2) - sub(ptc_rx, en, 5));
-                    r_tx = vecnorm(sub(pos,s,2) - sub(ptc_tx, em, 6)); 
-                    tau_rx = r_rx ./ c0;
-                    tau_tx = r_tx ./ c0;
+                    % S x 1 x N x M x 1 x 1
+                    r_rx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_rx, en, 5)),1,2);
+                    r_tx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_tx, em, 6)),1,2); 
+                    tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
+                    tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
 
                     % compute the contribution
-                    % T x S x N x M x 1 x 1
-                    att = sub(amp,s,2);% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
-                    s_ = att .* f((tau_rx + tau_tx) * fs_); % temporal delay (no phase shift)
+                    % S x 1 x N x M x 1 x 1
+                    att = sub(amp,s,2).';% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
+                    % f = @(tau) interpd(kern(:), (t - tau) - (fs_*tk(1)), 1, interp_method);
+                    % s_ = att .* f((tau_rx + tau_tx) * fs_); % temporal delay (no phase shift)
 
-                    % add contribution (T x N X M)
-                    x(:) = x + permute(nan2zero(sum(s_, 2, 'omitnan')), [1,3,4,2]);
+                    % get 0-based sample time delay
+                    % switch time and scatterer dimension
+                    % S x T x N x M x 1 x 1
+                    % tau = (tau_rx + tau_tx + tk(1)) * fs_;
+                    t0 = gather(tk(1)); % 1 x 1
+                    
+                    % make tall in the scatterer dimension
+                    % S x T x N x M x 1 x 1
+                    tvec = t(:)'; % 1 x T full time vector
+                    % tau = tvec - tall(gather(tau));
+                    % att = tall(gather(att)); % S x 1
+                    % kern = tall(kern(:)'); % 1 x T'
+                    kern = kern(:)'; % 1 x T'
+                    % [att, tau_tx, tau_rx] = dealfun(@(x)tall(gather(x)), att, tau_tx, tau_rx);
+
+                    % compute as tall arrays, then sum over all scatterers
+                    % S x T x N x M x 1 x 1
+                    % s_ = matlab.tall.reduce( ...
+                    %     @(a,k,tvec,tau1,tau2) gather(a .* interp1(k, (tvec-(tau1+tau2)-t0)*fs_)), ... map: interpolate and multiply in dim 2 (time)
+                    %     @(x) sum(x, 1, 'omitnan'), ... reduce: sum over dim 1 (scats)
+                    %     att, kern, tvec, tau_rx, tau_tx ... data
+                    %     );
+                    % s_ = att .* interpd(kern(:)', (t(:)' - (tau_rx + tau_tx) * fs_) - (fs_*tk(1)));
+                    
+                    % TODO: compute where we actually receive a response
+                    tau = (tau_tx + tau_rx + t0)*fs_; % S x 1 x N x M x 1 x 1
+                    it = tvec == tvec; %(1 x T')
+                    it = it & T-1 > tvec - max(tau(:));
+                    it = it &   0 < tvec - min(tau(:));
+
+                    % compute only for this range and sum as we go
+                    % (1 x T' x N X M)
+                    s_ = wsinterpd(kern(:)', tvec(it) - (tau_tx + tau_rx + t0)*fs_, 2, att, 1, interp_method, 0);
+
+                    % add contribution (1 x T x N X M)
+                    x(1,it,:,:) = x(1,it,:,:) + nan2zero(s_);
 
                     % update waitbar
-                    if isvalid(w), waitbar(sub2ind([E,E],en,em) / (E*E), w); end
+                    if isvalid(w), waitbar(sub2ind([E,E,S],en,em,sv) / (E*E*S), w); end
                 end
             end
             end
             if isvalid(w), delete(w); end
 
-            % make a channel data object
-            chd_ = ChannelData('t0', sub(t ./ self.fs,1,1), 'fs', self.fs, 'data', x);
+            % move back to GPU if requested
+            if device, x = gpuArray(gather(x)); end
+
+            % make a channel data object (T x N x M)
+            chd_ = ChannelData('t0', sub(t ./ self.fs,1,1), 'fs', self.fs, 'data', shiftdim(x,1));
 
             % synthesize linearly
             [chd] = self.focusTx(chd_, self.sequence, 'interp', interp_method);

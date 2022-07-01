@@ -288,7 +288,7 @@ inline __device__ half2 sampleh(const ushort2 * x, half tau, int flag, const hal
 
 
 __global__ void interpdh(ushort2 * __restrict__ y, 
-    const ushort2 * __restrict__ x, const float * __restrict__ tau, const int flag) {
+    const ushort2 * __restrict__ x, const unsigned short * __restrict__ tau, const int flag) {
 
     // get sampling index
     const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
@@ -303,10 +303,59 @@ __global__ void interpdh(ushort2 * __restrict__ y,
     if(i < QUPS_I && n < QUPS_N && f < F){
         # pragma unroll
         for(size_t m = 0; m < QUPS_M; ++m){ // per transmit
-            y[i + n*I + m*N*I + f*M*N*I] = h2u(sampleh(&x[n*T + f*N*T], (half)tau[i + n*I + m*I*N], flag, no_v));
+            y[i + n*I + m*N*I + f*M*N*I] = h2u(sampleh(&x[n*T + f*N*T], u2h(tau[i + n*I + m*I*N]), flag, no_v));
         }
     }
 }
+
+__global__ void wsinterpdh(ushort2 * __restrict__ y, 
+    const ushort2 * __restrict__ w, const ushort2 * __restrict__ x, 
+    const unsigned short * __restrict__ tau, const size_t * sizes, 
+    const size_t * wstride, const size_t * ystride, const int flag
+    ) {
+
+    // get sampling index
+    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    const half2 no_v = make_half2(0.0f, 0.0f);
+
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
+    size_t k,l,sz; // weighting / output indexing
+
+    // cast MATLAB alias to CUDA half type
+    half2 * yh = reinterpret_cast<half2 *>(y);
+
+    // if valid sample, per each i,n,f
+    if(i < I && n < N && f < F){
+        # pragma unroll
+        for(size_t m = 0; m < M; ++m){ // for m
+            // global index
+            const size_t j = (i + n*I + m*N*I + f*N*I*M);
+
+            // get weight vector and output indices
+            k = 0, l = 0; 
+            # pragma unroll
+            for(size_t s = 0; s < S; ++s){ // for each dimension s
+                // calculate the indexing stride for dimension s i.e. 
+                // size of all prior dimensions
+                sz = 1;
+                for(size_t sp = 0; sp < s; ++sp)
+                    sz *= sizes[sp]; 
+
+                const size_t js = ((j / sz) % sizes[s]); // index for this dimension
+                k += js * wstride[s]; // add pitched index for this dim (weights)
+                l += js * ystride[s]; // add pitched index for this dim (outputs)
+            }
+
+            const half2 val = u2h(w[k]) * sampleh(&x[n*T + f*N*T], u2h(tau[i + n*I + m*I*N]), flag, no_v); // weighted sample
+            atomicAdd(&yh[l], val); // store
+        }
+    }
+}
+
+
 
 
 inline __device__ float2 samplef(const float2 * x, float tau, int flag, const float2 no_v){
@@ -350,6 +399,53 @@ __global__ void interpdf(float2 * __restrict__ y,
     }
 }
 
+__global__ void wsinterpdf(float2 * __restrict__ y, 
+    const float2 * __restrict__ w, const float2 * __restrict__ x, 
+    const float * __restrict__ tau, const size_t * sizes, 
+    const size_t * wstride, const size_t * ystride, const int flag
+    ) {
+
+    // get sampling index
+    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    float2 no_v = make_float2(0.0f, 0.0f);
+
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
+    size_t k,l,sz; // weighting / output indexing
+
+    // if valid sample, per each i,n,f
+    if(i < I && n < N && f < F){
+        # pragma unroll
+        for(size_t m = 0; m < M; ++m){ // for m
+            // global index
+            const size_t j = (i + n*I + m*N*I + f*N*I*M);
+
+            // get weight vector and output indices
+            k = 0, l = 0; 
+            # pragma unroll
+            for(size_t s = 0; s < S; ++s){ // for each dimension s
+                // calculate the indexing stride for dimension s i.e. 
+                // size of all prior dimensions
+                sz = 1;
+                for(size_t sp = 0; sp < s; ++sp)
+                    sz *= sizes[sp]; 
+
+                const size_t js = ((j / sz) % sizes[s]); // index for this dimension
+                k += js * wstride[s]; // add pitched index for this dim (weights)
+                l += js * ystride[s]; // add pitched index for this dim (outputs)
+            }
+
+            const float2 val = w[k] * samplef(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v); // weighted sample
+            atomicAdd(&y[l].x, val.x); // store
+            atomicAdd(&y[l].y, val.y); // store
+        }
+    }
+}
+
+
+
 inline __device__ double2 sample(const double2 * x, double tau, int flag, const double2 no_v){
     double2 val;
     // sample according to the flag
@@ -390,4 +486,48 @@ __global__ void interpd(double2 * __restrict__ y,
     }
 }
 
+__global__ void wsinterpd(double2 * __restrict__ y, 
+    const double2 * __restrict__ w, const double2 * __restrict__ x, 
+    const double * __restrict__ tau, const size_t * sizes, 
+    const size_t * wstride, const size_t * ystride, const int flag
+    ) {
+
+    // get sampling index
+    const size_t i = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    const size_t f = threadIdx.z + blockIdx.z * blockDim.z;
+    double2 no_v = make_double2(0.0, 0.0);
+    
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
+    size_t k,l,sz; // weighting / output indexing
+
+    // if valid sample, per each i,n,f
+    if(i < I && n < N && f < F){
+        # pragma unroll
+        for(size_t m = 0; m < M; ++m){ // for m
+            // global index
+            const size_t j = (i + n*I + m*N*I + f*N*I*M);
+
+            // get weight vector and output indices
+            k = 0, l = 0; 
+            # pragma unroll
+            for(size_t s = 0; s < S; ++s){ // for each dimension s
+                // calculate the indexing stride for dimension s i.e. 
+                // size of all prior dimensions
+                sz = 1;
+                for(size_t sp = 0; sp < s; ++sp)
+                    sz *= sizes[sp]; 
+
+                const size_t js = ((j / sz) % sizes[s]); // index for this dimension
+                k += js * wstride[s]; // add pitched index for this dim (weights)
+                l += js * ystride[s]; // add pitched index for this dim (outputs)
+            }
+
+            const double2 val = w[k] * sample(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v); // weighted sample
+            atomicAdd(&y[l].x, val.x); // store
+            atomicAdd(&y[l].y, val.y); // store
+        }
+    }
+}
 

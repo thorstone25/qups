@@ -61,21 +61,21 @@ if isempty(rdms), F = 1; else, F = prod(size(x, rdms)); end
 x = permute(x, ord);
 t = permute(t, ord);
 
+% function to determine type
+isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
+
 % use ptx on gpu if available or use native MATLAB
 if exist('interpd.ptx', 'file') ...
         && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') ) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
     
     % determine the data type
-    isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T); 
     if     isftype(x, 'double')
-        suffix = "" ; [x,t] = dealfun(@double, x, t); enc = false;
+        suffix = "" ; [x,t] = dealfun(@double, x, t);
     elseif isftype(x, 'single')
-        suffix = "f"; [x,t] = dealfun(@single, x, t); enc = false;
-    elseif isftype(x, 'half'  )
-        suffix = "h"; [x,t] = deal(storedInteger(x), single(t)); enc = true; % HACK: send to uint16 
-    elseif isftype(x, 'uint16') % HACK: assume it's an alias for half type on GPU
-        suffix = "h"; [x,t] = deal(x, single(t)); enc = false;
+        suffix = "f"; [x,t] = dealfun(@single, x, t);
+    elseif isftype(x, 'halfT'  )
+        suffix = "h"; [x,t] = dealfun(@(x)gpuArray(halfT(x)), x, t); % custom type
     else
         warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
         suffix = "f" ;
@@ -96,23 +96,30 @@ if exist('interpd.ptx', 'file') ...
         otherwise, error('Interp option not recognized: ' + string(interp));
     end
 
-    % sample
+    % condition inputs/outputs
     osz = [I, max(size(t,2:maxdims), size(x,2:maxdims))];
     x = complex(x); % enforce complex type
-    y = repmat(cast(extrapval, 'like', x), osz);
-    y = k.feval(y, x, t, flagnum); % compute
+    switch suffix
+        case "h" % halfT type
+            y = complex(gpuArray(halfT(repelem(extrapval,osz))));
+            [y_,x_,t_] = dealfun(@(x)x.val, y,x,t);
+        otherwise % others
+            y = repmat(cast(extrapval, 'like', x), osz);
+            [y_,x_,t_] = deal(y,x,t);
+    end
 
-    % convert halfs back to original type
-    if enc, y = half.typecast(y); end
+    % sample
+    y_ = k.feval(y_, x_, t_, flagnum); % compute
 
+    % restore type
+    switch suffix, case "h", y.val = y; otherwise y = y_; end
 else
     % get new dimension mapping
     [~, tmp] = cellfun(@(x) ismember(x, ord), {dim, mdms, rdmst, rdmsx}, 'UniformOutput',false);
     [Tdim, Ndim, Mdim, Fdim] = deal(tmp{:});
 
     % promote half types
-    if isa(x, 'half'), [xc, tc] = deal(single(x), single(t)); % promote until MATLAB's half type is native
-    elseif isa(x, 'uint16'), [xc, tc] = deal(single(half.typecast(x)), single(t)); % assume uint16 is an alias for the half type
+    if isftype(x, 'halfT'), [xc, tc] = dealfun(@single, x, t); % promote until MATLAB's half type is native
     else [xc, tc] = deal(x,t); % keep original otherwise
     end
     
@@ -132,7 +139,10 @@ else
     if ~isempty(Ndim), lsz = size(t,Ndim); else, lsz = []; end % forward empty
     y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
     y = swapdim(y,Ndim,maxdims+(1:numel(Ndim))); % fold upper dimensions back into original dimensions
-    y = cast(y, 'like', x); % return to original type (if it was promoted)
+    
+    % return to original type (if it was promoted)
+    if isftype(x, 'halfT'), y = halfT(y); end     
+    
 end
 
 % place back in prior dimensions
