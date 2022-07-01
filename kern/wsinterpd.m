@@ -43,7 +43,7 @@ if nargin < 6 || isempty(interp),    interp = 'linear'; end
 if nargin < 5 || isempty(sdim),      sdim = []; end 
 if nargin < 4 || isempty(w        ), w = 1; end
 if nargin < 3 || isempty(dim),       dim = 1; end
-assert(isreal(t)); % sampling at a real data type
+assert(isreal(t), 'Sample indices must be real.'); % sampling at a real data type
 assert(isscalar(extrapval), 'Only a scalar value accepted for extrapolation.');
 
 maxdims = max([ndims(x), ndims(t), ndims(w)]); % maximum dimension
