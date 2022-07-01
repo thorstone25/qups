@@ -820,7 +820,7 @@ classdef ChannelData < matlab.mixin.Copyable
             if all(chd.t0 == sub(chd.t0,1,dim),'all'), chd.t0 = sub(chd.t0,1,dim); end % simplify for identical t0
 
         end
-        function chds = splice(chd, dim, bsize)
+        function [chds, ix]= splice(chd, dim, bsize)
             % SPLICE - Split the ChannelData into an array of ChannelDatas
             % 
             % chds = SPLICE(chd, dim) returns an array of ChannelData
