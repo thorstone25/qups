@@ -1,4 +1,4 @@
-function y = interpd(x, t, dim, interp, extrapval, ishalf)
+function y = interpd(x, t, dim, interp, extrapval)
 % INTERPD GPU-enabled interpolation in one dimension
 %
 % y = INTERPD(x, t) interpolates the data x at the indices t. It uses the
@@ -30,7 +30,6 @@ function y = interpd(x, t, dim, interp, extrapval, ishalf)
 %
 
 %% validate dimensions
-if nargin < 6 || isempty(ishalf)   , ishalf = isa(x, 'half'); end
 if nargin < 5 || isempty(extrapval), extrapval = nan; end
 if nargin < 4 || isempty(interp),    interp = 'linear'; end
 if nargin < 3 || isempty(dim),       dim = 1; end
@@ -120,8 +119,7 @@ else
     [Tdim, Ndim, Mdim, Fdim] = deal(tmp{:});
 
     % promote half types
-    if isftype(x, 'half'), [xc, tc] = dealfun(@single, x, t); % promote until MATLAB's half type is native
-    elseif isftype(x, 'uint16') && ishalf, [xc, tc] = deal(gpuArray(single(half.typecast(gather(x)))), single(t)); % uint16 is an alias for the gpuhalf type
+    if isftype(x, 'halfT'), [xc, tc] = dealfun(@single, x, t); % promote until MATLAB's half type is native
     else [xc, tc] = deal(x,t); % keep original otherwise
     end
     
@@ -142,10 +140,9 @@ else
     y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
     y = swapdim(y,Ndim,maxdims+(1:numel(Ndim))); % fold upper dimensions back into original dimensions
     
-    % demote for half types
-    if isftype(x, 'uint16') && ishalf, y = storedInteger(half(y));  % convert half types back to alias
-    elseif isftype(x, 'half'), y = cast(y, 'like', x); % return to original type (if it was promoted)
-    end
+    % return to original type (if it was promoted)
+    if isftype(x, 'halfT'), y = halfT(y); end     
+    
 end
 
 % place back in prior dimensions
