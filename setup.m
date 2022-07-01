@@ -24,7 +24,7 @@ function setup(varargin)
 % See also TEARDOWN
 
 base_path = fileparts(mfilename('fullpath'));
-rel_paths = {'.', 'fun', 'src', 'utils'};
+rel_paths = {'.', 'kern', 'src', 'utils'};
 paths = cellfun(@(p)fullfile(base_path, p), rel_paths, 'UniformOutput', false);
 paths = paths(7 == cellfun(@exist, paths));
 addpath(paths{:});
