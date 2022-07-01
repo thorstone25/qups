@@ -4,9 +4,9 @@ function z = slsc(x, dim, L, method, varargin)
 % z = SLSC(x) computes the short-lag spatial coherence (SLSC) across the
 % data x. x can be any ND-array.
 %
-% z = SLSC(x, dim) operate in dimension dim. The default is 2.
+% z = SLSC(x, dim) operates in dimension dim. The default is 2.
 % 
-% z = SLSC(x, dim, L) uses up to L lags
+% z = SLSC(x, dim, L) uses up to L lags.
 % 
 % z = SLSC(x, dim, L, method) uses the specified method. Must be one of
 % {"ensemble"* | "average"}.
@@ -23,15 +23,15 @@ function z = slsc(x, dim, L, method, varargin)
 % in IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
 % vol. 58, no. 7, pp. 1377-1388, July 2011.  
 % doi: 10.1109/TUFFC.2011.1957
-%
 
 % defaults
 if nargin < 2 || isempty(dim   ), dim    = 2;          end
 if nargin < 3 || isempty(L     ), L      = 10;         end
-if nargin < 4 || isempty(method), method = "ensemble"; end
+if nargin < 4 || isempty(method), method = "average"; end
 
 % default parpool: this is data heavy, so only use a threadpool
 if isa(gcp('nocreate'), 'parallel.threadPool'), clu = gcp(); else, clu = 0; end
+if isa(x, 'gpuArray'), clu = 0; end % don't use any pool for gpu data
 kwargs.parcluster = clu;
 
 % assign optional inputs
