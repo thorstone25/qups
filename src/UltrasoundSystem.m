@@ -2736,7 +2736,6 @@ classdef UltrasoundSystem < handle
             % move image dimensions beyond the data
             D = max([ndims(chd.data), ndims(dv), ndims(dr), 5]); % highest dimension of data
             [dv, dr, apod] = dealfun(@(x) swapdim(x, 1:3, D+(1:3)), dv, dr, apod);
-            [dvm, am] = dealfun(@(x)num2cell(x,setdiff(1:ndims(x),5)), dv, apod); % splice per transmit
             sdim = []; % dimensions to sum after apodization
             if sumrx, sdim = [sdim, chd.ndim]; end 
             if sumtx, sdim = [sdim, chd.mdim]; end 
@@ -2748,8 +2747,16 @@ classdef UltrasoundSystem < handle
             % * moving the image dimensions beyond the data dimensions and
             %   operating there
             assert(ismember('T', chd.ord(1:3)), 'The time dimension must be in one of the first 3 dimensions.');
-            chds = splice(chd, chd.mdim, kwargs.bsize); % splice transmit in chunks of size bsize
             tord = [chd.tdim, chd.ndim, chd.mdim]; % order to move to ChannelData dims
+            
+            % splice per transmit according to the block size
+            [chds, is] = splice(chd, chd.mdim, kwargs.bsize); % splice transmit in chunks of size bsize
+            dvm = cellfun(@(i){sub(dv,i,5)}, is); % splice per transmit
+            if size(apod,5) ~= 1, 
+                am = cellfun(@(i){sub(apod,i,5)}, is); % cell per transmit
+            else
+                am = {apod}; % single cell 
+            end
 
             b = 0; % initialize
             % hw = waitbar(0,'Beamforming ...'); % create a wait bar
@@ -2759,8 +2766,8 @@ classdef UltrasoundSystem < handle
                 if isscalar(am), a = am{1}; else, a = am{m}; end % (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
                 % a = sub(apod, min(m, Ma), 5); % recieve apodization 
                 % move to permutation of (1 x N x M) - N/M aligned with ChannelData
-                tau = swapdim(tau, 4, chds(m).ndim); 
-                a   = swapdim(a  , 4, chds(m).ndim); 
+                tau = swapdim(tau, [4,5], [chds(m).ndim, chds(m).mdim]); 
+                a   = swapdim(a  , [4,5], [chds(m).ndim, chds(m).mdim]); 
 
                 % sample, apodize, and sum over rx if requested
                 z = sample(chds(m), tau, interp_method, a, sdim); % (perm(1 x N x M) x F x ... x I1 x I2 x I3)
