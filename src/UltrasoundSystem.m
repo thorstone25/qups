@@ -2626,20 +2626,49 @@ classdef UltrasoundSystem < handle
             % b = BFDAS(self, chd, c0) creates a b-mode image b from the 
             % ChannelData chd and sound speed c0 (m/s). 
             % 
-            % b = BFDAS(..., 'interp', method) uses method for 
-            % interpolation. Support is provided by the ChannelData/sample
-            % method. The default is 'linear'.
+            % b = BFDAS(..., Name, Value, ...) passes additional Name/Value
+            % pair arguments
             % 
-            % b = BFDAS(..., 'apod', A) uses the ND-array A for
-            % apodization. A must be broadcastable to size 
-            % I1 x I2 x I3 x N x M where I1 x I2 x I3 is the size of the
-            % image, N is the number of receivers, and M is the number of
-            % transmits. The default is 1.
             % 
-            % b = BFDAS(..., 'parcluster', clu) uses the cluster clu for
-            % parallelization. The default is the current parallel pool.
-            % Setting clu = 0 avoids using a parallel cluster or pool. Use
-            % this when operating on a GPU or if memory usage explodes.
+            % Inputs:
+            %   
+            % keep_rx -     setting this to true returns an extra dimension
+            %               containing the data for each receive prior to
+            %               summation. The default is false.
+            %
+            % keep_tx -     setting this to true returns an extra dimension
+            %               containing the data for each transmit prior to
+            %               summation. The default is false.
+            %
+            % interp  -     specifies the method for interpolation. Support 
+            %               is provided by the ChannelData/sample method. 
+            %               The default is 'linear'.
+            % 
+            %   
+            % apod    -     specifies and ND-array A for apodization. A must 
+            %               be broadcastable to size  I1 x I2 x I3 x N x M 
+            %               where I1 x I2 x I3 is the size of the image, N 
+            %               is the number of receivers, and M is the number
+            %               of transmits. The default is 1.
+            % 
+            %   
+            % bsize   -     sets the ChannelData block size to at most B 
+            %               transmits at a time in order to limit memory 
+            %               usage. If memory is a concern, lowering B may 
+            %               help. If there is ample memory available, a 
+            %               higher value of B may yield better performance.
+            % 
+            %   
+            % parcluster  - specifies a parcluster object for 
+            %               parallelization. The default is the current 
+            %               parallel pool returned by gcp.
+            %               Setting clu = 0 avoids using a parallel cluster
+            %               or pool. 
+            %               A parallel.ThreadPool will tend to perform 
+            %               better than a parallel.ProcessPool because
+            %               threads are allowed to share memory.
+            %               Use 0 when operating on a GPU or if memory 
+            %               usage explodes on a parallel.ProcessPool.
             % 
             % See also DAS BFADJOINT CHANNELDATA/SAMPLE PARCLUSTER
 
@@ -2648,7 +2677,8 @@ classdef UltrasoundSystem < handle
             kwargs.parcluster = gcp('nocreate');
             kwargs.apod = 1;
             kwargs.keep_rx = false;
-            kwargs.keep_tx = false; 
+            kwargs.keep_tx = false;
+            kwargs.bsize = 16;
 
             % set input options
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
@@ -2693,16 +2723,24 @@ classdef UltrasoundSystem < handle
             % bring to I1 x I2 x I3 x 1 x M
             [dv, dr] = deal(shiftdim(dv,1), shiftdim(dr,1));
 
+            % make same type as the data
+            [dv, dr] = dealfun(@(x)cast(x, 'like', real(chd.data)), dv, dr);
+
             % splice args
-            sz = self.scan.size; % original size
             apod = kwargs.apod; % apodization (I1 x I2 x I3 x N x M)
             interp_method = kwargs.interp; 
             cinv = 1 ./ c0;
             sumtx = ~kwargs.keep_tx;
             sumrx = ~kwargs.keep_rx;
 
-            % TODO: allow options to specify summation
-            % sample for each tx/rx
+            % move image dimensions beyond the data
+            D = max([ndims(chd.data), ndims(dv), ndims(dr), 5]); % highest dimension of data
+            [dv, dr, apod] = dealfun(@(x) swapdim(x, 1:3, D+(1:3)), dv, dr, apod);
+            [dvm, am] = dealfun(@(x)num2cell(x,setdiff(1:ndims(x),5)), dv, apod); % splice per transmit
+            sdim = []; % dimensions to sum after apodization
+            if sumrx, sdim = [sdim, chd.ndim]; end 
+            if sumtx, sdim = [sdim, chd.mdim]; end 
+
             % TODO: fully support tall data by doing these permutations
             % in a different order to avoid permuting the tall
             % dimension perhaps by
@@ -2710,33 +2748,33 @@ classdef UltrasoundSystem < handle
             % * moving the image dimensions beyond the data dimensions and
             %   operating there
             assert(ismember('T', chd.ord(1:3)), 'The time dimension must be in one of the first 3 dimensions.');
-            b = 0; % initialize
-            [Na, Ma] = size(apod, 4:5);
-            chds = splice(chd, chd.mdim); % splice transmit
-            tsz = [prod(sz), chd.N, 1]; % size to vectorize I dimensions
+            chds = splice(chd, chd.mdim, kwargs.bsize); % splice transmit in chunks of size bsize
             tord = [chd.tdim, chd.ndim, chd.mdim]; % order to move to ChannelData dims
+
+            b = 0; % initialize
             % hw = waitbar(0,'Beamforming ...'); % create a wait bar
-            % for m = 1:chd.M
-            parfor (m = 1:chd.M, clu) % for each transmit
-                tau = cinv .* (dv(:,:,:,:,m) + dr); % get sample times (I1 x I2 x I3 x N)
-                tau = permute(reshape(tau, tsz), tord); % move to permutation of (I x N x M) - I placed in time dim, N/M aligned with ChannelData
-                y = sample(chds(m), tau, interp_method); % (perm(I x N x M) x F x ...)
-                y = ipermute(y, [tord, 4:gather(ndims(y))]); % I x N x M x F x ...
-                y = reshape(y, [sz, size(y,2:gather(ndims(y)))]); % I1 x I2 x I3 x N x M x F x ...
-                a = sub(apod, min(m, Ma), 5); % recieve apodization (I1 x I2 x I3 x N)
-                z = a .* y; % sample and apodize (I1 x I2 x I3 x N x 1 x F x ...)
-                if sumrx, z = sum(z, 4); end % sum over rx (if requested)
+            for m = 1:numel(chds)
+            % parfor (m = 1:numel(chds), clu) % for each transmit
+                tau = cinv .* (dvm{m} + dr); % get sample times (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
+                if isscalar(am), a = am{1}; else, a = am{m}; end % (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
+                % a = sub(apod, min(m, Ma), 5); % recieve apodization 
+                % move to permutation of (1 x N x M) - N/M aligned with ChannelData
+                tau = swapdim(tau, 4, chds(m).ndim); 
+                a   = swapdim(a  , 4, chds(m).ndim); 
+
+                % sample, apodize, and sum over rx if requested
+                z = sample(chds(m), tau, interp_method, a, sdim); % (perm(1 x N x M) x F x ... x I1 x I2 x I3)
+
+                % swap the imaging and time/aperture dimensions
+                z = ipermute(z, [tord, 4:gather(ndims(z))]); % 1 x N x M x F x ...
+                z = swapdim(z, 1:3, D+(1:3)); % (I1 x I2 x I3 x F x ... x N x M)
+
                 if sumtx, bm{m} = []; else; bm{m} = z; end % store tx to combine later (if requested)
                 if sumtx, b = b + z; end % sum tx here (if requested)
                 % if isvalid(hw), waitbar(m/M, hw); end % update if not closed
             end
             % if isvalid(hw), close(hw); end % close if not closed
-            if ~sumtx, b = cat(5, bm{:}); end % combine all transmits
-
-            % reshape to place data dimensions lower, and aperture
-            % dimensions at the end
-            % TODO: adapt (or avoid) for tall arrays
-            b = permute(b, [1:3,6:ndims(b),4,5]); % ([I] x F x ... x N x M)
+            if ~sumtx, b = cat(D+3, bm{:}); end % combine all transmits
         end
     end
     
@@ -3023,7 +3061,7 @@ classdef UltrasoundSystem < handle
             defs = [...
                 UltrasoundSystem.genCUDAdef_beamform(),...
                 UltrasoundSystem.genCUDAdef_interpd(),...
-                UltrasoundSystem.genCUDAdef_convd(),...                
+                UltrasoundSystem.genCUDAdef_convd(),...
                 ];
         end
 

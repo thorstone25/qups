@@ -111,17 +111,17 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % data type overloads
     methods
-        function chd = gather(chd)  , chd = applyFun2Props(chd, @gather); end
+        function chd = gather(chd)  , chd = applyFun2Data(chd, @gather); end
         % gather the underlying data
-        function chd = gpuArray(chd), chd = applyFun2Props(chd, @gpuArray); end
+        function chd = gpuArray(chd), chd = applyFun2Data (chd, @gpuArray); end
         % cast underlying type to gpuArray
         function chd = tall(chd)    , chd = applyFun2Data (chd, @tall); end
         % cast underlying type to tall
         function chd = sparse(chd)  , chd = applyFun2Data (chd, @sparse); end
         % cast underlying type to sparse
-        function chd = doubleT(chd) , chd = applyFun2Props(chd, @double); end
+        function chd = doubleT(chd) , chd = applyFun2Data (chd, @double); end
         % cast underlying type to double
-        function chd = singleT(chd) , chd = applyFun2Props(chd, @single); end
+        function chd = singleT(chd) , chd = applyFun2Data (chd, @single); end
         % cast underlying type to single
         function chd =   halfT(chd) , chd = applyFun2Data (chd, @half); end
         % cast underlying type to half
@@ -503,7 +503,7 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.t0 = t0_; % make new object
         end
     
-        function y = sample(chd, tau, interp)
+        function y = sample(chd, tau, interp, w, sdim)
             % SAMPLE Sample the channel data in time
             %
             % y = SAMPLE(chd, tau) samples the ChannelData chd at the times
@@ -539,11 +539,22 @@ classdef ChannelData < matlab.mixin.Copyable
             %    **   GPU support is enabled via interpd
             %    ***  GPU support is enabled via interp1
             %    **** GPU support is native
-            %
-            % See also INTERP1 INTERPD CHANNELDATA/RECTIFYT0
+            % 
+            % y = SAMPLE(x, t, interp, w) applies the weighting array via 
+            % point-wise  multiplication after sampling the the data. The 
+            % dimensions must be compatible with the sampling array t in 
+            % the sampling dimension dim. The default is 1.
+            % 
+            % y = SAMPLE(x, t, interp, w, sdim) sums the data in the 
+            % dimension(s) sdim after the weighting matrix has been applied.
+            % The default is [] (no dimensions).
+            % 
+            % See also INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 
             % defaults
-            if nargin < 3, interp = 'linear'; end
+            if nargin < 5, sdim = [];           end
+            if nargin < 4, w = 1;               end
+            if nargin < 3, interp = 'linear';   end
 
             % check condition that we can implicitly broadcast
             for d = setdiff(1:gather(ndims(tau)), chd.tdim) % all dims except time must match
@@ -554,105 +565,22 @@ classdef ChannelData < matlab.mixin.Copyable
                     );
             end
 
+            % compute the integer delays (I x [1|N] x [1|M] x [1|F] x ...) (default order)
+            ntau = (tau - chd.t0) * chd.fs;
+
             % dispatch
-            % assert(chd.tdim == 1, 'Time must be in the first dimension of the data.'); % TODO: generalize this restriction if necessary
-            if interp ~= "freq" % (isa(chd.data, 'gpuArray') ...
-                % && ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ...
-                % && logical(exist('interpd.ptx', 'file'))
-
-                % interpolate on the gpu via ptx if we can, else use
-                % optimized calls to interp1
-                ntau = (tau - chd.t0) * chd.fs; % sample delays (I x [1|N] x [1|M] x [1|F] x ...) (default order)
+            if interp ~= "freq" 
                 if istall(ntau) || istall(chd.data)
-                    y = matlab.tall.transform(@interpd, chd.data, ntau, chd.tdim, interp, 0);
+                    y = matlab.tall.transform(@wsinterpd, chd.data, ntau, chd.tdim, w, sdim, interp, 0);
                 else
-                    y = interpd(chd.data, ntau, chd.tdim, interp, 0);
+                    y = wsinterpd(chd.data, ntau, chd.tdim, w, sdim, interp, 0);
                 end
-
             elseif interp == "freq"
                 % extend data if necessary
-                ntau = (tau - chd.t0) * chd.fs; % sample delays (I x [1|N] x [1|M] x [1|F] x ...)
                 nwrap = min(0,floor(min(ntau,[],'all'))); % amount the signal is wrapped around from negative time
                 next  = max(0, ceil(max(ntau,[],'all')) - chd.T-1); % amount the signal is extended in positive time
                 chd = zeropad(chd, -nwrap, next); % extend signal to ensure we sample zeros
-
-                x = chd.data; % reference data (T x N x M x [1|F] x ...)
-                L = chd.T; % fft length
-                % l = (0:L-1)'; % make new time vector in sample dimension
-                d = max(ndims(x), ndims(ntau)); % find max dimension
-                ntau = swapdim(ntau, d+1, chd.tdim); % move sampling to a free dimension
-                
-                % apply phase shifts and sum (code written serially to 
-                % request in-place operation from MATLAB)
-                x = fft(x, L, chd.tdim); % put data in freq domain (L x N x M x [1|F] x ... x I)
-                wL = exp(2i*pi*ntau./L); % sampling steering vector (1 x [1|N] x [1|M] x [1|F] x ... x I)
-                y = 0; % initialize accumulator
-                if isa(x, 'gpuArray') || isa(wL, 'gpuArray'), clu = 0; % avoid parfor on gpuArray
-                else, clu = gcp('nocreate'); if isempty(clu), clu = 0; end % otherwise, use current parpool   
-                end
-                 % apply phase shift and sum over freq (1 x N x M x [1|F] x ... x I)
-                if istall(x) || istall(wL)
-                    l = shiftdim((1:L)', 1-chd.tdim); % each frequency index, in dim tdim
-                    y = matlab.tall.reduce(@(x,w,l) sum(w.^(l-1) .* x, chd.tdim), @(x)x, x, wL, l); % apply via map-reduce
-                else
-                    xl = num2cell(x, setdiff(1:ndims(x), chd.tdim)); % splice data in freq domain (L x {N x M x [1|F] x ... x I})
-                    parfor (l = (1:L), clu), y = y + wL.^(l-1) .* xl{l}; end % apply, 1 freq at a time
-                end
-                y = swapdim(y, chd.tdim, d+1); % move samples back to first dim (I x N x 1 x M' x F x ...)
-            %{        
-            else % use interp1, iterating over matched dimensions, broadcasting otherwise
-                    % convert to index based coordinates
-                    ntau = (tau - chd.t0) * chd.fs; % get full size sample delays
-                    x = chd.data; % reference data
-
-                    % get dims to pack versus loop
-                    mxdim = max(ndims(x), ndims(tau)); % maximum number of dimensions
-                    xsing = 1+find(size(x   ,2:mxdim) == 1); % x    singular
-                    nsing = 1+find(size(ntau,2:mxdim) == 1); % ntau singular
-                    bdim  = setxor(xsing, nsing); % broadcast dimensions
-                    pdim  = union(1,bdim); % pack dim1 & all broadcast dimensions
-                    ldim  = setxor(1:mxdim,pdim); % loop over matching dims (the compliment)
-                    Dn    = max(pdim(size(ntau,pdim) ~= 1)); if isempty(Dn), Dn = 1; end % dimensions
-                    Dx    = max(pdim(size(x   ,pdim) ~= 1)); if isempty(Dx), Dx = 1; end % dimensions
-
-
-                    % sample: output is [size(ntau,1), size(ntau,2:Dn), size(x,2:Dx)].
-                    xc = num2cell(x   ,pdim); % pack/splice data
-                    nc = num2cell(ntau,pdim); % pack/splice data
-                    if isa(x, 'gpuArray') || isa(ntau, 'gpuArray'), clu = 0; % avoid parfor on gpuArray
-                    elseif numel(xc) == 1, clu = 0; % don't parallelize over 1 thing
-                    else, clu = gcp('nocreate'); if isempty(clu), clu = 0; end % otherwise, use current parpool
-                    end
-                    parfor (i = 1:numel(xc), clu), y{i} = interp1(xc{i}, nc{i}, interp, 0); end
-                    
-                    % check my logic ...
-                    assert(...
-                        isempty(2:Dn) ||  all(cellfun(@(y) all(size(y,2:Dn) == size(ntau,(2:Dn)) | ~ismember(2:Dn, pdim)), y)), ...
-                        'Internal error. Please either check your sizing, check your MATLAB version, submit an issue, or give up.' ...
-                        );
-
-                    assert(...
-                        isempty(2:Dx) || all(cellfun(@(y) all(size(y,Dn-1+(2:Dx)) == size(x,(2:Dx)) | ~ismember(2:Dx, pdim)), y)), ...
-                        'Internal error. Please either check your sizing, check your MATLAB version, submit an issue, or give up.' ...
-                        );
-
-                    % output is [Tp, size(ntau,2:Dn), size(x,2:Dx)] - we want to identify
-                    % the broadcast dimensions of x and pull them back into
-                    % their original dimensions
-                    yord = [1, 2:Dn, Dn-1+(2:Dx)]; % full dimension size
-                    yord(nsing) = Dn+nsing-1; % swap out entries of ntau that are singular
-                    yord(Dn+nsing-1) = nsing; % corresponding to where x is non-singular
-                    if isequal(yord, [1]), yord(2) = 2; end %#ok<NBRAK2> % special case: [1,] -> [1,] not accepted by MATLAB
-                    y = cellfun(@(y) {permute(y, yord)}, y); % and permute it down
-
-                    % output is now (Tp x N x M x F x ...) in principal,
-                    % but with cell arrays over the looped dimensions
-                    % restore output sizing using trailing singleton dimensions
-                    y = cat(mxdim+1, y{:}); % (Tp x [1|N] x [1|M] x F x ... x [N|1] x [M|1]
-                    if ~isempty(ldim), lsz = size(ntau,ldim); else, lsz = []; end % forward empty
-                    y = reshape(y, [size(y,1:mxdim), lsz]); % restore data size in upper dimension
-                    y = swapdim(y,ldim,mxdim+(1:numel(ldim))); % fold upper dimensions back into original dimensions
-                    %}
+                y = interpf(chd.data, ntau, chd.tdim, w, sdim); % sample in the frequency domain
             end
         end
         
@@ -864,6 +792,8 @@ classdef ChannelData < matlab.mixin.Copyable
         ndim
         mdim
     end
+
+    % data indexing functions
     methods
         function chd = join(chds, dim)
             % JOIN - Merge an array of ChannelData objects
