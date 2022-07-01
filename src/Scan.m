@@ -334,10 +334,6 @@ classdef Scan < matlab.mixin.Copyable
                     "Expected Transducer to be a TransducerArray but instead got a " + class(rx) + ". This may produce unexpected results."...
                     )
             end
-            if ~any(seq.type == ["VS", "FSA"]), warning(...
-                    "Expected sequence type to be VS or FSA but instead got " + seq.type + ". This may produce unexpected results."...
-                    );
-            end
 
             % TODO: generalize to polar
             % get the receiver positions and orientations, N in dim 5
@@ -345,10 +341,6 @@ classdef Scan < matlab.mixin.Copyable
             thn = swapdim(rx.orientations, 2, 4); % (3 x 1 x 1 x N)
 
             % get the points as a variance in depth and lateral
-            % xdim = find(self.order == 'X');
-            % zdim = find(self.order == 'Z');
-            % Xi = shiftdim(self.x(:), xdim-1+1); % (I1 x I2 x I3)
-            % Zi = shiftdim(self.z(:), zdim-1+1); % (I1 x I2 x I3)
             [Xi, ~, Zi] = self.getImagingGrid(); % (I1 x I2 x I3)
 
             % restrict to points where the angle is less than theta at the
@@ -361,6 +353,70 @@ classdef Scan < matlab.mixin.Copyable
 
 
     methods
+        function gif(self, b_im, filename, h, varargin)
+            % GIF - Write the series of images to a GIF file
+            %
+            % GIF(self, b_im, filename) writes the series of imagesc b_im
+            % to the file filename.
+            %
+            % GIF(self, b_im, filename, h) updates the image handle h 
+            % rather than creating a new image. Use imagesc to create an 
+            % image handle. You can then format the figure prior to 
+            % calling this function.
+            %
+            % GIF(..., Name, Value, ...) forwards Name/Value pairs to
+            % imwrite.
+            %
+            % Example:
+            % 
+            % % create some data
+            % scan = ScanCartesian( ...
+            %   'x', 1e-3*(-10:0.2:10), ...
+            %   'z', 1e-3*(0:0.2:30) ...
+            %  );
+            % sz = [scan.size,100];
+            % b = complex(rand(sz), rand(sz)) - (0.5 + 0.5i);
+            % b_im = rad2deg(angle(b)); % display phase in degrees
+            % 
+            % % display with imagesc
+            % figure;
+            % h = imagesc(scan, b_im);
+            % colormap hsv;
+            % colorbar;
+            % title('Random phase');
+            % 
+            % % make a gif
+            % gif(scan, bim, 'noise.gif', h, 'LoopCount', Inf);
+            %
+            % See also IMAGESC
+
+            % defaults
+            kwargs = struct('LoopCount', Inf, 'DelayTime', 1/15);
+
+            % parse inputs
+            for i = 1:2:numel(varargin), kwargs.(varargin{1}) = varargin{i+1}; end
+
+            % if no image handle, create a new image
+            if nargin < 4 || isempty(h), h = imagesc(self, b_im, 1); end
+
+            M_ = prod(size(b_im, 3:max(3,ndims(b_im)))); %#ok<CPROPLC> % all slices
+
+            % get image frames
+            for m = M_:-1:1, h.CData(:) = b_im(:,:,m); fr{m} = getframe(h.Parent.Parent); end
+
+            % get color space for the image
+            [~, map] = rgb2ind(fr{1}.cdata, 256, 'nodither');
+
+            % get all image data
+            im = cellfun(@(fr) {rgb2ind(fr.cdata,map,'nodither')}, fr);
+            im = cat(4, im{:});
+
+            % forward options to imwrite
+            nvkwargs = struct2nvpair(kwargs);
+            imwrite(im, map, filename, nvkwargs{:});
+        end
+
+
         function h = imagesc(self, b, varargin)
             % IMAGESC - Overload of imagesc
             %
