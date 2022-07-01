@@ -19,8 +19,10 @@ function y = wsinterpd(x, t, dim, w, sdim, interp, extrapval, varargin)
 % y = WSINTERPD(x, t, dim) samples the data in dimension dim instead of
 % dimension 1
 %
-% y = WSINTERPD(x, t, dim, w) applies the weighting matrix after sampling the
-% the data. The default is 1.
+% y = WSINTERPD(x, t, dim, w) applies the weighting array via point-wise 
+% multiplication after sampling the the data. The dimensions must be 
+% compatible with the sampling array t in the sampling dimension dim. 
+% The default is 1.
 %
 % y = WSINTERPD(x, t, dim, w, sdim) sums the data in the dimension(s) sdim
 % after the weighting matrix has been applied. The default is [].
