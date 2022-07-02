@@ -212,56 +212,56 @@ classdef UltrasoundSystem < handle
 
     % Modified Green's function based direct computations
     methods
-        function [chd, wv] = comp_RS_FSA(self, target, element_subdivisions, varargin)
-            % COMP_RS_FSA - Compute rayleigh-Sommerfield via full-synthetic-aperture
+        function [chd, wv] = greens(self, target, element_subdivisions, varargin)
+            % GREENS - Simulate ChannelData via a shifted Green's function.
             % 
-            % chd = COMP_RS_FSA(self, target)
+            % chd = GREENS(self, target)
             % computes the full synthetic aperture data using a simple
             % Green's function kernel applied to all sub elements and all
             % point scatterers. It then applies the transmit sequence to
             % form the channel data.
             %
-            % chd = COMP_RS_FSA(self, target, element_subdivisions) uses
-            % multiple sub-apertures in the integration. This argument is
-            % passed to FieldII to construct the subdivisions. FieldII must
-            % be on the path.
+            % chd = GREENS(self, target, element_subdivisions) uses the 
+            % length 2 array element_subdivisions to specifiy the 
+            % subdivision of each element into a grid of sub-apertures 
+            % in the integration. This argument is passed to FieldII to 
+            % construct the subelements. FieldII must be on the path.
+            % Setting the subdvisions to [1,1] avoids this behaviour. The
+            % Default is [1,1].
             %
-            % chd = COMP_RS_FSA(..., Name, Value, ...) provides additional
-            % name/value pair arguments.
-            %
-            % [chd, wv] = COMP_RS_FSA(...) additionally returns the final
+            % [chd, wv] = GREENS(...) additionally returns the final
             % waveform convolved across the point scatterers and aperture.
             %
-            % Inputs:
-            %   - target:               a Target object
-            %   - element_subdivisions: 1 x 2 vector of subdivisions per
-            %                           transducer element (optional)
+            % [...] = GREENS(..., Name, Value, ...) provides additional
+            % name/value pair arguments.
             %
-            % Name-Value Pairs
-            %   - device    integer representing gpu selection. -1 selects
-            %   the current GPU. 0 selects a cpu. n where n > 0 selects and
-            %   resets a GPU
+            % Name-Value Arguments:
+            %   device -    integer representing gpu selection. -1 selects
+            %               the current GPU. 0 selects a cpu. n where n > 0
+            %               selects and resets a GPU
             %
-            %   - method    interpolator {'interpn'* | 'griddedInterpolant'}
-            %   - interp    interpolation method: must be supported by the
-            %               interpolator
-            %   - block_size number of scatterers to compute at a time.
-            %               Default is 1
+            %   interp -    interpolation method; it must be a method 
+            %               supported by wsinterpd. The default is 'cubic'.
             %
-            % Outputs:
-            %   - time (T x 1):             time sample values (s)
-            %   - voltages (T x M x N):     voltage samples (pure)
+            %   tall -      specifies whether to use a tall type. Set this
+            %               to true if memory is an issue. The default is
+            %               false.
             %
-            % where T -> time, M -> transmitters, N -> receivers
+            %   block_size - number of scatterers to compute at a time.
+            %               If operating on the GPU when the interp method
+            %               is one of {'nearest', 'linear', 'cubic',
+            %               'lanczos3'}, this option has no effect. The 
+            %               default is 1.
             %
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI WSINTERPD
+            % CHD/SAMPLE
             
             % get Tx/Rx apertures subelement positions
             % (3 x N x E)
-            if nargin < 3, element_subdivisions = self.getLambdaSubDiv(0.1, target); end
+            if nargin < 3, element_subdivisions = [1,1]; end
             device = -logical(gpuDeviceCount());
-            method = 'interpn';
             interp_method = 'linear';
+            usetall = false;
             block_size = 1;
             
             % parse inputs
@@ -269,8 +269,8 @@ classdef UltrasoundSystem < handle
             for i = 1:2:numel(varargin)
                 switch lower(varargin{i})
                     case 'device', device = varargin{i+1};
-                    case 'method', method = varargin{i+1};
                     case 'interp', interp_method = varargin{i+1};
+                    case 'tall', usetall = varargin{i+1};
                     case 'block_size', block_size = varargin{i+1};
                 end
             end
@@ -284,34 +284,20 @@ classdef UltrasoundSystem < handle
                 ptc_rx = self.rx.getFieldIIBaryCenters(element_subdivisions);
             end
             
-            % TODO: directly convolve the Waveform objects
-            % get the Tx/Rx impulse response function ( T' x 1)
-            tx_impulse_waveform = self.tx.impulse;
-            t_tx = tx_impulse_waveform.getSampleTimes(self.fs);
-            tx_impulse_samples = reshape(tx_impulse_waveform.fun(t_tx), 1, []);
-            
-            rx_impulse_waveform = self.rx.impulse;
-            t_rx = rx_impulse_waveform.getSampleTimes(self.fs);
-            rx_impulse_samples = reshape(rx_impulse_waveform.fun(t_rx), 1, []);
-            
-            % set the waveform
-            %%% TODO: handle multiple chirps in the sequence ... or not?
-            signal_waveform = self.sequence.pulse.copy(); % leave the original intact
-            t_sig = signal_waveform.getSampleTimes(self.fs);
-            signal_samples  = reshape(signal_waveform.fun(t_sig), 1, []);
-
             % get maximum necessary time sample (use manhattan distance and
             % sound speed to give an upper bound)
             maxdist = @(p) max(vecnorm(p,2,1), [], 'all');
             mindist = @(p) min(vecnorm(p,2,1), [], 'all');
             taumax = (2 * maxdist(target.pos) + maxdist(ptc_tx) + maxdist(ptc_rx)) ./ min(target.c0);
             taumin = (2 * mindist(target.pos) + mindist(ptc_tx) + mindist(ptc_rx)) ./ max(target.c0);
-            tstart = t_tx(1) + t_rx(1) + t_sig(1); 
             
-            % get the convolved kernel
-            kern = conv(conv(tx_impulse_samples, rx_impulse_samples, 'full'), signal_samples, 'full');
-            tk = tstart + (0 : 1 : numel(kern) - 1 )' ./ self.fs;
-            wv = Waveform('samples', kern, 't', tk);
+            % Directly convolve the Waveform objects to get the final
+            % convolved kernel
+            wv = conv(self.rx.impulse, ...
+                conv(self.tx.impulse, self.sequence.pulse, 4*self.fs), ...
+                4*self.fs); % transmit waveform, 4x intermediate convolution sampling
+            tk = wv.getSampleTimes(self.fs);
+            kern = wv.sample(tk);
 
             % get minimum/maximum sample times
             tmin = taumin + wv.t0;
@@ -319,124 +305,157 @@ classdef UltrasoundSystem < handle
 
             % create time vector (T x 1)
             % this formulation is guaranteed to pass through t == 0
-            t = (floor(tmin * self.fs) : ceil(tmax * self.fs))';% ./ self.fs;
+            t = (floor(tmin * self.fs) : ceil(tmax * self.fs))';
 
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), self.rx.numel, self.tx.numel, prod(element_subdivisions));
-            x   = zeros([1 T N M]);
+            x   = complex(zeros([1 T N M]));
 
             % splice
             c0  = target.c0;
             pos = target.pos; % 3 x S
             amp = target.amp; % 1 x S
             fs_ = self.fs;
+            if device && exist('greens.ptx', 'file') ... % use the GPU kernel
+                    && (ismember(interp_method, ["nearest", "linear", "cubic", "lanczos3"]))
+                % function to determine type
+                isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
-            % TODO: set data types | cast to GPU? | perform on GPU?
-            if device > 0, gpuDevice(device); end
-            if device, 
-                [pos, ptc_rx, ptc_tx, t, tk, kern] = dealfun(@gpuArray, pos, ptc_rx, ptc_tx, t, tk, kern);
-            end
-
-            % create 1D interpolator function
-            switch method
-                case 'griddedInterpolant'
-                    % terp = griddedInterpolant(gather(tk), gather(kern), 'linear','none');
-                    terp = griddedInterpolant(gather(round(tk*fs_)), gather(kern), interp_method,'none');
-                    f = @(tau) (terp(gather(t - tau)));
-                case 'interpn'
-                    f = @(tau) interpn(round(fs_*tk), kern, t - tau, interp_method, 0);
-                case 'interpd'
-                    f = @(tau) interpd(kern(:), (t - tau) - (fs_*tk(1)), 1, interp_method);
-                otherwise
-                    f = @(tau) interpn(fs_*tk, kern, t - tau, interp_method, 0);
-            end
-
-            % cast dimensions to compute in parallel
-            ptc_rx = permute(ptc_rx, [1,6,2,4,3,5]); % 3 x 1 x N x 1 x En x 1
-            ptc_tx = permute(ptc_tx, [1,6,4,2,5,3]); % 3 x 1 x 1 x M x  1 x Em
-
-            % for each tx/rx pair, extra subelements ...
-            % TODO: parallelize where possible
-            svec = num2cell((1:block_size)' + (0:block_size:target.numScat-1), 1);
-            svec{end} = svec{end}(svec{end} <= target.numScat);
-            S = numel(svec); % number of scatterer blocks
-            w = waitbar(0);
-            for sv = 1:S, s = svec{sv}; % vector of indices
-            for em = 1:E
-                for en = 1:E
-                    % unpack indexing (MATLAB optimization)
-                    % [en, em, n, m] = ind2sub([E, E, N, M], i);
-
-                    % compute time delays
-                    % TODO: do this via ray-path propagation through a
-                    % medium
-                    % S x 1 x N x M x 1 x 1
-                    r_rx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_rx, en, 5)),1,2);
-                    r_tx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_tx, em, 6)),1,2); 
-                    tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
-                    tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
-
-                    % compute the contribution
-                    % S x 1 x N x M x 1 x 1
-                    att = sub(amp,s,2).';% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
-                    % f = @(tau) interpd(kern(:), (t - tau) - (fs_*tk(1)), 1, interp_method);
-                    % s_ = att .* f((tau_rx + tau_tx) * fs_); % temporal delay (no phase shift)
-
-                    % get 0-based sample time delay
-                    % switch time and scatterer dimension
-                    % S x T x N x M x 1 x 1
-                    % tau = (tau_rx + tau_tx + tk(1)) * fs_;
-                    t0 = gather(tk(1)); % 1 x 1
-                    
-                    % make tall in the scatterer dimension
-                    % S x T x N x M x 1 x 1
-                    tvec = t(:)'; % 1 x T full time vector
-                    % tau = tvec - tall(gather(tau));
-                    % att = tall(gather(att)); % S x 1
-                    % kern = tall(kern(:)'); % 1 x T'
-                    kern = kern(:)'; % 1 x T'
-                    % [att, tau_tx, tau_rx] = dealfun(@(x)tall(gather(x)), att, tau_tx, tau_rx);
-
-                    % compute as tall arrays, then sum over all scatterers
-                    % S x T x N x M x 1 x 1
-                    % s_ = matlab.tall.reduce( ...
-                    %     @(a,k,tvec,tau1,tau2) gather(a .* interp1(k, (tvec-(tau1+tau2)-t0)*fs_)), ... map: interpolate and multiply in dim 2 (time)
-                    %     @(x) sum(x, 1, 'omitnan'), ... reduce: sum over dim 1 (scats)
-                    %     att, kern, tvec, tau_rx, tau_tx ... data
-                    %     );
-                    % s_ = att .* interpd(kern(:)', (t(:)' - (tau_rx + tau_tx) * fs_) - (fs_*tk(1)));
-                    
-                    % TODO: compute where we actually receive a response
-                    tau = (tau_tx + tau_rx + t0)*fs_; % S x 1 x N x M x 1 x 1
-                    it = tvec == tvec; %(1 x T')
-                    it = it & T-1 > tvec - max(tau(:));
-                    it = it &   0 < tvec - min(tau(:));
-
-                    % compute only for this range and sum as we go
-                    % (1 x T' x N X M)
-                    s_ = wsinterpd(kern(:)', tvec(it) - (tau_tx + tau_rx + t0)*fs_, 2, att, 1, interp_method, 0);
-
-                    % add contribution (1 x T x N X M)
-                    x(1,it,:,:) = x(1,it,:,:) + nan2zero(s_);
-
-                    % update waitbar
-                    if isvalid(w), waitbar(sub2ind([E,E,S],en,em,sv) / (E*E*S), w); end
+                % determine the data type
+                kern = single(kern); % HACK: only 1 type available so far.
+                if     isftype(kern, 'double'), suffix = "" ;  cfun = @double;
+                elseif isftype(kern, 'single'), suffix = "f";  cfun = @single;
+                elseif isftype(kern, 'halfT'  ), suffix = "h"; cfun = @(x) alias(halfT(x));
+                else,   error("Datatype " + class(kern) + " not recognized as a GPU compatible type.");
                 end
-            end
-            end
-            if isvalid(w), delete(w); end
 
-            % move back to GPU if requested
-            if device, x = gpuArray(gather(x)); end
+                % translate the interp flag
+                switch interp_method
+                    case "nearest", flagnum = 0;
+                    case "linear",  flagnum = 1;
+                    case "cubic",   flagnum = 2;
+                    case "lanczos3",flagnum = 3;
+                    otherwise, error('Interp option not recognized: ' + string(interp));
+                end
+
+                % cast data / map inputs
+                [x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_] = dealfun(cfun, ...
+                    x, pos, amp, ptc_rx, ptc_tx, kern, tk(1), t(1)/fs_, fs_, 1/c0 ...
+                    );
+
+                % re-map sizing
+                [QI, QS, QT, QN, QM] = deal(target.numScat, length(t), length(kern), N, M);
+
+                % grab the kernel reference
+                k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
+                k.setConstantMemory( ...
+                    'QUPS_I', uint64(QI), 'QUPS_T', uint64(QT), 'QUPS_S', uint64(QS), ...
+                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM)... , 'QUPS_F', uint64(QF) ...
+                    );
+                k.ThreadBlockSize = min(k.MaxThreadsPerBlock,QS); 
+                k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
+
+                % call the kernel
+                x = k.feval(x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_, [E,E], flagnum);
+
+            else % operate in native MATLAB
+                % TODO: set data types | cast to GPU? | perform on GPU?
+                if device > 0, gpuDevice(device); end
+                if device && ~usetall,
+                    [pos, ptc_rx, ptc_tx, t, tk, kern] = dealfun(...
+                        @gpuArray, pos, ptc_rx, ptc_tx, t, tk, kern ...
+                        );
+                end
+
+                % make time in dim 2
+                tvec = t(:)'; % 1 x T full time vector
+                kern = kern(:)'; % 1 x T'
+
+                % cast to tall types if requested
+                if usetall, [tvec, kern] = dealfun(@tall, tvec, kern); end
+
+                % cast dimensions to compute in parallel
+                ptc_rx = permute(ptc_rx, [1,6,2,4,3,5]); % 3 x 1 x N x 1 x En x 1
+                ptc_tx = permute(ptc_tx, [1,6,4,2,5,3]); % 3 x 1 x 1 x M x  1 x Em
+
+                % for each tx/rx pair, extra subelements ...
+                % TODO: parallelize where possible
+                svec = num2cell((1:block_size)' + (0:block_size:target.numScat-1), 1);
+                svec{end} = svec{end}(svec{end} <= target.numScat);
+                S = numel(svec); % number of scatterer blocks
+                w = waitbar(0);
+
+                for sv = 1:S, s = svec{sv}; % vector of indices
+                    for em = 1:E
+                        for en = 1:E
+                            % compute time delays
+                            % make tall in the scatterer dimension
+                            % TODO: do this via ray-path propagation through a
+                            % medium
+                            % S x 1 x N x M x 1 x 1
+                            r_rx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_rx, en, 5)),1,2);
+                            r_tx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_tx, em, 6)),1,2);
+                            tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
+                            tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
+
+                            % compute the contribution
+                            % S x 1 x N x M x 1 x 1
+                            att = sub(amp,s,2).';% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
+
+                            % get 0-based sample time delay
+                            % switch time and scatterer dimension
+                            % S x T x N x M x 1 x 1
+                            t0 = gather(tk(1)); % 1 x 1
+
+                            % S x T x N x M x 1 x 1
+                            if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern}))
+                                % compute as a tall array
+                                s_ = matlab.tall.transform(@wsinterpd, ...
+                                    kern, tvec - (tau_tx + tau_rx + t0)*fs_, ...
+                                    2, att, 1, interp_method, 0 ...
+                                    );
+                                
+                                % add contribution (1 x T x N X M)
+                                x = x + nan2zero(s_);
+
+                            else
+                                % compute natively
+                                % TODO: compute where we actually receive a response
+                                tau = (tau_tx + tau_rx + t0)*fs_; % S x 1 x N x M x 1 x 1
+                                it = tvec == tvec; %(1 x T')
+                                it = it & T-1 > tvec - max(tau(:));
+                                it = it &   0 < tvec - min(tau(:));
+
+                                % compute only for this range and sum as we go
+                                % (1 x T' x N X M)
+                                s_ = wsinterpd(kern(:)', tvec(it) - (tau_tx + tau_rx + t0)*fs_, 2, att, 1, interp_method, 0);
+
+                                % add contribution (1 x T x N X M)
+                                x(1,it,:,:,:,:) = x(1,it,:,:,:,:) + nan2zero(s_);
+                            end
+                            
+                            % update waitbar
+                            if isvalid(w), waitbar(sub2ind([E,E,S],en,em,sv) / (E*E*S), w); end
+                        end
+                    end
+                end
+                if isvalid(w), delete(w); end
+
+                % compute for tall arrays
+                if istall(x), x = gather(x); end
+
+                % move back to GPU if requested
+                if device, x = gpuArray(gather(x)); end
+            end
 
             % make a channel data object (T x N x M)
-            chd_ = ChannelData('t0', sub(t ./ self.fs,1,1), 'fs', self.fs, 'data', shiftdim(x,1));
+            chd = ChannelData('t0', sub(t ./ self.fs,1,1), 'fs', self.fs, 'data', shiftdim(x,1));
 
             % synthesize linearly
-            [chd] = self.focusTx(chd_, self.sequence, 'interp', interp_method);
+            [chd] = self.focusTx(chd, self.sequence, 'interp', interp_method);
 
             % send data (back) to CPU
-            chd = gather(chd);
+            % chd = gather(chd);
         end
     end
 
@@ -1883,7 +1902,7 @@ classdef UltrasoundSystem < handle
             % [ksource, t_sig, sig] = self.getKWaveSource(kgrid, kgrid_origin, el_sub_div, target.c0);
             
             % get the source signal
-            txsig = conv(self.tx.impulse, self.sequence.pulse, 4*fs_); % transmit waveform, 10x intermediate convolution sampling
+            txsig = conv(self.tx.impulse, self.sequence.pulse, 4*fs_); % transmit waveform, 4x intermediate convolution sampling
             apod = self.sequence.apodization(self.tx); % transmit apodization (M x V)
             del  = self.sequence.delays(self.tx); % transmit delays (M x V)
             txn0 = floor((txsig.t0   + min(del(:))) * fs_); % minimum time sample - must pass through 0
@@ -1907,11 +1926,6 @@ classdef UltrasoundSystem < handle
             Nt = 1 + floor((kwargs.T / kgrid.dt) + max(range(t_tx,1))); % number of steps in time
             kgrid.setTime(Nt, kgrid.dt);
 
-            % check the size of the temporal response and
-            % maximum number of subelements. An array of this size
-            % will be created
-            % nSubel = max(sum(arrayfun(@(s) numel(s.mask_indices), sens_map), 1), [], 2);
-            % warning(sprintf('Using up to %i subelements for %i points in time (%0.2fGB / %0.2fGB single/double (complex) temp variables)', nSubel, kgrid.Nt, prod(kgrid.Nt * nSubel) * 2 * [4, 8] / 2^30))
 
             %% Submit a k-wave simulation for each transmit
             tt_kwave = tic;
@@ -2174,8 +2188,8 @@ classdef UltrasoundSystem < handle
             switch seq.type, case 'FSA', return; end 
 
             % dist/time to receiver
-            tau_focal = - shiftdim(seq.delays(self.tx),      -2); % 1 x 1 x M x M'
-            apod      =   shiftdim(seq.apodization(self.tx), -2); % 1 x 1 x [1|M] x [1|M']
+            tau_focal = - seq.delays(self.tx); % M x M'
+            apod      =   seq.apodization(self.tx); % [1|M] x [1|M']
 
             % resample only within the window where we currently have data.
             nmin = floor(min(tau_focal,[],'all') .* chd.fs); % minimum sample time
@@ -2202,37 +2216,37 @@ classdef UltrasoundSystem < handle
             else
                 error("L must be a scalar or one of {'min' | 'pow2'}");
             end
-            
-            % frequency vector
-            l = shiftdim(0 : 1 : (L - 1), 1); % L x 1 x 1
+            % align dimensions
+            D = 1+ndims(chd.data); % get a free dimension for M'
+            tau_focal = swapdim(tau_focal, [1,2], [chd.mdim, D]); % move data
+            apod      = swapdim(apod     , [1,2], [chd.mdim, D]); % move data
 
             % choose an interpolation method: frequency is implemented here
-            % but will be moved into the ChannelData class at some point
             switch interp_method
                 case 'freq'
-                    % clear out the 4th dimension in the data
-                    x = chd.data; 
-                    dimfree = max(4,ndims(x)+1); % replace 4th dimension with a free one
-                    x = permute(x,[1:3,dimfree,4:ndims(x)]);
+                    % frequency vector
+                    l = shiftdim(0 : 1 : (L - 1), 1); % L x 1 x 1
+                    x = chd.data; % extract the data
 
                     % apply phase shifts and sum
-                    wL = apod .* exp(-2i * pi * chd.fs  .* tau_focal ./ L); % steering vector (1 x 1 x M x M')
-                    x = fft(x, L, 1); % put data in freq domain (L x N x M x 1 x F x ...)
-                    y = tenmul(wL.^l, x, 3, 1); % apply phase shift and sum over transmits (L x N x 1 x M' x F x ...)
-                    z = ifft(y, L, 1, 'nonsymmetric'); % back to time (T' x N x 1 x M' x F x ...)
-                    z = circshift(z, nwrap, 1); % handle FFT wrap-around
+                    wL = apod .* exp(-2i * pi * chd.fs  .* tau_focal ./ L); % steering vector (1 x 1 x M x ... x M')
+                    x = fft(x, L, chd.tdim); % put data in freq domain (L x N x M x 1 x F x ...)
+                    y = tenmul(wL.^l, x, chd.mdim, chd.tdim); % apply phase shift and sum over transmits (L x N x 1 x M' x F x ...)
+                    z = ifft(y, L, chd.tdim, 'nonsymmetric'); % back to time (T' x N x 1 x M' x F x ...)
+                    z = circshift(z, nwrap, chd.tdim); % handle FFT wrap-around
                     
-                    % move back to original dimensions
-                    z = permute(z, [1,2,4,5:ndims(z),3]); % T' x N x M' x F x ...
+                    % swap M' and M dimensions to return in same format
+                    z = swapdim(z, chd.mdim, D);
 
                 otherwise
-                    [MP, MPa] = deal(size(tau_focal,4), size(apod,4)); % sizing: number of transmits
+                    [MP, MPa] = deal(size(tau_focal,D), size(apod,D)); % sizing: number of transmits
                     for m = MP:-1:1 % per transmit (implicit pre-allocation)
-                        y = chd.sample(chd.time - sub(tau_focal,m,4), interp_method); % sample the data (T' x N x M x F x ...)
-                        y = sum(sub(apod,min(m,MPa),4) .* y, 3); % apodize and sum over transmits
-                        z{m} = y; % store data (T' x N x {M'} x F x ...)
+                        % sample, apodize, and sum over transmits
+                        % (T' x N x {M'} x F x ...)
+                        a = sub(apod,min(m,MPa),4); % apodization for this transmit
+                        z{m} = chd.sample(chd.time - sub(tau_focal,m,D), interp_method, a, chd.mdim); 
                     end
-                    z = cat(3, z{:}); % combine (T' x N x M' x F x ...)
+                    z = cat(chd.mdim, z{:}); % combine (T' x N x M' x F x ...)
             end
 
             % store output channel data
@@ -3069,6 +3083,7 @@ classdef UltrasoundSystem < handle
                 UltrasoundSystem.genCUDAdef_beamform(),...
                 UltrasoundSystem.genCUDAdef_interpd(),...
                 UltrasoundSystem.genCUDAdef_convd(),...
+                UltrasoundSystem.genCUDAdef_greens(),...
                 ];
         end
 
@@ -3126,6 +3141,28 @@ classdef UltrasoundSystem < handle
                 'no-deprecated-gpu-targets'...
                 };
             
+            d.DefinedMacros = {};
+        end
+
+        function d = genCUDAdef_greens()
+            % no halp :(
+
+            % filename
+            d.Source = {...
+                'greens.cu', ...
+                }';
+
+            d.IncludePath = {}; % include folders
+            d.Libraries = {}; % libraries
+
+            d.CompileOptions = {...  compile options
+                'use_fast_math',...
+                };
+
+            d.Warnings = {... warnings
+                'no-deprecated-gpu-targets'...
+                };
+
             d.DefinedMacros = {};
         end
 

@@ -173,7 +173,7 @@ else
     
     % compute using interp1, performing for each matching dimension,
     % weighting and summing over outer dimensions as requested
-    pdims = [Tdim, Mdim, Fdim, Dt-1+Fdim]; % pack all except matching dims
+    pdims = unique([Tdim, Mdim, Fdim, Dt-1+Fdim]); % pack all except matching dims
     [xc, tc, wc] = deal(num2cell(xc, pdims), num2cell(tc, pdims), num2cell(w, pdims));
     parfor(i = 1:numel(xc), 0), y{i} = sum(wc{i} .* interp1(xc{i},1+tc{i},interp,extrapval), dsumi, 'omitnan'); end
 
