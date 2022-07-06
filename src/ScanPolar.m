@@ -184,9 +184,11 @@ classdef ScanPolar < Scan
             [A, R, Y] = cart2pol(Z - og(3), X - og(1), Y - og(2));
 
             % sample the data at these coordinates
-            % TODO: handle different data orders? check data order?
-            terp = griddedInterpolant({self.r, self.a}, gather(b_pol), 'cubic', 'none');
-            b_cart = terp(R, rad2deg(A));
+            % TODO: handle different data orders / dimensionality via 
+            % permution / page functions
+            assert(self.order == "RAY", "Data must be in order 'RAY'.");
+            [RG, AG] = ndgrid(self.r, deg2rad(self.a)); % use interp2 for compatibility
+            b_cart = interp2(AG, RG, b_pol, A, R, 'linear', nan);
 
             % let nans be nans? or make zero?
             % b_cart(isnan(b_cart)) = 0;
