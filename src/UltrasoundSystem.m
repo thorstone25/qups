@@ -410,28 +410,29 @@ classdef UltrasoundSystem < handle
                             % S x T x N x M x 1 x 1
                             if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern}))
                                 % compute as a tall array
-                                s_ = matlab.tall.transform(@wsinterpd, ...
-                                    kern, tvec - (tau_tx + tau_rx + t0)*fs_, ...
-                                    2, att, 1, interp_method, 0 ...
+                                s_ = matlab.tall.transform(@(tvec, tau_tx, tau_rx, kern) ...
+                                    nan2zero(wsinterpd(kern, tvec - (tau_tx + tau_rx - t0)*fs_, ...
+                                    2, att, 1, interp_method, 0)), ...
+                                    tvec, tau_tx, tau_rx, kern ...
                                     );
                                 
                                 % add contribution (1 x T x N X M)
-                                x = x + nan2zero(s_);
+                                x = x + s_;
 
                             else
                                 % compute natively
                                 % TODO: compute where we actually receive a response
-                                tau = (tau_tx + tau_rx + t0)*fs_; % S x 1 x N x M x 1 x 1
+                                tau = (tau_tx + tau_rx - t0)*fs_; % S x 1 x N x M x 1 x 1
                                 it = tvec == tvec; %(1 x T')
                                 it = it & T-1 > tvec - max(tau(:));
                                 it = it &   0 < tvec - min(tau(:));
 
                                 % compute only for this range and sum as we go
                                 % (1 x T' x N X M)
-                                s_ = wsinterpd(kern(:)', tvec(it) - (tau_tx + tau_rx + t0)*fs_, 2, att, 1, interp_method, 0);
+                                s_ = nan2zero(wsinterpd(kern(:)', tvec(it) - tau, 2, att, 1, interp_method, 0));
 
                                 % add contribution (1 x T x N X M)
-                                x(1,it,:,:,:,:) = x(1,it,:,:,:,:) + nan2zero(s_);
+                                x(1,it,:,:,:,:) = x(1,it,:,:,:,:) + s_;
                             end
                             
                             % update waitbar
@@ -2437,14 +2438,12 @@ classdef UltrasoundSystem < handle
 
             % TODO: cast data type for efficency?
             [w_tx, w_rx, w_steer, apod_tx] = dealfun(@(w) cast(w, 'like', real(x)), w_tx, w_rx, w_steer, apod_tx);
-            b = zeros([1, size(Pi,2:ndims(Pi))], 'like', x);
+            b = repmat(cast(0, 'like', x), [1, size(Pi,2:ndims(Pi))]);
 
             % beamform one frequency at a time to save memory space
             h = waitbar(0,'Beamforming ...');
             % parfor (k = 1:K)
-            for k = gather(find(f_val)')
-                % skip unimportant frequencies
-                % if ~f_val(k), continue; end
+            for k = gather(find(f_val)') % skip unimportant frequencies
 
                 % report progress
                 if isvalid(h), waitbar(k/K/2, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
@@ -2467,7 +2466,7 @@ classdef UltrasoundSystem < handle
                 Ainv_tx = Ainv_tx ./ vecnorm(Ainv_tx, 2, 1); % normalize the power
                 
                 % apodize, delay, and sum the data for this frequency
-                % only 1 a_* will contain the apodization
+                % only 1 of the a_* will contain the apodization
                 yn = a_m .* pagemtimes(a_n .* conj(G_rx), a_mn .* xk); % 1 x V x 1 x 1 x [I]
                 y  = pagemtimes(yn, conj(Ainv_tx)); % 1 x 1 x 1 x 1 x [I]
                 
