@@ -67,16 +67,15 @@ function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
 % TODO: switch to kwargs struct to support arguments block
 % default parameters
 VS = true;
-odataPrototype = complex(zeros(0, 'like', x));
 interp_type = 'linear'; 
-apod = ones(1, 'like', x);
+apod = 1;
 isType = @(c,T) isa(c, T) || isa(c, 'gpuArray') && strcmp(classUnderlying(c), T);
 if isType(x, 'single')
     idataType = 'single';
 elseif isType(x, 'double')
     idataType = 'double';
-elseif isType(x, 'half')
-    idataType = 'half'; 
+elseif isType(x, 'halfT')
+    idataType = 'halfT'; 
 end
 if any(cellfun(@(c) isType(c, 'single'), {Pi, Pr, Pv, Nv}))
     posType = 'single';
@@ -98,12 +97,6 @@ while (n <= nargs)
             VS = false;
         case 'virtual-source'
             VS = true;
-        case 'output-prototype'
-            n = n + 1;
-            odataPrototype = varargin{n};
-        case 'output-precision'
-            n = n + 1;
-            odataPrototype = complex(zeros(0, varargin{n}));
         case 'position-precision'
             n = n + 1;
             posType = varargin{n};
@@ -175,7 +168,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     src_folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
     
     switch idataType
-        case 'half', postfix = 'h';
+        case 'halfT', postfix = 'h';
         case 'single', postfix = 'f';
         case 'double', postfix = '';
     end
@@ -204,18 +197,17 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         [fun, postfix]);
     
     % send constant data to GPU
-    if idataType == "half"  % HACK: make half types uint16
-    dprototype = complex(gpuArray(zeros(0, 'uint16')));
-    pprototype = gpuArray(zeros(0, 'single'));
-    if isa(x, 'half'), x = storedInteger(x); apod = storedInteger(half(apod)); end
-    if isa(odataPrototype, 'half'), odataPrototype = uint16(odataPrototype); end
-    else
-    dprototype = complex(gpuArray(zeros(0, idataType)));
-    pprototype = gpuArray(zeros(0, idataType));
+    typefun = str2func(idataType); % function to cast types
+    ptypefun = @(x) gpuArray(typefun(x));
+    dtypefun = @(x) complex(ptypefun(x));
+    if idataType == "halfT"
+        if isa(x, 'half'), 
+            x = storedInteger(x); 
+            apod = storedInteger(half(apod)); 
+        end
     end
-    x = cast(x, 'like', dprototype);
-    [tmp] = cellfun(@(p)cast(p, 'like', pprototype), {Pi, Pr, Pv, Nv}, per_cell{:});
-    [Pi, Pr, Pv, Nv,] = deal(tmp{:});
+    [x, apod] = dealfun(dtypefun, x, apod);
+    [Pi, Pr, Pv, Nv] = dealfun(ptypefun, Pi, Pr, Pv, Nv);
     
     % expand all inputs to 3D
     expand_inputs();
@@ -242,9 +234,9 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % get output data type
     switch fun
         case {'DAS', 'SYN', 'BF'}
-            obufprototype = complex(dprototype);
+            obuftypefun = dtypefun;
         case {'delays'}
-            obufprototype = real(dprototype);
+            obuftypefun = @(x)real(dtypefun(x));
     end
    
     % kernel sizes
@@ -273,24 +265,31 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % allocate output data buffer
     osize = cat(2, {kI}, osize);
     osize = cellfun(@uint64, osize, per_cell{:});
-    yg = zeros([osize{:}], 'like', obufprototype);
+    yg = repelem(obuftypefun(zeros(1)), [osize{:}]);
+    
+    % for half types, alias the weights/data, recast the positions as
+    % single
+    if idataType == "halfT"
+        [Pi, Pr, Pv, Nv] = dealfun(@single, Pi, Pr, Pv, Nv);
+        [yg, apod, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod, x);
+    end
     
     % partition input pixels per frame
-    Pif = NaN([3, kI, nF], 'like', Pi); % initialize value
+    Pif = repelem(ptypefun(NaN(1)),[3, kI, nF]); % initialize value
     Pif(1:3, 1:I) = Pi(:,:); % place valid pixel positions
     Pif = num2cell(Pif, [1,2]); % pack in cells per frame
 
     % partition data per frame
     fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
     F = prod(fsz);
-    
+
     % for each data frame, run the kernel
     switch fun
         case {'DAS','SYN','BF'}
             for f = F:-1:1 % beamform each data frame
-                yf = cellfun(@(pi) cast(...
-                    k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x(:,:,:,f), flagnum, t0, fs, cinv),...
-                    'like', odataPrototype), Pif, per_cell{:});
+                yf = cellfun(@(pi) ...
+                    k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x(:,:,:,f), flagnum, t0, fs, cinv), ...
+                     Pif, per_cell{:});
 
                 % concatentate pixels
                 y{f} = cat(1, yf{:}); % I' [x N [x M]] x 1 x 1 x {F x ...}
@@ -298,9 +297,9 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
             % unpack frames
             y = cat(6, y{:});
         case {'delays'}
-            y = cellfun(@(pi) cast(...
+            y = cellfun(@(pi)...
                 k.feval(yg, pi, Pr, Pv, Nv, cinv), ...
-                'like', odataPrototype), Pif, per_cell{:});
+                Pif, per_cell{:});
             % concatentate pixels
             y = cat(1, y{:}); % I' [x N [x M]]
     end
@@ -309,18 +308,16 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     y = sub(y,1:I,1); % trim the junk
     y = reshape(y, [Isz, size(y,2), size(y,3), fsz]); % I1 x I2 x I3 x [1|N] x [1|M] x F x ...
     
-    % if it's a half type, move it back to MATLAB
-    if idataType == "half", y = half.typecast(gather(y)); end
+    % if it's a half type, make an aliased halfT
+    if idataType == "halfT", y_ = alias(halfT([])); y_.val = y; y = y_; end
 else
     
     % cast constant data on CPU
-    dprototype = complex(zeros(0, idataType));
-    pprototype = zeros(0, posType);
-    
-    [x, t0, fs] = dealfun(@(x) cast(x, 'like', dprototype), x, t0, fs);
-    [tmp] = cellfun(@(p)cast(p, 'like', pprototype), ... 
-        {Pi, Pr, Pv, Nv}, per_cell{:});
-    [Pi, Pr, Pv, Nv] = deal(tmp{:});
+    typefun = str2func(idataType);
+    ptypefun = @(x) typefun(x);
+    dtypefun = @(x) complex(ptypefun(x));
+    [x] = dealfun(dtypefun, x);
+    [Pi, Pr, Pv, Nv] = dealfun(ptypefun, Pi, Pr, Pv, Nv);
     
     % expand all inputs to 3D
     expand_inputs();
@@ -355,29 +352,24 @@ else
     dr = shiftdim(dr, 1);
     
     % time vector
-    t = t0 + cast(colon(0,T-1).', 'like', t0) ./ fs;
+    % t = t0 + cast(colon(0,T-1).', 'like', t0) ./ fs;
     
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3]); % pack for I
 
-    % HACK: promote data/time to single if it's a half type 
-    % until MATLAB support it natively
-    % TODO: switch to interpd.m and offload typing responsibility there?
-    if isa(x, 'half'), [x,t] = deal(single(x), single(t)); end
-
     switch fun
         case 'delays'
-            y = cast(cinv .* (dv + dr), 'like', odataPrototype);
+            y = cinv .* (dv + dr);
             
         case 'DAS'
-            y = zeros([Isz, 1, 1], 'like', odataPrototype);
+            y = dtypefun(zeros([Isz, 1, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x 1 x M)
             xmn = shiftdim(num2cell(x,  [1,6:ndims(x)]),1); % ({T} x N x M x 1 x 1 x {F x ...})
             amn = shiftdim(num2cell(apod, [1:3]),3); % ({I} x N x M)
             amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
             Na = size(amn,1); % apodization size over receives
             parfor m = 1:M
-                yn = zeros([Isz, 1, 1], 'like', odataPrototype);
+                yn = dtypefun(zeros([Isz, 1, 1]));
                 drn = num2cell(dr, [1:3]); % ({I} x N x 1)
                 for n = 1:N
                     % time delay (I x 1 x 1)
@@ -387,15 +379,15 @@ else
                     a = sub(amn(:,m), min(n,Na), 1); % amn(n,m) || amn(1,m)
                     
                     % sample and output (I x 1 x 1)
-                    yn = yn + a{1} .* cast(...
-                        interp1(t, xmn{n,m}, tau, interp_type, 0), ...
-                        'like', odataPrototype);
+                    yn = yn + a{1} .* (...
+                        interp1(xmn{n,m}, 1 + (tau - t0) * fs, interp_type, 0) ...
+                       );
                 end
                 y = y + yn;
             end
             
         case 'SYN'
-            y = zeros([Isz, N, 1], 'like', odataPrototype);
+            y = dtypefun(zeros([Isz, N, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
             xm  = num2cell(swapdim(x,2,4),  [1,4,6:ndims(x)]); % ({T x N} x M x {F x ...)
             am = num2cell(apod, [1:4]);
@@ -408,11 +400,13 @@ else
                 an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
                 
                 % sample and output (I x N x 1)
-                y = y + cast(cell2mat(cellfun(...
+                ym = (cellfun(...
                     @(x, tau, a) ...
-                    a .* interp1(t, x, tau, interp_type, 0), ...
-                    num2cell(xm{m},1), pck(tau), pck(an), per_cell{:})), ...
-                    'like', odataPrototype); %#ok<PFBNS>
+                    a .* interp1(t, x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                    num2cell(xm{m},1), pck(tau), pck(an), per_cell{:})) ...
+                    ; %#ok<PFBNS>
+                ym = reshape(ym, [Isz, size(ym,4:ndims(ym))]);
+                y = y + ym;
             end
             
         case 'BF'
@@ -422,14 +416,14 @@ else
             % set size of x
             xmn = permute(x, [1,4,5,2,3,6:ndims(x)]); % (T x 1 x 1 x N x M x {F x ...})
             
-            % sample and output ([I] x N x M)
-            y = cell2mat(cellfun(... 
-                @(x, tau, a) cast(...
-                a .* interp1(t, x, tau, interp_type, 0), ...
-                'like', odataPrototype), ...
-                pck(xmn,1), pck(tau), pck(apod), per_cell{:}));
+            % sample and output ([I] x N x M x F x ...)
+            y = cellfun(... 
+                @(x, tau, a) ...
+                a .* interp1(t, x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                pck(xmn), pck(tau), pck(apod), per_cell{:} ...
+                );
+            y = reshape(y, [Isz, size(y,4:ndims(y))]);
     end
-    
 end
 
     function parse_inputs()
@@ -520,9 +514,9 @@ end
             xsz = size(x); % size of new x
             xsz(1) = 1; % set first dim to 1
             if size(x, 1) == 1 % assume data is in x
-                x = cat(1, x, repmat(zeros(xsz, 'like', x), [2,1]));
+                x = cat(1, x, repmat(cast(zeros(xsz), 'like', x), [2,1]));
             elseif size(x,1) == 2 % assume data is in (x,z)
-                x = cat(1, sub(x,1,1), zeros(xsz,'like', x), sub(x,2,1));
+                x = cat(1, sub(x,1,1), cast(zeros(xsz),'like', x), sub(x,2,1));
             elseif size(x,1) == 3 % assume data is in (x,y,z)
             elseif size(x,1) == 4 % assume data is in (x,y,z,w)
                 x = sub(x,1:3,1) ./ sub(x,4,1); % for projective coordinates, project
