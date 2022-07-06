@@ -46,7 +46,9 @@ switch "single"
 end
 % make scatterers twice the density
 targ.scat_mode = 'ratio';
-targ.rho_scat = 2; 
+% targ.rho_scat = 2;
+targ.rho_scat = 4;  
+
 % Choose a transducer
 
 switch "L11-5V"
