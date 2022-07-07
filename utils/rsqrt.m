@@ -1,0 +1,1 @@
+function x = rsqrt(x), x = rdivide(1, sqrt(x));
