@@ -265,7 +265,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % allocate output data buffer
     osize = cat(2, {kI}, osize);
     osize = cellfun(@uint64, osize, per_cell{:});
-    yg = repelem(obuftypefun(zeros(1)), [osize{:}]);
+    yg = repmat(obuftypefun(zeros(1)), [osize{:}]);
     
     % for half types, alias the weights/data, recast the positions as
     % single
@@ -275,7 +275,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     end
     
     % partition input pixels per frame
-    Pif = repelem(ptypefun(NaN(1)),[3, kI, nF]); % initialize value
+    Pif = repmat(ptypefun(NaN(1)),[3, kI, nF]); % initialize value
     Pif(1:3, 1:I) = Pi(:,:); % place valid pixel positions
     Pif = num2cell(Pif, [1,2]); % pack in cells per frame
 
