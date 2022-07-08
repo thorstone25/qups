@@ -93,6 +93,11 @@ function [T,Y]=msfm(F, SourcePoints, UseSecond, UseCross)
 if(nargin<3), UseSecond=false; end
 if(nargin<4), UseCross=false; end
 
+if any(SourcePoints < 1, 'all'), error('Source points must be >= 1 to be within the field.'); end
+for d = 1:ndims(F), if any(SourcePoints(d,:) > size(F,d)), %#ok<ALIGN>
+        error("Source points must be <= " + size(F,d) + " in dimension " + d + " to be in the field.");
+end, end
+
 if(nargout>1)
     if(size(F,3)>1)
         [T,Y]=msfm3d(F, SourcePoints, UseSecond, UseCross);        
