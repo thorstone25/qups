@@ -2517,16 +2517,25 @@ classdef UltrasoundSystem < handle
             kwargs.interp = 'linear';
             kwargs.parcluster = gcp('nocreate');
             kwargs.apod = 1;
+            kwargs.keep_rx = false;
+            kwargs.keep_tx = false;
+            kwargs.bsize = 16;
 
             % set input options
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
+            % get summation options
+            sumtx = ~kwargs.keep_tx;
+            sumrx = ~kwargs.keep_rx;
+
             % get cluster
-            clu = kwargs.parcluster;
-            if isempty(clu) || isa(clu, 'parallel.ThreadPool'), clu = 0; end % run on CPU
+            if isempty(kwargs.parcluster), kwargs.parcluster = 0; end % empty -> 0
+            clu = kwargs.parcluster; % compute cluster/pool/threads
+            % travel times cannot use threadPool because mex call
+            if isa(clu, 'parallel.ThreadPool'), clu = 0; end
 
             % get worker transfer function
-            if(isempty(clu) || clu == 0)
+            if(clu == 0)
                  constfun = @(x) struct('Value', x);
             else,constfun = @parallel.pool.Constant;
             end
@@ -2586,7 +2595,6 @@ classdef UltrasoundSystem < handle
             gi = gi(sel); % select and trim dimensions 
 
             % splice args
-            sz = self.scan.size; % original size
             interp_method = kwargs.interp; 
             apod = kwargs.apod;
 
@@ -2594,43 +2602,46 @@ classdef UltrasoundSystem < handle
             tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all receive delays
             tau_rx = cellfun(@(f) f(gi{:}), rx_samp, 'UniformOutput', false); % all receive delays
             tau_rx = cat(4, tau_rx{:}); % use all at a time
-            chds = splice(chd, chd.mdim); % splice per transmit
-            D = max(3, ndims(chd.data)); % data dimensions
+            tau_tx = cat(5, tau_tx{:}); % reconstruct matrix
+            D = max(5, ndims(chd.data)); % data dimensions
             ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
-            ord = [ord, setdiff(1:max(ord), ord)];
+            ord = [ord, setdiff(1:max(ord), ord)]; % full order (all dimes)
+
+            % splice data, apod, delays per transmit
+            [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
+            tau_tx = cellfun(@(ix){sub(tau_tx,ix,5)}, ix); % split per transmit block
+            if size(apod,5) == 1, apod = {apod}; % store as a single cell
+            else, apod = cellfun(@(ix){sub(apod,ix,5)}, ix); % split per transmit block
+            end
+            Mp = numel(chds); % number of transmit blocks
             
-            % TODO: allow summation argument to preserve tx/rx dimension
+            % identify dimensiosn for summation
+            sdim = [];
+            if sumtx, sdim = [sdim, chd.mdim]; end % tx dimensions
+            if sumrx, sdim = [sdim, chd.ndim]; end % rx dimensions
+            
             b = 0; % initialize
             hw = waitbar(0,'Beamforming ...'); % create a wait bar
-            for m = 1:chd.M % for each transmit
-                % extract the channel data for this transmit
-                chd_ = chds(m);
-
-                % make the eikonal delays algin with the channel data
-                tau = tau_rx + tau_tx{m}; % I1 x I2 x I3 x N x 1
-                tau = reshape(tau, [],1,1,chd_.N,1); % I x 1 x 1 x N x 1
-                tau = swapdim(tau, [1,4], [chd_.tdim, chd_.ndim]); % move to matching dimensions
-
-                % sample and unpack the data
-                y = sample(chd_, tau, interp_method); % sample in matching dims
-                y = swapdim(y, chd_.tdim, D+1); % perm(1 x N x 1) [x F x ... ] x I
-                y = reshape(y, [size(y,1:D), sz]); % perm(1 x N x 1) [x F x ... ] x I1 x I2 x I3
-
-                % extract the apodization
-                a = sub(apod, min(m, size(apod,5)), 5); % recieve apodization per transmit (I1 x I2 x I3 x N x 1)
-                a = ipermute(a, ord); % move apodization into matching dimensions  perm(1 x N x 1) [x 1 x ... ] x I1 x I2 x I3
-
-                % apply apodization and sum over receives
-                % TODO: allow options to specify (i.e. skip) summation
-                b = b + sum(a .* y, chd_.ndim); 
+            parfor (m = 1:Mp, 0) % for each transmit (no cluster because parpool may cause memory issues here)
+                % make the eikonal delays and apodization align with the channel data
+                tau = tau_rx + tau_tx{m}; % I1 x I2 x I3 x N x M
+                if isscalar(apod), a = apod{1}; else, a = apod{m}; end % recieve apodization per transmit (I1 x I2 x I3 x N x M)
+                a = ipermute(a, ord); % move time delays / apodization into matching dimensions  
+                tau = ipermute(tau, ord); % both: perm(1 x N x M) [x 1 x ... ] x I1 x I2 x I3
+                    
+                % sample and unpack the data (perm(1 x N x M) [x F x ... ] x I1 x I2 x I3)
+                ym = sample(chds(m), tau, interp_method, a, sdim); % sample and sum over rx/tx maybe
                 
-                if isvalid(hw), waitbar(m/chd_.M, hw); end % update if not closed
+                % sum or accumulate over transmit blocks
+                if sumtx, b = b + ym; else, bm{m} = ym; end 
+                if isvalid(hw), waitbar((Mp-m+1)/Mp, hw); end % update if not closed: parfor loops go backwards
             end
-            if isvalid(hw), close(hw); end % close if not closed
+            if ~sumtx, b = cat(chd.mdim,bm{:}); end % combine if not summing tx
+            if isvalid(hw), close(hw); end % close waitbar if not already closed
 
             % move image output into lower dimension
             if istall(b), b = gather(b); end % we have to gather tall arrays to place anything in dim 1
-            b = swapdim(b, 1:3, D+(1:3)); % move image dimensions down
+            b = swapdim(b, 1:3, D+(1:3)); % move image dimensions down (I1 x I2 x I3 [x F x ... ] x perm(1 x N x M))
         end
     
         function b = bfDAS(self, chd, c0, varargin)
