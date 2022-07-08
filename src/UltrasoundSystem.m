@@ -2484,28 +2484,58 @@ classdef UltrasoundSystem < handle
         function b = bfEikonal(self, chd, medium, cscan, varargin)
             % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
             %
-            % b = BFEIKONAL(self, chd, medium) creates a b-mode 
+            % b = BFEIKONAL(self, chd, medium, cscan) creates a b-mode 
             % image b from the ChannelData chd and Medium medium using the 
-            % delays given by the solution to the eikonal equation. The 
-            % equation is solved via the fast marching method.
+            % delays given by the solution to the eikonal equation defined 
+            % on the ScanCartesian cscan. The transmitter and receiver must
+            % fall within the cscan. The step size in each dimension must
+            % be identical. The equation is solved via the fast marching 
+            % method. 
             % 
-            % b = BFEIKONAL(self, chd, medium, cscan) defines the Medium on
-            % the ScanCartesian cscan rather than on the UltrasoundSystem
-            % scan property.
-            %
             % b = BFEIKONAL(..., Name,Value, ...) defines additional
             % parameters via Name/Value pairs
             %
             % Inputs:
-            %   interp     - interpolation method for ChannelData methods
-            %   parcluster - Parcluster object
-            %   apod       - apodization - must be a size I1 x I2 x I3 x N
-            %                x M array where [I1 x I2 x I3] is the size of
-            %                the scan property, N is the number of receive
-            %                elements and M is the number of transmitter
-            %                elements.
+            %   
+            % keep_rx -     setting this to true returns an extra dimension
+            %               containing the data for each receive prior to
+            %               summation. The default is false.
+            %
+            % keep_tx -     setting this to true returns an extra dimension
+            %               containing the data for each transmit prior to
+            %               summation. The default is false.
+            %
+            % interp  -     specifies the method for interpolation. Support 
+            %               is provided by the ChannelData/sample method. 
+            %               The default is 'linear'.
             % 
-            % See also DAS BFADJOINT
+            %   
+            % apod    -     specifies and ND-array A for apodization. A must 
+            %               be broadcastable to size  I1 x I2 x I3 x N x M 
+            %               where I1 x I2 x I3 is the size of the image, N 
+            %               is the number of receivers, and M is the number
+            %               of transmits. The default is 1.
+            % 
+            %   
+            % bsize   -     sets the ChannelData block size to at most B 
+            %               transmits at a time in order to limit memory 
+            %               usage. If memory is a concern, lowering B may 
+            %               help. If there is ample memory available, a 
+            %               higher value of B may yield better performance.
+            % 
+            %   
+            % parcluster  - specifies a parcluster object for 
+            %               parallelization. The default is the current 
+            %               parallel pool returned by gcp.
+            %               Setting clu = 0 avoids using a parallel cluster
+            %               or pool. 
+            %               A parallel.ThreadPool will tend to perform 
+            %               better than a parallel.ProcessPool because
+            %               threads are allowed to share memory.
+            %               Use 0 when operating on a GPU or if memory 
+            %               usage explodes on a parallel.ProcessPool.
+            % 
+            % See also DAS BFDAS BFADJOINT
 
             % if not given a new Scan, use the UltrasoundSystem Scan
             if nargin < 3 || isempty(cscan), cscan = self.scan; end
