@@ -1,4 +1,4 @@
-classdef interpTest < matlab.unittest.TestCase
+classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
     % KERNTEST - Test the compte kernels within QUPS
     %
     % This class test the various compute kernels within QUPS

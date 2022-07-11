@@ -1,4 +1,4 @@
-classdef (TestTags = "Github")InitTest < matlab.unittest.TestCase
+classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
     % INITTEST - Initialization tests class
     %
     % This class test that all objects initialize properly
