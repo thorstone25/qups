@@ -38,7 +38,7 @@ classdef SimTest < matlab.unittest.TestCase
             switch clp
                 case "background", test.assumeTrue(logical(exist('backgroundPool','builtin')), ...
                         'No backgroundPool available on this platform.');
-                case "local", test.assumeTrue(ismember('local', parallel.clusterProfiles()), ...
+                case ["local"], test.assumeTrue(ismember('local', parallel.clusterProfiles()), ...
                         'No local cluster profile available on this platform.');
             end
             
@@ -63,7 +63,7 @@ classdef SimTest < matlab.unittest.TestCase
                 case "local",               test.clu = parcluster('local');
                 case "threads",     if ecp, test.clu = parpool('threads'); end
                 case "background",  if ecp, test.clu = backgroundPool(); end
-                case "pool",        if ecp, test.clu = parpool('SpmdEnabled', false); end
+                case "pool",        if ecp, test.clu = parpool(); end % default
             end
         end
 
@@ -190,7 +190,7 @@ classdef SimTest < matlab.unittest.TestCase
 
     % Github test routine
     methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
-        function github_dispatch(test)
+        function github_pscat(test)
             % only test Green's function
             % switch terp, case {'nearest','linear','cubic'}, otherwise, return; end
             % terp = 'cubic';
@@ -239,7 +239,7 @@ classdef SimTest < matlab.unittest.TestCase
                 case 'FieldII',       chd = calc_scat_all   (us, targ, [1,1], opts{:}); % use FieldII,
                 case 'FieldII_multi', chd = calc_scat_multi (us, targ, [1,1], opts{:}); % use FieldII,
                 case 'SIMUS'  ,       chd = simus           (us, targ, 'periods', 1, 'dims', 3, opts{:}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-                case 'Greens' ,       chd = greens          (us, targ, [1,1], opts{:}, 'device', 0, 'tall', true);
+                case 'Greens' ,       chd = greens          (us, targ, [1,1], opts{:});
                 case 'kWave',         if(gpuDeviceCount) && (clu == 0 || isa(clu, 'parallel.Cluster')), dtype = 'gpuArray-double'; else, dtype = 'double'; end % data type for k-Wave
                                       chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parcluster', clu, 'PlotSim', false, 'DataCast', dtype); % run locally, and use an FFT friendly PML size
                 otherwise, warning('Simulator not recognized'); return;
