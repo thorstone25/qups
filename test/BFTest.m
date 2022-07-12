@@ -133,7 +133,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Simulate a point target
             % run on CPU to use spline interpolation
-            chd = greens(us, targ, [1,1], 'interp', 'cubic'); % use a Greens function with a GPU if available!
+            chd = greens(us, targ, [1,1], 'interp', 'cubic', 'tall', true); % use a Greens function with a GPU if available!
 
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
@@ -170,10 +170,10 @@ classdef BFTest < matlab.unittest.TestCase
     
     % Github test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github'})
-        function github_dispatch(test, gdev, bf_name, prec, terp)
+        function github_psf(test, gdev, bf_name, prec, terp)
             switch bf_name, case {'Adjoint'}, return; end % not supported
             switch prec, case {'single'}, otherwise, return; end % only test one precision
-            switch terp, case {'cubic'}, otherwise, return; end % only test one interpolation
+            switch terp, case {'nearest'}, otherwise, return; end % only test one interpolation
             
             % forward remaining
             psf(test, gdev, bf_name, prec, terp); 
@@ -182,7 +182,7 @@ classdef BFTest < matlab.unittest.TestCase
 
     % Full test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
-        function full_dispatch(test, gdev, bf_name, prec, terp)
+        function full_psf(test, gdev, bf_name, prec, terp)
             % forward all
             psf(test, gdev, bf_name, prec, terp); 
         end 
