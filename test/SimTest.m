@@ -17,7 +17,7 @@ classdef SimTest < matlab.unittest.TestCase
 
     properties(ClassSetupParameter)
         gpu   = getgpu()
-        clp = {'none', 'threads', 'background', 'pool', 'local'}; % cluster: local has to create a temp cluster each time
+        clp = {'none', 'threads', 'pool', 'background', 'local'}; % cluster: local has to create a temp cluster each time
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
             'linpw', string({"L11-5V",'Plane-wave'}), ...
@@ -34,6 +34,15 @@ classdef SimTest < matlab.unittest.TestCase
             setup(gpu{:}); % compile what we can
             if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
 
+            % ensure we can actually start these pools
+            switch clp
+                case "background", test.assumeTrue(logical(exist('backgroundPool','builtin')), ...
+                        'No backgroundPool available on this platform.');
+                case "local", test.assumeTrue(ismember('local', parallel.clusterProfiles()), ...
+                        'No local cluster profile available on this platform.');
+            end
+            
+
             % setup the parcluster/parpool
             hcp = gcp('nocreate'); % find the active pool
             if ~isempty(hcp)
@@ -44,8 +53,9 @@ classdef SimTest < matlab.unittest.TestCase
                     case "pool", del = ~isa(hcp, 'parallel.ProcessPool'); % delete if not a parpool (process pool)
                 end
                 % delete only if we gotta
-                if del, delete(hcp); hcp = gcp('nocreate'); end 
+                if del, delete(hcp); end 
             end
+            
             % choose the new cluster, creating it if appropriate
             ecp = isempty(gcp('nocreate'));
             switch clp 
@@ -53,7 +63,7 @@ classdef SimTest < matlab.unittest.TestCase
                 case "local",               test.clu = parcluster('local');
                 case "threads",     if ecp, test.clu = parpool('threads'); end
                 case "background",  if ecp, test.clu = backgroundPool(); end
-                case "pool",        if ecp, test.clu = parpool('local','SpmdEnabled', false); end
+                case "pool",        if ecp, test.clu = parpool('SpmdEnabled', false); end
             end
         end
 
