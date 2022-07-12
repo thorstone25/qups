@@ -13,7 +13,7 @@ classdef BFTest < matlab.unittest.TestCase
     end
 
     properties(ClassSetupParameter)
-        par   = struct('one_thread', {{}}, 'threadpool', {{'parallel'}});
+        par   = struct('one_thread', {{}})%, 'threadpool', {{'parallel'}});
         gpu   = getgpu()
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
@@ -26,7 +26,7 @@ classdef BFTest < matlab.unittest.TestCase
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
         % Setup for the entire test class
-        function addcache(test, par, gpu, xdc_seq_name)
+        function addcache(test)
             % ADDCACHE - add the cached bin folder
             % adds the cached bin folder - this prevents recompilation for
             % each and every test, which can be a majority of the
@@ -36,13 +36,13 @@ classdef BFTest < matlab.unittest.TestCase
         end
 
         % Shared setup for the entire test class
-        function setupQUPS(test, par, gpu, xdc_seq_name)
+        function setupQUPS(test, par, gpu)
             cd(BFTest.proj_folder); % call setup relative to here
             setup(par{:}, gpu{:}); % compile what we can
             if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
         end
 
-        function setupQUPSdata(test, par, gpu, xdc_seq_name)
+        function setupQUPSdata(test, xdc_seq_name)
             % create point target data with the configuration
 
             % simple point target 30 mm depth
@@ -135,7 +135,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Simulate a point target
             % run on CPU to use spline interpolation
-            chd = greens(us, targ, [1,1], 'interp', 'cubic'); % use a Greens function
+            chd = gather(greens(us, targ, [1,1], 'interp', 'cubic')); % use a Greens function
 
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
@@ -152,12 +152,6 @@ classdef BFTest < matlab.unittest.TestCase
         end
     end
     methods(TestClassTeardown)
-        function teardownQUPS(test)
-            cd(BFTest.proj_folder);
-            [test.chd, test.us, test.targ, test.scanc, test.tscan] = deal([]); 
-            teardown; % basic teardown should run
-            try delete(gcp('nocreate')); end % undo parpool if exists
-        end
     end
 
     % some of these options aren't supported yet.
@@ -172,13 +166,11 @@ classdef BFTest < matlab.unittest.TestCase
     
     % Github test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github'})
-        function github_psf(test, gdev, bf_name, prec, terp)
-            switch bf_name, case {'Adjoint'}, return; end % not supported
-            switch prec, case {'single'}, otherwise, return; end % only test one precision
-            switch terp, case {'nearest'}, otherwise, return; end % only test one interpolation
+        function github_psf(test, bf_name)%, prec, terp)
+            switch bf_name, case {'Eikonal', 'Adjoint'}, return; end % Adjoint not supported, Eikonal too large?
             
-            % forward remaining
-            psf(test, gdev, bf_name, prec, terp); 
+            % only test 1 precision/interpolation
+            psf(test, 0, bf_name, 'singleT', 'nearest'); 
         end
     end
 
