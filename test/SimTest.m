@@ -38,7 +38,7 @@ classdef SimTest < matlab.unittest.TestCase
             switch clp
                 case "background", test.assumeTrue(logical(exist('backgroundPool','builtin')), ...
                         'No backgroundPool available on this platform.');
-                case ["local"], test.assumeTrue(ismember('local', parallel.clusterProfiles()), ...
+                case ["local", "pool"], test.assumeTrue(ismember('local', parallel.clusterProfiles()), ...
                         'No local cluster profile available on this platform.');
             end
             
@@ -63,7 +63,7 @@ classdef SimTest < matlab.unittest.TestCase
                 case "local",               test.clu = parcluster('local');
                 case "threads",     if ecp, test.clu = parpool('threads'); end
                 case "background",  if ecp, test.clu = backgroundPool(); end
-                case "pool",        if ecp, test.clu = parpool(); end % default
+                case "pool",        if ecp, test.clu = parpool('local', 'SpmdEnabled',true); end % default
             end
         end
 
