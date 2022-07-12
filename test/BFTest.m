@@ -125,6 +125,8 @@ classdef BFTest < matlab.unittest.TestCase
             us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
 
             % Make the transducer impulse tighter
+            us.xdc.numel = 64; % reduce the number of elements
+            us.xdc.fc = us.fs/8; % set to 5MHZ, as a ratio of sampling frequency
             us.xdc.bw_frac = 1.5;
             us.xdc.impulse = us.xdc.ultrasoundTransducerImpulse(); 
             % us.xdc.impulse = Waveform.Delta(); 
@@ -133,7 +135,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Simulate a point target
             % run on CPU to use spline interpolation
-            chd = greens(us, targ, [1,1], 'interp', 'cubic', 'tall', true); % use a Greens function with a GPU if available!
+            chd = greens(us, targ, [1,1], 'interp', 'cubic'); % use a Greens function
 
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
