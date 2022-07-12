@@ -28,15 +28,6 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
-        % Setup for the entire test class
-        function addcache(test, gpu, clp, xdc_seq_name) 
-            % ADDCACHE - add the cached bin folder
-            % adds the cached bin folder - this prevents recompilation for
-            % each and every test, which can be a majority of the
-            % computational effort / time 
-            try addpath(fullfile(SimTest.proj_folder,'bin')); end %#ok<TRYNC>
-        end
-
         % Shared setup for the entire test class
         function setupQUPS(test, gpu, clp, xdc_seq_name)
             cd(SimTest.proj_folder); % call setup relative to here
@@ -66,7 +57,7 @@ classdef SimTest < matlab.unittest.TestCase
             end
         end
 
-        function setupQUPSdata(test, gpu, clp, xdc_seq_name)
+        function setupQUPSdata(test, xdc_seq_name)
             % create point target data with the configuration
 
             % simple point target 30 mm depth
@@ -188,18 +179,17 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     % Github test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github'})
-        function github_dispatch(test, sim_name, terp)
-            % skip kWave/SIMUS: kWave takes too long; SIMUS is inaccurate
-            switch sim_name, case {'kWave', 'SIMUS'},                    return; end
-            switch terp, case {'nearest', 'linear', 'cubic'}, otherwise, return; end
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
+        function github_dispatch(test)
+            % only test Green's function
+            % switch terp, case {'nearest','linear','cubic'}, otherwise, return; end
+            % terp = 'cubic';
 
             % skip local pools - they take too long;
-            if isa(test.clu, 'parallel.Cluster'), return; end
+            if isa(test.clu, 'parallel.Cluster') || isa(test.clu, 'parallel.ProcessPool'), return; end
             
             % forward remaining
-            pscat(test, sim_name, terp);
-            greens_devs(test, sim_name, terp);
+            pscat(test, 'Greens', 'cubic');
         end
     end
 
@@ -340,6 +330,16 @@ classdef SimTest < matlab.unittest.TestCase
     methods(Static)
         % PROJ_FOLDER - Identifies the base folder for the project
         function f = proj_folder(), f = fullfile(fileparts(mfilename('fullpath')), '..'); end
+
+        function addcache() 
+            % ADDCACHE - add the cached bin folder
+            % adds the cached bin folder - this prevents recompilation for
+            % each and every test, which can be a majority of the
+            % computational effort / time 
+            try addpath(fullfile(SimTest.proj_folder,'bin')); end %#ok<TRYNC>
+        end
+
+
     end
 end
 

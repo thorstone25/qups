@@ -135,7 +135,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Simulate a point target
             % run on CPU to use spline interpolation
-            chd = gather(greens(us, targ, [1,1], 'interp', 'cubic')); % use a Greens function
+            chd = gather(greens(us, targ, [1,1], 'interp', 'linear')); % use a Greens function
 
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
@@ -143,15 +143,23 @@ classdef BFTest < matlab.unittest.TestCase
             if isreal(chd), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
 
             % save QUPS objects for this test case
-            test.chd = chd; 
-            test.us = us; 
-            test.targ = targ;
-            test.scanc = scanc;
-            test.tscan = tscan; 
+            test.chd    = chd; 
+            test.us     = us; 
+            test.targ   = targ;
+            test.scanc  = scanc;
+            test.tscan  = tscan; 
 
         end
     end
     methods(TestClassTeardown)
+        function teardownQUPSdata(test)
+            % delete data
+            test.chd    = [];
+            test.us     = []; 
+            test.targ   = [];
+            test.scanc  = [];
+            test.tscan  = []; 
+        end
     end
 
     % some of these options aren't supported yet.
@@ -165,7 +173,7 @@ classdef BFTest < matlab.unittest.TestCase
     end
     
     % Github test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github'})
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
         function github_psf(test, bf_name)%, prec, terp)
             switch bf_name, case {'Eikonal', 'Adjoint'}, return; end % Adjoint not supported, Eikonal too large?
             
@@ -177,8 +185,7 @@ classdef BFTest < matlab.unittest.TestCase
     % Full test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
         function full_psf(test, gdev, bf_name, prec, terp)
-            % forward all
-            psf(test, gdev, bf_name, prec, terp); 
+            psf(test, gdev, bf_name, prec, terp); % forward all
         end 
     end
 
