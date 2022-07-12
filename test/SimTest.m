@@ -17,7 +17,7 @@ classdef SimTest < matlab.unittest.TestCase
 
     properties(ClassSetupParameter)
         gpu   = getgpu()
-        clp = {'none', 'threads', 'pool', 'background', 'local'}; % cluster: local has to create a temp cluster each time
+        clp = poolfilter({'none', 'threads', 'pool', 'background', 'local'}); % cluster: local has to create a temp cluster each time
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
             'linpw', string({"L11-5V",'Plane-wave'}), ...
@@ -356,4 +356,18 @@ end
 function s = getgpu()
 s.no_ptx = {};
 if gpuDeviceCount, s.ptx = {'CUDA'}; end
+end
+
+function pnms = poolfilter(pnms)
+for i = numel(pnms):-1:1
+    tf(i) = true;
+    switch pnms{i}
+        case "none",
+        case "local",       try test.clu = parcluster('local'); catch, tf(i) = false; end
+        case "threads",     try test.clu = parpool('threads'); close(gcp()); catch,  tf(i) = false; end
+        case "background",  try test.clu = backgroundPool(); close(gcp()); catch, tf(i) = false; end
+        case "pool",        try test.clu = parpool('local', 'SpmdEnabled',true); close(gcp()); catch tf(i) = false; end
+    end
+end
+pnms = pnms(tf); % filter the pools that fail to launch
 end
