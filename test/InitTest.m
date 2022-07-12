@@ -1,9 +1,9 @@
-classdef InitTest < matlab.unittest.TestCase
+classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
     % INITTEST - Initialization tests class
     %
     % This class test that all objects initialize properly
 
-    properties(ClassSetupParameter)
+    properties(TestParameter)
         par   = struct('no_parpool', {{}}, 'def_parpool', {{'parallel'}});
         cache = struct('no_cache', {{}}, 'cache', {{'cache'}});
         gpu   = struct('no_ptx', {{}}, 'ptx', {{'CUDA'}});
@@ -11,9 +11,9 @@ classdef InitTest < matlab.unittest.TestCase
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
         % Shared setup for the entire test class
-        function setupQUPS(test, par, cache, gpu)
+        function setupQUPS(test)
             cd(InitTest.proj_folder); % setup relative to here
-            setup(par{:}, gpu{:}, cache{:}); % setup with each option combo should work
+            setup; % setup alone to add paths
         end
     end
     methods(TestClassTeardown)
@@ -28,6 +28,11 @@ classdef InitTest < matlab.unittest.TestCase
         % Setup for each test
     end
     methods(Test)
+        function initQUPS(test, par, cache, gpu)
+            cd(InitTest.proj_folder); % setup relative to here
+            setup(par{:}, gpu{:}, cache{:}); % setup with each option combo should work
+        end
+
         function initxdc(test)
             % INITXDC - Assert that Transducer constructors initialize
             % without arguments

@@ -279,8 +279,8 @@ classdef UltrasoundSystem < handle
             end
 
             % cast dimensions to compute in parallel
-            ptc_rx = permute(ptc_rx, [1,6,2,4,3,5]); % 3 x 1 x N x 1 x En x 1
-            ptc_tx = permute(ptc_tx, [1,6,4,2,5,3]); % 3 x 1 x 1 x M x  1 x Em
+            ptc_rx = permute(ptc_rx, [6,1,2,4,3,5]); % 1 x 3 x N x 1 x En x 1
+            ptc_tx = permute(ptc_tx, [6,1,4,2,5,3]); % 1 x 3 x 1 x M x  1 x Em
             
             % get maximum necessary time sample (use manhattan distance and
             % sound speed to give an upper bound)
@@ -298,7 +298,7 @@ classdef UltrasoundSystem < handle
             kern = wv.sample(tk);
 
             F = numel(target);
-            if kwargs.verbose hw = waitbar(0); end
+            if kwargs.verbose, hw = waitbar(0); end
 
             for f = F:-1:1 % for each target
             % get minimum/maximum sample times
@@ -315,8 +315,8 @@ classdef UltrasoundSystem < handle
 
             % splice
             c0  = target(f).c0;
-            pos = target(f).pos; % 3 x S
-            amp = target(f).amp; % 1 x S
+            pos = target(f).pos.'; % S x 3
+            amp = target(f).amp.'; % S x 1
             fs_ = self.fs;
             if kwargs.device && exist('greens.ptx', 'file') ... % use the GPU kernel
                     && (ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]))
@@ -341,7 +341,7 @@ classdef UltrasoundSystem < handle
 
                 % cast data / map inputs
                 [x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_] = dealfun(cfun, ...
-                    x, pos, amp, ptc_rx, ptc_tx, kern, t(1)/fs_, tk(1), fs_, 1/c0 ...
+                    x, pos.', amp.', ptc_rx, ptc_tx, kern, t(1)/fs_, tk(1), fs_, 1/c0 ...
                     );
 
                 % re-map sizing
@@ -360,20 +360,21 @@ classdef UltrasoundSystem < handle
                 x = k.feval(x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_, [E,E], flagnum);
 
             else % operate in native MATLAB
-                % TODO: set data types | cast to GPU? | perform on GPU?
-                if kwargs.device > 0, gpuDevice(kwargs.device); end
-                if kwargs.device && ~kwargs.tall,
-                    [pos, ptc_rx, ptc_tx, t, tk, kern] = dealfun(...
-                        @gpuArray, pos, ptc_rx, ptc_tx, t, tk, kern ...
-                        );
-                end
-
                 % make time in dim 2
                 tvec = reshape(t,1,[]); % 1 x T full time vector
                 kern_ = reshape(kern,1,[]); % 1 x T' signal kernel
 
-                % cast to tall types if requested
-                if kwargs.tall, [tvec, kern_] = dealfun(@tall, tvec, kern_); end
+                % TODO: set data types | cast to GPU/tall? | reset GPU?
+                if kwargs.device > 0, gpuDevice(kwargs.device); end
+                if kwargs.device && ~kwargs.tall,
+                                  [pos, ptc_rx, ptc_tx, tvec, kern_] = dealfun(...
+                        @gpuArray, pos, ptc_rx, ptc_tx, tvec, kern_ ...
+                        );
+                elseif kwargs.tall
+                              [pos, ptc_rx, ptc_tx, tvec] = dealfun(...
+                        @tall, pos, ptc_rx, ptc_tx, tvec ...
+                        );
+                end
 
                 % for each tx/rx pair, extra subelements ...
                 % TODO: parallelize where possible
@@ -385,18 +386,16 @@ classdef UltrasoundSystem < handle
                     for em = 1:E
                         for en = 1:E
                             % compute time delays
-                            % make tall in the scatterer dimension
                             % TODO: do this via ray-path propagation through a
                             % medium
                             % S x 1 x N x M x 1 x 1
-                            r_rx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_rx, en, 5)),1,2);
-                            r_tx = swapdim(vecnorm(sub(pos,s,2) - sub(ptc_tx, em, 6)),1,2);
+                            r_rx = vecnorm(sub(pos,s,1) - sub(ptc_rx, en, 5),2,2);
+                            r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
                             tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
                             tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
 
-                            % compute the contribution
-                            % S x 1 x N x M x 1 x 1
-                            att = sub(amp,s,2).';% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
+                            % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
+                            att = sub(amp,s,1);% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
 
                             % get 0-based sample time delay
                             % switch time and scatterer dimension
@@ -405,11 +404,12 @@ classdef UltrasoundSystem < handle
 
                             % S x T x N x M x 1 x 1
                             if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
-                                % compute as a tall array
-                                s_ = matlab.tall.transform(@(tvec, tau_tx, tau_rx, kern) ...
-                                    nan2zero(wsinterpd(kern, tvec - (tau_tx + tau_rx + t0)*fs_, ...
-                                    2, att, 1, kwargs.interp, 0)), ...
-                                    tvec, tau_tx, tau_rx, kern_ ...
+                                % compute as a tall array  % S | T x N x M x 1 x 1
+                                tau = tvec - (tau_tx + tau_rx + t0)*fs_; % create tall ND-array
+                                s_ = matlab.tall.transform( ...
+                                    @(tau, att) wsinterpd(kern_, tau, 2, att, 1, kwargs.interp, 0), ...
+                                    ... @(x) sum(x, 1, 'omitnan'), ... reduce
+                                    tau, att ...
                                     );
                                 
                                 % add contribution (1 x T x N X M)
@@ -445,6 +445,13 @@ classdef UltrasoundSystem < handle
 
             % make a channel data object (T x N x M)
             chd(f) = ChannelData('t0', sub(t,1,1) ./ fs_, 'fs', fs_, 'data', shiftdim(x,1));
+
+            % truncate the data if possible
+            iszero = all(chd(f).data == 0, 2:ndims(chd(f).data)); % true if 0 for all tx/rx/targs
+            n0 = find(cumsum(~iszero, 'forward'), 1, 'first');
+            T_ = find(cumsum(~iszero, 'reverse'), 1, 'last' );
+            chd(f) = sub(chd(f), n0:T_, chd(f).tdim);
+
 
             % synthesize linearly
             [chd(f)] = self.focusTx(chd(f), self.sequence, 'interp', kwargs.interp);

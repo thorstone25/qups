@@ -17,3 +17,8 @@ jobs:
             release: ${{matrix.release}}
       - name: Run tests and generate artifacts
         uses: matlab-actions/run-tests@v1
+        with: 
+            select-by-folder: test
+            select-by-tag: Github
+            
+

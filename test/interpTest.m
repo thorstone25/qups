@@ -1,4 +1,4 @@
-classdef interpTest < matlab.unittest.TestCase
+classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
     % KERNTEST - Test the compte kernels within QUPS
     %
     % This class test the various compute kernels within QUPS
@@ -28,7 +28,7 @@ classdef interpTest < matlab.unittest.TestCase
     properties(TestParameter)
         % all permutations to test
         % ord = {[1,2,3,4], [1,3,2,4], [1,4,2,3]} % permute the data?
-        dsize = {[64 128 4 3 2]} % data test set size
+        dsize = {[16 32 4 3 2]} % data test set size
         terp = {'cubic', 'nearest', 'linear'}; % overlapping methods
         dsum = {[], [2], [3,4], 6} % summation dimensions
         wvecd = {[], 3, [3,4]} % different outer-product weights dimensions
