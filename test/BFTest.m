@@ -65,7 +65,7 @@ classdef BFTest < matlab.unittest.TestCase
                 switch seq_name
                     case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
                     case 'Plane-wave'
-                        [amin, amax, Na] = deal( -25 ,  25 , 26 );
+                        [amin, amax, Na] = deal( -25 ,  25 , 25 );
                         seq = SequenceRadial('type', 'PW', ...
                             'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
                     case 'Focused'
@@ -79,7 +79,7 @@ classdef BFTest < matlab.unittest.TestCase
             elseif isa(xdc, 'TransducerConvex')
                 switch seq_name
                     case 'sector'
-                        [amin, amax, Na] = deal( -40 ,  40 , 41 );
+                        [amin, amax, Na] = deal( -15 ,  15 , 21 );
                         seq = SequenceRadial('type', 'VS', 'c0', targ.c0, ...
                             'angles', linspace(amin, amax, Na), ...
                             'ranges', norm(xdc.center) + 35e-3, 'apex', xdc.center ...
@@ -229,7 +229,7 @@ classdef BFTest < matlab.unittest.TestCase
             % TODO: peak should be ~near~ [0, 30mm] scan - check for this
             [i,j] = deal(argmin(abs(scan.z - targ.pos(3))), argmin(abs(scan.x - targ.pos(1))));
             [xo,zo] = deal(scan.x(j), scan.z(i)); % ideal max, discrete
-            nmax = argmax(b_im, [], 'all');
+            nmax = argmax(b_im, [], 'all', 'linear');
             [X,~,Z] = scan.getImagingGrid();
             [x, z] = deal(X(nmax), Z(nmax)); % image max
             
