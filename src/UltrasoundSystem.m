@@ -446,6 +446,13 @@ classdef UltrasoundSystem < handle
             % make a channel data object (T x N x M)
             chd(f) = ChannelData('t0', sub(t,1,1) ./ fs_, 'fs', fs_, 'data', shiftdim(x,1));
 
+            % truncate the data if possible
+            iszero = all(chd(f).data == 0, 2:ndims(chd(f).data)); % true if 0 for all tx/rx/targs
+            n0 = find(cumsum(~iszero, 'forward'), 1, 'first');
+            T_ = find(cumsum(~iszero, 'reverse'), 1, 'last' );
+            chd(f) = sub(chd(f), n0:T_, chd(f).tdim);
+
+
             % synthesize linearly
             [chd(f)] = self.focusTx(chd(f), self.sequence, 'interp', kwargs.interp);
             end
