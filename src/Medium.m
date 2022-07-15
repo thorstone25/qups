@@ -181,6 +181,28 @@ classdef Medium < handle
     
     end
 
+    % fullwave interface
+    methods
+        % get Fullwave compatible map struct
+        function maps = getFullwaveMap(self, scan)
+            % GETFULLWAVEMAP - Get Fullwave compatible map structure
+            %
+            % maps = getFullwaveMap(self, scan) returns a map sampled on
+            % the Scan scan.
+            %
+            % See also SCANCARTESIAN MEDIUM/PROPS
+
+            % sample all maps on the grid points
+            [c, rho, BoA, alpha, ~] = props(self, scan);
+
+            % set the map properties
+            maps = struct('cmap', c, 'rmap', rho, 'amap', alpha, 'nmap', 1 + BoA./2);
+
+            % Use 0 for invalid properties in fullwave(?)
+            for f = string(fieldnames(maps))', maps.(f) = nan2zero(maps.(f)); end
+        end
+    end
+
     % k-Wave interface
     methods
         function kmedium = getMediumKWave(self, scan)
