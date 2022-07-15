@@ -483,7 +483,7 @@ classdef UltrasoundSystem < handle
             % kwarg defaults
             kwargs = struct(...
                 'f0', self.xdc.fc, ...    center frequency of the transmit / simulation
-                'CFL', 0.5, ...         minimum CFL
+                'CFL_max', 0.5, ...       maximum CFL
                 'txdel', 'terp' ...     delay models {'disc', 'cont', 'terp'}
                 );
 
@@ -509,7 +509,7 @@ classdef UltrasoundSystem < handle
             dX   = min(grid.step);  % limit of spatial step size - will be the same in both dimensions
             fs_  = self.fs;         % data sampling frequency
             cfl0 = (c0*(1/fs_)/dX); % cfl at requested frequency
-            modT = ceil(cfl0 / kwargs.CFL); % scaling for desired cfl
+            modT = ceil(cfl0 / kwargs.CFL_max); % scaling for desired cfl
             dT   = (1/fs_)/modT;    % simulation sampling interval
             cfl  = c0 * dT / dX;    % Courant-Friedrichs-Levi condition
             ppw  = c0 / kwargs.f0 / dX; % points per wavelength - determines grid spacing
@@ -569,11 +569,13 @@ classdef UltrasoundSystem < handle
             icmat = icmat .* shiftdim(tx_apod,-1); % (T' x nInPx x nTx)
 
             %% Define the Medium
-            % get maps in X x 1 x Z
-            maps = target.getFullwaveMap({sscan.x, 0, sscan.z});
+            % get maps in some order
+            maps = target.getFullwaveMap(sscan);
+            assert(isscalar(sscan.y), 'Unable to simulate in 3D (y-axis is not scalar).');
 
-            % switch to X x Z x 1
-            for f = string(fieldnames(maps))', maps.(f) = permute(maps.(f), [1,3,2]); end
+            % switch to X x Z x Y(=1)
+            ord = arrayfun(@(c) find(sscan.order == c), 'XZY');
+            for f = string(fieldnames(maps))', maps.(f) = permute(maps.(f), ord); end
 
             %% Store the configuration variables
             conf.sim = {c0,omega0,dur,ppw,cfl,maps,xdcfw,nTic,modT}; % args for full write function
@@ -605,7 +607,7 @@ classdef UltrasoundSystem < handle
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % create the configuration
-            conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'f0', 'CFL', 'txdel'}));
+            conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'f0', 'CFL_max', 'txdel'}));
             conf_args_ = struct2nvpair(conf_args);
             conf = fullwaveConf(self, target, sscan, conf_args_{:});
 
@@ -1954,8 +1956,8 @@ classdef UltrasoundSystem < handle
             ksensor.mask = karray.getArrayBinaryMask(kgrid);
             % ksensor.record = {'p'}; % record the pressure
             % ksensor.record = {'u_non_staggered'}; % record the particle velocity
-            % ksensor.record = {'u'}; % record the original particle velocity
-            ksensor.record = {'u','u_non_staggered', 'p'}; % record whatever, I'm lost
+            ksensor.record = {'u'}; % record the original particle velocity
+            % ksensor.record = {'u','u_non_staggered', 'p'}; % record whatever, I'm lost
 
             % define the source signal(s) for each transmit in the pulse sequence
             % [ksource, t_sig, sig] = self.getKWaveSource(kgrid, kgrid_origin, el_sub_div, target.c0);
@@ -2023,8 +2025,8 @@ classdef UltrasoundSystem < handle
 
             out = cell(self.sequence.numPulse, 1);
             [Np] = deal(self.sequence.numPulse); % splice
-            for puls = self.sequence.numPulse:-1:1
-            % parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
+            % for puls = self.sequence.numPulse:-1:1
+            parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
                 % TODO: make this part of some 'info' logger or something
                 fprintf('\nComputing pulse %i of %i\n', puls, Np);
                 tt_pulse = tic;
@@ -2035,11 +2037,10 @@ classdef UltrasoundSystem < handle
                 % Process the simulation data
                 % x = sensor_data.p;
                 % x = sensor_data.ux_non_staggered;
-                x = sensor_data.ux; % seems easier?
-                combined_sensor_data = karray.combineSensorData(kgrid, x); % N x T
+                x = sensor_data.ux; % get the axial velocity
                 
-                % enforce on CPU
-                out{puls}  = gather(combined_sensor_data).'; % T x N
+                % get sensor data, enforce on CPU (T x N)
+                out{puls}  = gather(karray.combineSensorData(kgrid, x)).'; %#ok<PFBNS> karray is small (~200KB)
 
                 % report timing % TODO: make this part of some 'info' logger or something
                 fprintf('\nFinished pulse %i of %i\n', puls, Np);
