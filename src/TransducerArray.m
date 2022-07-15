@@ -234,7 +234,7 @@ classdef TransducerArray < Transducer
                 j = find(inmap(i,:)==1);
                 if(~isempty(j))
                     j = j(end)+2; % offset by 2 indices in y - this is important!
-                    outmap(i,j)=1; % make a depth of 1 pixel in y
+                    outmap(i,j)= 1; % make a depth of 1 pixel in y
                 end
             end
 
@@ -267,7 +267,7 @@ classdef TransducerArray < Transducer
                 % less_than_max    = xdc.thetas_in < (xdc.thetas(tt) + xdc.dTheta/2);
                 % greater_than_min = xdc.thetas_in > (xdc.thetas(tt) - xdc.dTheta/2);
                 % idtheta = find( less_than_max & greater_than_min);
-                idxn = abs(xdc_.incoords(:,1) - xn(tt)) < self.pitch/2; % x is in-bounds
+                idxn = abs(x(xdc_.incoords(:,1)) - xn(tt)) < self.pitch/2; % x is in-bounds
                 xdc_.incoords(idxn,4) = tt; % assign
 
                 % find center of tt tx element - do each dim separate cause sometimes idtheta is just one value
@@ -279,7 +279,7 @@ classdef TransducerArray < Transducer
                 % less_than_max    = xdc.thetas_out < (xdc.thetas(tt) + xdc.dTheta/2);
                 % greater_than_min = xdc.thetas_out > (xdc.thetas(tt) - xdc.dTheta/2);
                 % idtheta = find( less_than_max & greater_than_min);
-                idxn = abs(xdc_.outcoords(:,1) - xn(tt)) < self.pitch/2; % x is in-bounds
+                idxn = abs(x(xdc_.outcoords(:,1)) - xn(tt)) < self.pitch/2; % x is in-bounds
                 xdc_.outcoords(idxn,4) = tt; % assign
 
                 % find center of tt rx element - do each dim separate cause sometimes
