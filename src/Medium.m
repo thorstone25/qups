@@ -6,7 +6,7 @@ classdef Medium < handle
         BoA0 = NaN;         % reference non-linearity - use 9 in tissue?
         alpha0 = NaN;       % reference power law absorption factor (dB/cm/MHz) - use 0.5 in tissue?
         alphap0 = 1.01;     % global power law absorption exponent
-        pertreg = {};       % regions of alternate properties given in
+                            % regions of alternate properties given in
                             % a cell array of perturbation regions. A 
                             % region can be a {fun, [c, rho, BoA, alpha]} 
                             % tuple where fun is a filtering function that 
@@ -17,7 +17,7 @@ classdef Medium < handle
                             % nd-array of points with x/y/z in the first
                             % dimension and returns the corresponding sound
                             % speed and density values etc. or NaN if the 
-                            % inputs are outside the perturbation region
+        pertreg = {};       % inputs are outside the perturbation region
     end
     
     methods
@@ -309,32 +309,48 @@ classdef Medium < handle
             % compute the properties on the grid
             [c, rho, BoA, alpha, alphap] = self.props(scan);
 
-            x = c; % default
+            x = {}; % init
             i = 1; % manual iteration
-            while i <= numel(varargin), % go through each property
-                v = varargin{i};
-                if (ischar(v) || isstring(v)) % look for a keyword
-                    isfound = true;
-                    switch v
-                        case 'c',       x = c;
-                        case 'rho',     x = rho;
-                        case 'BoA',     x = BoA;
-                        case 'alpha',   x = alpha;
-                        case 'alphap',  x = alphap;
-                        otherwise, isfound = false;
+            axs = {}; % no known axes for plotting
+            while i <= numel(varargin), % go through each argument
+                v = varargin{i}; % extract it
+                if isa(v, 'matlab.graphics.axis.Axes')
+                    axs = arrayfun(@(v){{v}},v); varargin(i) = []; continue; % we found the axes to plot on
+                elseif (ischar(v) || isstring(v) || iscellstr(v)) % look for a keyword
+                    v_ = string(v); % convert all to a string for easier parsing
+                    for j = 1:numel(v_) % for each argument
+                    switch v_(j)
+                        case 'c',       x = [x, {c}];
+                        case 'rho',     x = [x, {rho}];
+                        case 'BoA',     x = [x, {BoA}];
+                        case 'alpha',   x = [x, {alpha}];
+                        case 'alphap',  x = [x, {alphap}];
+                        otherwise, i = i + 1; continue; % not a prop -> move along
                     end
-                    if isfound, 
-                        varargin(i) = []; % delete the property - don't pass to imagesc
-                        continue, 
-                    end 
+                    end
+                    % was a prop: delete it - don't pass to imagesc
+                    varargin(i) = []; 
+                else % not a prop - move along
+                    i = i + 1; 
                 end
-                i = i + 1; % iterate
+            end
+            
+            % if no props found, just show the sound speed
+            if isempty(x), x = {c}; end
+            N = numel(x); % number of plots to show
+            if isempty(axs), % make a subplot for each property
+                if N == 1
+                    axs = {{}}; % don't pass an argument still
+                else
+                for i = 1:N, axs{i} = {subplot(1,N,i)}; end % create subplots
+                end
             end
 
             % plot the sound speed on the scan (no scaling!)
             % TODO: allow user to toggle properties by linking data or
             % making a GUI or something
-            h = imagesc(scan, real(x), varargin{:}); 
+
+            h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, varargin{:}), x, axs);
         end
     end
 end
