@@ -146,12 +146,6 @@ x = permute(x, [1:3,(max(3,ndims(x))+[1,2]),4:ndims(x)]); % (T x N x M x 1 x 1 x
     
 if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
 
-    % match position precision to inputData precision
-    if ~strcmp(idataType, posType) && ~strcmp(fun, 'delays') 
-        warning('Position data type will match the input data type.');
-        posType = idataType;
-    end
-
     % warn if non-linear interp was requested
     switch interp_type
         case "nearest",flagnum = 0;
@@ -201,10 +195,8 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     ptypefun = @(x) gpuArray(typefun(x));
     dtypefun = @(x) complex(ptypefun(x));
     if idataType == "halfT"
-        if isa(x, 'half'), 
-            x = storedInteger(x); 
-            apod = storedInteger(half(apod)); 
-        end
+        ptypefun = @(x) gpuArray(single(x));
+        dtypefun = @(x) complex(halfT(x));
     end
     [x, apod] = dealfun(dtypefun, x, apod);
     [Pi, Pr, Pv, Nv] = dealfun(ptypefun, Pi, Pr, Pv, Nv);

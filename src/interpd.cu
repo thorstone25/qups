@@ -24,6 +24,31 @@ limitations under the License.
 // data is (T x N x F)
 // sample times are (I x N x M)
 
+// make_vec2 - make a vector2 type 
+template<typename T, typename U> __device__ T make_vec2(U val);
+template<typename T, typename U, typename V> __device__ T make_vec2(U x, V y);
+template<typename U> inline __device__ double2 make_vec2<double2>(U val){ 
+    return make_double2(val, val); 
+}
+template<typename U, typename V> __device__ double2 make_vec2<double2>(U x, V y){ 
+    return make_double2(x, y); 
+}
+template<typename U> __device__ float2  make_vec2<float2> (U val){ 
+    return make_float2(val, val); 
+}
+template<typename U, typename V> __device__ float2 make_vec2<float2>(U x, V y){ 
+    return make_float2(x, y); 
+}
+#if (__CUDA_ARCH__ >= 530)
+template<typename U> __device__ half2 make_vec2<half2>  (U val) {  
+    return make_half2(val, val); 
+}
+template<typename U, typename V> __device__ half2 make_vec2<half2>(U x, V y){ 
+    return make_half2(x, y); 
+}
+#endif
+
+#if (__CUDA_ARCH__ >= 530)
 /// @brief Device function to reinterpret ushort values as half
 inline __device__ half2 u2h(const ushort2 a){
     return __halves2half2(__ushort_as_half(a.x), __ushort_as_half(a.y));
@@ -42,43 +67,66 @@ inline __device__ ushort u2h(const half a){
     return __half_as_ushort(a);
 }
 
+#endif
+
+int __device__ modfi(const double x, double* r){
+    double i; // temp var
+    (*r) = modf(x, &i);  // x is the fractional part, i the integer part
+    return (int) i;
+}
+
+int __device__ modfi(const float x, float* r){
+    float i; // temp var
+    (*r) = modff(x, &i);  // x is the fractional part, i the integer part
+    return (int) i;
+}
+
+#if (__CUDA_ARCH__ >= 530)
+int __device__ modfi(const half x, half* r){
+    float i; // temp var
+    (*r) = modff((float) x, &i);  // x is the fractional part, i the integer part
+    return (int) i;
+}
+#endif
+
 /// @brief Device function for nearest-neighbor interpolation
-__device__ half2 nearesth(const ushort2 * x, half tau, half2 no_v) {
+template<typename U, typename T2>
+__device__ T2 nearest(const T2 * x, U tau, T2 no_v) {
     const int ti = (int) roundf(tau); // round to nearest integer
-    return (0 <= ti && ti < QUPS_T) ? u2h(x[ti]) : no_v;
+    return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
 }
 
 /// @brief Device function for linear interpolation
-__device__ half2 linearh(const ushort2 * x, half tau, half2 no_v) {
-    float tf;
+template<typename U, typename T2>
+__device__ T2 linear(const T2 * x, U tau, T2 no_v) {
+    U tf;
     
     // fractional and integer part
-    tau = modf(tau, &tf); 
-    const int ti = (int) tf; 
+    const int ti = modfi(tau, &tf); 
                 
     // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(u2h(x[ti]), u2h(x[ti + 1]), tau) : no_v;
+    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti], x[ti + 1], tf) : no_v;
 }
 
 /// @brief Device function for cubic Hermite interpolation
-__device__ half2 cubich(const ushort2 * x, half tau, half2 no_v) {
-  float tf;
-  float u = modff(tau, &tf);  // u is the fractional part, xf the integer part
-  const int ti = (int) tf;
+template<typename U, typename T2>
+__device__ T2 cubic(const T2 * x, U tau, T2 no_v) {
+  U u;
+  int ti = modfi(tau, &u); // u is the fractional part, ti the integer part
   
   if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
 
-  half2 s0 = u2h(x[ti - 1]);
-  half2 s1 = u2h(x[ti + 0]);
-  half2 s2 = u2h(x[ti + 1]);
-  half2 s3 = u2h(x[ti + 2]);
+  T2 s0 = x[ti - 1];
+  T2 s1 = x[ti + 0];
+  T2 s2 = x[ti + 1];
+  T2 s3 = x[ti + 2];
 
   // Cubic Hermite interpolation (increased precision using fused multiply-adds)
-  half a0 = 0 + u * (-1 + u * (+2 * u - 1));
-  half a1 = 2 + u * (+0 + u * (-5 * u + 3));
-  half a2 = 0 + u * (+1 + u * (+4 * u - 3));
-  half a3 = 0 + u * (+0 + u * (-1 * u + 1));
+  U a0 = 0 + u * (-1 + u * (+2 * u - 1));
+  U a1 = 2 + u * (+0 + u * (-5 * u + 3));
+  U a2 = 0 + u * (+1 + u * (+4 * u - 3));
+  U a3 = 0 + u * (+0 + u * (-1 * u + 1));
   // // Cubic Hermite interpolation (naive, less precise implementation)
   // float a0 = -1 * u * u * u + 2 * u * u - 1 * u + 0;
   // float a1 = +3 * u * u * u - 5 * u * u + 0 * u + 2;
@@ -88,208 +136,152 @@ __device__ half2 cubich(const ushort2 * x, half tau, half2 no_v) {
 }
 
 /// @brief Inline helper code for Lanczos 3-lobe interpolation
-inline __device__ half lanczos_helper(half u, int a) {
-  const half PI = (atanf(1) * 4); // TODO: isn't there a built-in PI value?
-  half ret;
-  if (u == (half) 0.)
-      ret = (half) 1.;
+template<typename T>
+__device__ T lanczos_helper(T u, int a) {
+  const T PI = (atanf(1) * 4); // TODO: isn't there a built-in PI value?
+  T ret;
+  if (u == (T) 0.)
+      ret = (T) 1.;
   else {
-      const half spu  = (half) sinpif(__half2float(u)    );
-      const half spua = (half) sinpif(__half2float(u) / a);
-      ret = (half) 2. * spu * spua / (PI * PI * u * u);
+      const T spu  = sinpif(u    );
+      const T spua = sinpif(u / a);
+      ret = 2. * spu * spua / (PI * PI * u * u);
   }
   return ret;
   // return (u == (half)0.f) ? (half) 1.f : (half) 2.f * sinpif(__half2float(u)) * sinpif(__half2float(u) / a) / (PI * PI * u * u);
 }
 
 /// @brief Device function for Lanczos 3-lobe interpolation
-__device__ half2 lanczos3h(const ushort2 * x, half tau, half2 no_v) {
+template<typename U, typename T2>
+__device__ T2 lanczos3(const T2 * x, U tau, T2 no_v) {
   constexpr int a = 2;  // a=2 for 3-lobe Lanczos resampling
-  float xf;
-  float u = modff(tau, &xf);  // u is the fractional part, xf the integer part
-  const int ti = (int) xf;
+  U u;
+  const int ti = modfi(tau, &u); // u is the fractional part, ti the integer part
   
   if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
   
-  half2 s0 = u2h(x[ti - 1]);
-  half2 s1 = u2h(x[ti + 0]);
-  half2 s2 = u2h(x[ti + 1]);
-  half2 s3 = u2h(x[ti + 2]);
-  half a0 = lanczos_helper(u + 1, a);
-  half a1 = lanczos_helper(u + 0, a);
-  half a2 = lanczos_helper(u - 1, a);
-  half a3 = lanczos_helper(u - 2, a);
+  T2 s0 = x[ti - 1];
+  T2 s1 = x[ti + 0];
+  T2 s2 = x[ti + 1];
+  T2 s3 = x[ti + 2];
+  U a0 = lanczos_helper(u + 1, a);
+  U a1 = lanczos_helper(u + 0, a);
+  U a2 = lanczos_helper(u - 1, a);
+  U a3 = lanczos_helper(u - 2, a);
   return s0 * a0 + s1 * a1 + s2 * a2 + s3 * a3;
 }
 
-/// @brief Device function for nearest-neighbor interpolation
-__device__ float2 nearestf(const float2 * x, float tau, float2 no_v) {
-    const int ti = (int) roundf(tau); // round to nearest integer
-    return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
-}
-
-/// @brief Device function for linear interpolation
-__device__ float2 linearf(const float2 * x, float tau, float2 no_v) {
-    float tf;
-    
-    // fractional and integer part
-    tau = modf(tau, &tf); 
-    const int ti = (int) tf; 
-                
-    // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti], x[ti + 1], tau) : no_v;
-}
-
-/// @brief Device function for cubic Hermite interpolation
-__device__ float2 cubicf(const float2 * x, float tau, float2 no_v) {
-  float tf;
-  float u = modff(tau, &tf);  // u is the fractional part, xf the integer part
-  const int ti = (int) tf;
-  
-  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
-      return no_v;
-
-  float2 s0 = x[ti - 1];
-  float2 s1 = x[ti + 0];
-  float2 s2 = x[ti + 1];
-  float2 s3 = x[ti + 2];
-
-  // Cubic Hermite interpolation (increased precision using fused multiply-adds)
-  float a0 = 0 + u * (-1 + u * (+2 * u - 1));
-  float a1 = 2 + u * (+0 + u * (-5 * u + 3));
-  float a2 = 0 + u * (+1 + u * (+4 * u - 3));
-  float a3 = 0 + u * (+0 + u * (-1 * u + 1));
-  // // Cubic Hermite interpolation (naive, less precise implementation)
-  // float a0 = -1 * u * u * u + 2 * u * u - 1 * u + 0;
-  // float a1 = +3 * u * u * u - 5 * u * u + 0 * u + 2;
-  // float a2 = -3 * u * u * u + 4 * u * u + 1 * u + 0;
-  // float a3 = +1 * u * u * u - 1 * u * u + 0 * u + 0;
-  return (s0 * a0 + s1 * a1 + s2 * a2 + s3 * a3) * 0.5f;
-}
-
-/// @brief Inline helper code for Lanczos 3-lobe interpolation
-inline __device__ float lanczos_helper(float u, int a) {
-  const float PI = atanf(1) * 4; // TODO: isn't there a built-in PI value?
-  return (u == 0.f) ? 1.f : 2.f * sinpif(u) * sinpif(u / a) / (PI * PI * u * u);
-}
-
-/// @brief Device function for Lanczos 3-lobe interpolation
-__device__ float2 lanczos3f(const float2 * x, float tau, float2 no_v) {
-  constexpr int a = 2;  // a=2 for 3-lobe Lanczos resampling
-  float xf;
-  float u = modff(tau, &xf);  // u is the fractional part, xf the integer part
-  const int ti = (int) xf;
-  
-  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
-      return no_v;
-  
-  float2 s0 = x[ti - 1];
-  float2 s1 = x[ti + 0];
-  float2 s2 = x[ti + 1];
-  float2 s3 = x[ti + 2];
-  float a0 = lanczos_helper(u + 1, a);
-  float a1 = lanczos_helper(u + 0, a);
-  float a2 = lanczos_helper(u - 1, a);
-  float a3 = lanczos_helper(u - 2, a);
-  return s0 * a0 + s1 * a1 + s2 * a2 + s3 * a3;
-}
-
-/// @brief Device function for nearest-neighbor interpolation
-__device__ double2 nearest(const double2 * x, double tau, double2 no_v) {
-    const int ti = (int) roundf(tau); // round to nearest integer
-    return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
-}
-
-/// @brief Device function for linear interpolation
-__device__ double2 linear(const double2 * x, double tau, double2 no_v) {
-    double tf;
-    
-    // fractional and integer part
-    tau = modf(tau, &tf); 
-    const int ti = (int) tf; 
-                
-    // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti], x[ti + 1], tau) : no_v;
-}
-
-/// @brief Device function for cubic Hermite interpolation
-__device__ double2 cubic(const double2 * x, double tau, double2 no_v) {
-  double tf;
-  double u = modf(tau, &tf);  // u is the fractional part, xf the integer part
-  const int ti = (int) tf;
-  
-  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
-      return no_v;
-
-  double2 s0 = x[ti - 1];
-  double2 s1 = x[ti + 0];
-  double2 s2 = x[ti + 1];
-  double2 s3 = x[ti + 2];
-
-  // Cubic Hermite interpolation (increased precision using fused multiply-adds)
-  double a0 = 0 + u * (-1 + u * (+2 * u - 1));
-  double a1 = 2 + u * (+0 + u * (-5 * u + 3));
-  double a2 = 0 + u * (+1 + u * (+4 * u - 3));
-  double a3 = 0 + u * (+0 + u * (-1 * u + 1));
-  // // Cubic Hermite interpolation (naive, less precise implementation)
-  // double a0 = -1 * u * u * u + 2 * u * u - 1 * u + 0;
-  // double a1 = +3 * u * u * u - 5 * u * u + 0 * u + 2;
-  // double a2 = -3 * u * u * u + 4 * u * u + 1 * u + 0;
-  // double a3 = +1 * u * u * u - 1 * u * u + 0 * u + 0;
-  return (s0 * a0 + s1 * a1 + s2 * a2 + s3 * a3) * 0.5;
-}
-
-/// @brief Inline helper code for Lanczos 3-lobe interpolation
-inline __device__ double lanczos_helper(double u, int a) {
-  const double PI = atanf(1) * 4; // TODO: isn't there a built-in PI value?
-  return (u == 0.) ? 1. : 2. * sinpif(u) * sinpif(u / a) / (PI * PI * u * u);
-}
-
-/// @brief Device function for Lanczos 3-lobe interpolation
-__device__ double2 lanczos3(const double2 * x, double tau, double2 no_v) {
-  constexpr int a = 2;  // a=2 for 3-lobe Lanczos resampling
-  double xf;
-  double u = modf(tau, &xf);  // u is the fractional part, xf the integer part
-  const int ti = (int) xf;
-  
-  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
-      return no_v;
-  
-  double2 s0 = x[ti - 1];
-  double2 s1 = x[ti + 0];
-  double2 s2 = x[ti + 1];
-  double2 s3 = x[ti + 2];
-  double a0 = lanczos_helper(u + 1, a);
-  double a1 = lanczos_helper(u + 0, a);
-  double a2 = lanczos_helper(u - 1, a);
-  double a3 = lanczos_helper(u - 2, a);
-  return s0 * a0 + s1 * a1 + s2 * a2 + s3 * a3;
-}
-
-inline __device__ half2 sampleh(const ushort2 * x, half tau, int flag, const half2 no_v){
-    half2 val;
-// sample according to the flag
+template <typename U, typename T2>
+__device__ T2 sample(const T2 * x, U tau, int flag, const T2 no_v){
+    // sample according to the flag
          if (flag == 0)
-        val = nearesth  (x, tau, no_v);
+        return nearest  (x, tau, no_v);
     else if (flag == 1)
-        val = linearh   (x, tau, no_v);
+        return linear   (x, tau, no_v);
     else if (flag == 2)
-        val = cubich    (x, tau, no_v);
+        return cubic    (x, tau, no_v);
     else if (flag == 3)
-        val = lanczos3h (x, tau, no_v);
+        return lanczos3 (x, tau, no_v);
     else if (flag == 4)
-        val = linearh   (x, tau, no_v);
+        return linear   (x, tau, no_v);
     else 
-        val = no_v; 
-    
-    return val;
+        return no_v;     
 }
 
+template<typename T2, typename U, typename V> // channel data type, time data type, time-sampling type
+__device__ void interpd_temp(T2 * __restrict__ y, 
+    const T2 * __restrict__ x, const U * __restrict__ tau, const int flag, const T2 no_v) {
+    
+    // get sampling index
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
+    
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
+
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+
+    // if valid sample, for each tx/rx
+    if(i < I && n < N && m < M){
+        # pragma unroll
+        for(size_t f = 0; f < F; ++f){ // per transmit
+            y[i + n*I + m*N*I + f*M*N*I] = sample(&x[n*T + f*N*T], (V)(tau[i + n*I + m*I*N]), flag, no_v);
+        }
+    }
+}
+
+template<typename T2, typename U, typename V> // channel data type, time data type, time-sampling type
+__device__ void wsinterpd_temp(T2 * __restrict__ y, 
+    const T2 * __restrict__ w, const T2 * __restrict__ x, 
+    const U * __restrict__ tau, const size_t * sizes, 
+    const size_t * wstride, const size_t * ystride, const int flag, 
+    const half2 no_v) {
+
+    // get sampling index
+    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
+    
+    // rename for readability
+    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
+    size_t k,l,sz; // weighting / output indexing
+
+    // remap indices
+    const size_t i = tid % I;
+    const size_t m = tid / I;
+
+    // if valid sample, per each i,n,f
+    if(i < I && n < N && m < M){
+        # pragma unroll
+        for(size_t f = 0; f < F; ++f){ // for m
+            // global index
+            const size_t j = (i + n*I + m*N*I + f*N*I*M);
+
+            // get weight vector and output indices
+            k = 0, l = 0; 
+            # pragma unroll
+            for(size_t s = 0; s < S; ++s){ // for each dimension s
+                // calculate the indexing stride for dimension s i.e. 
+                // size of all prior dimensions
+                sz = 1;
+                for(size_t sp = 0; sp < s; ++sp)
+                    sz *= sizes[sp]; 
+
+                const size_t js = ((j / sz) % sizes[s]); // index for this dimension
+                k += js * wstride[s]; // add pitched index for this dim (weights)
+                l += js * ystride[s]; // add pitched index for this dim (outputs)
+            }
+
+            const T2 val = w[k] * sample(&x[n*T + f*N*T], (V)tau[i + n*I + m*I*N], flag, no_v); // weighted sample
+            atomicAdd(&y[l], val); // store
+        }
+    }
+}
+
+
+#if (__CUDA_ARCH__ >= 530)
 
 __global__ void interpdh(ushort2 * __restrict__ y, 
     const ushort2 * __restrict__ x, const unsigned short * __restrict__ tau, const int flag) {
+    interpd_temp<half2, half, float>(
+        (half2 *)y, (const half2 *)x, (const half *)tau, flag, (const half2) make_half2(0,0)
+    );
+}
 
+__global__ void wsinterpd_temp(ushort2 * __restrict__ y, 
+    const ushort2 * __restrict__ w, const ushort2 * __restrict__ x, 
+    const unsigned short * __restrict__ tau, const size_t * sizes, 
+    const size_t * wstride, const size_t * ystride, const int flag, 
+    const ushort2 no_v) {
+    wsinterpd_temp<half2, half, float>((half2 *)y, (const half2 *)w, (const half2 *)x,
+             (half *)tau, sizes, wstride, ystride, flag, (const half2) make_half2(0,0));
+}
+#endif
+/*
     // get sampling index
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
@@ -307,7 +299,7 @@ __global__ void interpdh(ushort2 * __restrict__ y,
     if(i < I && n < N && m < M){
         # pragma unroll
         for(size_t f = 0; f < F; ++f){ // per transmit
-            y[i + n*I + m*N*I + f*M*N*I] = h2u(sampleh(&x[n*T + f*N*T], u2h(tau[i + n*I + m*I*N]), flag, no_v));
+            y[i + n*I + m*N*I + f*M*N*I] = h2u(sample((const half2 *)&x[n*T + f*N*T], (float)u2h(tau[i + n*I + m*I*N]), flag, no_v));
         }
     }
 }
@@ -357,35 +349,13 @@ __global__ void wsinterpdh(ushort2 * __restrict__ y,
                 l += js * ystride[s]; // add pitched index for this dim (outputs)
             }
 
-            const half2 val = u2h(w[k]) * sampleh(&x[n*T + f*N*T], u2h(tau[i + n*I + m*I*N]), flag, no_v); // weighted sample
+            const half2 val = u2h(w[k]) * sample(&x[n*T + f*N*T], u2h(tau[i + n*I + m*I*N]), flag, no_v); // weighted sample
             atomicAdd(&yh[l], val); // store
         }
     }
 }
 
-
-
-
-inline __device__ float2 samplef(const float2 * x, float tau, int flag, const float2 no_v){
-    float2 val;
-// sample according to the flag
-         if (flag == 0)
-        val = nearestf  (x, tau, no_v);
-    else if (flag == 1)
-        val = linearf   (x, tau, no_v);
-    else if (flag == 2)
-        val = cubicf    (x, tau, no_v);
-    else if (flag == 3)
-        val = lanczos3f (x, tau, no_v);
-    else if (flag == 4)
-        val = linearf   (x, tau, no_v);
-    else 
-        val = no_v; 
-    
-    return val;
-}
-
-
+*/
 __global__ void interpdf(float2 * __restrict__ y, 
     const float2 * __restrict__ x, const float * __restrict__ tau, const int flag) {
 
@@ -406,7 +376,7 @@ __global__ void interpdf(float2 * __restrict__ y,
     if(i < I && n < N && m < M){
         # pragma unroll
         for(size_t f = 0; f < F; ++f){ // per frame of data
-            y[i + n*I + m*N*I + f*M*N*I] = samplef(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
+            y[i + n*I + m*N*I + f*M*N*I] = sample(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v);
         }
     }
 }
@@ -453,32 +423,12 @@ __global__ void wsinterpdf(float2 * __restrict__ y,
                 l += js * ystride[s]; // add pitched index for this dim (outputs)
             }
 
-            const float2 val = w[k] * samplef(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v); // weighted sample
+            const float2 val = w[k] * sample(&x[n*T + f*N*T], tau[i + n*I + m*I*N], flag, no_v); // weighted sample
             atomicAdd(&y[l].x, val.x); // store
             atomicAdd(&y[l].y, val.y); // store
         }
     }
 }
-
-
-
-inline __device__ double2 sample(const double2 * x, double tau, int flag, const double2 no_v){
-    double2 val;
-    // sample according to the flag
-         if (flag == 0)
-        val = nearest  (x, tau, no_v);
-    else if (flag == 1)
-        val = linear   (x, tau, no_v);
-    else if (flag == 2)
-        val = cubic    (x, tau, no_v);
-    else if (flag == 3)
-        val = lanczos3 (x, tau, no_v);
-    else 
-        val = no_v; 
-    
-    return val;
-}
-
 
 __global__ void interpd(double2 * __restrict__ y, 
     const double2 * __restrict__ x, const double * __restrict__ tau, const int flag) {
