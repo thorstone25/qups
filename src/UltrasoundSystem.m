@@ -1869,31 +1869,31 @@ classdef UltrasoundSystem < handle
             % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
             % target and returns a ChannelData object chd via k-Wave.
             %
-            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions)
-            % uses the 1x2 array of element_subdivisions to subdivide the
-            % elements prior to placing them on the simulation grid.
+            % chd = KSPACEFIRSTORDERND(self, target, sscan) operates using
+            % the simulation region defined by the ScanCartesian sscan. The
+            % step sizes in all dimensions must be identical for results to
+            % be valid.
             %
             % [chd, cgrid] = kspaceFirstOrderND(...) also returns a
             % structure with the coordinate transforms from the kWaveGrid. 
             % This behaviour is likely to be deprecated
             %
-            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions, 
-            % Name, Value, ... ) specifies name value pairs.
+            % chd = KSPACEFIRSTORDERND(self, target, sscan, Name, Value, ...)
+            % specifies name value pairs.
             %
             % Inputs:
-            %     PML_min - minimum (one-sided) PML size
-            %     PML_max - maximum (one-sided) PML size
+            %     PML - upper and lower bound on the PML size
             %     CFL_max - maximum cfl number (for stability)
-            %     buffer - x/y/z computational buffer (3 x 2)
-            %     resolution_ratio - grid resolution as proportion of wavelength
-            %     dims - dimensionality of the simulation (one of {2*,3})
             %     parcluster - parallel cluster for running simulations (use 0 for no cluster)
-            %     bounds - minimum boundaries of the sim (3 x 2)
+            %     ElemMapMethod - computational method for mapping elements to the grid. 
+            %           Must be one of {'direct'*, 'depend'}.The 'direct' 
+            %           method avoids recomputing intermediate results, but 
+            %           avoids using the kWaveArray methods. The 'depend' 
+            %           method always uses the kWaveArray methods.
             %
-            % Other Name/Value pairs that are valid for kWave's
-            % kspaceFirstOrderND functions are valid here with the
-            % exception of the PML definition
-            %
+            % Other Name/Value pairs that are valid for kWaveArray's 
+            % constructor or kWave's kspaceFirstOrderND functions are 
+            % valid here except for PML definition arguments.
             %
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM
 
@@ -1904,9 +1904,10 @@ classdef UltrasoundSystem < handle
                 'PML', [20 56], ... (one-sided) PML size range
                 'CFL_max', 0.25, ... maximum cfl number (for stability)
                 'parcluster', 0, ... parallel cluster for running simulations (use 0 for no cluster)
+                'ElemMapMethod', 'direct', ... one of {'direct', 'depend'} for karray
+                'UpsamplingRate', 10, ...
                 'BLITolerance', 0.05, ...
                 'BLIType', 'sync', ... stencil - exact or sync
-                'UpsamplingRate', 10, ...
                 'DataCast', 'gpuArray-single',...
                 'DataRecast', false, ...
                 'LogScale', false, ...
@@ -1923,13 +1924,15 @@ classdef UltrasoundSystem < handle
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % get the kWaveGrid
+            % TODO: check that the stpe sizes are all equal - this is
+            % required by kWaveArray
             [kgrid, Npml]= getkWaveGrid(sscan, 'PML', kwargs.PML);
 
             % get the kWave medium struct
             kmedium = getMediumKWave(target, sscan);
 
             % get the minimum necessary time step from the CFL
-            dt_cfl_max = kwargs.CFL_max * min([sscan.dx, sscan.dz, sscan.dy]) / max(kmedium.sound_speed,[],'all');
+            dt_cfl_max = kwargs.CFL_max * min([sscan.dz, sscan.dx, sscan.dy]) / max(kmedium.sound_speed,[],'all');
             
             % use a time step that aligns with the sampling frequency
             dt_us = inv(self.fs);
@@ -1953,14 +1956,10 @@ classdef UltrasoundSystem < handle
             % [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
             karray_opts = {'BLITolerance', kwargs.BLITolerance, 'UpsamplingRate', kwargs.UpsamplingRate};
             karray = kWaveArray(self.rx, kgrid.dim, kgrid_origin, karray_opts{:});
-            ksensor.mask = karray.getArrayBinaryMask(kgrid);
-            % ksensor.record = {'p'}; % record the pressure
-            % ksensor.record = {'u_non_staggered'}; % record the particle velocity
+            kmask = karray.getArrayBinaryMask(kgrid);
+            ksensor.mask = kmask;
             ksensor.record = {'u'}; % record the original particle velocity
-            % ksensor.record = {'u','u_non_staggered', 'p'}; % record whatever, I'm lost
-
-            % define the source signal(s) for each transmit in the pulse sequence
-            % [ksource, t_sig, sig] = self.getKWaveSource(kgrid, kgrid_origin, el_sub_div, target.c0);
+            % ksensor.record = {'u','u_non_staggered', 'p'}; % record everything
             
             % get the source signal
             txsig = conv(self.tx.impulse, self.sequence.pulse, 4*fs_); % transmit waveform, 4x intermediate convolution sampling
@@ -1971,12 +1970,32 @@ classdef UltrasoundSystem < handle
             t_tx = shiftdim((txn0 : txne)' / fs_, -2); % transmit signal time indices (1x1xT')
             txsamp = permute(apod .* txsig.sample(t_tx - del), [3,1,2]); % transmit waveform (T' x M x V)
             
-            % assign source for each transmission
-            psig = karray.getDistributedSourceSignal(kgrid, real(permute(txsamp, [2,1,3]))); % create this pressure function
-            % for v = self.sequence.numPulse:-1:1, ksource(v).p = sub(psig,v,3); end
-            % [ksource.p_mask] = deal(karray.getArrayBinaryMask(kgrid));
+            % assign source for each transmission (J' x T' x V)
+            % TODO: abstract this logic to come from transducer directly so 
+            % it can be used in fullwave or some other FDTD method
+            switch kwargs.ElemMapMethod
+                case 'direct'
+                    % get the offgrid source weights
+                    elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:self.xdc.numel);  % (J x {M})
+                    elem_weights = cat(2, elem_weights{:}); % (J x M)
+                    elem_weights = elem_weights(kmask(:),:); % (J' x M)
+                    psig = pagemtimes(full(elem_weights), 'none', real(txsamp), 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
+
+                    % get the offgrid source sizes
+                    elem_meas = arrayfun(@(i)karray.elements{i}.measure, 1:self.xdc.numel);
+                    elem_dim  = arrayfun(@(i)karray.elements{i}.dim    , 1:self.xdc.numel);
+                    elem_norm = elem_meas ./ (kgrid.dx) .^ elem_dim; % normalization factor
+
+                case 'depend', % compute one at a time and apply casting rules
+                    psig = cellfun(@(x) ...
+                        {cast(karray.getDistributedSourceSignal(kgrid, x.'), 'like', x)}, ...
+                        num2cell(real(txsamp), [1,2]) ...
+                        );
+                    psig = cat(3, psig);
+            end
+            
             for v = self.sequence.numPulse:-1:1, ksource(v).ux = sub(psig,v,3); end
-            [ksource.u_mask] = deal(karray.getArrayBinaryMask(kgrid));
+            [ksource.u_mask] = deal(kmask);
             
 
             % set the total simulation time: default to a single round trip at ambient speed
@@ -1994,7 +2013,7 @@ classdef UltrasoundSystem < handle
                 kgrid.total_grid_points, kgrid.total_grid_points*4/2^20);
 
             % strip all other arguments from input
-            nonkwfields = {'T', 'PML','CFL_max', 'parcluster', ... % not kWave args
+            nonkwfields = {'T', 'PML','CFL_max', 'parcluster', 'ElemMapMethod', ... % not kWave args
                  'BLIType', 'BLITolerance','UpsamplingRate',  ... % not kspaceFirstOrder args
                 }; 
             kwave_args = rmfield(kwargs, nonkwfields); % forward all others
@@ -2019,12 +2038,12 @@ classdef UltrasoundSystem < handle
             % get all arguments
             kwave_args_ = arrayfun(...
                 @(pulse) struct2nvpair(kwave_args(pulse)), ...
-                1:self.sequence.numPulse, ...
+                1:self.sequence.numPulse, ... 
                 'UniformOutput', false ...
                 );
 
             out = cell(self.sequence.numPulse, 1);
-            [Np] = deal(self.sequence.numPulse); % splice
+            [Np, elem_method] = deal(self.sequence.numPulse, kwargs.ElemMapMethod); % splice
             % for puls = self.sequence.numPulse:-1:1
             parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
                 % TODO: make this part of some 'info' logger or something
@@ -2035,12 +2054,15 @@ classdef UltrasoundSystem < handle
                 sensor_data = kspaceFirstOrderND_(kgrid, kmedium, ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
 
                 % Process the simulation data
-                % x = sensor_data.p;
-                % x = sensor_data.ux_non_staggered;
-                x = sensor_data.ux; % get the axial velocity
+                x = sensor_data.ux; % get the axial velocity (J' x T)
                 
                 % get sensor data, enforce on CPU (T x N)
-                out{puls}  = gather(karray.combineSensorData(kgrid, x)).'; %#ok<PFBNS> karray is small (~200KB)
+                switch elem_method
+                    case 'direct'
+                        out{puls} = gather(x.' * full(elem_weights ./ elem_norm)); % (J' x T)' x (J' x N) -> T x N
+                    case 'depend'
+                        out{puls} = gather(karray.combineSensorData(kgrid, x)).'; %#ok<PFBNS> karray is small (~200KB)
+                end
 
                 % report timing % TODO: make this part of some 'info' logger or something
                 fprintf('\nFinished pulse %i of %i\n', puls, Np);
