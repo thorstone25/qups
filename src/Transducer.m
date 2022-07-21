@@ -262,6 +262,150 @@ classdef (Abstract) Transducer < handle
         end
     end
 
+    % FDTD functions
+    methods
+        function [mask, el_ind, el_weight, el_dist] = elem2grid(self, scan, el_sub_div)
+            % ELEM2GRID - Transducer element to grid mapping
+            % 
+            % [mask, el_ind, el_weight, el_dist] = ELEM2GRID(self, scan)
+            % returns a binary mask and a set of indices, weights, and 
+            % distances defined for each element give a Transducer self and
+            % a ScanCartesian scan. The element indicies are defined on the
+            % vectorized non-zero indices of the mask i.e. on the indices 
+            % of `find(mask)`. 
+            
+            % arguments
+            %     self (1,1) Transducer
+            %     scan (1,1) ScanCartesian
+            %     el_sub_div (1,2) double = [1,1]
+            % end
+
+            % get the sensor and source masks. This is the hard part: how do I do this
+            % for a convex probe on a grid surface?
+
+            vec = @(x)x(:); % define locally for compatibility
+            
+            % cast grid points to single type for efficiency and base grid on the origin
+            [gxv, gyv, gzv] = deal(single(scan.x), single(scan.y), single(scan.z)); % grid {dim} vector
+            [gx0, gy0, gz0] = deal(scan.x(1), scan.y(1), scan.z(1)); % grid {dim} first point
+            [gxd, gyd, gzd] = deal(single(scan.dx), single(scan.dy), single(scan.dz)); % grid {dim} delta
+            pg = scan.getImagingGrid();
+            pg = cell2mat(cellfun(@(x){shiftdim(x,-1)}, pg(:))); % 3 x Z x X x Y
+            pdims = arrayfun(@(c){find(c == scan.order)}, 'XYZ'); % dimensions mapping
+            [xdim, ydim, zdim] = deal(pdims{:});
+            iord = arrayfun(@(d)find([pdims{:}] == d), [1,2,3]); % inverse mapping
+            
+            % get array sizing - size '1' and step 'inf' for sliced dimensions
+            [Nx, Ny, Nz] = deal(scan.nx, scan.ny, scan.nz);
+            
+            % get local element size reference
+            [width_, height_, sz_] = deal(self.width, self.height, scan.size);
+            
+            % get regions for each receive transducer element
+            el_cen = self.positions(); % center of each element
+            [theta, phi, el_dir, el_wid, el_ht] = self.orientations(); % orientations vectors for each element
+            
+            % reorder to map between kwave and conventional ultrasound coordinates
+            % [el_dir, el_cen, el_wid, el_ht] = dealfun(@(v)v([3 1 2],:), el_dir, el_cen, el_wid, el_ht);
+            
+            % get edges in x/y/z (i.e. patches) for each sub element
+            patches = self.patches(el_sub_div)'; % (E x N)
+            nSub = size(patches, 1); % number of subelements
+            
+            % convert to cell array of points with x/y/z in 1st dimension
+            p_patches = cellfun(@(pch) vec(cellfun(@(p)mean(p(:)), pch(1:3))), patches, 'UniformOutput', false);
+            
+            % send grid data to workers if we have a process pool
+            if(~isempty(gcp('nocreate')) && isa(gcp('nocreate'), 'parallel.ProcessPool')), 
+                  sendDataToWorkers = @parallel.pool.Constant;
+            else, sendDataToWorkers = @(x) struct('Value', x);
+            end
+            [gxv, gyv, gzv] = dealfun(sendDataToWorkers, gxv, gyv, gzv);
+            
+            % get sensing map for all patches for all elements
+            fprintf('\n');
+            for el = 1:self.numel
+                tt = tic;
+                % set variables for the element
+                [el_dir_, el_cen_, el_wid_, el_ht_, p_patches_] = deal(el_dir(:,el), el_cen(:,el), el_wid(:,el), el_ht(:,el), p_patches(:,el));
+                
+                % initialize
+                % mask{el} = false(sz_);
+                
+                for i = nSub:-1:1
+                    % get the center of the subelement
+                    pcen = p_patches_{i}; % (3 x 1)
+                    
+                    % get zero crossing in indices
+                    xind = 1 + (pcen(1) - gx0) / gxd;
+                    yind = 1 + (pcen(2) - gy0) / gyd;
+                    zind = 1 + (pcen(3) - gz0) / gzd;
+                    
+                    % get integer index on both sides of zero crossing
+                    [xind, yind, zind] = dealfun(@(n) vec(unique([floor(n); ceil(n)])), xind, yind, zind);
+                    
+                    % shift to appropriate dimensions for the scan
+                    pind = {xind, yind, zind}; 
+                    pind = pind(iord); % shift to proper order      
+                    [pind{:}] = ndgrid(pind{:}); % outer product expansion 
+                    [pind{:}] = dealfun(vec, pind{:}); % vectorize
+                    ind_msk = sub2ind(sz_, pind{:}); % get linear indices of the scan (J x 1)
+                    pind_ = [pind{:}]; % combine
+                    [xind, yind, zind] = deal(pind_(:,xdim), pind_(:,ydim), pind_(:,zdim)); % split
+                    
+                    % get vector from element to the grid pixels
+                    vec_ = gather([gxv.Value(xind'); gyv.Value(yind'); gzv.Value(zind')]) - pcen; %#ok<PFBNS> % 3 x J;
+                    
+                    % get plane wave phase shift distance as the inner product
+                    % sign is whether in front or behind
+                    d = vec(el_dir_' * vec_); % J x 1
+                    
+                    % get subelement apodization accounting for cosine
+                    % distribution along the transducer surface
+                    % I don't ... actually know how to do this ...
+                    a = cosd(90 * 2 * el_wid_' * (pcen - el_cen_) / width_ ) ...
+                      * cosd(90 * 2 * el_ht_'  * (pcen - el_cen_) / height_);
+                    a = ones(size(d)); %%% DEBUG %%%
+                    
+                    % save indices, distances, and normal to the sensitivity map
+                    %{
+                    sens_map(i,el) = struct(...
+                        'amp', a, ...
+                        'dist', vec(d),...
+                        'mask_indices', ind_msk ...
+                        ... 'element_dir', el_dir_ ...
+                        );
+                    %}
+                    
+                    % save outputs
+                    mask_ind{i,el} = ind_msk; % indices of the scan
+                    weights {i,el} = a; % amplitudes
+                    dists   {i,el} = d; % distances for phase shifting response
+                end
+                
+                % report computation timing
+                fprintf('Processed %i subelements for element %i in %0.5f seconds.\n', nSub, el, toc(tt));
+            end
+            
+            % check that each (sub-)element has some an associated grid index
+            assert(~any(cellfun(@isempty, mask_ind)), '')
+            
+            % reduce to make full recording sensor mask
+            mask = false(scan.size);
+            mask(unique(cat(1, mask_ind{:}))) = true;
+
+            % get the translation map for grid mask index to receiver element
+            ind_el  = cellfun(@(m) gather(argn(2, @ismember, m, find(mask))), mask_ind, 'UniformOutput', false);
+
+            % make all into arrays, defined by mask indices
+            for el = self.numel:-1:1
+                el_weight{el} = cat(1, weights{:,el});
+                el_dist  {el} = cat(1, dists  {:,el});
+                el_ind   {el} = cat(1, ind_el {:,el});
+            end
+        end
+    end
+
     methods %(Abstract)
         % karray = kWaveArray(self, og, varargin)
         function karray = kWaveArray(self, dim, og, varargin)
