@@ -279,6 +279,7 @@ classdef (Abstract) Transducer < handle
             %     scan (1,1) ScanCartesian
             %     el_sub_div (1,2) double = [1,1]
             % end
+            if nargin < 3, el_sub_div = [1,1]; end
 
             % get the sensor and source masks. This is the hard part: how do I do this
             % for a convex probe on a grid surface?
