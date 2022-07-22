@@ -51,7 +51,7 @@ y = permute(B, ord); % shared-copy?
 sz_x = size(x, 1:D);
 sz_y = size(y, 1:D);
 assert(numel(sz_x) == numel(sz_y) && all(sz_x(2:end) == sz_y(2:end)),...
-    "Incompatible sizes [" + join(string(size(sz_x))+",") + "], and [" + join(string(size(sz_y))+",") + "].");
+    "Incompatible sizes [" + join(string((sz_x))+",") + "], and [" + join(string((sz_y))+",") + "].");
 
 % get computation/output data type and precision
 complex_type = ~isreal(A) || ~isreal(B);
