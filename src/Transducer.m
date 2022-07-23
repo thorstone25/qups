@@ -264,7 +264,7 @@ classdef (Abstract) Transducer < handle
 
     % FDTD functions
     methods
-        function [mask, el_ind, el_weight, el_dist] = elem2grid(self, scan, el_sub_div)
+        function [mask, el_weight, el_dist, el_ind] = elem2grid(self, scan, el_sub_div)
             % ELEM2GRID - Transducer element to grid mapping
             % 
             % [mask, el_ind, el_weight, el_dist] = ELEM2GRID(self, scan)
@@ -324,9 +324,7 @@ classdef (Abstract) Transducer < handle
             [gxv, gyv, gzv] = dealfun(sendDataToWorkers, gxv, gyv, gzv);
             
             % get sensing map for all patches for all elements
-            fprintf('\n');
-            for el = 1:self.numel
-                tt = tic;
+            parfor el = 1:self.numel
                 % set variables for the element
                 [el_dir_, el_cen_, el_wid_, el_ht_, p_patches_] = deal(el_dir(:,el), el_cen(:,el), el_wid(:,el), el_ht(:,el), p_patches(:,el));
                 
@@ -343,11 +341,16 @@ classdef (Abstract) Transducer < handle
                     zind = 1 + (pcen(3) - gz0) / gzd;
                     
                     % get integer index on both sides of zero crossing
-                    [xind, yind, zind] = dealfun(@(n) vec(unique([floor(n); ceil(n)])), xind, yind, zind);
+                    [xind, yind, zind] = dealfun(@(n) vec((floor(n) + [0; 1])), xind, yind, zind);
+
+                    % set index of sliced dimensions
+                    if isinf(gxd), xind(:) = 1; end
+                    if isinf(gyd), yind(:) = 1; end
+                    if isinf(gzd), zind(:) = 1; end
                     
                     % shift to appropriate dimensions for the scan
                     pind = {xind, yind, zind}; 
-                    pind = pind(iord); % shift to proper order      
+                    pind = pind(iord); % shift to proper order given by the scan 
                     [pind{:}] = ndgrid(pind{:}); % outer product expansion 
                     [pind{:}] = dealfun(vec, pind{:}); % vectorize
                     ind_msk = sub2ind(sz_, pind{:}); % get linear indices of the scan (J x 1)
@@ -355,41 +358,35 @@ classdef (Abstract) Transducer < handle
                     [xind, yind, zind] = deal(pind_(:,xdim), pind_(:,ydim), pind_(:,zdim)); % split
                     
                     % get vector from element to the grid pixels
-                    vec_ = gather([gxv.Value(xind'); gyv.Value(yind'); gzv.Value(zind')]) - pcen; %#ok<PFBNS> % 3 x J;
+                    pgrd  = [gxv.Value(xind'); gyv.Value(yind'); gzv.Value(zind')]; %#ok<PFBNS> all data passed is necessary
+                    vec_ = gather(pgrd) - pcen; % 3 x J
                     
                     % get plane wave phase shift distance as the inner product
                     % sign is whether in front or behind
-                    d = vec(el_dir_' * vec_); % J x 1
+                    d = (el_dir_' * vec_).'; % J x 1
                     
                     % get subelement apodization accounting for cosine
                     % distribution along the transducer surface
                     % I don't ... actually know how to do this ...
-                    a = cosd(90 * 2 * el_wid_' * (pcen - el_cen_) / width_ ) ...
-                      * cosd(90 * 2 * el_ht_'  * (pcen - el_cen_) / height_);
-                    a = ones(size(d)); %%% DEBUG %%%
-                    
-                    % save indices, distances, and normal to the sensitivity map
-                    %{
-                    sens_map(i,el) = struct(...
-                        'amp', a, ...
-                        'dist', vec(d),...
-                        'mask_indices', ind_msk ...
-                        ... 'element_dir', el_dir_ ...
-                        );
-                    %}
+
+                    % a = cosd(90 * 2 * el_wid_' * (pcen - el_cen_) / width_ ) ...
+                    %   * cosd(90 * 2 * el_ht_'  * (pcen - el_cen_) / height_);
+                    % a = a + false(size(d)); 
+
+                    % get subelement apodization accounting for grid
+                    % interpolation
+                    a = prod(1 - (abs(pgrd - pcen) ./ [gxd; gyd; gzd]),1)'; % J x 1
+                    % a = ones(size(d)); %%% DEBUG %%%
                     
                     % save outputs
                     mask_ind{i,el} = ind_msk; % indices of the scan
                     weights {i,el} = a; % amplitudes
                     dists   {i,el} = d; % distances for phase shifting response
                 end
-                
-                % report computation timing
-                fprintf('Processed %i subelements for element %i in %0.5f seconds.\n', nSub, el, toc(tt));
             end
             
             % check that each (sub-)element has some an associated grid index
-            assert(~any(cellfun(@isempty, mask_ind)), '')
+            assert(~any(cellfun(@isempty, mask_ind), 'all'), 'Unable to assign all (sub-)elements to the grid.');
             
             % reduce to make full recording sensor mask
             mask = false(scan.size);
@@ -404,6 +401,11 @@ classdef (Abstract) Transducer < handle
                 el_dist  {el} = cat(1, dists  {:,el});
                 el_ind   {el} = cat(1, ind_el {:,el});
             end
+
+            % make numeric arrays (J x N)
+            el_weight = cat(2, el_weight{:});
+            el_dist   = cat(2, el_dist  {:});
+            el_ind    = cat(2, el_ind   {:});
         end
     end
 
