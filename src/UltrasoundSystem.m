@@ -2179,7 +2179,6 @@ classdef UltrasoundSystem < handle
                             ];
                     end
                     
-
                     % add simulation and processing task
                     job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim]);
 
@@ -3035,93 +3034,6 @@ classdef UltrasoundSystem < handle
         end
     end
     
-    % Receive Aperture beamforming methods: operate along rx dimension
-    % These should be either moved or deprecrated
-    methods(Static, Hidden)
-        function z = rcvDefault(x, dim)
-            if nargin < 2, dim = 2; end
-            z = UltrasoundSystem.rcvSum(x, dim);
-        end
-        
-        function z = rcvSum(x, dim)
-           if nargin < 2, dim = 2; end
-           z = sum(x, dim);
-        end
-        
-        function z = rcvSLSCAvg(x, dim, maxlag)
-            %
-            
-            % defaults
-            if nargin < 2, dim = 2; end
-            if nargin < 3, maxlag = 10; end
-            
-            % normalize magnitude per sample (averaging)
-            x = x ./ abs(x);
-            x(isnan(x)) = 0; % 0/0 -> 0
-            
-            % get weighting filter across receiver pairs
-            L = size(x,dim);
-            [M, N] = ndgrid(1:L, 1:L);
-            H = abs(M - N); % lag
-            S = (0 < H & H <= maxlag); % valid lags for adding
-            O = 1 ./ (L - H); % debiasing weights
-            W = S .* O; % final weights per pair
-            
-            % place cross-receiver across cells
-            xc = num2cell(x, setdiff(1:ndims(x), dim));
-            
-            % place weights as cross receiver over cells, receiver in dim
-            W = num2cell(shiftdim(W, -(dim-2)), dim);
-            
-            % correlation sum across receivers per cross-receiver kernel 
-            vn = @(w,xc) sum(w .* conj(xc) .* x, dim);
-                          
-            % compute product and sum per cross-receiver
-            z = 0;
-            parfor i = 1:numel(W)
-                z = z + vn(W{i}, xc{i});
-            end
-        end
-        
-        function z = rcvSLSCEns(x, dim, maxlag)
-            %
-
-            % defaults
-            if nargin < 2, dim = 2; end
-            if nargin < 3, maxlag = 10; end
-            
-            % get weighting filter across receiver pairs
-            L = size(x,dim);
-            [M, N] = ndgrid(1:L, 1:L);
-            H = abs(M - N);
-            W = (0 < H & H <= maxlag);
-            
-            % place cross-receiver across cells
-            xc = num2cell(x, setdiff(1:ndims(x), dim));
-            
-            % place weights as cross receiver over cells, receiver in "dim" 
-            W = num2cell(shiftdim(W, -(dim-2)), dim);
-            
-            % correlation across receivers per cross-receiver kernel 
-            vn = @(w,xc) deal(...
-                sum(w .* conj(xc) .* x,  dim),...
-                sum(w .* abs(x).^2,      dim),...
-                sum(w .* abs(xc).^2 * L, dim));
-                
-            % compute and sum for each cross-receiver
-            [z, a, b] = deal(0);
-            for i = 1:numel(W)
-                [zr, ar, br] = vn(W{i}, xc{i});
-                z = z + zr;
-                a = a + ar;
-                b = b + br;
-            end
-            
-            % get final image
-            z = z ./ (a .* b);
-        end
-    end
-    
     % dependent methods
     methods
         function f = get.fc(self)
@@ -3309,6 +3221,7 @@ classdef UltrasoundSystem < handle
             end
         end
     end
+    
     % source file recompilation definitions
     methods(Static,Hidden)
         function defs = getCUDAFileDefs()
