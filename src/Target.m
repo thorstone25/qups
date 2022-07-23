@@ -105,7 +105,7 @@ classdef Target < Medium & Scatterers
         end
     
         % get Fullwave compatible map struct
-        function maps = getFullwaveMap(self, grid, varargin)
+        function maps = getFullwaveMap(self, scan, varargin)
             % GETFULLWAVEMAP - Get Fullwave compatible map structure
             %
             % maps = getFullwaveMap(self, grid) returns a map sampled on
@@ -116,10 +116,9 @@ classdef Target < Medium & Scatterers
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % create samples of the grid points
-            [xg, yg, zg] = deal(grid{:});
-            [xg, yg, zg] = ndgrid(xg, yg, zg);
-            [xg, yg, zg] = dealfun(@(x) shiftdim(x, -1), xg, yg, zg); % 1 x X x Y x Z
-            pg = cat(1, xg, yg, zg); % points 3 x X x Y x Z
+            pg = scan.getImagingGrid();
+            pg = cellfun(@(x) {shiftdim(x, -1)}, pg); % 1 x X x Y x Z
+            pg = cat(1, pg{:}); % points 3 x X x Y x Z
 
             % sample all maps on the grid points
             [c, rho, BoA, alpha] = getPropertyMap(self, pg); % 1 x X x Y x Z
