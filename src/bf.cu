@@ -6,32 +6,6 @@
 
 // # include "half2_math.h" // vector math for half types only 
 
-
-/* Creates the positions for a linear array aperture given it's description
-*
-* All positions are in projetive coordinates.
-*
-* Must be run with a kernel size equal to the number of elements in the 
-* array.
-*
-* Inputs:
-*   Pn:     Vector of positions
-*   Pn0:    Initial position
-*   dPn:    Interelement difference
-*
-*
-*/ 
-
-__global__ void pos_step_rng_lenf(float3 * Pn, const float3 Pn0, const float3 dPn){
-    const uint idx = threadIdx.x + blockIdx.x * blockDim.x;
-    Pn[idx] = Pn0 + idx * dPn;
-}
-
-__global__ void pos_step_rng_len(double3 * Pn, const double3 Pn0, const double3 dPn){
-    const uint idx = threadIdx.x + blockIdx.x * blockDim.x;
-    Pn[idx] = Pn0 + idx * dPn;
-}
-
 /*
 * Delay and sum the given data at the given pixels
 *
@@ -101,8 +75,8 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
             
     // temp vars
-    const U2 zero_v = make_vec2<U2>(0.0);
-    U2 w;
+    const U2 zero_v = {0, 0};
+    U2 w = {1, 0};
     U rf, dv, dr, tau;
     U2 val, pix = zero_v;
     U3 rv;
@@ -124,8 +98,9 @@ void __device__ DAS_temp(U2 * __restrict__ y,
 
                 // data/time index number
                 tau = (cinv * (dv + dr) - t0);
-                w = make_vec2<U2>(1.0, 0.0); // TODO: enable demod: make_float2(cospi(2*fs/4*tau), -sinpi(2*fs/4*tau));
-                rf =  tau * fs;
+
+                // TODO: enable demod: {w.x = cospi(2*fs/4*tau); w.y = -sinpi(2*fs/4*tau);}
+                rf = tau * fs;
 
                 // sample the trace
                 val = sample(&x[(n + m * N) * T], rf, iflag, zero_v); // out of bounds: extrap 0

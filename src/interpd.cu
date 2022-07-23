@@ -24,30 +24,6 @@ limitations under the License.
 // data is (T x N x F)
 // sample times are (I x N x M)
 
-// make_vec2 - make a vector2 type 
-template<typename T, typename U> __device__ T make_vec2(U val);
-template<typename T, typename U, typename V> __device__ T make_vec2(U x, V y);
-template<typename U> inline __device__ double2 make_vec2<double2>(U val){ 
-    return make_double2(val, val); 
-}
-template<typename U, typename V> __device__ double2 make_vec2<double2>(U x, V y){ 
-    return make_double2(x, y); 
-}
-template<typename U> __device__ float2  make_vec2<float2> (U val){ 
-    return make_float2(val, val); 
-}
-template<typename U, typename V> __device__ float2 make_vec2<float2>(U x, V y){ 
-    return make_float2(x, y); 
-}
-#if (__CUDA_ARCH__ >= 530)
-template<typename U> __device__ half2 make_vec2<half2>  (U val) {  
-    return make_half2(val, val); 
-}
-template<typename U, typename V> __device__ half2 make_vec2<half2>(U x, V y){ 
-    return make_half2(x, y); 
-}
-#endif
-
 #if (__CUDA_ARCH__ >= 530)
 /// @brief Device function to reinterpret ushort values as half
 inline __device__ half2 u2h(const ushort2 a){

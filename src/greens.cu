@@ -31,7 +31,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     
     // temp vars
     // const float ts = s + s0*fs; // compute the time index for this thread
-    const T2 zero_v = make_vec2<T2>(0.0f); // OOB value
+    const T2 zero_v = {0, 0}; // OOB value
     U r, tau;
     T2 val = zero_v;
 
