@@ -189,15 +189,14 @@ classdef TransducerArray < Transducer
 
     % Fullwave functions
     methods
-        function xdc = getFullwaveTransducer(self, grid)
-            
-            
-            [nX, nY, dX, dY, X0, Y0] = deal( ...
-                grid.size(1)  , grid.size(2), ...
-                grid.step(1)  , grid.step(2), ...
-                grid.origin(1), grid.origin(2) ...
-                ); % translate from Leahs' defs. to QUPS defs.
+        function xdc = getFullwaveTransducer(self, sscan)
 
+            [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size
+            [X0, Y0]= deal(sscan.x(1), sscan.z(1)); % first value
+            nX = sscan.size('X' == sscan.order); % grid size
+            nY = sscan.size('Z' == sscan.order);
+            % map (X, Z) -> (X, Y)
+            
             % define variables
             xdc_.npx     = self.numel; % number of elements
             % xdc.thetas  = self.orientations(); % xdc.dTheta*((-(xdc.npx-1)/2):((xdc.npx-1)/2)); % the thetas defining the transmit elements

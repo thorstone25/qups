@@ -1,3 +1,4 @@
+
 classdef TransducerConvex < Transducer
     
     properties
@@ -194,13 +195,13 @@ classdef TransducerConvex < Transducer
 
     % Fullwave functions (in-house)
     methods
-        function xdc = getFullwaveTransducer(self, grid)
+        function xdc = getFullwaveTransducer(self, sscan)
             
-            [nX, nY, dX, dY, X0, Y0] = deal( ...
-                grid.size(1)  , grid.size(2), ...
-                grid.step(1)  , grid.step(2), ...
-                grid.origin(1), grid.origin(2) ...
-                ); % translate from Leahs' defs. to QUPS defs.
+            [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size
+            [X0, Y0]= deal(sscan.x(1), sscan.z(1)); % first value
+            nX = sscan.size('X' == sscan.order); % grid size
+            nY = sscan.size('Z' == sscan.order);
+            % map (X, Z) -> (X, Y)
             
 
             % define variables

@@ -10,9 +10,7 @@
 % See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERPISTON
 
 classdef (Abstract) Transducer < handle
-
-    % properties(GetAccess=public, SetAccess=protected)
-    properties(GetAccess=public, SetAccess=public)
+    properties
         fc = 5e6        % center frequency
         bw = [3.5e6 6.5e6] % bandwidth
         width = 1.19e-4 % width of an element (m)
@@ -22,7 +20,7 @@ classdef (Abstract) Transducer < handle
         impulse = repmat(Waveform(),[0,0]) % the impulse response function of the element
     end
     
-    properties(Access=public)
+    properties
         el_focus = realmax('single') % elevation focal depth
     end
     
@@ -30,7 +28,7 @@ classdef (Abstract) Transducer < handle
         area            % area of an element (m^2)
     end
     
-    properties(GetAccess=public, SetAccess=public, Dependent)
+    properties(Dependent)
         bw_frac         % fractional bandwidth
     end
     properties(Dependent, Hidden)
@@ -475,31 +473,19 @@ classdef (Abstract) Transducer < handle
     methods (Abstract)
         % GETFULLWAVETRANSDUCER - define a fullwave transducer structure
         %
-        % xdc = GETFULLWAVETRANSDUCER(self, grid) creates a fullwave 
-        % compatible structure on the grid defined by spacing (dX, dY) and 
-        % size (nX, nY)
-        %
-        % Inputs:
-        %   - grid: a struct with
-        %       - nX:       lateral size of the simulation in pixels
-        %       - nY:       axial size of the simulation in pixels 
-        %       - dX:       lateral step size of the simulation in meters
-        %       - dY:       axial step size of the simulation in meters 
+        % xdc = GETFULLWAVETRANSDUCER(self, scan) creates a fullwave 
+        % compatible structure xdc defined on the ScanCartesian scan.
         %
         % Outputs:
         %   - xdc: a Fullwave compatible struct with (at least) the 
         %           following fields:
-        %       - npx
-        %       - inmap
-        %       - nInPx
-        %       - nOutPx
-        %       - incoords
-        %       - outcoords
-        %       - incoords2
-        %       - outcoords2
-        %       - surf
-        xdc = getFullwaveTransducer(self, grid)
-        
+        %       - npx           number of elements
+        %       - inmap         mask of the input pixels
+        %       - nInPx         number of input pixels
+        %       - nOutPx        number of output pixels
+        %       - incoords      (x,y,1,el) coordinate pairs of the input pixels
+        %       - outcoords     (x,y,1,el) coordinate pairs of the output pixels
+        xdc = getFullwaveTransducer(self, scan) 
     end
 
     methods
