@@ -29,7 +29,7 @@
  
 %#ok<*UNRCH> ignore unreachable code due to constant values
 %#ok<*BDLGI> ignore casting numbers to logical values
-device = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
+dev = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
 % setup;  % add all the necessary paths
 % setup parallel; % start a parpool for faster CPU processing
 setup CUDA cache;  % setup CUDA paths & recompile and cache local mex/CUDA binaries
@@ -41,14 +41,12 @@ target_depth = 1e-3 * 30;
 switch "single"
     case 'single' , targ = Target('pos', [0;0;target_depth], 'c0', 1500); % simple point target
     case 'array'  , targ = Target('pos', [0;0;1] * 1e-3*(10:5:50), 'c0', 1500); % targets every 5mm
-    case 'diffuse', N = 2501; % a random number of scatterers
+    case 'diffuse', N = 2500; % a random number of scatterers
                     targ = Target('pos', 1e-3*[40;10;60].*([1;0;1].*rand(3,N)-[0.5;0;0]), 'amp', rand(1,N), 'c0', 1500); % diffuse scattering
 end
 % make scatterers twice the density
 targ.scat_mode = 'ratio';
-% targ.rho_scat = 2;
-targ.rho_scat = 4;  
-
+targ.rho_scat = 2; 
 % Choose a transducer
 
 switch "L11-5V"
@@ -65,7 +63,7 @@ switch "small"
 end
 
 % point per wavelength - aim for >2 for a simulation
-ppw = c0/xdc.fc/min([tscan.dx, tscan.dz]); 
+ppw = targ.c0/xdc.fc/min([tscan.dx, tscan.dz]); 
 
 % Choose a transmit sequence
 % For linear transducers only!
@@ -162,7 +160,11 @@ switch seq.type % show the transmit sequence
     case 'PW', plot(seq, 3e-2, 'k.', 'DisplayName', 'Tx Sequence'); % scale the vectors for the plot
     otherwise, plot(seq, 'k.', 'DisplayName', 'Tx Sequence'); % plot focal points, if they exist
 end
-plot(targ, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
+if targ.numScat < 500
+    plot(targ, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
+else
+    disp('Info: Too many scatterers to display.');
+end
 hl = legend(gca, 'Location','bestoutside'); 
 set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
 %% Simulate the Point Scatterer(s)
@@ -173,18 +175,19 @@ set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
 
 % Construct an UltrasoundSystem object, combining all of these properties
 us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
-us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 * us.fc
 
 % Simulate a point target
 % run on CPU to use spline interpolation
 switch "Greens"
-    case 'FieldII', chd0 = calc_scat_all(us, targ, [1,1], 'device', device, 'interp', 'cubic'); % use FieldII, 
+    case 'FieldII', chd0 = calc_scat_all(us, targ, [1,1], 'device', dev, 'interp', 'cubic'); % use FieldII, 
     case 'FieldII-multi', chd0 = calc_scat_multi(us, targ, [1,1]); % use FieldII, 
-    case 'SIMUS'  , chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'cubic'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-    case 'Greens' , chd0 = comp_RS_FSA(us, targ, [1,1], 'method', 'interpd', 'device', device, 'interp', 'cubic'); % use a Greens function with a GPU if available!
+    case 'SIMUS'  , us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 * us.fc
+                    chd0 = simus(us, targ, 'periods', 1, 'dims', 3, 'interp', 'cubic'); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
+    case 'Greens' , chd0 = greens(us, targ, [1,1], 'device', dev, 'interp', 'cubic'); % use a Greens function with a GPU if available!
     case 'kWave', chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parcluster', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
 end
 chd0
+%%
 
 % display the channel data across the transmits
 chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in decibels
@@ -203,7 +206,7 @@ chd = singleT(chd); % use less data
 chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC 
 D = chd.getPassbandFilter(xdc.bw, 25); % get a passband filter for the transducer bandwidth
 chd = filter(chd, D); % apply passband filter for transducer bandwidth
-if device, chd = gpuArray(chd); end % move data to GPU
+if dev, chd = gpuArray(chd); end % move data to GPU
 if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
 
 % Run a simple DAS algorithm
@@ -254,7 +257,7 @@ end
 %% 
 % Choose a beamforming method
 
-switch "DAS-direct"
+switch "DAS"
     case "DAS"
         b = bfDAS(us, chd, targ.c0, 'apod', apod, 'interp', 'cubic'); % use a vanilla delay-and-sum beamformer
     case "Adjoint"
@@ -262,7 +265,7 @@ switch "DAS-direct"
     case "Eikonal"
         b = bfEikonal(us, chd, targ, tscan, 'apod', apod, 'interp', 'cubic'); % use the eikonal equation
     case "DAS-direct"
-        b = DAS(us, chd, targ.c0, 'apod', apod, 'interp', 'cubic', 'device', device); % use a specialized delay-and-sum beamformer
+        b = DAS(us, chd, targ.c0, 'apod', apod, 'interp', 'cubic', 'device', dev); % use a specialized delay-and-sum beamformer
 end
 
 % show the image
