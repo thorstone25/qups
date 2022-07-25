@@ -162,7 +162,7 @@ classdef UltrasoundSystem < handle
             % TODO: generalize to mex extension for other machines (with 
             % isunix or iswindows or ismac)
             defs = self.getMexFileDefs();
-            fls = arrayfun(@(d) string(strrep(d.Source, 'c', 'mexa64')), defs);
+            fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
             s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
             if any(~s), self.recompileMex(); end % attempt to recompile code
         end

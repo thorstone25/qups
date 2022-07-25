@@ -10,16 +10,21 @@ function setup(varargin)
 % be used to cache the files. 
 %
 % SETUP CUDA - adds the default CUDA installation paths to the system
-% environmental variable PATH so that nvcc can be called
+% environmental variable PATH so that nvcc can be called. The function will
+% attempt to find an installation of CUDA. On Windows, it will also attempt
+% to find an installation of MSVC C/C++. If the 'CUDA_PATH' environmental
+% variable is set, it will use that version of CUDA first. If the
+% 'VCToolsInstallDir' environmental variable is set, it will use that C/C++
+% compiler.
 %
 % SETUP CUDA NVCC_PATH - specifies the path for the nvcc executable. On
 % Linux the default is '/usr/local/cuda/bin'. On Windows it is the first
 % installation under
-% 'C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\**\bin'
+% '<drive>:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\<version>\bin'
 %
 % SETUP CUDA NVCC_PATH MSVC_CL_PATH - specifies the path for the C/C++
 % compilier under MSVC. By default this is the first installation under 
-% 'C:\Program Files (x86)\Microsoft Visual Studio *\**\cl.exe'
+% '<drive>:\Program Files*\Microsoft Visual Studio *\**\cl.exe'
 %
 % See also TEARDOWN
 
@@ -55,23 +60,29 @@ while i <= nargin % go through arguments sequentially
             % get the nvcc executable path
             if isunix
                 if i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
-                    p = varargin{i+1}; % store user path
+                    p = varargin{i+1}; varargin(i+1) = []; % store user path
                 else 
                     p = "/usr/local/cuda/bin"; % linux default nvcc path
                 end                
                 if ~exist(fullfile(p, 'nvcc')), warning("nvcc not found at " + p); end
                 p = pathsep + p; % prepend path separator here
             elseif ispc
+                % get all the windows drives, from A to Z
+                isdrive = @(c) logical(exist([c ':\'], "dir"));
+                wdrvs = char(double('A'):double('Z'));
+                wdrvs = wdrvs(arrayfun(isdrive, wdrvs));
+
                 % get the nvcc path
                 if  i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
-                    p1 = varargin{i+1}; % store user path
+                    p1 = varargin{i+1}; varargin(i+1) = []; % store user path
                     i = i + 1; % move to next argument
                 else % find the windows (default) nvcc paths
                     p1 = getenv('CUDA_PATH'); % use env. var if set
                     if isfolder(p1)
                         p1 = fullfile(p1, 'bin'); % bin should have nvcc
                     else
-                        l = dir(fullfile("C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA","**","nvcc*")); % search for nvcc
+                        l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files\NVIDIA GPU Computing Toolkit\CUDA","**","nvcc*"))}, wdrvs); % search for nvcc
+                        l = cat(1, l{:});
                         if ~isempty(l) % we found at least one
                             p1 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
                         else % nothing found
@@ -86,14 +97,15 @@ while i <= nargin % go through arguments sequentially
                 
                 % MSVC find cl.exe
                 if i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
-                    p2 = varargin{i+1}; % store user path
+                    p2 = varargin{i+1}; varargin(i+1) = []; % store user path
                     i = i + 1; % move to next argument
                 else % search for cl.exe within MSVC default install directories
                     p2 = getenv('VCToolsInstallDir');
                     if isfolder(p2)
                         p2 = fullfile(p2, 'bin', 'Hostx86','x64');
                     else
-                        l = dir(fullfile('C:\Program Files*\Microsoft Visual Studio*','**','Hostx86','x64', 'cl.exe'));
+                        l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files*\Microsoft Visual Studio*",'**','Hostx86','x64', 'cl.exe'))}, wdrvs);
+                        l = cat(1, l{:});
                         if ~isempty(l) % we found at least one
                             p2 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
                         else % nothing found
