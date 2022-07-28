@@ -135,9 +135,9 @@ classdef Medium < handle
 
                         % MATLAB does not promise the number of outputs,
                         % nor provide a convenient way of figuring that out
-                        % from the function handle itself: so we just try 
-                        % 5 outputs down to 1 until we get it right
-                        for nfout = 5:-1:1
+                        % from the function handle itself, so we just try 
+                        % up to 5 until we get it right
+                        for nfout = 1:5
                             out = cell(1, nfout);
                             try
                                 [out{:}] = fun(points);
@@ -196,7 +196,10 @@ classdef Medium < handle
             [c, rho, BoA, alpha, ~] = props(self, scan);
 
             % set the map properties
-            maps = struct('cmap', c, 'rmap', rho, 'amap', alpha, 'nmap', 1 + BoA./2);
+            eta = 1 + BoA./2;
+            maps = struct('cmap', c, 'rmap', rho, 'amap', alpha, 'nmap', eta);
+            maps.nmap(isnan(maps.nmap)) = 0; % set invalid non-linearity to 0
+            maps.amap(isnan(maps.amap)) = 0; % set invalid attenuation to 0
 
             % Use 0 for invalid properties in fullwave(?)
             for f = string(fieldnames(maps))', maps.(f) = nan2zero(maps.(f)); end
@@ -226,7 +229,7 @@ classdef Medium < handle
 
             % remove higher order terms if the coefficients are all 0s
             if all(isnan(kmedium.alpha_coeff)), kmedium = rmfield(kmedium, "alpha_coeff"); end
-            if all(isnan(kmedium.BonA)), kmedium = rmfield(kmedium, "BonA"); end
+            if all(isnan(kmedium.BonA)),        kmedium = rmfield(kmedium, "BonA"); end
 
             % set alpha power if alpha coefficient is set
             if isfield(kmedium, 'alpha_coeff'), kmedium.alpha_power = self.alphap0; end
