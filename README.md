@@ -6,7 +6,7 @@ QUPS (pronounced "CUPS") is intended to be an abstract, lightweight, readable to
 The easiest way to get started is to open and run [`example.mlx`](example.mlx) or [`example_.m`](example_.m) and interact with the simulation and beamforming examples. There are plenty of comments highlighting the different methods supported by the interface. You will need to separately download the simulator packages that you wish to use. Don't forget to add them to your path!
 
 ## Documentation
-QUPS is (partially) internally documented following MATLAB conventions. This means you can use `help` or `doc` on any class or method with `help classname` or `help classname/methodname` or `help classname.methodname`. To see all the available classes, from the qups folder, use `help src` or `doc src`.
+QUPS is (partially) internally documented following MATLAB conventions. This means you can use `help` or `doc` on any class or method with `help classname` or `help classname/methodname` or `help classname.methodname`. To see all the available classes, from the qups folder, use `help ./src` or `doc ./src`.
 
 ## Compatibility
 QUPS targets MATLAB R2020b and later. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking for compatibility in order to maintain flexibility.
