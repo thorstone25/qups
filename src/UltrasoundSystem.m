@@ -828,8 +828,8 @@ classdef UltrasoundSystem < handle
             % select the computing cluster
             clu = kwargs.parcluster;
             if isempty(clu), clu = 0; end % empty pool -> 0
-            isloc = ~isa(clu, 'parallel.Pool'); % local or parpool
-            if isloc, pclu = clu; else, pclu = 0; end % cluster or local
+            isloc = ~isa(clu, 'parallel.Pool') || ~isa(clu, 'parallel.Cluster'); % local or parpool
+            if isloc, [pclu, clu] = deal(clu, 0); else, pclu = 0; end % cluster or local
 
             % call the sim: FSA approach
             [M, F] = deal(self.xdc.numel, numel(target)); % splice
