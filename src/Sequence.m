@@ -1,4 +1,4 @@
-classdef Sequence < handle
+classdef Sequence < matlab.mixin.Copyable
     % SEQUENCE - Class defining transmit sequences
     %
     % A SEQUENCE object defines the parameters for common transmit
