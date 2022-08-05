@@ -21,21 +21,21 @@ classdef UltrasoundSystem < handle
     
     % objects
     properties
-        tx          % Transducer object (transmit)
-        rx          % Transducer object (receive)
-        sequence    % Sequence object
-        scan        % Scan object
+        tx Transducer = TransducerArray() % Transducer object (transmit)
+        rx Transducer = TransducerArray() % Transducer object (receive)
+        sequence Sequence           % Sequence object
+        scan Scan = ScanCartesian() % Scan object
     end
     
     % parameters
     properties
-        fs = 40e6   % simulation sampling frequency (Hz)
+        fs (1,1) {mustBeNumeric} = 40e6   % simulation sampling frequency (Hz)
     end
     
     properties(Dependent)
-        fc                  % central operating frequency (from the Transducer) (Hz)
-        xdc                 % Transducer object (if receive and transmit are identical)
-        pulse               % Waveform object (from the Sequence)
+        fc  {mustBeNumeric} % central operating frequency (from the Transducer) (Hz)
+        xdc Transducer      % Transducer object (if receive and transmit are identical)
+        pulse Waveform      % Waveform object (from the Sequence)
     end
     
     properties(Hidden,SetAccess=protected)
@@ -256,6 +256,15 @@ classdef UltrasoundSystem < handle
             % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI WSINTERPD
             % CHD/SAMPLE
             
+            arguments
+                self (1,1) UltrasoundSystem
+                target Scatterers
+                element_subdivisions (1,2) double = [1,1]
+            end
+            arguments(Repeating)
+                varargin
+            end
+
             % get Tx/Rx apertures subelement positions
             % (3 x N x E)
             if nargin < 3, element_subdivisions = [1,1]; end
@@ -470,25 +479,24 @@ classdef UltrasoundSystem < handle
 
     % Fullwave calls
     methods
-        function conf = fullwaveConf(self, target, sscan, varargin)
+        function conf = fullwaveConf(self, target, sscan, kwargs)
             % FULLWAVECONF - Generate a Fullwave simulation configuration
             %
-            % conf = FULLWAVECONF(self, targ, scan) creates a simulation
+            % conf = FULLWAVECONF(self, targ, sscan) creates a simulation
             % configuration struct to be used with fullwaveJob to simulate 
             % the response from the Target targ using the simulation region
             % in the ScanCartesian sscan.
             %
             % See also ULTRASOUNDSYSTEM/FULLWAVEJOB
 
-            % kwarg defaults
-            kwargs = struct(...
-                'f0', self.xdc.fc, ...    center frequency of the transmit / simulation
-                'CFL_max', 0.5, ...       maximum CFL
-                'txdel', 'terp' ...     delay models {'disc', 'cont', 'terp'}
-                );
-
-            % name-value pairs
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+            arguments
+                self (1,1) UltrasoundSystem
+                target Scatterers
+                sscan ScanCartesian
+                kwargs.f0 (1,1) {mustBeNumeric} = self.xdc.fc; % center frequency of the transmit / simulation
+                kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
+                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["disc", "cont", "terp"])} = 'terp';
+            end            
 
             %% Configuration variables
 
@@ -587,7 +595,7 @@ classdef UltrasoundSystem < handle
             conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
         end
         
-        function [chd, conf] = fullwaveSim(self, target, sscan, varargin)
+        function [chd, conf] = fullwaveSim(self, target, sscan, kwargs)
             % FULLWAVESIM - Simulate channel data via Fullwave
             %
             % chd = FULLWAVESIM(self, target, sscan) simulates the Target 
@@ -596,15 +604,14 @@ classdef UltrasoundSystem < handle
             % enough that all elements of the Transducer can be placed.
             %
             % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDERND
-
-            % defaults
-            kwargs = struct(...
-                'simdir', fullfile(pwd, 'fwsim'), ...
-                'parcluster', parcluster('local') ... parallel cluster
-                );
-
-            % parse inputs
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+            
+            arguments
+                self (1,1) UltrasoundSystem
+                target Scatterers
+                sscan ScanCartesian
+                kwargs.parcluster (1,1) parallel.Cluster = parcluster('local') % parallel cluster
+                kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim'); % simulation directory
+            end            
 
             % create the configuration
             conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'f0', 'CFL_max', 'txdel'}));
@@ -644,6 +651,12 @@ classdef UltrasoundSystem < handle
             %
             % See also FULLWAVECONF PARCLUSTER PARALLEL.CLUSTER
 
+            arguments
+                conf (1,1) struct
+                simdir (1,1) string
+                clu (1,1) parallel.Cluster % computing cluster
+            end
+
             % parse inputs
             if nargin < 3, clu = parcluster('local'); end
             if nargin < 2, simdir = fullfile(pwd, 'fwsim'); end
@@ -679,6 +692,12 @@ classdef UltrasoundSystem < handle
             % rather than loading one from the simulation directory.
             %
             % See also RUNFULLWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
+            arguments
+                simdir (1,1) string
+                conf (1,1) struct
+            end
+
+
 
             % see if we can find a conf file in the directory if not given to us
             if nargin < 2
@@ -729,7 +748,7 @@ classdef UltrasoundSystem < handle
 
     % SIMUS calls
     methods
-        function chd = simus(self, target, varargin)
+        function chd = simus(self, target, kwargs)
             % SIMUS - Simulate channel data via MUST
             %
             % chd = SIMUS(self, target) simulates the Target target and
@@ -759,24 +778,24 @@ classdef UltrasoundSystem < handle
             % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL
             % ULTRASOUNDSYSTEM/FOCUSTX
             
-            % defaults
-            % TODO: forward arguments to params or opt as appropriate
-            kwargs = struct(...
-                'interp', 'cubic', ...
-                'parcluster', gcp('nocreate'), ...
-                'periods', 1, ...
-                'dims', [] ...
-                );
+            arguments
+                self (1,1) UltrasoundSystem
+                target (1,1) Scatterers
+                kwargs.interp (1,1) string = "cubic"
+                kwargs.parcluster (1,1) = gcp('nocreate')
+                kwargs.periods (1,1) double = 1
+                kwargs.dims {mustBeScalarOrEmpty} = [];
+            
+            end
 
             % load options
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
             if isempty(kwargs.parcluster), kwargs.parcluster = 0; end % select 0 workers if empty
 
             % TODO: check the transmit/receive/sequence impulse: they 
             % cannot be satisfied if not a Delta or empty
-            if ~ismember("periods", varargin(cellfun(@ischar,varargin) | cellfun(@isstring, varargin))) % was this an input?
-                warning("QUPS:UltrasoundSystem:simus:unsatisfiable", "Transmit sequence determined by 'periods', property.");
-            end
+            %if ~ismember("periods", varargin(cellfun(@ischar,varargin) | cellfun(@isstring, varargin))) % was this an input?
+                %warning("QUPS:UltrasoundSystem:simus:unsatisfiable", "Transmit sequence determined by 'periods', property.");
+            %end
             
             % get the points and the dimensions of the simulation(s)
             [X, Y, Z, A] = arrayfun(@(target) ...
@@ -861,7 +880,7 @@ classdef UltrasoundSystem < handle
 
     % Field II calls
     methods(Access=public)
-        function chd = calc_scat_all(self, target, element_subdivisions, varargin)
+        function chd = calc_scat_all(self, target, element_subdivisions, kwargs)
             % CALC_SCAT_ALL - Simulate channel data via FieldII
             %
             % chd = CALC_SCAT_ALL(self, target) simulates the Target target
@@ -876,16 +895,17 @@ classdef UltrasoundSystem < handle
             % must be supported by focusTx.
             %
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
+
+            arguments
+                self (1,1) UltrasoundSystem
+                target Scatterers
+                element_subdivisions (1,2) double = [1,1]
+                kwargs.parcluster (1,1) = gcp('nocreate')
+                kwargs.interp (1,1) string = "linear"
+            end
             
             % helper function
             vec = @(x) x(:); % column-vector helper function
-
-            % defaults
-            kwargs = struct('parcluster', gcp('nocreate'), 'interp', 'linear');
-            if nargin < 3, element_subdivisions = self.getLambdaSubDiv(0.1, target); end
-
-            % load options
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % get the Tx/Rx impulse response function / excitation function
             wv_tx = self.tx.impulse; % transmitter impulse
@@ -959,7 +979,7 @@ classdef UltrasoundSystem < handle
             chd = self.focusTx(chd, self.sequence, 'interp', kwargs.interp);
         end        
 
-        function chd = calc_scat_multi(self, target, element_subdivisions, varargin)
+        function chd = calc_scat_multi(self, target, element_subdivisions, kwargs)
             % CALC_SCAT_MULTI - Simulate channel data via FieldII
             %
             % chd = CALC_SCAT_MULTI(self, target) simulates the Target target
@@ -971,14 +991,15 @@ classdef UltrasoundSystem < handle
             %
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
 
+            arguments
+                self (1,1) UltrasoundSystem
+                target Scatterers
+                element_subdivisions (1,2) double = [1,1]
+                kwargs.parcluster (1,1) = gcp('nocreate')
+            end
+            
             % helper function
             vec = @(x) x(:); % column-vector helper function
-
-            % defaults
-            kwargs = struct('parcluster', gcp('nocreate'));
-
-            % load options
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
 
             % initialize field II
             try
@@ -1863,7 +1884,7 @@ classdef UltrasoundSystem < handle
 
     % k-Wave calls (new)
     methods
-        function [chd, job, readfun] = kspaceFirstOrder(self, target, sscan, varargin)
+        function [chd, job, readfun] = kspaceFirstOrder(self, target, sscan, varargin, kwargs, karray_args)
             % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
@@ -1904,19 +1925,28 @@ classdef UltrasoundSystem < handle
             % valid here except for PML definition arguments.
             %
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM
-
+            arguments
+                self (1,1) UltrasoundSystem
+                target Medium
+                sscan (1,1) ScanCartesian
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
+                kwargs.T (1,1) double = [], ... simulation time (s)
+                kwargs.PML (1,:) double = [20 56], ... (one-sided) PML size range
+                kwargs.CFL_max (1,1) double = 0.25, ... maximum cfl number (for stability)
+                kwargs.parcluster (1,1) = 0, ... parallel cluster for running simulations (use 0 for no cluster)
+                kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', ... one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
+                kwargs.el_sub_div = self.getLambdaSubDiv(0.1, target.c0), ... element subdivisions (width x height)
+                karray_args.UpsamplingRate (1,1) double =  10, ...
+                karray_args.BLITolerance (1,1) double = 0.05, ...
+                karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
+            end
 
             % setup a default keyword arguments structure
-            kwargs = struct( ...
-                'T', [], ... simulation time (s)
-                'PML', [20 56], ... (one-sided) PML size range
-                'CFL_max', 0.25, ... maximum cfl number (for stability)
-                'parcluster', 0, ... parallel cluster for running simulations (use 0 for no cluster)
-                'ElemMapMethod', 'nearest', ... one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
-                'el_sub_div', self.getLambdaSubDiv(0.1, target.c0), ... element subdivisiosn (width x height)
-                'UpsamplingRate', 10, ...
-                'BLITolerance', 0.05, ...
-                'BLIType', 'sinc', ... stencil - exact or sinc
+            kwave_args = struct( ...
                 'DataCast', 'gpuArray-single',...
                 'DataRecast', false, ...
                 'LogScale', false, ...
@@ -1929,8 +1959,8 @@ classdef UltrasoundSystem < handle
                 'Smooth', true ...
                 );
 
-            % store NV pair arguments into kwargs
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+            % forward unrecognized NV pair arguments into kwave_args
+            for i = 1:2:numel(varargin), kwave_args.(varargin{i}) = varargin{i+1}; end
 
             % only supported with tx == rx for now
             assert(self.tx == self.rx, 'Transmitter and receiver must be identical.')
@@ -2019,7 +2049,7 @@ classdef UltrasoundSystem < handle
 
                 case {'karray-direct', 'karray-depend'}
                     % [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
-                    karray_opts = {'BLITolerance', kwargs.BLITolerance, 'UpsamplingRate', kwargs.UpsamplingRate, 'BLIType', kwargs.BLIType};
+                    karray_opts = struct2nvpair(karray_args);
                     karray = kWaveArray(self.rx, kgrid.dim, kgrid_origin, karray_opts{:});
                     mask = karray.getArrayBinaryMask(kgrid);
 
@@ -2077,12 +2107,6 @@ classdef UltrasoundSystem < handle
             fprintf('There are %i points in the grid which is %0.3f megabytes per grid variable.\n', ...
                 kgrid.total_grid_points, kgrid.total_grid_points*4/2^20);
 
-            % strip all other arguments from input
-            nonkwfields = {'T', 'PML','CFL_max', 'parcluster', 'ElemMapMethod', 'el_sub_div', ... % not kWave args
-                 'BLIType', 'BLITolerance','UpsamplingRate',  ... % not kspaceFirstOrder args
-                }; 
-            kwave_args = rmfield(kwargs, nonkwfields); % forward all others
-            
             % set global arguments: these are always overridden
             kwave_args.PMLInside = false;
             kwave_args.PMLSize = Npml(1:kgrid.dim);
@@ -2208,7 +2232,7 @@ classdef UltrasoundSystem < handle
     
     % Beamforming
     methods(Access=public)
-        function b = DAS(self, chd, c0, varargin)
+        function b = DAS(self, chd, c0, kwargs)
             % DAS - Delay and sum
             %
             % b = DAS(us, chd, c0) performs delay-and-sum beamforming on 
@@ -2252,32 +2276,20 @@ classdef UltrasoundSystem < handle
             %   - X\Y\Z:    3D coordinates of the output
             %   - B:        B-mode image
             
-            % TODO: switch to using a struct kwargs to facilitate later
-            % using the arguments blocks for R2020b+
-            % default name-value pair arguments
-            prec = 'single';
-            device = int64(-1 * logical(gpuDeviceCount)); % {0 | -1} -> {CPU | GPU}
-            apod = 1;
-            interp_args = {};
-            sumtx = true;
-            sumrx = true; 
-            
-            % name-value pairs
-            for n = int64(1):2:numel(varargin)
-                switch varargin{n}
-                    case 'prec'
-                        prec = varargin{n+1};
-                    case 'device'
-                        device = varargin{n+1};
-                    case 'interp'
-                        interp_args = varargin(n:n+1);
-                    case 'apod', apod = varargin{n+1}; 
-                    case 'keep_tx', sumtx = ~varargin{n+1};
-                    case 'keep_rx', sumrx = ~varargin{n+1};
-                    otherwise
-                        error('Unrecognized name-value pair');
-                end
+            arguments
+                self (1,1) UltrasoundSystem
+                chd ChannelData
+                c0 (1,1) double = 1540
+                kwargs.prec (1,1) string = "single"
+                kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
+                kwargs.apod {mustBeNumeric} = 1
+                kwargs.interp (1,1) string
+                kwargs.keep_tx (1,1) logical = false
+                kwargs.keep_rx (1,1) logical = false
             end
+
+            % parse inputs
+            [sumtx, sumrx] = deal(~kwargs.keep_tx, ~kwargs.keep_rx);
 
             % if we want to keep tx, we must keep rx too because of
             % available DAS functions
@@ -2295,7 +2307,7 @@ classdef UltrasoundSystem < handle
             [X, Y, Z, image_size] = self.scan.getImagingGrid();
 
             % reshape into I x N x M
-            apod_args = {'apod', apod};
+            apod_args = {'apod', kwargs.apod};
             
             % convert to x/y/z in 1st dimension
             P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 = 3 x I
@@ -2305,7 +2317,8 @@ classdef UltrasoundSystem < handle
             P_rx = self.rx.positions(); % cast(self.rx.positions(), 'like', time(end)); % 3 x N
             
             % get the beamformer arguments
-            dat_args = {chd.data, chd.t0, chd.fs, c0, 'device', device, 'position-precision', prec}; % data args
+            dat_args = {chd.data, chd.t0, chd.fs, c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
+            if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
             ext_args = [interp_args, apod_args]; % extra args
             
             switch self.sequence.type
@@ -2331,7 +2344,7 @@ classdef UltrasoundSystem < handle
             b = permute(b, [1:3,6:ndims(b),4:5]);
         end
         
-        function chd = focusTx(self, chd0, seq, varargin)
+        function chd = focusTx(self, chd0, seq, kwargs)
             % FOCUSTX - Synthesize transmits
             %
             % chd = FOCUSTX(self, chd0) focuses the FSA ChannelData chd0 by
@@ -2356,16 +2369,16 @@ classdef UltrasoundSystem < handle
             %   chd -                   New ChannelData object
             %
             % See also CHANNELDATA/SAMPLE
-            
-            % defaults
-            kwargs.length = [];
-            kwargs.interp = 'cubic';
-            
-            % focus using self's sequence 
-            if nargin < 3 || isempty(seq), seq = self.sequence; end
 
-            % parse optional inputs
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+            arguments
+                self (1,1) UltrasoundSystem
+                chd0 ChannelData
+                seq (1,1) Sequence = self.sequence;
+                kwargs.interp (1,1) string = "cubic";
+                kwargs.length = [];
+            end
+
+            % parse inputs
             L = kwargs.length;
 
             % Copy semantics
@@ -2554,7 +2567,7 @@ classdef UltrasoundSystem < handle
             B = reshape(B, image_size);        
         end
     
-        function b = bfAdjoint(self, chd, c0, varargin)
+        function b = bfAdjoint(self, chd, c0, kwargs)
             % BFADJOINT - Adjoint method beamformer
             %
             % b = BFADJOINT(self, chd) beamforms the ChannelData chd using
@@ -2567,18 +2580,16 @@ classdef UltrasoundSystem < handle
             % ULTRASOUNDSYSTEM/BFEIKONAL
 
             % TODO: include apodization, device, other keyword arguments
+            arguments
+                self (1,1) UltrasoundSystem
+                chd ChannelData
+                c0 (1,1) double = 1540
+                kwargs.fthresh = -40; % threshold for including frequencies
+                kwargs.apod = 1; % apodization
+                kwargs.Nfft = chd.T; % FFT-length
+            end
 
-            warning('This function is currently unsupported.'); 
-            
-            % options
-            kwargs.fthresh = -40; % threshold for including frequencies
-            kwargs.apod = 1; % apodization
-            kwargs.Nfft = chd.T; % FFT-length
-
-            % parse inputs
-            if nargin < 3 || isempty(c0), c0 = 1540; end
-
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+            warning('This function is currently unsupported.');
 
             % move the data to the frequency domain, being careful to
             % preserve the time axis
@@ -2590,10 +2601,10 @@ classdef UltrasoundSystem < handle
 
             % choose frequencies to evaluate
             xmax = max(x, [], chd.tdim); % maximum value per trace
-            f_val = mod2db(x) - mod2db(xmax) >= kwargs.fthresh; % threshold 
+            f_val = mod2db(x) - mod2db(xmax) >= kwargs.fthresh; % threshold
             f_val = f_val & f < chd.fs / 2; % positive frequencies only
             f_val = any(f_val, setdiff(1:ndims(x), chd.tdim)); % evaluate only freqs across aperture/frames that is above threshold
-            
+
             % get the pixel positions
             D = max(3, gather(ndims(chd.data))); % >= 4
             Pi = self.scan.getImagingGrid();
@@ -2676,7 +2687,7 @@ classdef UltrasoundSystem < handle
             b = swapdim(b, 1:3, D+(1:3));
         end    
 
-        function b = bfEikonal(self, chd, medium, cscan, varargin)
+        function b = bfEikonal(self, chd, medium, cscan, kwargs)
             % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
             %
             % b = BFEIKONAL(self, chd, medium, cscan) creates a b-mode 
@@ -2732,22 +2743,20 @@ classdef UltrasoundSystem < handle
             % 
             % See also DAS BFDAS BFADJOINT
 
-            % if not given a new Scan, use the UltrasoundSystem Scan
-            if nargin < 3 || isempty(cscan), cscan = self.scan; end
+            arguments
+                self (1,1) UltrasoundSystem
+                chd ChannelData
+                medium Medium
+                cscan (1,1) ScanCartesian = self.scan
 
-            % ensure that the cscan is on Cartesian coordinates
-            assert(isa(cscan, 'ScanCartesian'), "The medium Scan must be a ScanCartesian (given a " + class(cscan) + ").");
-
-            % defaults
-            kwargs.interp = 'linear';
-            kwargs.parcluster = gcp('nocreate');
-            kwargs.apod = 1;
-            kwargs.keep_rx = false;
-            kwargs.keep_tx = false;
-            kwargs.bsize = 16;
-
-            % set input options
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+                % defaults
+                kwargs.interp (1,1) string = 'cubic';
+                kwargs.parcluster = gcp('nocreate');
+                kwargs.apod {mustBeNumeric} = 1;
+                kwargs.keep_rx (1,1) logical = false;
+                kwargs.keep_tx (1,1) logical = false;
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = 16;
+            end
 
             % get summation options
             sumtx = ~kwargs.keep_tx;
@@ -2869,7 +2878,7 @@ classdef UltrasoundSystem < handle
             b = swapdim(b, 1:3, D+(1:3)); % move image dimensions down (I1 x I2 x I3 [x F x ... ] x perm(1 x N x M))
         end
     
-        function b = bfDAS(self, chd, c0, varargin)
+        function b = bfDAS(self, chd, c0, kwargs)
             % BFDAS - Delay-and-sum beamformer
             %
             % b = BFDAS(self, chd, c0) creates a b-mode image b from the 
@@ -2921,19 +2930,18 @@ classdef UltrasoundSystem < handle
             % 
             % See also DAS BFADJOINT CHANNELDATA/SAMPLE PARCLUSTER
 
-            % defaults
-            kwargs.interp = 'linear';
-            kwargs.parcluster = gcp('nocreate');
-            kwargs.apod = 1;
-            kwargs.keep_rx = false;
-            kwargs.keep_tx = false;
-            kwargs.bsize = 16;
-
-            % set input options
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
-
-            % parse inputs
-            if ~isnumeric(c0), c0 = c0.c0; end
+            arguments
+                self (1,1) UltrasoundSystem
+                chd ChannelData
+                c0 (1,1) double = 1540
+                kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
+                kwargs.apod {mustBeNumeric} = 1
+                kwargs.interp (1,1) string = "cubic"
+                kwargs.keep_tx (1,1) logical = false
+                kwargs.keep_rx (1,1) logical = false
+                kwargs.parcluster = gcp('nocreate');
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = 16;
+            end
 
             % get cluster
             clu = kwargs.parcluster;
