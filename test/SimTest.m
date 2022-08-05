@@ -271,7 +271,7 @@ classdef SimTest < matlab.unittest.TestCase
             n = median(1:chd.N); % must be odd integer size
             m = median(1:chd.M); % must be odd integer size
             ip = argmax(sub(chd.data, {n,m,1}, [2,3,4]), [], 1); % slice rx/tx/frames
-            tau = double(chd.time(ip,median(1:size(chd.time,2)), median(1:size(chd.time,3)), 1));
+            tau = gather(double(chd.time(ip,median(1:size(chd.time,2)), median(1:size(chd.time,3)), 1)));
 
             % true peak time - exactly 20us travel time
             switch us.sequence.type
