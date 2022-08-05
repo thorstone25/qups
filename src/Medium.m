@@ -136,8 +136,8 @@ classdef Medium < handle
                         % MATLAB does not promise the number of outputs,
                         % nor provide a convenient way of figuring that out
                         % from the function handle itself, so we just try 
-                        % up to 5 until we get it right
-                        for nfout = 1:5
+                        % 5 or less until we get it right
+                        for nfout = 5:-1:1
                             out = cell(1, nfout);
                             try
                                 [out{:}] = fun(points);
