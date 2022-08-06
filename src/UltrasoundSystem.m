@@ -212,7 +212,7 @@ classdef UltrasoundSystem < handle
 
     % Modified Green's function based direct computations
     methods
-        function [chd, wv] = greens(self, target, element_subdivisions, varargin)
+        function [chd, wv] = greens(self, target, element_subdivisions, varargin, kwargs)
             % GREENS - Simulate ChannelData via a shifted Green's function.
             % 
             % chd = GREENS(self, target)
@@ -259,21 +259,19 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 target Scatterers
-                element_subdivisions (1,2) double = [1,1]
+                element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
             end
             arguments(Repeating)
                 varargin
             end
 
-            % get Tx/Rx apertures subelement positions
-            % (3 x N x E)
-            if nargin < 3, element_subdivisions = [1,1]; end
-            kwargs.device = -logical(gpuDeviceCount());
-            kwargs.interp = 'linear';
-            kwargs.tall = false;
-            kwargs.bsize = 1;
-            kwargs.verbose = false;
-            
+            arguments
+                kwargs.device (1,1) {mustBeInteger} = -logical(gpuDeviceCount());
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+                kwargs.tall (1,1) logical = false;
+                kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = 1;
+                kwargs.verbose (1,1) logical = false;
+            end
             % parse inputs
             % TODO: switch to kwargs properties
             for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
@@ -429,8 +427,8 @@ classdef UltrasoundSystem < handle
                                 % TODO: compute where we actually receive a response
                                 tau = (tau_tx + tau_rx + t0)*fs_; % S x 1 x N x M x 1 x 1
                                 it = tvec == tvec; %(1 x T')
-                                it = it & T-1 > tvec - max(tau(:));
-                                it = it &   0 < tvec - min(tau(:));
+                                it = it & T-1 >= tvec - max(tau(:));
+                                it = it &   0 <= tvec - min(tau(:));
 
                                 % compute only for this range and sum as we go
                                 % (1 x T' x N X M)
@@ -491,7 +489,7 @@ classdef UltrasoundSystem < handle
 
             arguments
                 self (1,1) UltrasoundSystem
-                target Scatterers
+                target Medium
                 sscan ScanCartesian
                 kwargs.f0 (1,1) {mustBeNumeric} = self.xdc.fc; % center frequency of the transmit / simulation
                 kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
@@ -607,7 +605,7 @@ classdef UltrasoundSystem < handle
             
             arguments
                 self (1,1) UltrasoundSystem
-                target Scatterers
+                target Medium
                 sscan ScanCartesian
                 kwargs.parcluster (1,1) parallel.Cluster = parcluster('local') % parallel cluster
                 kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim'); % simulation directory
@@ -653,13 +651,9 @@ classdef UltrasoundSystem < handle
 
             arguments
                 conf (1,1) struct
-                simdir (1,1) string
-                clu (1,1) parallel.Cluster % computing cluster
+                simdir (1,1) string = fullfile(pwd, 'fwsim')
+                clu (1,1) parallel.Cluster = parcluster('local')
             end
-
-            % parse inputs
-            if nargin < 3, clu = parcluster('local'); end
-            if nargin < 2, simdir = fullfile(pwd, 'fwsim'); end
 
             % make simulation directory
             mkdir(simdir);
@@ -748,7 +742,7 @@ classdef UltrasoundSystem < handle
 
     % SIMUS calls
     methods
-        function chd = simus(self, target, kwargs)
+        function chd = simus(self, target, kwargs, simus_kwargs)
             % SIMUS - Simulate channel data via MUST
             %
             % chd = SIMUS(self, target) simulates the Target target and
@@ -781,10 +775,10 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 target (1,1) Scatterers
-                kwargs.interp (1,1) string = "cubic"
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parcluster (1,1) = gcp('nocreate')
-                kwargs.periods (1,1) double = 1
-                kwargs.dims {mustBeScalarOrEmpty} = [];
+                simus_kwargs.periods (1,1) {mustBePositive} = 1
+                simus_kwargs.dims {mustBeScalarOrEmpty} = []
             
             end
 
@@ -801,11 +795,11 @@ classdef UltrasoundSystem < handle
             [X, Y, Z, A] = arrayfun(@(target) ...
                 deal(sub(target.pos,1,1), sub(target.pos,2,1), sub(target.pos,3,1), target.amp), ...
                 target, 'UniformOutput',false);
-            if isempty(kwargs.dims) 
-                if all(cellfun(@(Y)Y == 0, 'all'),Y), kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
+            if isempty(simus_kwargs.dims) 
+                if all(cellfun(@(Y)Y == 0, 'all'),Y), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
                 else, kwargs.dims = 3; end
             end
-            if kwargs.dims == 2 && cellfun(@(Y)any(Y ~= 0, 'all'),Y)
+            if simus_kwargs.dims == 2 && cellfun(@(Y)any(Y ~= 0, 'all'),Y)
                 warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
             end
 
@@ -819,7 +813,7 @@ classdef UltrasoundSystem < handle
             % set transmit sequence ... the only way we can
             % TODO: forward arguments to transmit parameters
             p.fs    = self.fs;
-            p.TXnow = kwargs.periods; % number of wavelengths
+            p.TXnow = simus_kwargs.periods; % number of wavelengths
             p.TXapodization = zeros([self.xdc.numel,1]); % set tx apodization
             p.RXdelay = zeros([self.xdc.numel,1]); % receive delays (none)
             
@@ -899,9 +893,9 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 target Scatterers
-                element_subdivisions (1,2) double = [1,1]
+                element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parcluster (1,1) = gcp('nocreate')
-                kwargs.interp (1,1) string = "linear"
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
             end
             
             % helper function
@@ -994,7 +988,7 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 target Scatterers
-                element_subdivisions (1,2) double = [1,1]
+                element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parcluster (1,1) = gcp('nocreate')
             end
             
@@ -1934,12 +1928,12 @@ classdef UltrasoundSystem < handle
                 varargin
             end
             arguments
-                kwargs.T (1,1) double = [], ... simulation time (s)
+                kwargs.T double {mustBeScalarOrEmpty} = [], ... simulation time (s)
                 kwargs.PML (1,:) double = [20 56], ... (one-sided) PML size range
-                kwargs.CFL_max (1,1) double = 0.25, ... maximum cfl number (for stability)
+                kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, ... maximum cfl number (for stability)
                 kwargs.parcluster (1,1) = 0, ... parallel cluster for running simulations (use 0 for no cluster)
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', ... one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
-                kwargs.el_sub_div = self.getLambdaSubDiv(0.1, target.c0), ... element subdivisions (width x height)
+                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, target.c0), ... element subdivisions (width x height)
                 karray_args.UpsamplingRate (1,1) double =  10, ...
                 karray_args.BLITolerance (1,1) double = 0.05, ...
                 karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
@@ -2138,7 +2132,7 @@ classdef UltrasoundSystem < handle
                 case {'karray-direct'}
                     proc_fun = @(x) gather(convn(x.ux.' * full(elem_weights)), rx_sig, 'full'); % (J' x T)' x (J' x N) -> T x N
                 case {'nearest'}
-                    proc_fun = @(x) gather(x.ux.'); % -> (T x N)
+                    proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full')); % -> (T x N)
                 case 'linear'
                     % create the advanced impulse response function with
                     % which to convolve the output
@@ -2152,10 +2146,10 @@ classdef UltrasoundSystem < handle
                         ); % [(N x J'') x (J'' x T)]' -> T x N
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
-                    proc_fun = @(x) gather(x.ux.');
+                    proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full'));
             end
 
-            % TODO: provide more options to toggle between cluster job and
+            % choose where to compute the data
             % parfor behaviour - for now, only parcluster == 0 -> parfor
             switch kwargs.parcluster
                 case 0 % process directly in a parfor loop if 0
@@ -2279,11 +2273,11 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) double = 1540
+                c0 (1,1) double = self.sequence.c0
                 kwargs.prec (1,1) string = "single"
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumeric} = 1
-                kwargs.interp (1,1) string
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
             end
@@ -2374,11 +2368,11 @@ classdef UltrasoundSystem < handle
                 self (1,1) UltrasoundSystem
                 chd0 ChannelData
                 seq (1,1) Sequence = self.sequence;
-                kwargs.interp (1,1) string = "cubic";
-                kwargs.length = [];
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+                kwargs.length double {mustBeScalarOrEmpty} = [];
             end
 
-            % parse inputs
+            % parse optional inputs
             L = kwargs.length;
 
             % Copy semantics
@@ -2583,7 +2577,7 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) double = 1540
+                c0 (1,1) double = self.sequence.c0
                 kwargs.fthresh = -40; % threshold for including frequencies
                 kwargs.apod = 1; % apodization
                 kwargs.Nfft = chd.T; % FFT-length
@@ -2750,7 +2744,7 @@ classdef UltrasoundSystem < handle
                 cscan (1,1) ScanCartesian = self.scan
 
                 % defaults
-                kwargs.interp (1,1) string = 'cubic';
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parcluster = gcp('nocreate');
                 kwargs.apod {mustBeNumeric} = 1;
                 kwargs.keep_rx (1,1) logical = false;
@@ -2933,10 +2927,10 @@ classdef UltrasoundSystem < handle
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) double = 1540
+                c0 (1,1) double = self.sequence.c0
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumeric} = 1
-                kwargs.interp (1,1) string = "cubic"
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
                 kwargs.parcluster = gcp('nocreate');
