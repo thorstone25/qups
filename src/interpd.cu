@@ -248,38 +248,15 @@ __global__ void interpdh(ushort2 * __restrict__ y,
     );
 }
 
-__global__ void wsinterpd_temp(ushort2 * __restrict__ y, 
+__global__ void wsinterpdh(ushort2 * __restrict__ y, 
     const ushort2 * __restrict__ w, const ushort2 * __restrict__ x, 
     const unsigned short * __restrict__ tau, const size_t * sizes, 
-    const size_t * wstride, const size_t * ystride, const int flag, 
-    const ushort2 no_v) {
+    const size_t * wstride, const size_t * ystride, const int flag) {
     wsinterpd_temp<half2, half, float>((half2 *)y, (const half2 *)w, (const half2 *)x,
              (half *)tau, sizes, wstride, ystride, flag, (const half2) make_half2(0,0));
 }
 #endif
 /*
-    // get sampling index
-    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
-    const half2 no_v = make_half2(0.0f, 0.0f);
-
-    // rename for readability
-    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F;
-
-    // remap indices
-    const size_t i = tid % I;
-    const size_t m = tid / I;
-
-    // if valid sample, for each tx/rx
-    if(i < I && n < N && m < M){
-        # pragma unroll
-        for(size_t f = 0; f < F; ++f){ // per transmit
-            y[i + n*I + m*N*I + f*M*N*I] = h2u(sample((const half2 *)&x[n*T + f*N*T], (float)u2h(tau[i + n*I + m*I*N]), flag, no_v));
-        }
-    }
-}
-
 __global__ void wsinterpdh(ushort2 * __restrict__ y, 
     const ushort2 * __restrict__ w, const ushort2 * __restrict__ x, 
     const unsigned short * __restrict__ tau, const size_t * sizes, 
