@@ -87,6 +87,39 @@ classdef ChannelData < matlab.mixin.Copyable
                 'data', self.data(:,:,:,:) ... limit to 4 dimensions
                 );
         end
+    
+        % scaling
+        function chd = scale(chd, kwargs)
+            % SCALE - Scale units
+            %
+            % chd = SCALE(chd, 'time', factor) scales the temporal
+            % properties by factor. This simultaneously converts in time 
+            % and in frequency, for example from seconds to microseconds 
+            % and hertz to megahertz.
+            %
+            % Example:
+            %
+            % % Create a ChannelData object
+            % chd = ChannelData('data', rand(2^8), 'fs', 1e6, 't0', -5e-6); % s, Hz
+            %
+            % % convert from hertz to megahertz
+            % chd = scale(chd, 'time', 1e6); % us, MHz
+            % chd.fs
+            % chd.t0
+            %
+
+            arguments
+                chd ChannelData
+                kwargs.time (1,1) double
+            end
+            chd = copy(chd);
+            if isfield(kwargs, 'time')
+                w = kwargs.time;
+                % scale time (e.g. s -> us / Hz -> MHz)
+                [chd.fs, chd.t0] = deal(chd.fs/w, w*chd.t0);
+            end
+        end
+
     end
 
     % helper functions
