@@ -71,6 +71,25 @@ classdef TransducerConvex < Transducer
         end
     end
     
+    % manipulation
+    methods
+        % scaling
+        function self = scale(self, kwargs)
+            arguments
+                self Transducer
+                kwargs.dist (1,1) double
+                kwargs.time (1,1) double
+            end
+            args = struct2nvpair(kwargs); % get the arguments as Name/Value pairs
+            self = scale@Transducer(self, args{:}); % call superclass method
+            if isfield(kwargs, 'dist')
+                w = kwargs.dist;
+                % scale distance (e.g. m -> mm)
+                [self.radius] = deal(w*self.radius);
+            end
+        end
+    end
+
     % define abstract methods
     methods
         function p = positions(self), p = findPositions(self); end

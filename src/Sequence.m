@@ -29,13 +29,13 @@ classdef Sequence < matlab.mixin.Copyable
     
     properties
         type (1,1) string {mustBeMember(type, ["FSA", "PW", "VS"])} = 'FSA' % {'FSA', 'PW', 'VS'}
-        focus (3,:) {mustBeNumeric} = zeros([3,1]);   % (3 x S) array specifying the focal point or plane-wave direction (m)
-        c0 (1,1) {mustBeNumeric} = 1540               % sound speed for the transmit delays (m/s)
+        focus (3,:) {mustBeNumeric} = zeros([3,1]);   % (3 x S) array specifying the focal point or plane-wave direction
+        c0 (1,1) {mustBeNumeric} = 1540               % sound speed for the transmit delays
         pulse (1,1) Waveform = Waveform.Delta() % transmit Waveform
     end
     
     properties(Dependent)
-        numPulse (1,1) double {mustBeInteger}% number of pulses: set manually if sequence.type == 'FSA'
+        numPulse (1,1) double {mustBeInteger} % number of pulses: set manually if sequence.type == 'FSA'
     end
     
     properties(Hidden)
@@ -83,6 +83,47 @@ classdef Sequence < matlab.mixin.Copyable
 
             % initialize
             for s = string(fieldnames(kwargs))', self.(s) = kwargs.(s); end
+        end
+
+        % scaling
+        function self = scale(self, kwargs)
+            % SCALE - Scale units
+            %
+            % seq = SCALE(seq, 'dist', factor) scales the distance of the
+            % properties by factor. This can be used to convert from meters
+            % to millimeters for example.
+            %
+            % seq = SCALE(seq, 'time', factor) scales the temporal
+            % properties by factor. This can be used to convert from
+            % seconds to microseconds and hertz to megahertz.
+            %
+            % Example:
+            %
+            % % Create a Sequence
+            % seq = Sequence('type', 'VS', 'c0', 1500, 'focus', [0;0;30e-3]); % m, s, Hz
+            %
+            % % convert from meters to millimeters, hertz to megahertz
+            % seq = scale(seq, 'dist', 1e3, 'time', 1e6); % mm, us, MHz
+            % seq.focus % in mm
+            % seq.c0 % in mm/us
+            %
+            %
+            arguments
+                self Sequence
+                kwargs.dist (1,1) double
+                kwargs.time (1,1) double
+            end
+            self = copy(self);
+            cscale = 1;
+            if isfield(kwargs, 'dist')
+                self.focus = kwargs.dist * self.focus; % scale distance (e.g. m -> mm)
+                cscale = cscale * kwargs.dist;
+            end
+            if isfield(kwargs, 'time')
+                self.pulse = scale(self.pulse, 'time', kwargs.time);
+                cscale = cscale / kwargs.time;
+            end
+            self.c0 = self.c0 * cscale;
         end
     end
     

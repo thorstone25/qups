@@ -75,6 +75,19 @@ classdef ScanCartesian < Scan
             % See also SETIMAGINGGRID
             [self.xb, self.yb, self.zb] = deal(x, y, z);
         end
+        % scaling
+        function self = scale(self, kwargs)
+            arguments
+                self ScanCartesian
+                kwargs.dist (1,1) double
+            end
+            self = copy(self);
+            if isfield(kwargs, 'dist')
+                w = kwargs.dist;
+                % scale distance (e.g. m -> mm)
+                [self.x, self.y, self.z] = deal(w*self.x, w*self.y, w*self.z);
+            end
+        end
     end
 
     % USTB interface methods

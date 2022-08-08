@@ -86,6 +86,24 @@ classdef Scan < matlab.mixin.Copyable
         %               imaging grid
         setImageGridOnTarget(self, target, margin)
 
+
+        % SCALE - Scale units
+        %
+        % scan = SCALE(scan, 'dist', factor) scales the distance of the
+        % properties by factor. This can be used to convert from meters to
+        % millimeters for example.
+        %
+        % Example:
+        %
+        % % Create a scan
+        % scan = ScanCartesian('xb', [-2e-3, 2e-3]); % in meters
+        %
+        % % convert from meters to millimeters
+        % scan = scale(scan, 'dist', 1e3); % in millimeters
+        % scan.xb
+        %
+        % 
+        scale(self, kwargs)
     end
 
 

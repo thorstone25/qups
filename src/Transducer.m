@@ -9,7 +9,7 @@
 % 
 % See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERPISTON
 
-classdef (Abstract) Transducer < handle
+classdef (Abstract) Transducer < matlab.mixin.Copyable
     properties
         fc = 5e6        % center frequency
         bw = [3.5e6 6.5e6] % bandwidth
@@ -80,6 +80,52 @@ classdef (Abstract) Transducer < handle
             end   
         end
     end
+
+    % manipulation
+    methods
+        % scaling
+        function self = scale(self, kwargs)
+            % SCALE - Scale units
+            %
+            % xdc = SCALE(xdc, 'dist', factor) scales the distance of the
+            % properties by factor. This can be used to convert from meters
+            % to millimeters for example.
+            %
+            % xdc = SCALE(xdc, 'time', factor) scales the temporal
+            % properties by factor. This can be used to convert from
+            % seconds to microseconds and hertz to megahertz.
+            %
+            % Example:
+            %
+            % % Create a Transducer
+            % xdc = TransducerArray() % m, s, Hz
+            %
+            % % convert from meters to millimeters, hertz to megahertz
+            % xdc = scale(xdc, 'dist', 1e3, 'time', 1e6); % mm, us, MHz
+            % xdc.width
+            % xdc.fc
+            %
+
+            arguments
+                self Transducer
+                kwargs.dist (1,1) double
+                kwargs.time (1,1) double
+            end
+            self = copy(self);
+            if isfield(kwargs, 'dist')
+                w = kwargs.dist;
+                % scale distance (e.g. m -> mm)
+                [self.width, self.height, self.offset] = deal(w*self.width, w*self.height, w*self.offset);
+            end
+            if isfield(kwargs, 'time')
+                w = kwargs.time;
+                % scale time (e.g. s -> us / Hz -> MHz)
+                [self.fc, self.bw] = deal(self.fc/w, self.bw/w);
+                self.impulse = scale(self.impulse, 'time', w);
+            end
+        end
+    end
+
 
     % transducer specific methods
     methods (Abstract)

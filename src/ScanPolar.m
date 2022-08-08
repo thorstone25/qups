@@ -74,8 +74,21 @@ classdef ScanPolar < Scan
                 'depth_axis'  , self.r ...
                 );
         end
+        % scaling
+        function self = scale(self, kwargs)
+            arguments
+                self ScanPolar
+                kwargs.dist (1,1) double
+            end
+            self = copy(self);
+            if isfield(kwargs, 'dist')
+                w = kwargs.dist;
+                % scale distance (e.g. m -> mm)
+                [self.y, self.r] = deal(w*self.y, w*self.r);
+            end
+        end
     end
-        
+
     % imaging computations
     methods
         function [X, Y, Z, sz] = getImagingGrid(self, kwargs)

@@ -82,6 +82,20 @@ classdef SequenceRadial < Sequence
                 error('Both range and angle must be set together.')
             end
         end
+        
+        % scaling
+        function self = scale(self, kwargs)
+            arguments
+                self SequenceRadial
+                kwargs.dist (1,1) double
+                kwargs.time (1,1) double
+            end
+            args = struct2nvpair(kwargs); % gather args
+            self = scale@Sequence(self, args{:}); % call the superclass method
+            if isfield(kwargs, 'dist')
+                self.apex = kwargs.dist * self.apex; % scale distance (e.g. m -> mm)
+            end
+        end
     end
 
     % get/set methods

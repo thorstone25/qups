@@ -206,6 +206,33 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
 
+    % property modification
+    methods
+        function self = scale(self, kwargs)
+            arguments
+                self (1,1) UltrasoundSystem
+                kwargs.dist (1,1) double
+                kwargs.time (1,1) double
+            end
+
+            self = copy(self);
+            args = struct2nvpair(kwargs);
+            
+            % convert distance only
+            if isfield(kwargs, 'dist')
+                self.scan = scale(self.scan, 'dist', kwargs.dist);
+            end
+            % convert time only
+            if isfield(kwargs, 'time')
+                self.fs = self.fs / kwargs.time;
+            end
+
+            % convert distance and/or time/freq
+            self.xdc = scale(self.xdc, args{:}); % convert in distance and time
+            self.sequence = scale(self.sequence, args{:}); % convert in distance and time
+        end
+    end
+
     % Modified Green's function based direct computations
     methods
         function [chd, wv] = greens(self, target, element_subdivisions, varargin, kwargs)
