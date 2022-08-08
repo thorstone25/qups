@@ -450,6 +450,7 @@ classdef ChannelData < matlab.mixin.Copyable
             assert(A >= 0 && B >= 0, 'Data append or prepend size must be positive.');
 
             chd = copy(chd); % copy semantics
+            if A == 0 && B == 0, return; end % short circuit
             % chd.data(end+(B+A),:) = 0; % append A + B zeros in time to the data
             s = repmat({':'}, [1,gather(ndims(chd.data))]); % splice in all other dimensions
             s{chd.tdim} = chd.T + (1:(B+A)); % expand by B+A in time dimension
