@@ -7,10 +7,10 @@ classdef Sequence < matlab.mixin.Copyable
     % The following properties must be set by the caller/construtor:
     %
     % properties
-    %     type = 'FSA'            % {'FSA', 'plane[-wave]'], 'virtual[-source]']}
-    %     focus = [0;0;0]         % (3 x S) array specifying the focal point or plane-wave direction (m)
-    %     c0 = 1540               % sound speed for the transmit delays (m/s)
-    %     pulse = Waveform.Delta()% ([1|N] x [1|S]) transmit Waveform (array)
+    %     type = 'FSA'            % one of {'FSA', 'PW', 'VS'}
+    %     focus = [0;0;0]         % (3 x S) array specifying the focal points or plane-wave vectors
+    %     c0 = 1540               % beamforming sound speed for the transmit delays
+    %     pulse = Waveform.Delta()% transmit Waveform object
     % end
     %
     % S -> number of transmitted pulses
@@ -25,33 +25,64 @@ classdef Sequence < matlab.mixin.Copyable
     %
     % seq.numPulse = xdc.numel;
     %
-    % See also: SEQUENCERADIAL
+    % See also: SEQUENCERADIAL WAVEFORM
     
     properties
-        type = 'FSA'            % {'FSA', 'PW', 'VS'}
-        focus = zeros([3,1]);   % (3 x S) array specifying the focal point or plane-wave direction (m)
-        c0 = 1540               % sound speed for the transmit delays (m/s)
-        pulse = Waveform.Delta()% transmit Waveform
+        type (1,1) string {mustBeMember(type, ["FSA", "PW", "VS"])} = 'FSA' % {'FSA', 'PW', 'VS'}
+        focus (3,:) {mustBeNumeric} = zeros([3,1]);   % (3 x S) array specifying the focal point or plane-wave direction (m)
+        c0 (1,1) {mustBeNumeric} = 1540               % sound speed for the transmit delays (m/s)
+        pulse (1,1) Waveform = Waveform.Delta() % transmit Waveform
     end
     
     properties(Dependent)
-        numPulse        % number of pulses: set manually if sequence.type == 'FSA'
+        numPulse (1,1) double {mustBeInteger}% number of pulses: set manually if sequence.type == 'FSA'
     end
     
     properties(Hidden)
-        FSA_n_tx = nan % hidden storage of the number of pulse for an FSA sequence
+        FSA_n_tx (1,1) double = nan % hidden storage of the number of pulse for an FSA sequence
         apodization_ = [] % hidden storage of user entered apodization values or function
     end
     
     methods
         % constructor
-        function self = Sequence(varargin)
-            % SEQUENCE/SEQUENCE - Sequence constructor
+        function self = Sequence(kwargs)
+            % SEQUENCE - Sequence constructor
             %
-            % Uses name/value pair initialization
+            % seq = SEQUENCE() constructs a Sequence
             %
-            % 
-            for i = 1:2:nargin, self.(varargin{i}) = varargin{i+1}; end
+            % seq = SEQUENCE(Name, Value, ...) uses Name/Value pair
+            % arguments to construct a Sequence
+            %
+            % seq = SEQUENCE('type', 'FSA', 'numPulse', N) defines a full
+            % synthetic aperture (FSA) sequence for a transducer with N 
+            % elements. The numPulse property must be set explicitly 
+            %
+            % seq = SEQUENCE('type', 'PW', 'focus', 1 .* [cosd(theta); 0*theta; sind(theta)]) 
+            % defines a plane  wave (PW) sequence at the 1 x S array of 
+            % angles theta. Note that the norm of the focus is always 1.
+            %
+            % seq = SEQUENCE('type', 'VS', 'focus', FOCI) defines a 
+            % focused or diverging virtual source (VS) sequence with 
+            % focal point locations at the focal points FOCI. FOCI is a
+            % 3 x S array of focal points. 
+            %
+            % seq = SEQUENCE(..., 'c0', c0) sets the beamforming sound 
+            % speed to c0. 
+            %
+            % seq = SEQUENCE(..., 'pulse', wv) defines the transmitted 
+            % pulse to be the Waveform wv.
+            %
+            % See also SEQUENCERADIAL WAVEFORM
+            arguments
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["FSA", "PW", "VS"])}
+                kwargs.focus (3,:) double
+                kwargs.c0 (1,1) double
+                kwargs.pulse (1,1) Waveform
+                kwargs.numPulse (1,1) double {mustBeInteger}
+            end
+
+            % initialize
+            for s = string(fieldnames(kwargs))', self.(s) = kwargs.(s); end
         end
     end
     
@@ -66,6 +97,11 @@ classdef Sequence < matlab.mixin.Copyable
             % the QUPS coordinate system.
             %
             % See also TRANSDUCER/GETUSTBPROBE
+            arguments
+                self (1,1) Sequence
+                xdc (1,1) Transducer
+                t0 (1,1) double % bulk offset of the data
+            end
 
 
             % initialize all wave objects
@@ -128,6 +164,10 @@ classdef Sequence < matlab.mixin.Copyable
             %   - tau:      a (N x S) array of element delays (s)
             %
             % N -> number of elements, S -> number of transmits
+            arguments
+                self Sequence
+                tx Transducer
+            end
             
             % element positions (3 x 1 x N)
             p = permute(tx.positions(),[1 3 2]); 
@@ -154,6 +194,11 @@ classdef Sequence < matlab.mixin.Copyable
         end
 
         function a = apodization(self, tx)
+            arguments
+                self Sequence
+                tx Transducer
+            end
+
             if isempty(self.apodization_) % apodization not set by user:
                 switch self.type
                     case 'FSA'
@@ -174,6 +219,7 @@ classdef Sequence < matlab.mixin.Copyable
         end
 
         function t0 = t0Offset(self)
+            arguments, self Sequence, end
             switch self.type
                 case 'VS' % for virtual source, t0 is at the foci
                     t0 = - vecnorm(self.focus, 2,1) ./ self.c0; % (1 x S)
