@@ -4,15 +4,15 @@
 classdef Waveform < handle
     
     properties(GetAccess=public, SetAccess=public)
-        fun = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
-        t0 = 0                      % start time
-        tend = 2 / 5e6              % end time
+        fun function_handle = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
+        t0 (1,1) {mustBeNumeric} = 0                      % start time
+        tend (1,1) {mustBeNumeric} = 2 / 5e6              % end time
     end
     
-    properties(GetAccess=public, SetAccess=protected)
+    properties(GetAccess=public, SetAccess=public)
         samples = []         % sampled form of the waveform
-        mode = 'fun'         % echo mode {*fun | samp}
-        dt = []              % time resolution in sampled mode
+        mode (1,1) string {mustBeMember(mode, ["fun", "samp"])} = 'fun'         % echo mode {*fun | samp}
+        dt (1,1) {mustBeNumeric} = []              % time resolution in sampled mode
     end
     
     properties(Dependent)
@@ -182,7 +182,7 @@ classdef Waveform < handle
             end
             w = Waveform(params{:});
         end
-        
+       
         function s = sample(self, t)
             % Get waveform samples for the times specified in the vector t.
             % If in sampled mode, t must match the sample time axis
