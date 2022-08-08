@@ -141,6 +141,7 @@ classdef BFTest < matlab.unittest.TestCase
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
             chd = filter(chd, getPassbandFilter(chd, xdc.bw)); % apply a filter
             if isreal(chd), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
+            chd = gather(chd); % bring to CPU
 
             % save QUPS objects for this test case
             test.chd    = chd; 
@@ -170,12 +171,13 @@ classdef BFTest < matlab.unittest.TestCase
         terp = {'nearest', 'linear', 'cubic'};
     end
     methods(TestMethodSetup)
+        function resetGPU(test), gpuDevice([]); end
     end
     
     % Github test routine
     methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
         function github_psf(test, bf_name)%, prec, terp)
-            switch bf_name, case {'Eikonal', 'Adjoint'}, return; end % Adjoint not supported, Eikonal too large?
+            switch bf_name, case {'Eikonal'}, return; end % Eikonal is too large?
             
             % only test 1 precision/interpolation
             psf(test, 0, bf_name, 'singleT', 'nearest'); 
@@ -205,8 +207,11 @@ classdef BFTest < matlab.unittest.TestCase
 
             % for the Eikonal beamformer, pass if not given FSA delays
             if bf_name == "Eikonal" && us.sequence.type ~= "FSA", return; end
+            % if using the adjoint method, skip half precision - the phase errors are too large
+            if bf_name == "Adjoint" && prec == "halfT", return; end
 
             % set ChannelData type
+            if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
             tfun = str2func(prec);
             chd = tfun(test.chd); % cast to specified precision
             if gdev, chd = gpuArray(chd); else, chd = gather(chd); end % move data to GPU if requested
