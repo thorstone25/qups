@@ -39,7 +39,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
     
     properties(Hidden,SetAccess=protected)
-        tmp_folder (1,1) string {mustBeFolder} = mktempdir() % temporary folder for compiled binaries
+        tmp_folder (1,1) string = mktempdir() % temporary folder for compiled binaries
     end
         
     % get/set & constructor
