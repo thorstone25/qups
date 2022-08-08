@@ -39,7 +39,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
     
     properties(Hidden,SetAccess=protected)
-        tmp_folder string {mustBeScalarOrEmpty, mustBeFolder} % temporary folder for compiled binaries
+        tmp_folder (1,1) string {mustBeFolder} = mktempdir() % temporary folder for compiled binaries
     end
         
     % get/set & constructor
@@ -114,12 +114,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     );
             end
 
-            % get a temp folder for binaries and const-compiled code
-            tmp = tempname();
-            mkdir(tmp); % make the folder
-            addpath(tmp); % this should let us shadow any other binaries
-            self.tmp_folder = tmp; % gives a folder usually in /tmp
-
+            % shadow with the (newly created) temp folder for binaries and 
+            % const-compiled code
+            addpath(self.tmp_folder);
 
             % copy code or recompile it
             if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
@@ -130,8 +127,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % copy code or recompile it
-            % TODO: generalize to mex extension for other machines (with
-            % isunix or iswindows or ismac)
             defs = self.getMexFileDefs();
             fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
             s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
@@ -3395,4 +3390,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
 end
+
+function tmp = mktempdir(), tmp = tempname(); mkdir(tmp); end
 
