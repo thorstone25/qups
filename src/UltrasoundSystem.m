@@ -17,13 +17,13 @@
 % 
 % See also TRANSDUCER SEQUENCE SCAN TARGET CHANNELDATA
 
-classdef UltrasoundSystem < handle
+classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % objects
     properties
         tx Transducer = TransducerArray() % Transducer object (transmit)
         rx Transducer = TransducerArray() % Transducer object (receive)
-        sequence Sequence           % Sequence object
+        sequence Sequence = Sequence()    % Sequence object
         scan Scan = ScanCartesian() % Scan object
     end
     
@@ -39,150 +39,150 @@ classdef UltrasoundSystem < handle
     end
     
     properties(Hidden,SetAccess=protected)
-        tmp_folder          % temporary folder for compiled binaries
+        tmp_folder string {mustBeScalarOrEmpty, mustBeFolder} % temporary folder for compiled binaries
     end
         
     % get/set & constructor
     methods
         % constructor
-        function self = UltrasoundSystem(varargin)
-            % UltrasoundSystem - Construct an UltrasoundSystem
+        function self = UltrasoundSystem(kwargs, opts)
+            % ULTRASOUNDSYSTEM - Construct an UltrasoundSystem object
             %
-            % us = UltrasoundSystem(Name,Value,...) constructs an
-            % UltrasoundSystem object using name value pairs. It's the
-            % recommended method of construction.
+            % us = ULTRASOUNDSYSTEM() constructs an UltrasoundSystem
+            % object.
+            % 
+            % us = ULTRASOUNDSYSTEM(Name,Value,...) constructs an
+            % UltrasoundSystem object using Name/Value pairs. 
+            % 
+            % us = ULTRASOUNDSYSTEM(...,'tx', tx) sets the transmit 
+            % Transducer to be the Transducer tx.
             %
-
-            
-            % initialize Target / Transducer array
-            xdc_args = {};
-            for i = 1:2:nargin
-                switch lower(varargin{i})
-                    case {'width', 'radius', 'height', 'impulse','beampattern',...
-                            'pitch','numel','kerf', 'fc',...
-                            'bandwidth','fractional_bandwidth'}
-                        xdc_args{end+1} = varargin{i}; %#ok<AGROW>
-                        xdc_args{end+1} = varargin{i+1}; %#ok<AGROW>
-                end
+            % us = ULTRASOUNDSYSTEM(...,'rx', rx) sets the receive 
+            % Transducer to be the Transducer rx.
+            %
+            % us = ULTRASOUNDSYSTEM(...,'xdc', xdc) sets the transmit and 
+            % receive Transducer us.tx and us.rx to be the Transducer xdc.
+            % When set like this, the property us.xdc is available.
+            %
+            % us = ULTRASOUNDSYSTEM(...,'sequence', seq) sets the Sequence
+            % to be the Sequence seq.
+            %
+            % us = ULTRASOUNDSYSTEM(...,'scan', scan) sets the Scan to be
+            % the Scan scan.
+            %
+            % us = ULTRASOUNDSYSTEM(...,'fs', fs) sets the simulation 
+            % sampling frequency to fs.
+            %
+            % us = ULTRASOUNDSYSTEM(...,'recompile', false) avoids
+            % attempting to recompile mex and CUDA files when an
+            % UltrasoundSystem object is created.
+            %
+            % See also TRANSDUCER SEQUENCE SCAN
+            arguments
+                kwargs.tx Transducer
+                kwargs.rx Transducer
+                kwargs.xdc Transducer
+                kwargs.sequence Sequence
+                kwargs.scan Scan
+                kwargs.fs (1,1) {mustBeNumeric}
+                opts.recompile (1,1) logical = true
             end
             
-            % default receiving and transmitting tranducer
-            self.rx = TransducerArray(xdc_args{:});
-            self.tx = self.rx;
+            % initailize via name-Value pairs
+            f = string(fieldnames(kwargs))'; % name-value fields (1 x F)
 
-            % set US arguments
-            for i = 1:2:nargin
-                switch lower(varargin{i})
-                    case 'xdc'
-                        if(ischar(varargin{i+1}))
-                            switch varargin{i+1}
-                                case 'IVUS'
-                                    self.rx = TransducerIVUS(xdc_args{:});
-                                case 'linear'
-                                    self.rx = TransducerArray(xdc_args{:});
-                                case 'convex'
-                                    self.rx = TransducerConvex(xdc_args{:});
-                                otherwise
-                                    self.rx = TransducerArray(xdc_args{:});
-                            end
-                        elseif(isa(varargin{i+1},'Transducer'))
-                            self.rx = varargin{i+1};
-                        end
-                        
-                        % set the transmitter and receiver to be identical objects
-                        self.tx = self.rx;
-                        
-                    case 'fc'
-                        self.fc = varargin{i+1};
-                    case 'fs'
-                        self.fs = varargin{i+1};
-                end
-            end
+            % initialize
+            for s = f, self.(s) = kwargs.(s); end
             
-            % set the default pulse
-            excitation = @(t)exp(-2j*pi*self.fc*t); % functional form
-            P = 2; % 2 periods
-            
-            % set the default pulse sequence
-            self.sequence = Sequence(...
-                'type','FSA',...
-                'focus', [0;0;0], ...
-                'pulse', Waveform('t0', 0, 'tend', P / self.fc, 'fun', excitation), ...
-                'numPulse', self.tx.numel ...
-                );
-            
-            % set default resolution
-            c = 1540; % assuming sound speed == 1540 m/s
-            lambda = c ./ self.fc;
-            self.scan = ScanCartesian('res', lambda / 4 * ones([1,3]));
-            
-            % check for sequence, pulse or scan
-            for i = 1:2:nargin
-                switch lower(varargin{i})
-                    case 'sequence'
-                        self.sequence = varargin{i+1};
-                    case 'pulse'
-                        self.sequence.pulse = varargin{i+1};
-                    case 'scan'
-                        self.scan = varargin{i+1};
-                end
+            % create a default Sequence if none provided
+            if ~isfield(kwargs, 'Sequence')
+                % set the default pulse
+                excitation = @(t)exp(-2j*pi*self.tx.fc*t); % functional form
+                P = 2; % 2 periods
+
+                % set the default pulse sequence
+                wv = Waveform( ...
+                    't0', - P / 2 / self.tx.fc, ...
+                    'tend', P / 2 / self.tx.fc, ...
+                    'fun', excitation);
+
+                self.sequence = Sequence(...
+                    'type','FSA',...
+                    'focus', [0;0;0], ...
+                    'pulse', wv, ...
+                    'numPulse', self.tx.numel ...
+                    );
             end
 
-            % check for scan options?
-            for i = 1:2:nargin
-                switch lower(varargin{i})
-                    case 'res'
-                        self.scan.res = varargin{i+1};
-                    case 'xlim'
-                        self.scan.xb  = varargin{i+1};
-                    case 'ylim'
-                        self.scan.yb  = varargin{i+1};
-                    case 'zlim'
-                        self.scan.zb  = varargin{i+1};
-                end
-            end
-            
-            % TODO: use a bin folder locally if we can create one to avoid
-            % recompiling to temp when we can instead use a cached version
-            % get a temp folder for binaries or code that needs to be
-            % recompiled
-            self.tmp_folder = tempname; % gives a folder usually in /tmp
-            mkdir(self.tmp_folder); % make the folder
-            addpath(self.tmp_folder); % this should let us shadow any other binaries
+            % get a temp folder for binaries and const-compiled code
+            tmp = tempname();
+            mkdir(tmp); % make the folder
+            addpath(tmp); % this should let us shadow any other binaries
+            self.tmp_folder = tmp; % gives a folder usually in /tmp
+
 
             % copy code or recompile it
             if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
-            defs = self.getCUDAFileDefs();
-            fls = arrayfun(@(d) string(strrep(d.Source, 'cu', 'ptx')), defs);
-            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
-            if any(~s), self.recompileCUDA(); end % attempt to recompile code
+                defs = self.getCUDAFileDefs();
+                fls = arrayfun(@(d) string(strrep(d.Source, 'cu', 'ptx')), defs);
+                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
+                if opts.recompile && any(~s), self.recompileCUDA(); end % attempt to recompile code
             end
-            
+
             % copy code or recompile it
-            % TODO: generalize to mex extension for other machines (with 
+            % TODO: generalize to mex extension for other machines (with
             % isunix or iswindows or ismac)
             defs = self.getMexFileDefs();
             fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
             s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
-            if any(~s), self.recompileMex(); end % attempt to recompile code
+            if opts.recompile && any(~s), self.recompileMex(); end % attempt to recompile code
+
         end
 
+        % destructor
         function delete(self)
             % DELETE - Destroy an UltrasoundSystem ... programatically.
             %
             % On object destruction, any temporary directories are removed.
             %
             % See also HANDLE
+            arguments, self (1,1) UltrasoundSystem, end
 
             % if we made a temp folder, clean it up
             if ~isempty(self.tmp_folder) && exist(self.tmp_folder, 'dir')
                 rmpath(self.tmp_folder) % remove from the path
-                rmdir(self.tmp_folder, 's'); % recursive deletion
+                list = dir(self.tmp_folder); % all files in the folder
+                nms = string({list.name}); % get the file names
+                % check that it's only ptx and mex files we are deleting
+                assert(all(...
+                    endsWith(nms, [".ptx", string(mexext())]) ...
+                    | nms == ".." | nms == "." ...
+                    ), ...
+                    "Call for deletion of " + self.tmp_folder + " failed due to unexpected files present." ...
+                    ); 
+                
+                % rmdir(self.tmp_folder, 's'); % recursive deletion - dangerous
+                
+                % safe: remove specific files first, then (attempt) the folder
+                rmdir(fullfile(self.tmp_folder, "*" + ".ptx")); % remove any ptx files
+                rmdir(fullfile(self.tmp_folder, "*" + string(mexext()))); % remove any mex files
+                rmdir(self.tmp_folder);
             end
         end
-
+    end
+    methods(Access=protected)
+        % copy 
+        function other = copyElement(self)
+            arguments, self (1,1) UltrasoundSystem, end
+            n = cellstr(["tx", "rx", "sequence", "scan", "fs"]); % copy props
+            v = cellfun(@(n){self.(n)}, n);
+            nv = cat(1,n,v);
+            other = UltrasoundSystem(nv{:}, 'recompile', false);            
+        end
+    end
+    methods
         function sub_div = getLambdaSubDiv(self, p, c, ap)
-            % GETLAMBDASUBDIV - Get subelement divisions
+            % GETLAMBDASUBDIV - Get subelement divisions w.r.t. wavelength
             % 
             % sub_div = GETLAMBDASUBDIV(self, p, c) returns the element 
             % subdivision vector corresponding to a proportion p of the 
@@ -192,6 +192,7 @@ classdef UltrasoundSystem < handle
             % aperture ap. Must be one of {'rx'*, 'tx', 'xdc'}
             %
             % 
+            
             
             if(nargin < 4), ap = 'rx'; end
             if isa(c, 'Medium'), c = c.c0; end
@@ -455,8 +456,8 @@ classdef UltrasoundSystem < handle
 
             % truncate the data if possible
             iszero = all(chd(f).data == 0, 2:ndims(chd(f).data)); % true if 0 for all tx/rx/targs
-            n0 = find(cumsum(~iszero, 'forward'), 1, 'first');
-            T_ = find(cumsum(~iszero, 'reverse'), 1, 'last' );
+            n0 = gather(find(cumsum(~iszero, 'forward'), 1, 'first'));
+            T_ = gather(find(cumsum(~iszero, 'reverse'), 1, 'last' ));
             chd(f) = sub(chd(f), n0:T_, chd(f).tdim);
 
 
@@ -2372,9 +2373,6 @@ classdef UltrasoundSystem < handle
                 kwargs.length double {mustBeScalarOrEmpty} = [];
             end
 
-            % parse optional inputs
-            L = kwargs.length;
-
             % Copy semantics
             chd = copy(chd0);
 
@@ -2393,6 +2391,7 @@ classdef UltrasoundSystem < handle
             chd = zeropad(chd,0,(nmax - nmin)); % expand time axes to capture all data
             
             % legacy: pick new signal length
+            L = kwargs.length;
             if kwargs.interp == "freq",
                 if isempty(L) % default
                     L = chd.T;
@@ -2411,45 +2410,16 @@ classdef UltrasoundSystem < handle
                 else
                     error("L must be a scalar or one of {'min' | 'pow2'}");
                 end
-                chd = zeropad(chd,0,max(0, L - chd.T)); % expand only
+                
+                % expand to match requested FFT length (do not shrink)
+                chd = zeropad(chd,0,max(0, L - chd.T)); 
             end
-            %}
             
             % align dimensions
             D = 1+ndims(chd.data); % get a free dimension for M'
             tau_focal = swapdim(tau_focal, [1,2], [chd.mdim, D]); % move data
             apod      = swapdim(apod     , [1,2], [chd.mdim, D]); % move data
 
-            % choose an interpolation method: frequency is implemented here
-            %{
-            switch kwargs.interp
-                case 'freq'
-                    % frequency vector
-                    l = shiftdim(0 : 1 : (L - 1), 1); % L x 1 x 1
-                    x = chd.data; % extract the data
-
-                    % apply phase shifts and sum
-                    wL = apod .* exp(-2i * pi * chd.fs  .* tau_focal ./ L); % steering vector (1 x 1 x M x ... x M')
-                    x = fft(x, L, chd.tdim); % put data in freq domain (L x N x M x 1 x F x ...)
-                    y = tenmul(wL.^l, x, chd.mdim, chd.tdim); % apply phase shift and sum over transmits (L x N x 1 x M' x F x ...)
-                    z = ifft(y, L, chd.tdim, 'nonsymmetric'); % back to time (T' x N x 1 x M' x F x ...)
-                    z = circshift(z, nwrap, chd.tdim); % handle FFT wrap-around
-                    
-                    % swap M' and M dimensions to return in same format
-                    z = swapdim(z, chd.mdim, D);
-
-                otherwise
-                    [MP, MPa] = deal(size(tau_focal,D), size(apod,D)); % sizing: number of transmits
-                    for m = MP:-1:1 % per transmit (implicit pre-allocation)
-                        % sample, apodize, and sum over transmits
-                        % (T' x N x {M'} x F x ...)
-                        a = sub(apod,min(m,MPa),4); % apodization for this transmit
-                        z{m} = chd.sample(chd.time - sub(tau_focal,m,D), kwargs.interp, a, chd.mdim); 
-                    end
-                    z = cat(chd.mdim, z{:}); % combine (T' x N x M' x F x ...)
-            end
-            %}
-            
             % sample and store
             z = chd.sample(chd.time - tau_focal, kwargs.interp, apod, chd.mdim); % sample (perm(T' x N x 1) x F x ... x M')
             z = swapdim(z, chd.mdim, D); % replace transmit dimension (perm(T' x N x M') x F x ...)
@@ -2565,32 +2535,67 @@ classdef UltrasoundSystem < handle
             % BFADJOINT - Adjoint method beamformer
             %
             % b = BFADJOINT(self, chd) beamforms the ChannelData chd using
-            % an adjoint matrix method.
+            % an adjoint matrix method. This method computes the
+            % inner-product of the normalized transmitted wave with the
+            % received data in the frequency domain.
             % 
-            % b = BFADJOINT(self, chd, c0) uses an assumed sound speed c0
-            % for the green's functions. The default is 1540 (m/s).
+            % b = BFADJOINT(self, chd, c0) uses a beamforming sound speed 
+            % of c0.
             %             
-            % See also ULTRASOUNDSYSTEM/DAS ULTRASOUNDSYSTEM/FOCUSTX
-            % ULTRASOUNDSYSTEM/BFEIKONAL
+            % b = BFADJOINT(..., 'apod', apod) uses an apodization matrix
+            % of apod. It must be singular in the receive dimension, the 
+            % transmit dimension, or all image dimensions. The apodization
+            % matrix must be broadcastable to size (I1 x I2 x I3 x N x M)
+            % where (I1 x I2 x I3) is the size of self.scan, N is the
+            % number of receive elements, and M is the number of transmits.
+            % 
+            % b = BFADJOINT(..., 'Nfft', K) uses a K-point FFT when
+            % converting the received to the frequency domain.
+            %
+            % b = BFADJOINT(..., 'keep_tx', true) preserves the transmit
+            % dimension in the output image b.
+            %
+            % b = BFADJOINT(..., 'keep_rx', true) preserves the receive
+            % dimension in the output image b.
+            %
+            % b = BFADJOINT(..., 'bsize', B) uses an block size of B when
+            % vectorizing computations. A larger block size will run
+            % faster, but use more memory. The default is chosen
+            % heuristically.
+            %
+            % b = BFADJOINT(..., 'fthresh', thresh) neglects frequencies
+            % where the maximum power across the apertures is less than 
+            % thresh dB-down with respect to the maximum power. This can 
+            % accelerate computation but with a loss of accuracy. The
+            % default is -Inf.
+            %
+            % See also BFEIKONAL BFDAS DAS FOCUSTX
 
-            % TODO: include apodization, device, other keyword arguments
+            % TODO: test for tall types where receive diomension is tall -
+            % should work ...
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
                 c0 (1,1) double = self.sequence.c0
-                kwargs.fthresh = -40; % threshold for including frequencies
-                kwargs.apod = 1; % apodization
-                kwargs.Nfft = chd.T; % FFT-length
+                kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
+                kwargs.apod {mustBeNumeric} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
+                kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
+                kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
+                kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0))))); % vector computation block size
+                % heuristic 1 Gibibyte limit on the size of the delays
             end
 
-            warning('This function is currently unsupported.');
+            % parse inputs
+            sumtx = ~kwargs.keep_tx;
+            sumrx = ~kwargs.keep_rx;
 
             % move the data to the frequency domain, being careful to
             % preserve the time axis
             K = kwargs.Nfft; % DFT length
             f = shiftdim(chd.fs * (0 : K - 1)' / K, 1-chd.tdim); % frequency axis
             df = chd.fs * 1 / K; % frequency step size
-            x = fft(chd.data,K,chd.tdim); % K x N x M x ...
+            x = fft(chd.data,K,chd.tdim); % perm(K x N x M) x ...
             x = x .* exp(-2i*pi*f.*chd.t0); % phase shift to re-align time axis
 
             % choose frequencies to evaluate
@@ -2600,10 +2605,10 @@ classdef UltrasoundSystem < handle
             f_val = any(f_val, setdiff(1:ndims(x), chd.tdim)); % evaluate only freqs across aperture/frames that is above threshold
 
             % get the pixel positions
-            D = max(3, gather(ndims(chd.data))); % >= 4
+            D = max(4, gather(ndims(chd.data))); % >= 4
             Pi = self.scan.getImagingGrid();
             Pi = cellfun(@(x) {shiftdim(x, -D)}, Pi); % place I past max data dims 5-7
-            Pi = cat(1,Pi{:}); % 3 x 1 x 1 x 1 x [I]
+            Pi = cat(1,Pi{:}); % 3 x 1 x 1 x 1 x ... x [I]
 
             % get the receive apodization, spliced if it can be applied
             apod = kwargs.apod;
@@ -2613,22 +2618,22 @@ classdef UltrasoundSystem < handle
             elseif size(apod, 4) == 1 % receive is scalar, apply over tx
                 ord = [D+(1:4), 2]; % send dims 1-5 here
                 ord = [ord, setdiff(1:max(ord, 5), ord)]; % complete set of dimensions
-                a_m = ipermute(apod, ord); % 1 x V x 1 x 1 x [I] x 1
+                a_m = ipermute(apod, ord); % 1 x V x 1 x 1 x ... x [I] x 1
             elseif size(apod, 5) == 1 % transmit is scalar, apply over rx
                 ord = [D+(1:3), 2]; % send dims 1-4 here
                 ord = [ord, setdiff(1:max(ord, 5), ord)]; % complete set of dimensions
-                a_n = ipermute(apod, ord); % 1 x N x 1 x 1 x [I]
+                a_n = ipermute(apod, ord); % 1 x N x 1 x 1 x ... x [I]
             else % none of the following is true: this request is excluded for now
                 error('Unable to apply apodization due to size constraints. Apodization must be scalar in the transmit dimension, receive dimension, or all image dimensions.')
             end
             
             % get the delays for the transmit/receive green's matrix
             % kernels
-            tau_tx = vecnorm(self.tx.positions() - Pi,2,1) / c0; % 1 x M x 1 x 1 x [I]
-            tau_rx = vecnorm(self.rx.positions() - Pi,2,1) / c0; % 1 x N x 1 x 1 x [I]
+            tau_tx = vecnorm(self.tx.positions() - Pi,2,1) / c0; % 1 x M x 1 x 1 x ... x [I]
+            tau_rx = vecnorm(self.rx.positions() - Pi,2,1) / c0; % 1 x N x 1 x 1 x ... x [I]
 
             % get the transmit steering vector weights and delays
-            del_tx  = self.sequence.delays(self.tx); % M x V
+            del_tx  = self.sequence.delays(self.tx);      % M x V
             apod_tx = self.sequence.apodization(self.tx); % M x V
 
             % transform to frequency step kernels
@@ -2636,49 +2641,67 @@ classdef UltrasoundSystem < handle
             w_tx    = exp(-2i*pi*df.*tau_tx); % transmit greens function
             w_steer = exp(-2i*pi*df.*del_tx); % transmit steering delays
 
-            % TODO: cast data type for efficency?
+            % cast data type for efficency
             [w_tx, w_rx, w_steer, apod_tx] = dealfun(@(w) cast(w, 'like', real(x)), w_tx, w_rx, w_steer, apod_tx);
             b = repmat(cast(0, 'like', x), [1, size(Pi,2:ndims(Pi))]);
 
-            % beamform one frequency at a time to save memory space
-            h = waitbar(0,'Beamforming ...');
-            % parfor (k = 1:K)
-            for k = gather(find(f_val)') % skip unimportant frequencies
+            % splice data 
+            k = gather(find(f_val)'); % skip unimportant frequencies
+            k = num2cell(reshape([k(:); nan([-mod(numel(k),-kwargs.bsize),1])], kwargs.bsize, []), 1)'; % expand and make blocks
+            k{end}(isnan(k{end})) = []; % delete invalid entries
+            xk = cellfun(@(k) sub(x,k,chd.tdim), k, 'UniformOutput',false);
+            chd_ord = [chd.ndim, chd.mdim, chd.tdim]; % permution order
+
+            % beamform for a block of frequencies at a time
+            hw = waitbar(0,'Beamforming ...');
+
+            % DEBUG: plot
+            % figure; h = imagesc(squeeze(zeros(self.scan.size))); colorbar; colormap jet;
+
+            % TODO: parallelize for thread-based pools only
+            % parfor (ik = 1:numel(k))
+            for ik = 1:numel(k)
+                % get discrete frequency index 
+                k_ = shiftdim(k{ik}, -2); % 1 x 1 x F
 
                 % report progress
-                if isvalid(h), waitbar(k/K/2, h, char("Beamforming: " + (gather(f(k))/1e6) + " MHz")); end
+                lbl = "Beamforming: " + min(gather(f(k_))) + " - " + max(gather(f(k_)));% + " MHz";
+                if isvalid(hw), waitbar(ik/numel(k), hw, char(lbl)); end
+                % fprintf(lbl + "\n");
 
-                % select frequency
-                % xk = shiftdim(sub(x,k,1),1); % data, in freq. domain (N x V x ...)
-                xk = permute(sub(x,k,chd.tdim), [chd.ndim, chd.mdim, chd.tdim, 4:D]);
-                
-                % TODO: adapt for data out of order
+                % data, in freq. domain (N x V x ...)
                 % TODO: adapt for tall types
-
+                xk_ = permute(xk{ik}, [chd_ord, 4:D]);
+                
                 % compute the greens functions on transmit/receive
-                G_tx = w_tx.^(k-1); % 1 x M x 1 x 1 x [I]
-                G_rx = w_rx.^(k-1); % 1 x N x 1 x 1 x [I]
+                G_tx = w_tx.^(k_-1); % 1 x M x F x 1 x [I]
+                G_rx = w_rx.^(k_-1); % 1 x N x F x 1 x [I]
 
                 % compute the inverse steering vector on transmit
-                T_tx = apod_tx .* w_steer.^(k-1); % M x V
-                A_tx = pagemtimes(G_tx, T_tx); % 1 x V x 1 x 1 x [I]
-                Ainv_tx = pagetranspose(A_tx); % V x 1 x 1 x 1 x [I] % make a column vector
+                T_tx = apod_tx .* w_steer.^(k_-1); % M x V x F
+                A_tx = pagemtimes(G_tx, T_tx); % 1 x V x F x 1 x [I]
+                Ainv_tx = pagetranspose(A_tx); % V x 1 x F x 1 x [I] % make a column vector
                 Ainv_tx = Ainv_tx ./ vecnorm(Ainv_tx, 2, 1); % normalize the power
                 
                 % apodize, delay, and sum the data for this frequency
                 % only 1 of the a_* will contain the apodization
-                yn = a_m .* pagemtimes(a_n .* conj(G_rx), a_mn .* xk); % 1 x V x 1 x 1 x [I]
-                y  = pagemtimes(yn, conj(Ainv_tx)); % 1 x 1 x 1 x 1 x [I]
-                
+                if sumrx, yn = a_m .*     pagemtimes(a_n .* conj(G_rx)   , a_mn .* xk_); % 1 x V x F x 1 x [I]
+                else,     yn = a_m .* (pagetranspose(a_n .* conj(G_rx)) .* a_mn .* xk_); % N x V x F x 1 x [I]
+                end
+                if sumtx, y  = pagemtimes(yn,                 conj(Ainv_tx));  % [1|N] x 1 x F x 1 x [I]
+                else,     y  =           (yn .* pagetranspose(conj(Ainv_tx))); % [1|N] x V x F x 1 x [I]
+                end
+
                 % integrate over all frequencies
-                b = b + y; % 1 x 1 x 1 x 1 x [I]
+                b = b + sum(y,3); % [1|N] x [1|V] x 1 x 1 x [I]
 
-            end           
-            if isvalid(h), close(h); end
+                % DEBUG: update display
+                % h.CData(:) = mod2db(sum(y,3)); drawnow limitrate; 
+            end
+            if isvalid(hw), close(hw); end
 
-            % move to image dimensions
-            % b = shiftdim(b,D); % [I] x ...
-            b = swapdim(b, 1:3, D+(1:3));
+            % move to image dimensions ([I] x ... x perm([1|N] x [1|V] x 1)
+            b = swapdim(ipermute(b,[chd_ord, 4:(D+3)]), 1:3, D+(1:3));
         end    
 
         function b = bfEikonal(self, chd, medium, cscan, kwargs)
@@ -2749,7 +2772,7 @@ classdef UltrasoundSystem < handle
                 kwargs.apod {mustBeNumeric} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = 16;
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0))))); % 1 Gibibyte limit on the size of the delays
             end
 
             % get summation options
@@ -2934,7 +2957,7 @@ classdef UltrasoundSystem < handle
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
                 kwargs.parcluster = gcp('nocreate');
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = 16;
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0))))); % 1 Gibibyte limit on the size of the delays
             end
 
             % get cluster
