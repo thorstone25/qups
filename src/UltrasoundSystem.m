@@ -2582,8 +2582,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
                 kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0))))); % vector computation block size
-                % heuristic 1 Gibibyte limit on the size of the delays
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*sizeof(double(0)))))); % vector computation block size
+                % heuristic: 1/4 Gibibyte limit on the size of the delays
+            end
+
+            % validate precision: doesn't work for halfT
+            if classUnderlying(chd) == "halfT"
+                warning('QUPS:bfAdjoint:InsufficientPrecision', ...
+                    'Half precision data is insufficient for frequency-domain beamforming.' ...
+                    );
             end
 
             % parse inputs
@@ -2772,7 +2779,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.apod {mustBeNumeric} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0))))); % 1 Gibibyte limit on the size of the delays
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0)))))); 
+                % 1 Gibibyte limit on the size of the delays
             end
 
             % get summation options
@@ -2957,7 +2965,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
                 kwargs.parcluster = gcp('nocreate');
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0))))); % 1 Gibibyte limit on the size of the delays
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0)))))); 
+                % 1 Gibibyte limit on the size of the delays
             end
 
             % get cluster
