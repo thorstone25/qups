@@ -877,17 +877,16 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = sub(chd, ind, dim)
             if ~iscell(ind), ind = {ind}; end % enforce cell syntax
             tind = ind; % separate copy for the time indices
-            tind(size(chd.time,dim) == 1) = {1}; % set singleton
-            has_tdim = any(dim == chd.tdim);
+            tind(size(chd.time,dim) == 1) = {1}; % set singleton where t0 is sliced
+            has_tdim = any(dim == chd.tdim); % whether we are idnexing in the time dimension too
             if has_tdim, 
                 n = tind{dim == chd.tdim}; % get the time indices
                 assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
                     'The temporal index must be a strictly increasing set of indices.');
             end
-            if has_tdim, t = chd.time; else, t = chd.t0; end % index in time if necessary
-            t0_   = sub(t, tind, dim); % extract
-            data_ = sub(chd.data, ind, dim); % extract
-            if has_tdim, t0_ = sub(t0_, 1, chd.tdim); end % extract only the first value in time
+            t0_   = sub(chd.t0, tind(dim(dim ~= chd.tdim)), dim(dim ~= chd.tdim)); % extract start time
+            data_ = sub(chd.data, ind, dim); % extract data
+            if has_tdim, t0_ = t0_ + (n(1) - 1) / chd.fs; end % get the new start time based on the starting index
             
             chd = copy(chd); % copy semantics
             chd.t0 = t0_; % assign
