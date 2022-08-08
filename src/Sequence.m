@@ -59,7 +59,7 @@ classdef Sequence < matlab.mixin.Copyable
             %
             % seq = SEQUENCE('type', 'PW', 'focus', 1 .* [cosd(theta); 0*theta; sind(theta)]) 
             % defines a plane  wave (PW) sequence at the 1 x S array of 
-            % angles theta. Note that the norm of the focus is always 1.
+            % angles theta. The norm of the focus should always be 1.
             %
             % seq = SEQUENCE('type', 'VS', 'focus', FOCI) defines a 
             % focused or diverging virtual source (VS) sequence with 
