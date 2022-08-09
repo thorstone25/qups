@@ -2604,7 +2604,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
                 kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*sizeof(double(0)))))); % vector computation block size
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*8)))); % vector computation block size
                 % heuristic: 1/4 Gibibyte limit on the size of the delays
             end
 
@@ -2801,7 +2801,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.apod {mustBeNumeric} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0)))))); 
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
                 % 1 Gibibyte limit on the size of the delays
             end
 
@@ -2987,7 +2987,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
                 kwargs.parcluster = gcp('nocreate');
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*sizeof(double(0)))))); 
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
                 % 1 Gibibyte limit on the size of the delays
             end
 
