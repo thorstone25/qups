@@ -171,7 +171,7 @@ classdef BFTest < matlab.unittest.TestCase
         terp = {'nearest', 'linear', 'cubic'};
     end
     methods(TestMethodSetup)
-        function resetGPU(test), gpuDevice([]); end
+        function resetGPU(test), if gpuDeviceCount, gpuDevice([]); end, end
     end
     
     % Github test routine
@@ -214,6 +214,7 @@ classdef BFTest < matlab.unittest.TestCase
             if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
             tfun = str2func(prec);
             chd = tfun(test.chd); % cast to specified precision
+            
             if gdev, chd = gpuArray(chd); else, chd = gather(chd); end % move data to GPU if requested
 
             % Beamform 
