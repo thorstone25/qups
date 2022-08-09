@@ -918,7 +918,7 @@ classdef ChannelData < matlab.mixin.Copyable
                 assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
                     'The temporal index must be a strictly increasing set of indices.');
             end
-            t0_   = sub(chd.t0, tind(dim(dim ~= chd.tdim)), dim(dim ~= chd.tdim)); % extract start time
+            t0_   = sub(chd.t0, tind((dim ~= chd.tdim)), dim(dim ~= chd.tdim)); % extract start time
             data_ = sub(chd.data, ind, dim); % extract data
             if has_tdim, t0_ = t0_ + (n(1) - 1) / chd.fs; end % get the new start time based on the starting index
             
