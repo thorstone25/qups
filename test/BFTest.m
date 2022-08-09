@@ -205,10 +205,18 @@ classdef BFTest < matlab.unittest.TestCase
                 test.us, test.targ, test.us.scan, test.scanc, test.tscan...
                 );
 
+            % exceptions
             % for the Eikonal beamformer, pass if not given FSA delays
             if bf_name == "Eikonal" && us.sequence.type ~= "FSA", return; end
             % if using the adjoint method, skip half precision - the phase errors are too large
             if bf_name == "Adjoint" && prec == "halfT", return; end
+            % is using the adjoint method, pagemtimes,pagetranspose must be supported
+            if bf_name == "Adjoint", 
+                test.assumeTrue( ...
+                       logical(exist('pagemtimes'   , 'builtin')) ...
+                    && logical(exist('pagetranspose', 'builtin')) ...
+                    ); 
+            end
 
             % set ChannelData type
             if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
