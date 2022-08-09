@@ -5,8 +5,8 @@ classdef Waveform < handle
     
     properties(GetAccess=public, SetAccess=public)
         fun function_handle = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
-        t0 (1,1) {mustBeNumeric} = 0                      % start time
-        tend (1,1) {mustBeNumeric} = 2 / 5e6              % end time
+        t0 (1,1) {mustBeNumeric} = -1 / 5e6         % start time
+        tend (1,1) {mustBeNumeric} = 1 / 5e6        % end time
     end
     
     properties(GetAccess=public, SetAccess=public)
@@ -298,7 +298,7 @@ classdef Waveform < handle
             end
             self.samples = samples;
             self.mode = 'samp';
-            self.fun = [];
+            self.fun = @(t) interp1(self.samples, 1 + (t - self.t0) * fs, "cubic", 0);
         end        
     end    
     
