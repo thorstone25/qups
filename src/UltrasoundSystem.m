@@ -228,7 +228,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % convert distance and/or time/freq
+            if self.tx == self.rx,
             self.xdc = scale(self.xdc, args{:}); % convert in distance and time
+            else
+            self.tx = scale(self.tx, args{:}); % convert in distance and time
+            self.rx = scale(self.rx, args{:}); % convert in distance and time
+            end
             self.sequence = scale(self.sequence, args{:}); % convert in distance and time
         end
     end
@@ -2448,111 +2453,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd.data = z;% store output channel data % (perm(T' x N x M') x F x ...)
         end
         
-        function [B, X, Y, Z] = DASEikonal(self, chd, medium, cgrid, rcvfun, varargin)
-            % DASEIKONAL - Delay and sum FSA data with an assumed sound speed
-            %
-            % Inputs:
-            %   chd -                   ChannelData object of FSA data
-            %   medium -                Medium object
-            %   rcvfun -                Receive aperture accumulation function
-            %                           (defaults to summation)
-            %   cgrid -                 A structure defining the grid on
-            %                           which to calculate the speed of
-            %                           sound using the Medium object.
-            %     cgrid.origin (3 x 1)  The origin of the grid in x/y/z
-            %                           defined as the point with the
-            %                           smallest value in each dimension
-            %     cgrid.step   (3 x 1)  The distance between grid points in
-            %                           x/y/z. Inf/NaN for a sliced
-            %                           dimension.
-            %     cgrid.size   (3 x 1)  The number of grid points in each
-            %                           dimension. 1 for a sliced dimension
-            %                           
-            %   Name/Value pair arguments:
-            %   prec -                 compute precision of the positions
-            %                           {'single'* | 'double'}
-            %   device -               GPU device index: -1 for default
-            %                           gpu, 0 for cpu, n for device index
-            %
-            % Outputs:
-            %   B -        B-mode image
-            %   X\Y\Z -    3D coordinates of the output
-            %
-            % See also DAS
-            
-            
-            warning('This function is currently unsupported');
-            % default name-value pair arguments
-            prec = 'single';
-            device = int64(-1 * logical(gpuDeviceCount)); % {0 | -1} -> {CPU | GPU}
-
-            % name-value pairs
-            for n = int64(1):2:numel(varargin)
-                switch varargin{n}
-                    case 'prec'
-                        prec = varargin{n+1};
-                    case 'device'
-                        device = varargin{n+1};
-                    otherwise
-                        error('Unrecognized name-value pair');
-                end
-            end
-            
-            % get positions of the imaging plane
-            [X, Y, Z, image_size] = self.scan.getImagingGrid();
-            
-            % convert to x/y/z in 1st dimension
-            shp = @(n) n(:)';
-            P_im = cat(1, shp(X), shp(Y), shp(Z)); % 3 x I
-
-            % get sample points of the speed of sound grid
-            for d = 3:-1:1
-                if ~isfinite(cgrid.step(d)), dp = 0; else, dp = cgrid.step(d); end
-                P_c_vec{d} = cgrid.origin(d) + dp*colon(1,cgrid.size(d)); 
-            end
-            shf = @(n)shiftdim(n,-1);
-            [Xc, Yc, Zc] = ndgrid(P_c_vec{:});
-            P_cm = cat(1, shf(Xc), shf(Yc), shf(Zc)); % 3 x Ic
-            
-            % get speed of sound map on the c-grid
-            [c, ~] = medium.getPropertyMap(P_cm); % X x Y x Z
-            
-            % get positions of the aperture(s)
-            P_tx = self.tx.positions(); % 3 x M
-            P_rx = self.rx.positions(); % 3 x N
-            
-            % get the beamformer arguments
-            dat_args = {cgrid, chd.data, c, chd.t0, chd.fs, 'device', 0, 'position-precision', prec}; %#ok<PROPLC> % data args
-            ext_args = {}; % extra args
-            
-            switch self.sequence.type
-                case 'FSA'
-                    pos_args = {P_im, P_rx, P_tx};
-                case 'PW'
-                    pos_args = {P_im, P_rx, self.sequence.focus}; 
-                    ext_args{end+1} = 'plane-waves'; 
-                    error('Eikonal beamforming not implemented for plane wave transmits.');
-                case 'VS'
-                    pos_args = {P_im, P_rx, self.sequence.focus};
-                    error('Eikonal beamforming not implemented for virtual source transmits.');
-            end
-            
-            % beamform we the speed of sound data and collapse the aperture
-            if nargin < 6 || isempty(rcvfun)
-                % beamform the data (I x 1)
-                B = cbeamform('DAS', pos_args{:}, dat_args{:}, ext_args{:}); 
-            else
-                % beamform the data (I x N)
-                B = cbeamform('SYN', pos_args{:}, dat_args{:}, ext_args{:});
-                
-                % apply recieve aperture function in dim 2 and shape up
-                B = rcvfun(B, 2); % I x 1
-            end
-            
-            % make the shape consistent
-            B = reshape(B, image_size);        
-        end
-    
         function b = bfAdjoint(self, chd, c0, kwargs)
             % BFADJOINT - Adjoint method beamformer
             %
@@ -2714,11 +2614,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 
                 % apodize, delay, and sum the data for this frequency
                 % only 1 of the a_* will contain the apodization
-                if sumrx, yn = a_m .*     pagemtimes(a_n .* conj(G_rx)   , a_mn .* xk_); % 1 x V x F x 1 x [I]
-                else,     yn = a_m .* (pagetranspose(a_n .* conj(G_rx)) .* a_mn .* xk_); % N x V x F x 1 x [I]
+                if sumrx, yn = a_m .*      pagemtimes(a_n .* conj(G_rx)   , a_mn .* xk_); % 1 x V x F x 1 x [I]
+                else,     yn = a_m .* (pagectranspose(a_n .*     (G_rx)) .* a_mn .* xk_); % N x V x F x 1 x [I]
                 end
                 if sumtx, y  = pagemtimes(yn,                 conj(Ainv_tx));  % [1|N] x 1 x F x 1 x [I]
-                else,     y  =           (yn .* pagetranspose(conj(Ainv_tx))); % [1|N] x V x F x 1 x [I]
+                else,     y  =           (yn .* pagectranspose(   (Ainv_tx))); % [1|N] x V x F x 1 x [I]
                 end
 
                 % integrate over all frequencies
@@ -2736,58 +2636,50 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         function b = bfEikonal(self, chd, medium, cscan, kwargs)
             % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
             %
-            % b = BFEIKONAL(self, chd, medium, cscan) creates a b-mode 
-            % image b from the ChannelData chd and Medium medium using the 
-            % delays given by the solution to the eikonal equation defined 
+            % b = BFEIKONAL(self, chd, medium, cscan) creates a b-mode
+            % image b from the ChannelData chd and Medium medium using the
+            % delays given by the solution to the eikonal equation defined
             % on the ScanCartesian cscan. The transmitter and receiver must
             % fall within the cscan. The step size in each dimension must
-            % be identical. The equation is solved via the fast marching 
-            % method. 
-            % 
+            % be identical. The equation is solved via the fast marching
+            % method.
+            %
             % b = BFEIKONAL(..., Name,Value, ...) defines additional
             % parameters via Name/Value pairs
             %
-            % Inputs:
-            %   
-            % keep_rx -     setting this to true returns an extra dimension
-            %               containing the data for each receive prior to
-            %               summation. The default is false.
+            % b = BFEIKONAL(..., 'keep_rx', true) preserves the receive 
+            % dimension
             %
-            % keep_tx -     setting this to true returns an extra dimension
-            %               containing the data for each transmit prior to
-            %               summation. The default is false.
+            % b = BFEIKONAL(..., 'keep_tx', true) preserves the tranmit 
+            % dimension
             %
-            % interp  -     specifies the method for interpolation. Support 
-            %               is provided by the ChannelData/sample method. 
-            %               The default is 'linear'.
-            % 
-            %   
-            % apod    -     specifies and ND-array A for apodization. A must 
-            %               be broadcastable to size  I1 x I2 x I3 x N x M 
-            %               where I1 x I2 x I3 is the size of the image, N 
-            %               is the number of receivers, and M is the number
-            %               of transmits. The default is 1.
-            % 
-            %   
-            % bsize   -     sets the ChannelData block size to at most B 
-            %               transmits at a time in order to limit memory 
-            %               usage. If memory is a concern, lowering B may 
-            %               help. If there is ample memory available, a 
-            %               higher value of B may yield better performance.
-            % 
-            %   
-            % parcluster  - specifies a parcluster object for 
-            %               parallelization. The default is the current 
-            %               parallel pool returned by gcp.
-            %               Setting clu = 0 avoids using a parallel cluster
-            %               or pool. 
-            %               A parallel.ThreadPool will tend to perform 
-            %               better than a parallel.ProcessPool because
-            %               threads are allowed to share memory.
-            %               Use 0 when operating on a GPU or if memory 
-            %               usage explodes on a parallel.ProcessPool.
-            % 
+            % b = BFEIKONAL(..., 'apod',A) uses an apodization defined by
+            % the ND-array A. A must be broadcastable to size 
+            % I1 x I2 x I3 x N x M where I1 x I2 x I3 is the size of the 
+            % image, N is the number of receivers, and M is the number of 
+            % transmits.
+            %
+            % b = BFEIKONAL(..., 'bsize',B) computes using a B 
+            % frequencies at a time in order to limit memory usage. A lower
+            % B uses less memory to prevent OOM errors but a higher B 
+            % yields better computer performance.
+            %
+            % b = BFEIKONAL(..., 'parcluster', clu) specifies a 
+            % parcluster or parpool object clu for parallelization. The 
+            % default is the parallel.Pool returned by gcp.
+            %
+            % Setting clu = 0 avoids using a parallel cluster or pool. A
+            % parallel.ThreadPool will tend to perform better than a
+            % parallel.ProcessPool or parallel.Cluster because threads are 
+            % allowed to share memory. Use 0 when operating on a GPU or if 
+            % memory usage explodes on a parallel.ProcessPool.
+            %
+            % b = BFEIKONAL(..., 'interp',method, ...) specifies the 
+            % method for interpolation. Support is provided by the 
+            % ChannelData/sample method. The default is 'cubic'.
+            %
             % See also DAS BFDAS BFADJOINT
+
 
             arguments
                 self (1,1) UltrasoundSystem
