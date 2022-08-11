@@ -2751,15 +2751,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % reduced dimensions ([M|N] x {Cx x Cy x Cz})
             gi_opts = {'cubic', 'none'};
             tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
+            parfor (n = 1:chd.N, clu)
+                % fprintf('rx %i\n', n);
+                [tau_map_rx] = msfm(squeeze(cnorm.Value), double(Prc(:,n))); %#ok<PFBNS> % travel time to each point
+                rx_samp{n} = griddedInterpolant(grd, tau_map_rx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
+            end
+            if self.tx == self.rx % if apertures are identical, copy
+                tx_samp = rx_samp;
+            else % else compute for each tx
             parfor (m = 1:chd.M, clu)
                 % fprintf('tx %i\n', m);
                 [tau_map_tx] = msfm(squeeze(cnorm.Value), double(Pvc(:,m))); %#ok<PFBNS> % travel time to each point
                 tx_samp{m} = griddedInterpolant(grd, tau_map_tx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
             end
-            parfor (n = 1:chd.N, clu)
-                % fprintf('rx %i\n', n);
-                [tau_map_rx] = msfm(squeeze(cnorm.Value), double(Prc(:,n))); %#ok<PFBNS> % travel time to each point
-                rx_samp{n} = griddedInterpolant(grd, tau_map_rx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
             end
             fprintf('\nEikonal time delays completed in %0.3f seconds.\n', toc(tt));
 
@@ -2772,8 +2776,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             apod = kwargs.apod;
 
             % get sample times for each tx/rx
-            tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all receive delays
             tau_rx = cellfun(@(f) f(gi{:}), rx_samp, 'UniformOutput', false); % all receive delays
+            tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all transmit delays
             tau_rx = cat(4, tau_rx{:}); % use all at a time
             tau_tx = cat(5, tau_tx{:}); % reconstruct matrix
             D = max(5, ndims(chd.data)); % data dimensions
