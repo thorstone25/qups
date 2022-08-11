@@ -97,7 +97,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % create a default Sequence if none provided
             if ~isfield(kwargs, 'Sequence')
                 % set the default pulse
-                excitation = @(t)exp(-2j*pi*self.tx.fc*t); % functional form
+                fc = self.tx.fc; % extract - otherwise, we reference the changing value of the object
+                excitation = @(t)exp(-2j*pi*fc*t); % functional form
                 P = 2; % 2 periods
 
                 % set the default pulse sequence
@@ -121,7 +122,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % copy code or recompile it
             if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
                 defs = self.getCUDAFileDefs();
-                fls = arrayfun(@(d) string(strrep(d.Source, 'cu', 'ptx')), defs);
+                fls = arrayfun(@(d) string(strrep(d.Source, '.cu', '.ptx')), defs);
                 s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
                 if opts.recompile && any(~s), self.recompileCUDA(); end % attempt to recompile code
             end
@@ -218,22 +219,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             self = copy(self);
             args = struct2nvpair(kwargs);
             
-            % convert distance only
+            % Scan: convert distance only
             if isfield(kwargs, 'dist')
                 self.scan = scale(self.scan, 'dist', kwargs.dist);
             end
-            % convert time only
+            % Sampling: convert time only
             if isfield(kwargs, 'time')
                 self.fs = self.fs / kwargs.time;
             end
 
-            % convert distance and/or time/freq
+            % Transducer: convert distance and/or time/freq
             if self.tx == self.rx,
-            self.xdc = scale(self.xdc, args{:}); % convert in distance and time
+                self.xdc = scale(self.xdc, args{:}); % convert in distance and time
             else
-            self.tx = scale(self.tx, args{:}); % convert in distance and time
-            self.rx = scale(self.rx, args{:}); % convert in distance and time
+                self.tx = scale(self.tx, args{:}); % convert in distance and time
+                self.rx = scale(self.rx, args{:}); % convert in distance and time
             end
+
+            % Sequence
             self.sequence = scale(self.sequence, args{:}); % convert in distance and time
         end
     end
@@ -3080,7 +3083,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     "nvcc ", ...
                     "--ptx " + fullfile(src_folder, d.Source), ...
                     "-arch=native ", ... % for half types: TODO move to compile option
-                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx')), ...
+                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, '.cu', '.ptx')), ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
                     join("-L" + d.Libraries), ...
@@ -3156,7 +3159,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     "nvcc --ptx ", ...
                     "-arch=native ", ... % for half types: TODO move to compile option
                     fullfile(src_folder, d.Source) + " ", ...
-                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, 'cu', 'ptx')), ...
+                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, '.cu', '.ptx')), ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
                     join("-L" + d.Libraries), ...
