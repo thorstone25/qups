@@ -95,7 +95,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             for s = f, self.(s) = kwargs.(s); end
             
             % create a default Sequence if none provided
-            if ~isfield(kwargs, 'Sequence')
+            if ~isfield(kwargs, 'sequence')
                 % set the default pulse
                 fc = self.tx.fc; % extract - otherwise, we reference the changing value of the object
                 excitation = @(t)exp(-2j*pi*fc*t); % functional form

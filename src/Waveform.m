@@ -196,7 +196,7 @@ classdef Waveform < handle
                     't0', w * self.t0, 'tend', w * self.tend, ...
                     'fun', @(t) f(t./w) ...
                     );
-            elseif self.mod == "samp"
+            elseif self.mode == "samp"
                 wv = Waveform( ...
                     't0', w * self.t0, 'tend', w * self.tend, ...
                     'dt', w * self.dt ...
@@ -305,14 +305,7 @@ classdef Waveform < handle
     
     methods
         function dur = get.duration(self), dur = self.tend - self.t0; end
-        function t = get.time(self)
-            switch self.mode
-                case 'samp'
-                    t = self.getSampleTimes();
-                case 'fun'
-                    t = [];
-            end
-        end
+        function t = get.time(self), t = self.getSampleTimes(); end
     end
 
     methods(Static)
