@@ -666,9 +666,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
         function a = get.area(self), a = self.width * self.height; end
         
-        function b = get.bw_frac(self), b = diff(self.bw) ./ self.fc; end
+        function b = get.bw_frac(self), b = range(self.bw) ./ self.fc; end
         
-        function set.bw_frac(self, bf), self.bw = mean(self.bw) + mean(self.bw)*[-1 1]/2 * bf; end
+        function set.bw_frac(self, bf), self.bw = mean(self.fc) + mean(self.fc) * bf * ([-1 1] ./ 2); end
         
         function o = get.origin(self), o = - self.offset; end
         
