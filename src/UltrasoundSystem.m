@@ -1909,7 +1909,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % k-Wave calls (new)
     methods
-        function [chd, job] = kspaceFirstOrder(self, target, sscan, varargin, kwargs, karray_args)
+        function [chd, job] = kspaceFirstOrder(self, target, sscan, kwargs, karray_args, kwave_args)
             % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
@@ -1955,9 +1955,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 target Medium
                 sscan (1,1) ScanCartesian
             end
-            arguments(Repeating)
-                varargin
-            end
             arguments
                 kwargs.T double {mustBeScalarOrEmpty} = [], ... simulation time (s)
                 kwargs.PML (1,:) double = [20 56], ... (one-sided) PML size range
@@ -1965,27 +1962,37 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.parcluster (1,1) = 0, ... parallel cluster for running simulations (use 0 for no cluster)
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', ... one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, target.c0), ... element subdivisions (width x height)
+            end
+            arguments % kWave-Array arguments
                 karray_args.UpsamplingRate (1,1) double =  10, ...
                 karray_args.BLITolerance (1,1) double = 0.05, ...
                 karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
             end
-
-            % setup a default keyword arguments structure
-            kwave_args = struct( ...
-                'DataCast', 'gpuArray-single',...
-                'DataRecast', false, ...
-                'LogScale', false, ...
-                'MovieName', 'kwave-sim', ...
-                'PlotPML', false, ...
-                'PlotSim', false, ...
-                'PlotScale', 'auto', ...
-                ...'DisplayMask', 'off', ...
-                'RecordMovie', false, ...
-                'Smooth', true ...
-                );
-
-            % forward unrecognized NV pair arguments into kwave_args
-            for i = 1:2:numel(varargin), kwave_args.(varargin{i}) = varargin{i+1}; end
+            arguments % kWave 1.1 arguments
+                kwave_args.CartInterp (1,1) string {mustBeMember(kwave_args.CartInterp, ["linear", "nearest"])}
+                kwave_args.CreateLog (1,1) logical
+                kwave_args.DataCast (1,1) string = 'gpuArray-single'
+                kwave_args.DataRecast (1,1) logical = false
+                kwave_args.DisplayMask % must be 'off' or a mask the size of sensor.mask
+                kwave_args.LogScale (1,1) logical
+                kwave_args.MeshPlot(1,1) logical
+                kwave_args.MovieArgs cell
+                kwave_args.MovieName (1,1) string
+                kwave_args.MovieType (1,1) string {mustBeMember(kwave_args.MovieType, ["frame", "image"])}
+                kwave_args.PlotFreq (1,1) {mustBeInteger, mustBePositive}
+                kwave_args.PlotLayout (1,1) logical
+                kwave_args.PlotPML (1,1) logical = false
+                kwave_args.PlotScale = 'auto' % must be 'auto' or [min, max]
+                kwave_args.PlotSim (1,1) logical = false
+                kwave_args.PMLAlpha (1,1) double
+                % kwave_args.PMLInside % set by subroutines
+                % kwave_args.PMLSize % set by subroutines
+                kwave_args.RecordMovie (1,1) logical = false
+                kwave_args.SaveToDisk (1,1) string
+                kwave_args.Smooth (1,:) logical % can be (1,3) to smooth {p0, c, rho} separately, or (1,1) for all
+                kwave_args.StreamToDisk (1,1) {mustBeNumericOrLogical}
+            end
+            
 
             % only supported with tx == rx for now
             assert(self.tx == self.rx, 'Transmitter and receiver must be identical.')
