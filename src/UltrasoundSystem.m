@@ -1909,7 +1909,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % k-Wave calls (new)
     methods
-        function [chd, job, readfun] = kspaceFirstOrder(self, target, sscan, varargin, kwargs, karray_args)
+        function [chd, job] = kspaceFirstOrder(self, target, sscan, varargin, kwargs, karray_args)
             % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
@@ -1920,13 +1920,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % step sizes in all dimensions must be identical for results to
             % be valid.
             %
-            % [chd, job, readfun] = kspaceFirstOrderND(...) also returns
-            % a parallel.Job job and a function readfun to read the output 
-            % of the Job into a ChannelData object. If these outputs are
-            % requested, chd is empty and the job is not submitted. The job
-            % can be submitted with the submit function. When the job has
-            % completed, it can be read into a ChannelData object with
-            % readfun.
+            % [chd, job] = kspaceFirstOrderND(...) also returns
+            % a parallel.Job job with a function job.UserData.readfun to 
+            % read the output of the Job into a ChannelData object. If 
+            % these outputs are requested, chd is empty and the job is not 
+            % submitted. The job can be submitted with the submit function.
+            % When the job has completed, it can be read into a ChannelData
+            % object with job.UserData.readfun(job).
             %
             % [...] = KSPACEFIRSTORDERND(self, target, sscan, Name, Value, ...)
             % specifies name value pairs.
@@ -1995,7 +1995,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isinf(sscan.dy), kwargs.el_sub_div(2) = 1; end % don't use sub-elements in elevation for 2D sims
 
             % intialize empty outputs
-            [chd, job, readfun] = deal([]);
+            [chd, job] = deal([]);
 
             % get the kWaveGrid
             % TODO: check that the stpe sizes are all equal - this is
@@ -2236,17 +2236,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % we can make this a lambda because we only
                     % have one output per task
                     V = self.sequence.numPulse;
-                    readfun = @(job) ... 
-                        ChannelData('t0', t0, 'fs', fs_, 'data', ... 
+                    job.UserData = struct('t0', gather(t0), 'fs', gather(fs_)); 
+                    job.UserData.readfun = @(job) ... 
+                        ChannelData('t0', job.UserData.t0, 'fs', job.UserData.fs, 'data', ... 
                         diff(cell2mat(arrayfun(@(t)t.OutputArguments, reshape(job.Tasks, [1,1,V,2]))),1,4) ... 
                         );
-
+                    
                     % if no job output was requested, run the job and
                     % create the ChannelData
                     if nargout < 2, 
                         submit(job); 
                         wait(job);
-                        chd = readfun(job);
+                        chd = job.UserData.readfun(job);
 
                         % TODO: make reports optional
                         fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
