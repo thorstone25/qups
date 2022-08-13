@@ -1977,7 +1977,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwave_args.LogScale (1,1) logical
                 kwave_args.MeshPlot(1,1) logical
                 kwave_args.MovieArgs cell
-                kwave_args.MovieName (1,1) string
+                kwave_args.MovieName (1,1) string = 'kwave-sim'
                 kwave_args.MovieType (1,1) string {mustBeMember(kwave_args.MovieType, ["frame", "image"])}
                 kwave_args.PlotFreq (1,1) {mustBeInteger, mustBePositive}
                 kwave_args.PlotLayout (1,1) logical
@@ -2142,6 +2142,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % set global arguments: these are always overridden
             kwave_args.PMLInside = false;
             kwave_args.PMLSize = Npml(1:kgrid.dim);
+
+            % make string inputs character arrays to avoid compatability
+            % issues
+            for f = string(fieldnames(kwave_args))'
+                if isstring(kwave_args.(f))
+                    kwave_args.(f) = char(kwave_args.(f));
+                end
+            end
             
             % make a new movie name for each pulse
             kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
@@ -2242,11 +2250,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % reshape and convole with receive impulse-response
                     % we can make this a lambda because we only
                     % have one output per task
-                    V = self.sequence.numPulse;
-                    job.UserData = struct('t0', gather(t0), 'fs', gather(fs_)); 
+                    job.UserData = struct('t0', gather(t0), 'fs', gather(fs_), 'V', self.sequence.numPulse); 
                     job.UserData.readfun = @(job) ... 
                         ChannelData('t0', job.UserData.t0, 'fs', job.UserData.fs, 'data', ... 
-                        diff(cell2mat(arrayfun(@(t)t.OutputArguments, reshape(job.Tasks, [1,1,V,2]))),1,4) ... 
+                        diff(cell2mat(arrayfun(@(t)t.OutputArguments, reshape(job.Tasks, [1,1,job.UserData.V,2]))),1,4) ... 
                         );
                     
                     % if no job output was requested, run the job and
