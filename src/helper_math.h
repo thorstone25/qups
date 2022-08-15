@@ -1756,7 +1756,12 @@ inline __device__ __host__ uint4 clamp(uint4 v, uint4 a, uint4 b)
 ////////////////////////////////////////////////////////////////////////////////
 // dot product
 ////////////////////////////////////////////////////////////////////////////////
-
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half dot(half2 a, half2 b)
+{
+    return a.x * b.x + a.y * b.y;
+}
+#endif
 inline __host__ __device__ float dot(float2 a, float2 b)
 {
     return a.x * b.x + a.y * b.y;
@@ -1812,7 +1817,12 @@ inline __host__ __device__ uint dot(uint4 a, uint4 b)
 ////////////////////////////////////////////////////////////////////////////////
 // length
 ////////////////////////////////////////////////////////////////////////////////
-
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half length(half2 v)
+{
+    return sqrtf(dot(v, v));
+}
+#endif
 inline __host__ __device__ float length(float2 v)
 {
     return sqrtf(dot(v, v));
