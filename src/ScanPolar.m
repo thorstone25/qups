@@ -246,6 +246,11 @@ classdef ScanPolar < Scan
             sz = [self.nr, self.na, self.ny];
             sz = sz(self.getPermuteOrder());            
         end
+        function set.size(self, sz)
+            iord = arrayfun(@(c) find(c == self.order), 'RAY');
+            [self.nr, self.na, self.ny] = deal(sz(iord(1)), sz(iord(2)), sz(iord(3)));
+        end
+
         
         % change number of points -> resample linearly, preserve endpoints
         function set.nr(self, n), self.r = linspace(min(self.r), max(self.r), n); end

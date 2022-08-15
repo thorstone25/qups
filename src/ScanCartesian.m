@@ -228,6 +228,10 @@ classdef ScanCartesian < Scan
             sz = [self.nx, self.ny, self.nz];
             sz = sz(self.getPermuteOrder());            
         end
+        function set.size(self, sz)
+            iord = arrayfun(@(c) find(c == self.order), 'XYZ');
+            [self.nx, self.ny, self.nz] = deal(sz(iord(1)), sz(iord(2)), sz(iord(3)));
+        end
         
         % change number of points -> resample linearly, preserve endpoints
         function set.nx(self, n), self.x = linspace(min(self.x), max(self.x), n); end
