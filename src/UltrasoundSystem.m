@@ -123,14 +123,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
                 defs = self.getCUDAFileDefs();
                 fls = arrayfun(@(d) string(strrep(d.Source, '.cu', '.ptx')), defs);
-                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
+                e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
+                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(~e)); % move there if not?
                 if opts.recompile && any(~s), self.recompileCUDA(); end % attempt to recompile code
             end
 
             % copy code or recompile it
             defs = self.getMexFileDefs();
             fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
-            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls);
+            e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
+            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls); % move there if not?
             if opts.recompile && any(~s), self.recompileMex(); end % attempt to recompile code
 
         end
@@ -2244,16 +2246,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     end
                     
                     % add simulation and processing task
-                    job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim]);
+                    job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim], 'CaptureDiary',true);
 
                     % function to read into a ChannelData object
                     % reshape and convole with receive impulse-response
                     % we can make this a lambda because we only
                     % have one output per task
-                    job.UserData = struct('t0', gather(t0), 'fs', gather(fs_), 'V', self.sequence.numPulse); 
+                    job.UserData = struct('t0', gather(t0), 'fs', gather(fs_)); 
                     job.UserData.readfun = @(job) ... 
                         ChannelData('t0', job.UserData.t0, 'fs', job.UserData.fs, 'data', ... 
-                        diff(cell2mat(arrayfun(@(t)t.OutputArguments, reshape(job.Tasks, [1,1,job.UserData.V,2]))),1,4) ... 
+                        diff(cell2mat(shiftdim(reshape([job.Tasks.OutputArguments], [], 2), -2)),1,4) ... 
                         );
                     
                     % if no job output was requested, run the job and
@@ -2523,6 +2525,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
                 kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*8)))); % vector computation block size
+                kwargs.verbose (1,1) logical = true 
                 % heuristic: 1/4 Gibibyte limit on the size of the delays
             end
 
@@ -2600,7 +2603,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd_ord = [chd.ndim, chd.mdim, chd.tdim]; % permution order
 
             % beamform for a block of frequencies at a time
-            hw = waitbar(0,'Beamforming ...');
+            if kwargs.verbose, hw = waitbar(0,'Beamforming ...'); end
 
             % DEBUG: plot
             % figure; h = imagesc(squeeze(zeros(self.scan.size))); colorbar; colormap jet;
@@ -2613,7 +2616,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % report progress
                 lbl = "Beamforming: " + min(gather(f(k_))) + " - " + max(gather(f(k_)));% + " MHz";
-                if isvalid(hw), waitbar(ik/numel(k), hw, char(lbl)); end
+                if kwargs.verbose && isvalid(hw), waitbar(ik/numel(k), hw, char(lbl)); end
                 % fprintf(lbl + "\n");
 
                 % data, in freq. domain (N x V x ...)
@@ -2645,7 +2648,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % DEBUG: update display
                 % h.CData(:) = mod2db(sum(y,3)); drawnow limitrate; 
             end
-            if isvalid(hw), close(hw); end
+            if kwargs.verbose && isvalid(hw), close(hw); end
 
             % move to image dimensions ([I] x ... x perm([1|N] x [1|V] x 1)
             b = swapdim(ipermute(b,[chd_ord, 4:(D+3)]), 1:3, D+(1:3));
@@ -3203,6 +3206,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 UltrasoundSystem.genCUDAdef_interpd(),...
                 UltrasoundSystem.genCUDAdef_convd(),...
                 UltrasoundSystem.genCUDAdef_greens(),...
+                UltrasoundSystem.genCUDAdef_wbilerp(),...
                 ];
         end
 
@@ -3254,6 +3258,27 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             d.CompileOptions = {...  compile options
                 'use_fast_math',...
+                };
+
+            d.Warnings = {... warnings
+                'no-deprecated-gpu-targets'...
+                };
+            
+            d.DefinedMacros = {};
+        end
+
+        function d = genCUDAdef_wbilerp()
+            % no halp :(
+
+            % filename
+            d.Source = {...
+                'wbilerp.cu', ...
+                }';
+
+            d.IncludePath = {}; % include folders
+            d.Libraries = {}; % libraries
+
+            d.CompileOptions = {...  compile options
                 };
 
             d.Warnings = {... warnings
@@ -3332,5 +3357,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
 end
 
-function tmp = mktempdir(), tmp = tempname(); mkdir(tmp); end
+function tmp = mktempdir(),
+tmp = tempname(); % new folder
+try
+    mkdir(tmp); % try to create it
+catch % cannot create new folder
+    tmp = cachedir(); % reference the cache folder
+end
+end
 
+function d = cachedir()
+    d = fullfile(fileparts(mfilename('fullpath')), 'bin');
+end
