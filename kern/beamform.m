@@ -199,7 +199,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         dtypefun = @(x) complex(halfT(x));
     end
     [x, apod] = dealfun(dtypefun, x, apod);
-    [Pi, Pr, Pv, Nv] = dealfun(ptypefun, Pi, Pr, Pv, Nv);
+    [Pi, Pr, Pv, Nv, cinv] = dealfun(ptypefun, Pi, Pr, Pv, Nv, cinv);
     
     % expand all inputs to 3D
     expand_inputs();
@@ -209,9 +209,11 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     Isz = size(Pi, 2:4); % I1 x I2 x I3 == I
     I = prod(Isz);
 
-    % get stride for apodization
+    % get stride for apodization and sound speed
     Iasz = size(apod,1:5);
+    Icsz = size(cinv,1:5);
     astride = [1, cumprod(Iasz(1:end-1))] .* (Iasz ~= 1);
+    cstride = [1, cumprod(Icsz(1:end-1))] .* (Icsz ~= 1);
     
     % get kernel and frame sizing
     switch fun
@@ -280,7 +282,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         case {'DAS','SYN','BF'}
             for f = F:-1:1 % beamform each data frame
                 yf = cellfun(@(pi) ...
-                    k.feval(yg, pi, Pr, Pv, Nv, apod, astride, x(:,:,:,f), flagnum, t0, fs, cinv), ...
+                    k.feval(yg, pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, t0, fs), ...
                      Pif, per_cell{:});
 
                 % concatentate pixels
@@ -290,7 +292,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
             y = cat(6, y{:});
         case {'delays'}
             y = cellfun(@(pi)...
-                k.feval(yg, pi, Pr, Pv, Nv, cinv), ...
+                k.feval(yg, pi, Pr, Pv, Nv, cinv(1)), ... TODO: fix the bf.cu kernel
                 Pif, per_cell{:});
             % concatentate pixels
             y = cat(1, y{:}); % I' [x N [x M]]
@@ -358,14 +360,17 @@ else
             dvm = num2cell(dv, [1:3]); % ({I} x 1 x M)
             xmn = shiftdim(num2cell(x,  [1,6:ndims(x)]),1); % ({T} x N x M x 1 x 1 x {F x ...})
             amn = shiftdim(num2cell(apod, [1:3]),3); % ({I} x N x M)
+            cinvmn = shiftdim(num2cell(cinv, [1:3]),3); % ({I} x [1|N] x [1|M])
             amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
             Na = size(amn,1); % apodization size over receives
             parfor m = 1:M
                 yn = dtypefun(zeros([Isz, 1, 1]));
                 drn = num2cell(dr, [1:3]); % ({I} x N x 1)
+                if size(cinvmn,5) == 1, cinvn = cinvmn; else, cinvn = cinvmn(:,m); end % ({I} x [1|N] x 1)
                 for n = 1:N
+                    if isscalar(cinvn), cinv_ = cinvn{1}; else, cinv_ = cinvn{n}; end % ({I} x 1 x 1)
                     % time delay (I x 1 x 1)
-                    tau = cinv .* (dvm{m} + drn{n});
+                    tau = cinv_ .* (dvm{m} + drn{n});
 
                     % extract apodization
                     a = sub(amn(:,m), min(n,Na), 1); % amn(n,m) || amn(1,m)
@@ -383,10 +388,12 @@ else
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
             xm  = num2cell(swapdim(x,2,4),  [1,4,6:ndims(x)]); % ({T x N} x M x {F x ...)
             am = num2cell(apod, [1:4]);
+            cinvm = num2cell(cinv, [1:4]); % ({I x N} x M)
             am = repmat(am, double([ones(1,4),M]) ./ [ones(1,4), size(am,5)]); % broadcast to ({I x N} x M)
             parfor m = 1:M
                 % time delay (I x N x 1)
-                tau = cinv .* (dvm{m} + dr); 
+                if isscalar(cinvm), cinv_ = cinvm{1}; else, cinv_ = cinvm{m}; end % ([1|I] x [1|N] x 1)
+                tau = cinv_ .* (dvm{m} + dr); 
 
                 % extract apodizzation
                 an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
@@ -394,10 +401,10 @@ else
                 % sample and output (I x N x 1)
                 ym = (cellfun(...
                     @(x, tau, a) ...
-                    a .* interp1(t, x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                    a .* interp1(x,  1 + (tau - t0) * fs, interp_type, 0), ...
                     num2cell(xm{m},1), pck(tau), pck(an), per_cell{:})) ...
                     ; %#ok<PFBNS>
-                ym = reshape(ym, [Isz, size(ym,4:ndims(ym))]);
+                ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym))]);
                 y = y + ym;
             end
             
@@ -411,7 +418,7 @@ else
             % sample and output ([I] x N x M x F x ...)
             y = cellfun(... 
                 @(x, tau, a) ...
-                a .* interp1(t, x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                a .* interp1(x,  1 + (tau - t0) * fs, interp_type, 0), ...
                 pck(xmn), pck(tau), pck(apod), per_cell{:} ...
                 );
             y = reshape(y, [Isz, size(y,4:ndims(y))]);
@@ -480,6 +487,7 @@ end
             [Nr] = size(Pr,2);
             Isz = size(Pi, 2:4);
             Iasz = size(apod, 1:5);
+            Icsz = size(cinv, 1:5);
             I = prod(Isz);
 
             % expand vectors
@@ -494,6 +502,9 @@ end
         assert(all(Iasz(1:3) == 1 | Iasz(1:3) == Isz), 'Apodization data size inconsistent with pixel data size');
         assert(Iasz(4) == 1 || Iasz(4) == N, 'Apodization data size inconsistent with receiver data size');
         assert(Iasz(5) == 1 || Iasz(5) == M, 'Apodization data size inconsistent with transmit data size');
+        assert(all(Icsz(1:3) == 1 | Icsz(1:3) == Isz), 'Sound speed data size inconsistent with pixel data size');
+        assert(Icsz(4) == 1 || Icsz(4) == N, 'Sound speed data size inconsistent with receiver data size');
+        assert(Icsz(5) == 1 || Icsz(5) == M, 'Sound speed data size inconsistent with transmit data size');
                 
         % expand to 3D: 1D -> x, 2D -> x,z, 4D -> x/w, y/w, z/w
         Pi = modDim(Pi);

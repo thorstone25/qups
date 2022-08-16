@@ -2321,7 +2321,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) double = self.sequence.c0
+                c0 {mustBeNumeric} = self.sequence.c0
                 kwargs.prec (1,1) string = "single"
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumeric} = 1
@@ -2338,9 +2338,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if ~sumtx && sumrx
                 error('Unable to keep transmit dimension but not receive dimension. Try bfDAS.'); 
             end
-
-            % accept c0 as a value, or an object with a c0 property
-            if ~isnumeric(c0) && ~istall(c0), c0 = c0.c0; end % accept tall numbers too for now.
 
             % make sure t0 is a scalar
             if ~isscalar(chd.t0), chd = rectifyt0(chd); end
