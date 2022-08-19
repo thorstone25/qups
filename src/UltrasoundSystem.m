@@ -3052,12 +3052,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
             % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
             % );
-            % xdc = TransducerArray('numel', 8, 'fc', 3e6, 'bw', [1.5, 4.5]*1e6);
+            % xdc = TransducerArray('numel', 16, 'fc', 3e6, 'bw', [1.5, 4.5]*1e6, 'pitch', 1.5e3/3e6);
             % seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', 1500);
             % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
             % 
             % % Create a Medium to simulate
-            % [c0, rho0] = deal(1500, 1000); 
+            % [c0, rho0] = deal(1.5e3, 1e3); 
             % [c, rho] = deal(c0*ones(sscan.size), rho0*ones(sscan.size));
             % [Xg, ~, Zg] = sscan.getImagingGrid();
             % 
@@ -3090,6 +3090,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Display the ChannelData
             % figure;
             % imagesc(real(chd));
+	    % title('Channel Data')
             % 
             % % Display the images
             % bim_naive = mod2db(b_naive);
