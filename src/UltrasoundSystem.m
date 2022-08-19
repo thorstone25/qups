@@ -578,9 +578,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
             % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
@@ -730,9 +730,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
             % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
@@ -801,9 +801,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
             % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
@@ -871,9 +871,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
             % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
@@ -969,8 +969,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % interpolation to use when synthesizing transmits from the
             % full-synthetic-aperture data.
             %
-            % chd = SIMUS(...,'penv', clu, ...) or 
-            % chd = SIMUS(...,'penv', pool, ...) uses the parallel.Cluster 
+            % chd = SIMUS(...,'parenv', clu, ...) or 
+            % chd = SIMUS(...,'parenv', pool, ...) uses the parallel.Cluster 
             % clu or the parallel.Pool pool to run each transmit in 
             % parallel. The default is the current parpool returned by gcp.
             % 
@@ -993,13 +993,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 target (1,1) Scatterers
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 simus_kwargs.periods (1,1) {mustBePositive} = 1
                 simus_kwargs.dims {mustBeScalarOrEmpty, mustBeMember(simus_kwargs.dims, [2,3])} = []
             end
 
             % load options
-            if isempty(kwargs.penv), kwargs.penv = 0; end % select 0 workers if empty
+            if isempty(kwargs.parenv), kwargs.parenv = 0; end % select 0 workers if empty
 
             % TODO: check the transmit/receive/sequence impulse: they 
             % cannot be satisfied if not a Delta or empty
@@ -1055,10 +1055,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 );
 
             % select the computing environment
-            penv = kwargs.penv;
-            if isempty(penv), penv = 0; end % empty pool -> 0
-            isloc = ~isa(penv, 'parallel.Pool') || ~isa(penv, 'parallel.Cluster'); % local or parpool
-            if isloc, [pclu, penv] = deal(penv, 0); else, pclu = 0; end % cluster or local
+            parenv = kwargs.parenv;
+            if isempty(parenv), parenv = 0; end % empty pool -> 0
+            isloc = ~isa(parenv, 'parallel.Pool') || ~isa(parenv, 'parallel.Cluster'); % local or parpool
+            if isloc, [pclu, parenv] = deal(parenv, 0); else, pclu = 0; end % cluster or local
 
             % call the sim: FSA approach
             [M, F] = deal(self.xdc.numel, numel(target)); % splice
@@ -1068,7 +1068,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     args = argf; % copy settings for this frame
                     args{6}.TXapodization(m) = 1; % transmit only on element m
                     if isloc, rf{m,f} = simus(args{:}); % local compute
-                    else, out(m,f) = parfeval(penv, @simus, 1, args{:}); % add cluster job
+                    else, out(m,f) = parfeval(parenv, @simus, 1, args{:}); % add cluster job
                     end
                 end
             end
@@ -1104,8 +1104,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % interpolation methods for the transmit synthesis. The method
             % must be supported by focusTx.
             %
-            % chd = CALC_SCAT_MULTI(..., 'penv', clu) or 
-            % chd = CALC_SCAT_MULTI(..., 'penv', pool) uses the
+            % chd = CALC_SCAT_MULTI(..., 'parenv', clu) or 
+            % chd = CALC_SCAT_MULTI(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to
             % parallelize computations. parallel.ThreadPools are invalid
             % due to mex function restrictions.
@@ -1128,7 +1128,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 target Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
             end
             
@@ -1151,8 +1151,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tx_pls = gather(double(real(vec(wv_pl.fun(t_pl))')));
 
             % choose the cluster to operate on: avoid running on ThreadPools
-            penv = kwargs.penv;
-            if isempty(penv) || isa(penv, 'parallel.ThreadPool') || isa(penv, 'parallel.BackgroundPool'), penv = 0; end
+            parenv = kwargs.parenv;
+            if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
             % splice
             [M, F] = deal(self.sequence.numPulse, numel(target)); % number of transmits/frames
@@ -1160,7 +1160,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), target); % splice
 
             % Make position/amplitude and transducers constants across the workers
-            if isa(penv, 'parallel.Pool'), 
+            if isa(parenv, 'parallel.Pool'), 
                 cfun = @parallel.pool.Constant;
             else, 
                 cfun = @(x)struct('Value', x);
@@ -1169,7 +1169,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
             % for each target (frame)
-            parfor (f = 1:F, penv) % each transmit pulse
+            parfor (f = 1:F, parenv) % each transmit pulse
             % reinitialize field II
             field_init(-1);
             
@@ -1217,8 +1217,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % specifies the number of subdivisions in width and height for
             % each element. The default is [1, 1].
             %
-            % chd = CALC_SCAT_MULTI(..., 'penv', clu) or 
-            % chd = CALC_SCAT_MULTI(..., 'penv', pool) uses the
+            % chd = CALC_SCAT_MULTI(..., 'parenv', clu) or 
+            % chd = CALC_SCAT_MULTI(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to
             % parallelize computations. parallel.ThreadPools are invalid
             % due to mex function restrictions.
@@ -1241,7 +1241,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 target Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
             end
             
             % helper function
@@ -1278,15 +1278,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_tx = tau_tx - tau_offset; % 0-base the delays for FieldII
 
             % choose the parallel environment to operate on: avoid running on ThreadPools
-            penv = kwargs.penv;
-            if isempty(penv) || isa(penv, 'parallel.ThreadPool') || isa(penv, 'parallel.BackgroundPool'), penv = 0; end
+            parenv = kwargs.parenv;
+            if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
             [M, F] = deal(self.sequence.numPulse, numel(target)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), target); % splice
             
             % Make position/amplitude and transducers constants across the workers
-            if isa(penv, 'parallel.Pool'), 
+            if isa(parenv, 'parallel.Pool'), 
                 cfun = @parallel.pool.Constant;
             else, 
                 cfun = @(x)struct('Value', x);
@@ -1294,7 +1294,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
-            parfor (m = 1:M, penv) % each transmit pulse
+            parfor (m = 1:M, parenv) % each transmit pulse
             for (f = F:-1:1) % each target frame            
                 % (re)initialize field II
                 field_init(-1);
@@ -2171,15 +2171,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % intermediate results. The 'karray-depend' method always uses 
             % the kWaveArray methods, but can be slower.
             % 
-            % chd = KSPACEFIRSTORDER(..., 'penv', clu) or 
-            % chd = KSPACEFIRSTORDER(..., 'penv', pool) uses the
+            % chd = KSPACEFIRSTORDER(..., 'parenv', clu) or 
+            % chd = KSPACEFIRSTORDER(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to compute
             % each pulse in parallel.
             % 
             % A MATLAB parallel.Job is saved until it is deleted, so
             % simulations can be recalled later from the job reference.
             % 
-            % [chd, job] = KSPACEFIRSTORDER(..., 'penv', clu) also 
+            % [chd, job] = KSPACEFIRSTORDER(..., 'parenv', clu) also 
             % returns a parallel.Job job with a function to read the output
             % of the Job into a ChannelData object. If these outputs are 
             % requested, chd is  empty and the job is not submitted. The 
@@ -2206,9 +2206,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
             % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
@@ -2230,7 +2230,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.T double {mustBeScalarOrEmpty} = [], % simulation time (s)
                 kwargs.PML (1,:) double = [20 56], % (one-sided) PML size range
                 kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, % maximum cfl number (for stability)
-                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, target.c0), % element subdivisions (width x height)
             end
@@ -2467,13 +2467,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % choose where to compute the data
             % parfor behaviour - for now, only parcluster == 0 -> parfor
-            if ~isa(kwargs.penv, 'parallel.Cluster') % no cluster
+            if ~isa(kwargs.parenv, 'parallel.Cluster') % no cluster
                 % process directly in a parfor loop if 0
                 out = cell(self.sequence.numPulse, 1); % init
                 [Np] = deal(self.sequence.numPulse); % splice
 
                 % for puls = self.sequence.numPulse:-1:1
-                parfor (puls = 1:self.sequence.numPulse, kwargs.penv)
+                parfor (puls = 1:self.sequence.numPulse, kwargs.parenv)
                     % TODO: make this part of some 'info' logger or something
                     fprintf('\nComputing pulse %i of %i\n', puls, Np);
                     tt_pulse = tic;
@@ -2498,7 +2498,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             else
                 % make a job on the cluster
-                clu = kwargs.penv;
+                clu = kwargs.parenv;
                 job = createJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true);
 
                 % arguments for each simulation
@@ -3020,10 +3020,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % B uses less memory to prevent OOM errors but a higher B 
             % yields better computer performance.
             %
-            % b = BFEIKONAL(..., 'parcluster', clu) specifies a 
+            % b = BFEIKONAL(..., 'parenv', clu) specifies a 
             % parcluster or parpool object clu for parallelization. The 
             % default is the parallel.Pool returned by gcp.
             %
+            % b = BFEIKONAL(..., 'parenv', clu) or
+            % b = BFEIKONAL(..., 'parenv', pool) uses the
+            % parallel.Cluster clu or the parallel.Pool pool to
+            % parallelize computations. parallel.ThreadPools are invalid
+            % due to mex function restrictions.
+            % 
             % Setting clu = 0 avoids using a parallel cluster or pool. A
             % parallel.ThreadPool will tend to perform better than a
             % parallel.ProcessPool or parallel.Cluster because threads are 
@@ -3034,8 +3040,73 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % method for interpolation. Support is provided by the 
             % ChannelData/sample method. The default is 'cubic'.
             %
+            % Example:
+            % 
+            % % This example requires kWave
+            % if ~exist('kWaveGrid', 'class')
+            %     warning('kWave must be on the path to run this example.');
+            % end
+            % 
+            % % Setup a system
+            % sscan = ScanCartesian(...
+            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            % );
+            % xdc = TransducerArray('numel', 8, 'fc', 3e6, 'bw', [1.5, 4.5]*1e6);
+            % seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', 1500);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % 
+            % % Create a Medium to simulate
+            % [c0, rho0] = deal(1500, 1000); 
+            % [c, rho] = deal(c0*ones(sscan.size), rho0*ones(sscan.size));
+            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % 
+            % % Define isoimpedance layers
+            % z0 = rho0 * c0; % ambient impedance
+            % [c(Zg > 15e-3), rho(Zg > 15e-3)] = deal(1.4e3, z0/1.4e3); % isoimpedance
+            % [c(Zg > 25e-3), rho(Zg > 25e-3)] = deal(1.6e3, z0/1.6e3); % isoimpedance 
+            % [c(Zg > 35e-3), rho(Zg > 35e-3)] = deal(1.4e3, z0/1.4e3); % isoimpedance
+            % [c(Zg > 45e-3), rho(Zg > 45e-3)] = deal(1.5e3, z0/1.5e3); % isoimpedance
+            % 
+            % % Define density scatterers
+            % rho(Xg == 0 & Zg == 10e-3) = rho0*2; 
+            % rho(Xg == 0 & Zg == 20e-3) = rho0*2; 
+            % rho(Xg == 0 & Zg == 30e-3) = rho0*2; 
+            % rho(Xg == 0 & Zg == 40e-3) = rho0*2; 
+            % rho(Xg == 0 & Zg == 50e-3) = rho0*2;
+            % 
+            % % Construct the Medium
+            % med = Medium.Sampled(sscan, c, rho);
+            % 
+            % % Simulate the ChannelData
+            % if gpuDeviceCount, dtype = 'gpuArray-single'; 
+            % else, dtype = 'single'; end
+            % chd = kspaceFirstOrder(us, med, sscan, 'DataCast', dtype, 'CFL_max', 0.5);
+            % 
+            % % Beamform
+            % b_naive = DAS(us, chd);
+            % b_c0    = bfEikonal(us, chd, med, sscan);
+            % 
+            % % Display the ChannelData
+            % figure;
+            % imagesc(real(chd));
+            % 
+            % % Display the images
+            % bim_naive = mod2db(b_naive);
+            % bim_c0    = mod2db(b_c0   );
+            % 
+            % figure;
+            % subplot(1,2,1);
+            % imagesc(us.scan, bim_naive, [-80 0] + max(bim_naive(:)));
+            % colormap gray; colorbar;
+            % title('Naive Delay-and-Sum');
+            % 
+            % subplot(1,2,2);
+            % imagesc(us.scan, bim_c0   , [-80 0] + max(bim_c0(:)   ));
+            % colormap gray; colorbar;
+            % title('Eikonal Delay-and-Sum');
+            % 
             % See also DAS BFDAS BFADJOINT
-
 
             arguments
                 self (1,1) UltrasoundSystem
@@ -3045,7 +3116,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % defaults
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-                kwargs.parcluster = gcp('nocreate');
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 kwargs.apod {mustBeNumeric} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
@@ -3058,13 +3129,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             sumrx = ~kwargs.keep_rx;
 
             % get cluster
-            if isempty(kwargs.parcluster), kwargs.parcluster = 0; end % empty -> 0
-            clu = kwargs.parcluster; % compute cluster/pool/threads
+            parenv = kwargs.parenv; % compute cluster/pool/threads
             % travel times cannot use threadPool because mex call
-            if isa(clu, 'parallel.ThreadPool'), clu = 0; end
+            if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
             % get worker transfer function
-            if(clu == 0)
+            if(parenv == 0)
                  constfun = @(x) struct('Value', x);
             else,constfun = @parallel.pool.Constant;
             end
@@ -3107,7 +3177,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % reduced dimensions ([M|N] x {Cx x Cy x Cz})
             gi_opts = {'cubic', 'none'};
             tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
-            parfor (n = 1:chd.N, clu)
+            parfor (n = 1:chd.N, parenv)
                 % fprintf('rx %i\n', n);
                 [tau_map_rx] = msfm(squeeze(cnorm.Value), double(Prc(:,n))); %#ok<PFBNS> % travel time to each point
                 rx_samp{n} = griddedInterpolant(grd, tau_map_rx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
@@ -3115,7 +3185,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if self.tx == self.rx % if apertures are identical, copy
                 tx_samp = rx_samp;
             else % else compute for each tx
-            parfor (m = 1:chd.M, clu)
+            parfor (m = 1:chd.M, parenv)
                 % fprintf('tx %i\n', m);
                 [tau_map_tx] = msfm(squeeze(cnorm.Value), double(Pvc(:,m))); %#ok<PFBNS> % travel time to each point
                 tx_samp{m} = griddedInterpolant(grd, tau_map_tx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
@@ -3259,8 +3329,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % get cluster
-            penv = kwargs.parenv;
-            if isempty(penv) || isa(chd.data, 'gpuArray'), penv = 0; end % run on CPU by default
+            parenv = kwargs.parenv;
+            if isempty(parenv) || isa(chd.data, 'gpuArray'), parenv = 0; end % run on CPU by default
 
             % get image pixels, outside of range of data
             Pi = self.scan.getImagingGrid();
@@ -3333,7 +3403,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             b = 0; % initialize
             % hw = waitbar(0,'Beamforming ...'); % create a wait bar
             % for m = 1:numel(chds)
-            parfor (m = 1:numel(chds), penv) % for each transmit
+            parfor (m = 1:numel(chds), parenv) % for each transmit
                 tau = cinv .* (dvm{m} + dr); % get sample times (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
                 if isscalar(am), a = am{1}; else, a = am{m}; end % (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
 
