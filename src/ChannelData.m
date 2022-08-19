@@ -213,6 +213,56 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % DSP overloads 
     methods
+        function chd = demodulate(chd, fc)
+            % DEMODULATE Demodulate ChannelData
+            %
+            % chd = DEMODULATE(chd, fc) demodulates the data with respect
+            % to frequency fc and the time axis.
+            %
+            % Demodulation can be combined with downssampling to reduce
+            % the sampling frequency while retaining the information
+            % content of the data.
+            % 
+            % Example:
+            % % Simulate some data
+            % us = UltrasoundSystem('fs', 100e6); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = greens(us, targ); % simulate the ChannelData
+            % 
+            % % Demodulate and downsample the data
+            % ratio = 4;
+            % chdd = downsample(demodulate(chd, us.fs/ratio), ratio);
+            % 
+            % % Image the data
+            % figure; 
+            % subplot(1,2,1);
+            % imagesc(us.scan, mod2db(DAS(us, chd)));
+            % colormap gray; colorbar;
+            % title('Original sampling frequency');
+            %
+            % subplot(1,2,2);
+            % imagesc(us.scan, mod2db(DAS(us, chdd)));
+            % colormap gray; colorbar;
+            % title("Downsampled by " + ratio + "x");
+            %
+            % See also DOWNSAMPLE FILTER HILBERT FFT
+            arguments
+                chd ChannelData
+                fc (1,1) double {mustBeFinite}
+            end
+            
+            % copy semantics
+            chd = copy(chd);
+            
+            % demodulate directly with the temporal phasor
+            chd.data = chd.data .* exp(2i*pi*fc*chd.time);
+            
+            % TODO: make this computation more efficient for large data?
+            % wn = exp(2i*pi*fc/chd.fs); % base phasor
+            % w0 = exp(2i*pi*fc*chd.t0); % time offset
+            % n = shiftdim((0 : chd.T - 1)', 1 - chd.tdim); % time indices
+            % chd.data = chd.data .* w0 .* (wn .^ n); 
+        end
         function D = getPassbandFilter(chd, bw, N)
             % GETPASSBANDFILTER Get a passband filter
             %
@@ -412,6 +462,26 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = copy(chd);
             chd.data = matlab.tall.transform(@ifftshift, chd.data, dim);
         end
+        function chd = downsample(chd, ratio)
+            % DOWNSAMPLE Downsample the ChannelData
+            %
+            % chd = DOWNSAMPLE(chd, ratio) downsamples the ChannelData to
+            % reduce the sampling frequency by ratio.
+            %
+            % Example:
+            % 
+            % chd = ChannelData('data', rand([2^10,1]), 'fs', 8);
+            % chd = downsample(chd, 4) % downsample by a factor of 4
+            % 
+            % See also RESAMPLE DEMODULATE
+            arguments
+                chd ChannelData
+                ratio (1,1) double {mustBePositive, mustBeInteger}
+            end
+            chd = copy(chd); % copy semantics
+            chd = sub(chd, 1:ratio:chd.T, chd.tdim); % sub-index
+            chd.fs = chd.fs / ratio; % reduce sampling frequency
+        end
         function chd = resample(chd, fs, varargin)
             % RESAMPLE - Resample the data in time
             %
@@ -428,7 +498,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd = RESAMPLE(chd, fs, ..., arg1, arg2, ...) forwards 
             % arguments to MATLAB's RESAMPLE function
             %
-            % See also RESAMPLE
+            % See also RESAMPLE DOWNSAMPLE
 
             % save original data prototypes
             [Tt, Tf, Td] = deal(chd.t0, chd.fs, cast(zeros([0,0]), 'like', chd.data));
