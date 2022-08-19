@@ -234,14 +234,14 @@ classdef SimTest < matlab.unittest.TestCase
 
             
             % simulate based on the simulation routine
-            opts = {'interp', terp, 'parcluster', clu};
+            opts = {'interp', terp, 'parenv', clu};
             switch sim_name
                 case 'FieldII',       chd = calc_scat_all   (us, targ, [1,1], opts{:}); % use FieldII,
                 case 'FieldII_multi', chd = calc_scat_multi (us, targ, [1,1], opts{:}); % use FieldII,
                 case 'SIMUS'  ,       chd = simus           (us, targ, 'periods', 1, 'dims', 3, opts{:}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-                case 'Greens' ,       chd = greens          (us, targ, [1,1], opts{:});
+                case 'Greens' ,       chd = greens          (us, targ, [1,1], opts{1:2});
                 case 'kWave',         if(gpuDeviceCount) && (clu == 0 || isa(clu, 'parallel.Cluster')), dtype = 'gpuArray-double'; else, dtype = 'double'; end % data type for k-Wave
-                                      chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parcluster', clu, 'PlotSim', false, 'DataCast', dtype); % run locally, and use an FFT friendly PML size
+                                      chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype); % run locally, and use an FFT friendly PML size
                 otherwise, warning('Simulator not recognized'); return;
             end
 
@@ -313,15 +313,15 @@ classdef SimTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.AbsoluteTolerance;
 
             % simulate based on the simulation routine
-            opts = {'interp', terp, 'parcluster', clu};
+            opts = {'interp', terp, 'parenv', clu};
             switch sim_name
                 case 'Greens' ,
                     us.sequence.pulse.fun = @(t) single(t==0); % implicit cast to single type
-                    chd0 = gather(greens(us, targ, [1,1], opts{:}, 'device', 0 , 'tall', false)); % reference
+                    chd0 = gather(greens(us, targ, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
                     [xo, to] = deal(chd0.data, chd0.t0);
                     for usetall = [true, false]
                         for dev = [0 -1]
-                            chd = doubleT(gather(greens(us, targ, [1,1], opts{:}, 'device', dev , 'tall', usetall)));
+                            chd = doubleT(gather(greens(us, targ, [1,1], opts{1:2}, 'device', dev , 'tall', usetall)));
                             [x, t] = deal(gather(chd.data), gather(chd.t0));
                             test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
                                 "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.sequence.type + " sequence."  ...
