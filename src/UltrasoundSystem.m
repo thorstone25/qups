@@ -972,7 +972,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chd = SIMUS(...,'parenv', clu, ...) or 
             % chd = SIMUS(...,'parenv', pool, ...) uses the parallel.Cluster 
             % clu or the parallel.Pool pool to run each transmit in 
-            % parallel. The default is the current parpool returned by gcp.
+            % parallel. 
+            % 
+            % chd = SIMUS(..., 'parenv', 0) avoids using a parallel.Cluster
+            % or parallel.Pool. Use 0 when operating on a GPU or if memory 
+            % usage explodes on a parallel.ProcessPool.
+            %
+            % The default is the current parpool returned by gcp. To use a
+            % parallel.ThreadPool with SIMUS, see this <a href="matlab:web('https://github.com/thorstone25/qups/issues/2')">issue</a>.
             % 
             % Example:
             % 
@@ -1104,11 +1111,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % interpolation methods for the transmit synthesis. The method
             % must be supported by focusTx.
             %
-            % chd = CALC_SCAT_MULTI(..., 'parenv', clu) or 
-            % chd = CALC_SCAT_MULTI(..., 'parenv', pool) uses the
+            % chd = CALC_SCAT_ALL(..., 'parenv', clu) or 
+            % chd = CALC_SCAT_ALL(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to
-            % parallelize computations. parallel.ThreadPools are invalid
+            % parallelize computations. parallel.ThreadPools are ignored
             % due to mex function restrictions.
+            % 
+            % chd = CALC_SCAT_ALL(..., 'parenv', 0) avoids using a 
+            % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
+            % GPU or if memory usage explodes on a parallel.ProcessPool.
+            %
+            % The default is the current pool returned by gcp.
             % 
             % Example:
             % 
@@ -1222,6 +1235,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % parallel.Cluster clu or the parallel.Pool pool to
             % parallelize computations. parallel.ThreadPools are invalid
             % due to mex function restrictions.
+            % 
+            % chd = CALC_SCAT_MULTI(..., 'parenv', 0) avoids using a 
+            % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
+            % GPU or if memory usage explodes on a parallel.ProcessPool.
+            %
+            % The default is the current pool returned by gcp.
             % 
             % Example:
             % 
@@ -2187,12 +2206,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % has completed, it can be read into a ChannelData object with 
             % job.UserData.readfun(job).
             %
+            % chd = KSPACEFIRSTORDER(..., 'parenv', 0) avoids using a
+            % parallel.Cluster or parallel.Pool. 
+            %
+            % The default is the current pool returned by gcp.
+            % 
             % [...] = KSPACEFIRSTORDER(..., Name, Value, ...)
             % specifies other Name/Value pairs that are valid for 
             % kWaveArray's constructor or kWave's kspaceFirstOrderND. 
             % 
-            % kWave's kspaceFirstOrderND PML arguments are invalid as they 
-            % are overwritten by the UltrasoundSystem method.
+            % kWave's kspaceFirstOrderND `PMLSize` and `PMLInside`
+            % arguments are invalid as they are overwritten by the method.
             %
             % Example:
             % 
@@ -2466,7 +2490,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % choose where to compute the data
-            % parfor behaviour - for now, only parcluster == 0 -> parfor
+            % parfor behaviour - for now, only parenv == 0 -> parfor
             if ~isa(kwargs.parenv, 'parallel.Cluster') % no cluster
                 % process directly in a parfor loop if 0
                 out = cell(self.sequence.numPulse, 1); % init
@@ -3020,21 +3044,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % B uses less memory to prevent OOM errors but a higher B 
             % yields better computer performance.
             %
-            % b = BFEIKONAL(..., 'parenv', clu) specifies a 
-            % parcluster or parpool object clu for parallelization. The 
-            % default is the parallel.Pool returned by gcp.
-            %
             % b = BFEIKONAL(..., 'parenv', clu) or
             % b = BFEIKONAL(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to
-            % parallelize computations. parallel.ThreadPools are invalid
-            % due to mex function restrictions.
+            % parallelize computations. parallel.ThreadPools will be
+            % ignored due to mex function restrictions.
             % 
-            % Setting clu = 0 avoids using a parallel cluster or pool. A
-            % parallel.ThreadPool will tend to perform better than a
-            % parallel.ProcessPool or parallel.Cluster because threads are 
-            % allowed to share memory. Use 0 when operating on a GPU or if 
-            % memory usage explodes on a parallel.ProcessPool.
+            % b = BFEIKONAL(..., 'parenv', 0) avoids using a 
+            % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
+            % GPU or if memory usage explodes on a parallel.ProcessPool.
             %
             % b = BFEIKONAL(..., 'interp',method, ...) specifies the 
             % method for interpolation. Support is provided by the 
@@ -3176,7 +3194,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get one-way delays within the field then generate samplers, using
             % reduced dimensions ([M|N] x {Cx x Cy x Cz})
-            gi_opts = {'cubic', 'none'};
+            gi_opts = {'cubic', 'none'}; % interpolater options
             tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
             parfor (n = 1:chd.N, parenv)
                 % fprintf('rx %i\n', n);
