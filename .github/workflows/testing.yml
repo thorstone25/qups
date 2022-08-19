@@ -5,7 +5,7 @@ jobs:
     strategy:
       matrix:
         platform: [ubuntu-latest] #, macos-latest, windows-latest]
-        release: [R2020a,R2021a, R2022a]
+        release: [R2020b,R2021a,R2021b,R2022a]
     name: Run MATLAB Tests and Generate Artifacts
     runs-on: ${{ matrix.platform }}
     steps:
