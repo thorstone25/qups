@@ -1,4 +1,4 @@
-% ULTRASOUNDSYSTEM - Complete ultrasound system description
+% ULTRASOUNDSYSTEM - Complete ultrasound system class
 %
 % The ULTRASOUNDSYSTEM class is a synthesis class containing the properties
 % describing a medical ultrasound system and providing methods to simulate
@@ -10,12 +10,18 @@
 % They include:
 % 
 % * simus via MUST
-% * calc_scat_all via FieldII
+% * calc_scat_all, calc_scat_multi via FieldII
 % * kspaceFirstOrderND via K-wave
 % * fullwaveSim via Fullwave
 % 
+% Multiple beamformers are provided which include
 % 
-% See also TRANSDUCER SEQUENCE SCAN TARGET CHANNELDATA
+% * bfDAS - a naive delay-and-sum beamformer
+% * DAS - a more performant naive delay-and-sum beamformer
+% * bfEikonal - a sound speed delay-and-sum beamformer using the eikonal equation
+% * bfAdjoint - a frequency domain beamformer
+% 
+% See also CHANNELDATA TRANSDUCER SEQUENCE SCAN TARGET MEDIUM 
 
 classdef UltrasoundSystem < matlab.mixin.Copyable
     
@@ -33,7 +39,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
     
     properties(Dependent)
-        fc  {mustBeNumeric} % central operating frequency (from the Transducer) (Hz)
+        fc  {mustBeNumeric} % central operating frequency (from the Transducer)
         xdc Transducer      % Transducer object (if receive and transmit are identical)
         pulse Waveform      % Waveform object (from the Sequence)
     end
@@ -212,6 +218,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     % property modification
     methods
         function self = scale(self, kwargs)
+            % SCALE - Scale the units of the system
+            %
+            % self = SCALE(self, 'dist', dscale) scales the values of 
+            % distance by dscale.
+            % 
+            % self = SCALE(self, 'time', tscale) scales the values of
+            % time by tscale, and values of (temporal) frequency by the
+            % inverse of tscale.
+            %
+            % Example:
+            % % Define a system in meters, seconds
+            % xdc = TransducerArray('pitch', 1e-3, 'fc', 1e6); % defined in meters, seconds
+            % us = UltrasoundSystem('xdc', xdc); 
+            %
+            % % Scale the values to millimiters, microseconds
+            % us = scale(us, 'dist', 1e3, 'time', 1e6);
+            % 
+            %
             arguments
                 self (1,1) UltrasoundSystem
                 kwargs.dist (1,1) double
@@ -245,7 +269,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % Modified Green's function based direct computations
     methods
-        function [chd, wv] = greens(self, target, element_subdivisions, varargin, kwargs)
+        function [chd, wv] = greens(self, target, element_subdivisions, kwargs)
             % GREENS - Simulate ChannelData via a shifted Green's function.
             % 
             % chd = GREENS(self, target)
@@ -265,39 +289,42 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % [chd, wv] = GREENS(...) additionally returns the final
             % waveform convolved across the point scatterers and aperture.
             %
-            % [...] = GREENS(..., Name, Value, ...) provides additional
-            % name/value pair arguments.
+            % [...] = GREENS(..., 'interp', method) specifies the method for
+            % interpolation. Support is provided by the ChannelData/sample 
+            % method. The default is 'cubic'.
+            % 
+            % [...] = GREENS(..., 'device', index) uses the gpuDevice with ID
+            % index. If index == -1, the current device is used. Index == 0
+            % avoids using a gpuDevice. The default is -1 if a gpu is
+            % available.
             %
-            % Name-Value Arguments:
-            %   device -    integer representing gpu selection. -1 selects
-            %               the current GPU. 0 selects a cpu. n where n > 0
-            %               selects and resets a GPU
+            % [...] = GREENS(..., 'bsize', B) uses a block size of B when
+            % vectorizing computations. A larger block size will run
+            % faster, but use more memory. The default is 1.
             %
-            %   interp -    interpolation method; it must be a method 
-            %               supported by wsinterpd. The default is 'cubic'.
+            % [...] = GREENS(..., 'device', 0, 'tall', true, ...) uses a 
+            % tall type for intermediate computations. This may help 
+            % prevent out-of-memory errors.
             %
-            %   tall -      specifies whether to use a tall type. Set this
-            %               to true if memory is an issue. The default is
-            %               false.
+            % Example:
+            % 
+            % % Simulate some data
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = greens(us, targ); % simulate the ChannelData
+            % 
+            % % Display the data
+            % figure;
+            % imagesc(real(chd));
+            % colorbar;
             %
-            %   bsize -     number of scatterers to compute at a time.
-            %               If operating on the GPU when the interp method
-            %               is one of {'nearest', 'linear', 'cubic',
-            %               'lanczos3'}, this option has no effect. The 
-            %               default is 1.
-            %
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI WSINTERPD
-            % CHD/SAMPLE
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI CHANNELDATA/SAMPLE
             
             arguments
                 self (1,1) UltrasoundSystem
                 target Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
             end
-            arguments(Repeating)
-                varargin
-            end
-
             arguments
                 kwargs.device (1,1) {mustBeInteger} = -logical(gpuDeviceCount());
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
@@ -305,9 +332,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = 1;
                 kwargs.verbose (1,1) logical = false;
             end
-            % parse inputs
-            % TODO: switch to kwargs properties
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
             
             % get the centers of all the sub-elements
             if all(element_subdivisions == 1) % no sub-elements
@@ -510,42 +534,88 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % Fullwave calls
     methods
-        function conf = fullwaveConf(self, target, sscan, kwargs)
+        function conf = fullwaveConf(self, medium, sscan, kwargs)
             % FULLWAVECONF - Generate a Fullwave simulation configuration
             %
-            % conf = FULLWAVECONF(self, targ, sscan) creates a simulation
+            % conf = FULLWAVECONF(self, medium) creates a simulation
             % configuration struct to be used with fullwaveJob to simulate 
-            % the response from the Target targ using the simulation region
-            % in the ScanCartesian sscan.
+            % the response from the Target targ using the UltrasoundSystem 
+            % self and the Medium medium. 
+            % 
+            % conf = FULLWAVECONF(self, medium, sscan) uses the  
+            % ScanCartesian sscan as the simulation region. The default is
+            % self.scan.
             %
+            % conf = FULLWAVECONF(..., 'f0', f0) uses a reference frequency
+            % of f0 to configure the simulation. The default is self.tx.fc.
+            %
+            % conf = FULLWAVECONF(..., 'CFL_max', cfl) scales the 
+            % sampling frequency until the CFL is at most cfl. A rule of
+            % thumb for a stable simulation is 0.3. A lesser CFL will be
+            % more numerically stable whereas a greater CFL will be faster
+            % to compute, but will be less numerically accurate and may
+            % lead to instability.
+            % 
+            % conf = FULLWAVECONF(..., 'txdel', method) uses the specified 
+            % method for applying the transmit delays. The 'discrete'
+            % method applies delays per pixel rounded to the nearest time
+            % interval. The 'continuous' method samples the transmit
+            % waveform continuously at the exact delays, but takes longer
+            % to compute. The 'interpolate' method samples the transmit
+            % waveform once and then resamples the waveform with the 
+            % transmit delays. This method offers more compute performance
+            % while sacrificing much less accuracy.
+            % 
+            % Example:
+            % 
+            % % Setup a system
+            % sscan = ScanCartesian(...
+            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            % );
+            % xdc = TransducerArray();
+            % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % 
+            % % Create a Medium to simulate
+            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % med = Medium.Sampled(sscan, c, rho);
+            % 
+            % % Simulate the ChannelData
+            % simdir = fullfile(pwd, 'fwsim'); % simulation directory
+            % conf = fullwaveConf(us, med, sscan, 'CFL_max', 0.5); % configure the sim
+            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir); % create a job
+            % submit(job); % submit the job
+            % ... do other things
+            % wait(job); % wait for the job to finish processing
+            % chd = UltrasoundSystem.readFullwaveSim(simdir); % extract the ChannelData
+            % 
+            % % Display the ChannelData
+            % figure;
+            % imagesc(real(chd));
+            % 
             % See also ULTRASOUNDSYSTEM/FULLWAVEJOB
 
             arguments
                 self (1,1) UltrasoundSystem
-                target Medium
-                sscan ScanCartesian
-                kwargs.f0 (1,1) {mustBeNumeric} = self.xdc.fc; % center frequency of the transmit / simulation
-                kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
-                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["disc", "cont", "terp"])} = 'terp';
+                medium Medium
+                sscan ScanCartesian = self.scan
+                kwargs.f0 (1,1) {mustBeNumeric} = self.tx.fc; % center frequency of the transmit / simulation
+                kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.3 % maximum CFL
+                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["discrete", "continuous", "interpolate"])} = 'interpolate';
             end            
 
             %% Configuration variables
 
             % basic vars
-            c0       = target.c0;       % speed of sound (m/s)
+            c0       = medium.c0;       % speed of sound (m/s)
             omega0   = 2*pi*kwargs.f0;  % center radian frequency of transmitted wave
             dur      = diff(sscan.zb)*2.3/c0; % duration of simulation (s) TODO: make this more general, or an input?
 
-            % define the spatial grid
-            % TODO: we can only accept grids where dx/dy/dz exist and are 
-            % identical (or infinite/nan) in all dimensions - error if not
-            [~, sdims] = ismember('XZ', sscan.order);
-            grid.size = sscan.size(sdims); % simulation size
-            grid.step = [mode(diff(sscan.x)), mode(diff(sscan.z))]; % simulation step size
-            grid.origin = [sscan.x(1), sscan.z(1)]; % first value
-
             % determine other grid vars
-            dX   = min(grid.step);  % limit of spatial step size - will be the same in both dimensions
+            dX   = min(abs([sscan.dx, sscan.dy, sscan.dz]), [], 'omitnan');  % limit of spatial step size - will be the same in both dimensions
             fs_  = self.fs;         % data sampling frequency
             cfl0 = (c0*(1/fs_)/dX); % cfl at requested frequency
             modT = ceil(cfl0 / kwargs.CFL_max); % scaling for desired cfl
@@ -559,7 +629,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % at the end: conf.sim  = {c0,omega0,dur,ppw,cfl,maps2,xdcfw,nTic,modT};
 
             %% Define the Transducer
-            xdcfw = self.xdc.getFullwaveTransducer(grid);
+            xdcfw = self.xdc.getFullwaveTransducer(sscan);
 
             %% Define the Transmit Delays
 
@@ -596,10 +666,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_tx_pix = shiftdim(tau_tx_pix,  -1); % 1 x nPxIn x nTx, nTx == M
             switch kwargs.txdel
                 % apply discrete shifts in time
-                case 'disc',  icmat = cell2mat(arrayfun(@(tau) circshift(wv_tx.sample(t(:)), round(tau ./ dT)), tau_tx_pix, 'UniformOutput', false));
+                case 'discrete',  icmat = cell2mat(arrayfun(@(tau) circshift(wv_tx.sample(t(:)), round(tau ./ dT)), tau_tx_pix, 'UniformOutput', false));
                     % continuous resampling of the waveform
-                case 'cont', icmat = cell2mat(arrayfun(@(tau) {wv_tx.sample(t(:) - tau)}, tau_tx_pix));
-                case 'terp' % interpolate, upsampling by 10x in time first
+                case 'continuous', icmat = cell2mat(arrayfun(@(tau) {wv_tx.sample(t(:) - tau)}, tau_tx_pix));
+                case 'interpolate' % interpolate, upsampling by 10x in time first
                     t_up = wv_tx.getSampleTimes(10*fs_);
                     icmat = interp1(t_up, wv_tx.sample(t_up), t(:) - tau_tx_pix, 'spline', 0); 
             end
@@ -609,7 +679,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             %% Define the Medium
             % get maps in some order
-            maps = target.getFullwaveMap(sscan);
+            maps = medium.getFullwaveMap(sscan);
             assert(isscalar(sscan.y), 'Unable to simulate in 3D (y-axis is not scalar).');
 
             % switch to X x Z x Y(=1)
@@ -626,31 +696,72 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
         end
         
-        function [chd, conf] = fullwaveSim(self, target, sscan, kwargs)
+        function [chd, conf] = fullwaveSim(self, medium, sscan, kwargs)
             % FULLWAVESIM - Simulate channel data via Fullwave
             %
-            % chd = FULLWAVESIM(self, target, sscan) simulates the Target 
-            % target on the simulation grid sscan and returns a ChannelData
+            % chd = FULLWAVESIM(self, medium, sscan) simulates the Medium 
+            % medium on the simulation grid sscan and returns a ChannelData
             % object chd. The simulation scan should be large and fine 
             % enough that all elements of the Transducer can be placed.
             %
+            % chd = FULLWAVESIM(self, medium) uses self.scan as the
+            % simulation scan sscan.
+            %
+            % chd = FULLWAESIM(..., 'simdir', dir) uses the directory dir
+            % to store temporary simulation files. The default is a folder
+            % in the working directory.
+            %
+            % chd = FULLWAESIM(..., 'parcluster', clu) uses the
+            % parallel.Cluster clu to compute each pulse. The simulation
+            % directory must be accesible by the parallel.Cluster clu.
+            % 
+            % [chd, conf] = FULLWAVESIM(...) also returns the configuration
+            % structure used to launch the simulation.
+            %
+            % Example:
+            % 
+            % % Setup a system
+            % sscan = ScanCartesian(...
+            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            % );
+            % xdc = TransducerArray();
+            % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % 
+            % % Create a Medium to simulate
+            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % med = Medium.Sampled(sscan, c, rho);
+            % 
+            % % Simulate the ChannelData
+            % chd = fullwaveSim(us, med, sscan);
+            % 
+            % % Display the ChannelData
+            % figure;
+            % imagesc(real(chd));
+            % 
             % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDERND
             
             arguments
                 self (1,1) UltrasoundSystem
-                target Medium
-                sscan ScanCartesian
-                kwargs.parcluster (1,1) parallel.Cluster = parcluster('local') % parallel cluster
+                medium Medium
+                sscan ScanCartesian = self.scan
+                kwargs.parcluster (1,1) parallel.Cluster = parcluster() % parallel cluster
                 kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim'); % simulation directory
+                kwargs.f0 (1,1) {mustBeNumeric} = self.xdc.fc; % center frequency of the transmit / simulation
+                kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
+                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["disc", "cont", "terp"])} = 'terp'; % delay method
             end            
 
             % create the configuration
             conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'f0', 'CFL_max', 'txdel'}));
             conf_args_ = struct2nvpair(conf_args);
-            conf = fullwaveConf(self, target, sscan, conf_args_{:});
+            conf = fullwaveConf(self, medium, sscan, conf_args_{:});
 
             % create a job to process it
-            job = UltrasoundSystem.fullwaveJob(conf, kwargs.simdir, kwargs.parcluster);
+            job = UltrasoundSystem.fullwaveJob(conf, kwargs.parcluster, 'simdir', kwargs.simdir);
 
             % submit the job
             submit(job);
@@ -663,32 +774,61 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
     methods(Static)
-        function job = fullwaveJob(conf, simdir, clu)
+        function job = fullwaveJob(conf, clu, kwargs)
             % FULLWAVEJOB - Create a Fullwave simulation job.
             %
-            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf) creates a job to run the
-            % fullwave simulation from conf.
+            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf) creates a parallel.Job 
+            % to run the fullwave simulation from conf.
             %
-            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf, simdir) uses the directory
-            % simdir to store the simulation inputs and outputs.
+            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf, clu) creates a 
+            % parallel.Job on the parallel.Cluster clu. The parallel.Cluster clu 
+            % must have access to the simulation directory simdir. The resource 
+            % configurations for the parallel.Cluster clu should be setup prior
+            % to this call to ensure enough RAM is present.
             %
-            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(conf, simdir, clu) creates a job on
-            % the parcluster clu. The parcluster must have access to the
-            % simulation directory simdir. The resource configurations for
-            % the parcluster clu should be setup prior to this call to
-            % ensure enough RAM is present.
+            % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(..., 'simdir', dir) 
+            % uses the directory dir to store the simulation inputs and outputs.
             %
-            % Use 'submit' to submit the job.
-            %
+            % Example:
+            % 
+            % % Setup a system
+            % sscan = ScanCartesian(...
+            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            % );
+            % xdc = TransducerArray();
+            % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % 
+            % % Create a Medium to simulate
+            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % med = Medium.Sampled(sscan, c, rho);
+            % 
+            % % Simulate the ChannelData
+            % simdir = fullfile(pwd, 'fwsim'); % simulation directory
+            % conf = fullwaveConf(us, med, sscan, 'CFL_max', 0.5); % configure the sim
+            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir); % create a job
+            % submit(job); % submit the job
+            % ... do other things
+            % wait(job); % wait for the job to finish processing
+            % chd = UltrasoundSystem.readFullwaveSim(simdir); % extract the ChannelData
+            % 
+            % % Display the ChannelData
+            % figure;
+            % imagesc(real(chd));
+            % 
             % See also FULLWAVECONF PARCLUSTER PARALLEL.CLUSTER
 
             arguments
                 conf (1,1) struct
-                simdir (1,1) string = fullfile(pwd, 'fwsim')
-                clu (1,1) parallel.Cluster = parcluster('local')
+                clu (1,1) parallel.Cluster = parcluster()
+                kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim')
             end
 
             % make simulation directory
+            simdir = kwargs.simdir;
             mkdir(simdir);
 
             % Write Simulation Files
@@ -702,6 +842,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             for n = N:-1:1, args{n} = {conf.tx(:,:,n), simdir, fullfile(simdir, string(n))}; end % number the outputs
             job = clu.createJob("AutoAddClientPath",true,"AutoAttachFiles",true);
             job.createTask(@runFullwaveTx, 0, args, "CaptureDiary",true,"Name",'Fullwave-Simulation');
+            job.UserData = struct('simdir', kwargs.simdir);
 
             % write the configuration variables we need for post-processing
             conf = rmfield(conf, ["sim", "tx"]); % remove large variables, save the rest
@@ -718,13 +859,41 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chd = ULTRASOUNDSYSTEM.READFULLWAVESIM(simdir, conf) uses the configuration file conf
             % rather than loading one from the simulation directory.
             %
+            % Example:
+            % 
+            % % Setup a system
+            % sscan = ScanCartesian(...
+            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            % );
+            % xdc = TransducerArray();
+            % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % 
+            % % Create a Medium to simulate
+            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % med = Medium.Sampled(sscan, c, rho);
+            % 
+            % % Simulate the ChannelData
+            % simdir = fullfile(pwd, 'fwsim'); % simulation directory
+            % conf = fullwaveConf(us, med, sscan, 'CFL_max', 0.5); % configure the sim
+            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir); % create a job
+            % submit(job); % submit the job
+            % ... do other things
+            % wait(job); % wait for the job to finish processing
+            % chd = UltrasoundSystem.readFullwaveSim(simdir); % extract the ChannelData
+            % 
+            % % Display the ChannelData
+            % figure;
+            % imagesc(real(chd));
+            % 
             % See also RUNFULLWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
             arguments
                 simdir (1,1) string
                 conf (1,1) struct
             end
-
-
 
             % see if we can find a conf file in the directory if not given to us
             if nargin < 2
@@ -779,44 +948,58 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % SIMUS - Simulate channel data via MUST
             %
             % chd = SIMUS(self, target) simulates the Target target and
-            % returns a ChannelData object chd. By default it runs on the
-            % current parpool object returned by gcp
+            % returns a ChannelData object chd.
+            %
+            % When calling this function the transmit sequence pulse is 
+            % ignored. SIMUS only supports tone bursts at the central 
+            % frequency of the transducer.
+            %
+            % The transmit and receive transducer must be identical i.e. 
+            % self.rx == self.tx must be true.
             %
             % chd = SIMUS(...,'dims', D, ...) selects the number of 
-            % dimensions for the simulation. D must be one of {2, 3, []*}. 
-            % If D is empty, the dimensions are chosen based on the point 
-            % targets.
+            % dimensions for the simulation. D must be one of {2, 3} or 
+            % empty. If D is empty, the dimensions are chosen based on the 
+            % point scatterers.
             %
             % chd = SIMUS(...,'periods', T, ...) selects the number of
-            % periods of the tone burst. 
+            % periods of the tone burst. T can be any positive number.
             %
             % chd = SIMUS(...,'interp', method, ...) selects the method of
             % interpolation to use when synthesizing transmits from the
             % full-synthetic-aperture data.
             %
-            % chd = SIMUS(...,'parcluster', clu, ...) selects the
-            % parcluster for parfor to run on for each transmit. It must 
-            % either be a type of parcluster, parpool, or 0 for no 
-            % parcluster. The default is the parpool returned by gcp. 
-            %
-            % chd = SIMUS(...,'device', d, ...) selects the device to run
-            % on. 
-            %
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL
-            % ULTRASOUNDSYSTEM/FOCUSTX
+            % chd = SIMUS(...,'penv', clu, ...) or 
+            % chd = SIMUS(...,'penv', pool, ...) uses the parallel.Cluster 
+            % clu or the parallel.Pool pool to run each transmit in 
+            % parallel. The default is the current parpool returned by gcp.
+            % 
+            % Example:
+            % 
+            % % Simulate some data
+            % us = UltrasoundSystem(); % get a default system
+            % us.rx = us.tx; % ensure the receiver and transmitter are identical
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = simus(us, targ); % simulate the ChannelData
+            % 
+            % % Display the data
+            % figure;
+            % imagesc(real(chd));
+            % colorbar;
+            % 
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX
             
             arguments
                 self (1,1) UltrasoundSystem
                 target (1,1) Scatterers
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-                kwargs.parcluster (1,1) = gcp('nocreate')
+                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 simus_kwargs.periods (1,1) {mustBePositive} = 1
-                simus_kwargs.dims {mustBeScalarOrEmpty} = []
-            
+                simus_kwargs.dims {mustBeScalarOrEmpty, mustBeMember(simus_kwargs.dims, [2,3])} = []
             end
 
             % load options
-            if isempty(kwargs.parcluster), kwargs.parcluster = 0; end % select 0 workers if empty
+            if isempty(kwargs.penv), kwargs.penv = 0; end % select 0 workers if empty
 
             % TODO: check the transmit/receive/sequence impulse: they 
             % cannot be satisfied if not a Delta or empty
@@ -829,7 +1012,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 deal(sub(target.pos,1,1), sub(target.pos,2,1), sub(target.pos,3,1), target.amp), ...
                 target, 'UniformOutput',false);
             if isempty(simus_kwargs.dims) 
-                if all(cellfun(@(Y)Y == 0, 'all'),Y), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
+                if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
                 else, kwargs.dims = 3; end
             end
             if simus_kwargs.dims == 2 && cellfun(@(Y)any(Y ~= 0, 'all'),Y)
@@ -871,11 +1054,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 ... 'CallFun', 'simus' ... % hack: use the simulation portion of the code
                 );
 
-            % select the computing cluster
-            clu = kwargs.parcluster;
-            if isempty(clu), clu = 0; end % empty pool -> 0
-            isloc = ~isa(clu, 'parallel.Pool') || ~isa(clu, 'parallel.Cluster'); % local or parpool
-            if isloc, [pclu, clu] = deal(clu, 0); else, pclu = 0; end % cluster or local
+            % select the computing environment
+            penv = kwargs.penv;
+            if isempty(penv), penv = 0; end % empty pool -> 0
+            isloc = ~isa(penv, 'parallel.Pool') || ~isa(penv, 'parallel.Cluster'); % local or parpool
+            if isloc, [pclu, penv] = deal(penv, 0); else, pclu = 0; end % cluster or local
 
             % call the sim: FSA approach
             [M, F] = deal(self.xdc.numel, numel(target)); % splice
@@ -885,7 +1068,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     args = argf; % copy settings for this frame
                     args{6}.TXapodization(m) = 1; % transmit only on element m
                     if isloc, rf{m,f} = simus(args{:}); % local compute
-                    else, out(m,f) = parfeval(clu, @simus, 1, args{:}); % add cluster job
+                    else, out(m,f) = parfeval(penv, @simus, 1, args{:}); % add cluster job
                     end
                 end
             end
@@ -906,7 +1089,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
 
     % Field II calls
-    methods(Access=public)
+    methods
         function chd = calc_scat_all(self, target, element_subdivisions, kwargs)
             % CALC_SCAT_ALL - Simulate channel data via FieldII
             %
@@ -915,19 +1098,37 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % chd = CALC_SCAT_ALL(self, target, element_subdivisions)
             % specifies the number of subdivisions in width and height for 
-            % each element.
+            % each element. The default is [1,1].
             %
             % chd = CALC_SCAT_ALL(..., 'interp', method) specifies the
             % interpolation methods for the transmit synthesis. The method
             % must be supported by focusTx.
             %
-            % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
+            % chd = CALC_SCAT_MULTI(..., 'penv', clu) or 
+            % chd = CALC_SCAT_MULTI(..., 'penv', pool) uses the
+            % parallel.Cluster clu or the parallel.Pool pool to
+            % parallelize computations. parallel.ThreadPools are invalid
+            % due to mex function restrictions.
+            % 
+            % Example:
+            % 
+            % % Simulate some data
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = calc_scat_all(us, targ); % simulate the ChannelData
+            % 
+            % % Display the data
+            % figure;
+            % imagesc(real(chd));
+            % colorbar;
+            % 
+            % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/CALC_SCAT_MULTI FOCUSTX
 
             arguments
                 self (1,1) UltrasoundSystem
                 target Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.parcluster (1,1) = gcp('nocreate')
+                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
             end
             
@@ -950,8 +1151,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tx_pls = gather(double(real(vec(wv_pl.fun(t_pl))')));
 
             % choose the cluster to operate on: avoid running on ThreadPools
-            clu = kwargs.parcluster;
-            if isempty(clu) || isa(clu, 'parallel.ThreadPool') || isa(clu, 'parallel.BackgroundPool'), clu = 0; end
+            penv = kwargs.penv;
+            if isempty(penv) || isa(penv, 'parallel.ThreadPool') || isa(penv, 'parallel.BackgroundPool'), penv = 0; end
 
             % splice
             [M, F] = deal(self.sequence.numPulse, numel(target)); % number of transmits/frames
@@ -959,7 +1160,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), target); % splice
 
             % Make position/amplitude and transducers constants across the workers
-            if isa(clu, 'parallel.Pool'), 
+            if isa(penv, 'parallel.Pool'), 
                 cfun = @parallel.pool.Constant;
             else, 
                 cfun = @(x)struct('Value', x);
@@ -968,7 +1169,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
             % for each target (frame)
-            parfor (f = 1:F, clu) % each transmit pulse
+            parfor (f = 1:F, penv) % each transmit pulse
             % reinitialize field II
             field_init(-1);
             
@@ -1014,15 +1215,33 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % chd = CALC_SCAT_MULTI(self, target, element_subdivisions)
             % specifies the number of subdivisions in width and height for
-            % each element.
+            % each element. The default is [1, 1].
             %
+            % chd = CALC_SCAT_MULTI(..., 'penv', clu) or 
+            % chd = CALC_SCAT_MULTI(..., 'penv', pool) uses the
+            % parallel.Cluster clu or the parallel.Pool pool to
+            % parallelize computations. parallel.ThreadPools are invalid
+            % due to mex function restrictions.
+            % 
+            % Example:
+            % 
+            % % Simulate some data
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = calc_scat_multi(us, targ); % simulate the ChannelData
+            % 
+            % % Display the data
+            % figure;
+            % imagesc(real(chd));
+            % colorbar;
+            % 
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
 
             arguments
                 self (1,1) UltrasoundSystem
                 target Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.parcluster (1,1) = gcp('nocreate')
+                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
             end
             
             % helper function
@@ -1058,16 +1277,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_offset = min(tau_tx, [], 1); % (1 x M)
             tau_tx = tau_tx - tau_offset; % 0-base the delays for FieldII
 
-            % choose the cluster to operate on: avoid running on ThreadPools
-            clu = kwargs.parcluster;
-            if isempty(clu) || isa(clu, 'parallel.ThreadPool') || isa(clu, 'parallel.BackgroundPool'), clu = 0; end
+            % choose the parallel environment to operate on: avoid running on ThreadPools
+            penv = kwargs.penv;
+            if isempty(penv) || isa(penv, 'parallel.ThreadPool') || isa(penv, 'parallel.BackgroundPool'), penv = 0; end
 
             [M, F] = deal(self.sequence.numPulse, numel(target)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), target); % splice
             
             % Make position/amplitude and transducers constants across the workers
-            if isa(clu, 'parallel.Pool'), 
+            if isa(penv, 'parallel.Pool'), 
                 cfun = @parallel.pool.Constant;
             else, 
                 cfun = @(x)struct('Value', x);
@@ -1075,7 +1294,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
-            parfor (m = 1:M, clu) % each transmit pulse
+            parfor (m = 1:M, penv) % each transmit pulse
             for (f = F:-1:1) % each target frame            
                 % (re)initialize field II
                 field_init(-1);
@@ -1128,7 +1347,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
     
     % k-Wave calls (old)
-    methods(Access=public)
+    methods(Hidden)
         function [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] ...
                 = getkWaveGrid(self, target, varargin)
             % GETKWAVEGRID - Create a kWaveGrid for the Target
@@ -1912,65 +2131,115 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     % k-Wave calls (new)
     methods
         function [chd, job] = kspaceFirstOrder(self, target, sscan, kwargs, karray_args, kwave_args)
-            % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
+            % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
-            % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
+            % chd = KSPACEFIRSTORDER(self, target) simulates the Target
             % target and returns a ChannelData object chd via k-Wave.
             %
-            % chd = KSPACEFIRSTORDERND(self, target, sscan) operates using
+            % chd = KSPACEFIRSTORDER(self, target, sscan) operates using
             % the simulation region defined by the ScanCartesian sscan. The
-            % step sizes in all dimensions must be identical for results to
-            % be valid.
+            % default is self.scan.
+            % 
+            % If using an element mapping method provided by kWaveArray,
+            % the step sizes in all dimensions must be identical.
             %
-            % [chd, job] = kspaceFirstOrderND(...) also returns
-            % a parallel.Job job with a function job.UserData.readfun to 
-            % read the output of the Job into a ChannelData object. If 
-            % these outputs are requested, chd is empty and the job is not 
-            % submitted. The job can be submitted with the submit function.
-            % When the job has completed, it can be read into a ChannelData
-            % object with job.UserData.readfun(job).
+            % chd = KSPACEFIRSTORDER(..., 'T', T) runs the simulation
+            % until time T. The default is computed heuristically to
+            % include a two-way propagation of a signal at the slowest
+            % sound speed.
+            % 
+            % chd = KSPACEFIRSTORDER(..., 'PML', P) or 
+            % chd = KSPACEFIRSTORDER(..., 'PML', [PL, PU]) uses a PML of 
+            % size P or with a size between PL and PU with the smallest 
+            % maximum prime factor. The default is [20 56].
+            % 
+            % chd = KSPACEFIRSTORDER(..., 'CFL_max', cfl) scales the
+            % sampling frequency until the CFL is at most cfl. A rule of
+            % thumb for a stable simulation is 0.3. A lesser CFL will be
+            % more numerically stable whereas a greater CFL will be faster
+            % to compute, but will be less numerically accurate and may
+            % lead to instability.
+            % 
+            % chd = KSPACEFIRSTORDER(..., 'ElemMapMethod', method) 
+            % specifies the computational method used for mapping 
+            % transducer elements to the computational grid. Must be one of 
+            % {'nearest*, 'linear', 'karray-direct', 'karray-depend'}. 
+            % 
+            % The 'nearest' method uses the nearest pixel. The 'linear' 
+            % method uses linear interpolation weights. The 'karray-direct'
+            % method uses the karray method but avoids recomputing 
+            % intermediate results. The 'karray-depend' method always uses 
+            % the kWaveArray methods, but can be slower.
+            % 
+            % chd = KSPACEFIRSTORDER(..., 'penv', clu) or 
+            % chd = KSPACEFIRSTORDER(..., 'penv', pool) uses the
+            % parallel.Cluster clu or the parallel.Pool pool to compute
+            % each pulse in parallel.
+            % 
+            % A MATLAB parallel.Job is saved until it is deleted, so
+            % simulations can be recalled later from the job reference.
+            % 
+            % [chd, job] = KSPACEFIRSTORDER(..., 'penv', clu) also 
+            % returns a parallel.Job job with a function to read the output
+            % of the Job into a ChannelData object. If these outputs are 
+            % requested, chd is  empty and the job is not submitted. The 
+            % job can be submitted with the submit function. When the job 
+            % has completed, it can be read into a ChannelData object with 
+            % job.UserData.readfun(job).
             %
-            % [...] = KSPACEFIRSTORDERND(self, target, sscan, Name, Value, ...)
-            % specifies name value pairs.
+            % [...] = KSPACEFIRSTORDER(..., Name, Value, ...)
+            % specifies other Name/Value pairs that are valid for 
+            % kWaveArray's constructor or kWave's kspaceFirstOrderND. 
+            % 
+            % kWave's kspaceFirstOrderND PML arguments are invalid as they 
+            % are overwritten by the UltrasoundSystem method.
             %
-            % Inputs:
-            %     T - time limit of the simulation 
-            %     PML - upper and lower bound on the PML size
-            %     CFL_max - maximum cfl number (for stability)
-            %     parcluster - parallel cluster for running simulations (use 0 for no cluster)
-            %     ElemMapMethod - computational method for mapping elements to the grid. 
-            %           Must be one of 
-            %          {'nearest*, 'karray-direct', 'karray-depend'}. The
-            %          'nearest' method uses the nearest pixel. The 
-            %           'karray-direct' method uses the karray method but 
-            %           avoids recomputing intermediate results. The 
-            %           'karray-depend' method always uses the kWaveArray 
-            %           methods, but can be slower. 
-            %
-            % Other Name/Value pairs that are valid for kWaveArray's 
-            % constructor or kWave's kspaceFirstOrderND functions are 
-            % valid here except for PML definition arguments.
-            %
+            % Example:
+            % 
+            % % Setup a system
+            % sscan = ScanCartesian(...
+            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            % );
+            % xdc = TransducerArray();
+            % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % 
+            % % Create a Medium to simulate
+            % [c, rho] = deal(1500*ones(sscan.size), 1020*ones(sscan.size));
+            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % rho(Xg == 0 & Zg == 30e-3) = 1020*2; % double the density
+            % med = Medium.Sampled(sscan, c, rho);
+            % 
+            % % Simulate the ChannelData
+            % if gpuDeviceCount, dtype = 'gpuArray-single'; 
+            % else, dtype = 'single'; end
+            % chd = kspaceFirstOrder(us, med, sscan, 'DataCast', dtype);
+            % 
+            % % Display the ChannelData
+            % figure;
+            % imagesc(real(chd));
+            % 
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM
-            arguments
+            arguments % required arguments
                 self (1,1) UltrasoundSystem
                 target Medium
-                sscan (1,1) ScanCartesian
+                sscan (1,1) ScanCartesian = self.scan
             end
-            arguments
-                kwargs.T double {mustBeScalarOrEmpty} = [], ... simulation time (s)
-                kwargs.PML (1,:) double = [20 56], ... (one-sided) PML size range
-                kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, ... maximum cfl number (for stability)
-                kwargs.parcluster (1,1) = 0, ... parallel cluster for running simulations (use 0 for no cluster)
-                kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', ... one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
-                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, target.c0), ... element subdivisions (width x height)
+            arguments % keyword arguments for this function
+                kwargs.T double {mustBeScalarOrEmpty} = [], % simulation time (s)
+                kwargs.PML (1,:) double = [20 56], % (one-sided) PML size range
+                kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, % maximum cfl number (for stability)
+                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
+                kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
+                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, target.c0), % element subdivisions (width x height)
             end
-            arguments % kWave-Array arguments
+            arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10, ...
                 karray_args.BLITolerance (1,1) double = 0.05, ...
                 karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
             end
-            arguments % kWave 1.1 arguments
+            arguments % kWave 1.1 arguments - these are passed to kWave
                 kwave_args.CartInterp (1,1) string {mustBeMember(kwave_args.CartInterp, ["linear", "nearest"])}
                 kwave_args.CreateLog (1,1) logical
                 kwave_args.DataCast (1,1) string = 'gpuArray-single'
@@ -1994,7 +2263,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwave_args.Smooth (1,:) logical % can be (1,3) to smooth {p0, c, rho} separately, or (1,1) for all
                 kwave_args.StreamToDisk (1,1) {mustBeNumericOrLogical}
             end
-            
 
             % only supported with tx == rx for now
             assert(self.tx == self.rx, 'Transmitter and receiver must be identical.')
@@ -2189,8 +2457,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     rx_sig = gather(real(rx_imp.sample(t_rx(:)' + el_dist(:)/c0map))); % J'' x T''
                     el_map_el = ((1:N) == vec(ones(size(el_ind)) .* (1:N)))'; % map from convolved samples to elements
                     proc_fun = @(x) gather(...
-                         (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N) 
-                         ...
+                        (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
+                        ...
                         ); % [(N x J'') x (J'' x T)]' -> T x N
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
@@ -2199,130 +2467,157 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % choose where to compute the data
             % parfor behaviour - for now, only parcluster == 0 -> parfor
-            switch kwargs.parcluster
-                case 0 % process directly in a parfor loop if 0
-                     out = cell(self.sequence.numPulse, 1); % init
-                    [Np] = deal(self.sequence.numPulse); % splice
+            if ~isa(kwargs.penv, 'parallel.Cluster') % no cluster
+                % process directly in a parfor loop if 0
+                out = cell(self.sequence.numPulse, 1); % init
+                [Np] = deal(self.sequence.numPulse); % splice
 
-                    % for puls = self.sequence.numPulse:-1:1
-                    parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
-                        % TODO: make this part of some 'info' logger or something
-                        fprintf('\nComputing pulse %i of %i\n', puls, Np);
-                        tt_pulse = tic;
+                % for puls = self.sequence.numPulse:-1:1
+                parfor (puls = 1:self.sequence.numPulse, kwargs.penv)
+                    % TODO: make this part of some 'info' logger or something
+                    fprintf('\nComputing pulse %i of %i\n', puls, Np);
+                    tt_pulse = tic;
 
-                        % simulate
-                        sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
-                        sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:}); 
+                    % simulate
+                    sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
+                    sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
 
-                        % Process the simulation data
-                        out{puls} = proc_fun(sensor_data) - proc_fun(sensor_data_iso); %#ok<PFBNS> data is small 
+                    % Process the simulation data
+                    out{puls} = proc_fun(sensor_data) - proc_fun(sensor_data_iso); %#ok<PFBNS> data is small
 
-                        % report timing % TODO: make this part of some 'info' logger or something
-                        fprintf('\nFinished pulse %i of %i\n', puls, Np);
-                        toc(tt_pulse)
-                    end
+                    % report timing % TODO: make this part of some 'info' logger or something
+                    fprintf('\nFinished pulse %i of %i\n', puls, Np);
+                    toc(tt_pulse)
+                end
 
-                    % create ChannelData objects
-                    chd = ChannelData('data', cat(3, out{:}), 't0', t0, 'fs', fs_);
+                % create ChannelData objects
+                chd = ChannelData('data', cat(3, out{:}), 't0', t0, 'fs', fs_);
+
+                % TODO: make reports optional
+                fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
+
+            else
+                % make a job on the cluster
+                clu = kwargs.penv;
+                job = createJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true);
+
+                % arguments for each simulation
+                parfor (puls = 1:self.sequence.numPulse, 0)
+                    kargs_sim{puls} = [...
+                        {kgrid, kmedium    , ksource(puls), ksensor}, ...
+                        kwave_args_{puls}(:)'...
+                        ];
+                    kargs_sim_iso{puls} = [...
+                        {kgrid, kmedium_iso, ksource(puls), ksensor}, ...
+                        kwave_args_{puls}(:)'...
+                        ];
+                end
+
+                % add simulation and processing task
+                job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim], 'CaptureDiary',true);
+
+                % function to read into a ChannelData object
+                % reshape and convole with receive impulse-response
+                % we can make this a lambda because we only
+                % have one output per task
+                job.UserData = struct('t0', gather(t0), 'fs', gather(fs_));
+                job.UserData.readfun = @(job) ...
+                    ChannelData('t0', job.UserData.t0, 'fs', job.UserData.fs, 'data', ...
+                    diff(cell2mat(shiftdim(reshape([job.Tasks.OutputArguments], [], 2), -2)),1,4) ...
+                    );
+
+                % if no job output was requested, run the job and
+                % create the ChannelData
+                if nargout < 2,
+                    submit(job);
+                    wait(job);
+                    chd = job.UserData.readfun(job);
 
                     % TODO: make reports optional
                     fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
-
-                otherwise
-                    % make a job on the cluster
-                    clu = kwargs.parcluster;
-                    job = createJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true);
-
-                    % arguments for each simulation
-                    parfor (puls = 1:self.sequence.numPulse, 0)
-                        kargs_sim{puls} = [...
-                            {kgrid, kmedium    , ksource(puls), ksensor}, ...
-                            kwave_args_{puls}(:)'...
-                            ];
-                        kargs_sim_iso{puls} = [...
-                            {kgrid, kmedium_iso, ksource(puls), ksensor}, ...
-                            kwave_args_{puls}(:)'...
-                            ];
-                    end
-                    
-                    % add simulation and processing task
-                    job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim], 'CaptureDiary',true);
-
-                    % function to read into a ChannelData object
-                    % reshape and convole with receive impulse-response
-                    % we can make this a lambda because we only
-                    % have one output per task
-                    job.UserData = struct('t0', gather(t0), 'fs', gather(fs_)); 
-                    job.UserData.readfun = @(job) ... 
-                        ChannelData('t0', job.UserData.t0, 'fs', job.UserData.fs, 'data', ... 
-                        diff(cell2mat(shiftdim(reshape([job.Tasks.OutputArguments], [], 2), -2)),1,4) ... 
-                        );
-                    
-                    % if no job output was requested, run the job and
-                    % create the ChannelData
-                    if nargout < 2, 
-                        submit(job); 
-                        wait(job);
-                        chd = job.UserData.readfun(job);
-
-                        % TODO: make reports optional
-                        fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
-                    end
+                end
             end
         end
     end
     
     % Beamforming
-    methods(Access=public)
+    methods
         function b = DAS(self, chd, c0, kwargs)
-            % DAS - Delay and sum
+            % DAS - Delay and sum beamformer
             %
-            % b = DAS(us, chd, c0) performs delay-and-sum beamforming on 
-            % the ChannelData chd using an assumed sound speed of c0. The
-            % ChannelData must conform to the delays given by the Sequence 
-            % model in us.sequence. The output is defined on the Scan 
-            % object us.scan.
+            % b = DAS(us, chd) performs delay-and-sum beamforming on 
+            % the ChannelData chd. The ChannelData must conform to the 
+            % delays given by the Sequence us.sequence. The output is the
+            % image defined on the Scan us.scan. 
+            %
+            % b = DAS(self, chd, c0) uses a beamforming sound speed of c0. 
+            % c0 can be a scalar or an NDarray that is broadcastable to 
+            % size (I1 x I2 x I3) where  [I1, I2, I3] == self.scan.size. 
+            % The default is self.sequence.c0.            
             % 
-            % b = DAS(us, chd, c0) specifies the receive aperture
-            % reduction function (defaults to summation)
-            %
+            % b = DAS(..., 'apod', apod) uses an apodization matrix
+            % of apod. It must be singular in the receive dimension, the 
+            % transmit dimension, or all image dimensions. The apodization
+            % matrix must be broadcastable to size (I1 x I2 x I3 x N x M)
+            % where [I1, I2, I3] == self.scan.size, N is the number of 
+            % receive elements, and M is the number of transmits.
             % 
-            % Inputs:
-            %  chd      - A ChannelData object  
-            %  c0       - A sound speed, or any object with a .c0 property
+            % b = DAS(..., 'keep_tx', true) preserves the transmit
+            % dimension in the output image b.
             %
-            % Name/Value pair arguments
-            %  prec -  compute precision of the positions 
-            %            {'single'* | 'double'}
-            %  device - GPU device index: -1 for default gpu, 0 for cpu, n
-            %           to select (and reset!) a gpuDevice.
-            %  interp - select a method of interpolation for the transmit
-            %           synthesis
-            %  apod   - define the apodization. The apodization is defined
-            %           as a 5D compatible array across 
-            %           I1 x I2 x I3 x N x M where N is the number of 
-            %           receivers, M is the number of transmits, and I[1-3]
-            %           are the dimensions according to us.scan. Typically,
-            %           apod should be singleton in at least two or three
-            %           dimensions.
+            % b = DAS(..., 'keep_rx', true) preserves the receive
+            % dimension in the output image b.
             %
-            %  keep_rx - whether to keep the receive dimension rather than
-            %           sum. The default is false.
+            % b = DAS(..., 'interp', method) specifies the method for
+            % interpolation. Support is provided by interp1 on the CPU or
+            % is restricted to one of {'nearest', 'linear', 'cubic'} on the
+            % GPU. The default is 'cubic'.
+            % 
+            % b = DAS(..., 'prec', type) uses the datatype type for 
+            % computing the image. The type can be one of 
+            % {'double', 'single'*, 'halfT'}. The precision of the channel 
+            % data samples, apodization weights, and the positions / times 
+            % are all affected. 
+            % 
+            % For half precision, the channel data samples and weights are 
+            % half precision but the position and  time variables are 
+            % computed in single precision. The <a href="matlab:web('https://github.com/thorstone25/halfT')">halfT project</a> must be on 
+            % the path. 
+            % 
+            % b = DAS(..., 'device', index) uses the gpuDevice with ID
+            % index. If index == -1, the current device is used. Index == 0
+            % avoids using a gpuDevice. The default is -1 if a gpu is
+            % available or 0 if no gpu is available.
             %
-            %  keep_tx - whether to keep the transmit dimension rather than
-            %           sum. The default is false. If keep_tx is true, then
-            %           keep_rx must also be true.
+            % DAS is similar to BFDAS, but is more computationally 
+            % efficient at the cost of code readability and interpolation 
+            % methods because it avoids calling the ChannelData/sample 
+            % method.
             %
+            % Example:
+            % 
+            % % Define the setup
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % 
+            % % Compute the image
+            % chd = greens(us, targ); % compute the response
+            % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            % b = DAS(us, chd); % beamform the data
+            % 
+            % % Display the image
+            % bim = mod2db(b); % log-compression
+            % figure;
+            % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
+            % colormap gray; colorbar;
             %
-            % outputs:
-            %   - X\Y\Z:    3D coordinates of the output
-            %   - B:        B-mode image
+            % See also BFDAS BFADJOINT BFEIKONAL CHANNELDATA/SAMPLE
             
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
                 c0 {mustBeNumeric} = self.sequence.c0
-                kwargs.prec (1,1) string = "single"
+                kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumeric} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
@@ -2349,7 +2644,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             apod_args = {'apod', kwargs.apod};
             
             % convert to x/y/z in 1st dimension
-            P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 = 3 x I
+            P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 == 3 x [I]
             
             % get positions of the aperture(s)
             P_tx = self.tx.positions(); % cast(self.tx.positions(), 'like', time(end)); % 3 x M
@@ -2387,25 +2682,53 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % FOCUSTX - Synthesize transmits
             %
             % chd = FOCUSTX(self, chd0) focuses the FSA ChannelData chd0 by
-            % linearly synthesizing transmits (e.g. delay and sum across 
-            % transmits)
+            % linearly synthesizing transmits (i.e. delay and sum across 
+            % transmits).
             %
             % chd = FOCUSTX(self, chd0, seq) uses the Sequence seq to focus
-            % the data instead of self.sequence.
+            % the data. The default is self.sequence.
             %
             % chd = FOCUSTX(..., Name, Value, ...) uses name-value pairs to
             % specify 
             %
-            % Name/value pair arguments
-            %  length -               Length of DFT / time vector
-            %  interp -               Interpolation method
+            % chd = FOCUSTX(..., 'interp', method) specifies the method for
+            % interpolation. Support is provided by the ChannelData/sample
+            % method. The default is 'cubic'.
             %
-            %  Interpolation methods are passed to the ChannelData/sample
-            %  function. An additional method 'freq' is provided to delay
-            %  the data in the frequency domain.
+            % chd = FOCUSTX(..., 'interp', freq, 'length', L) expands the 
+            % data to length L before interpolating. For frequency domain
+            % interpolation, L must be large enough to avoid aliasing and
+            % ringing artefacts.
             %
-            % Outputs:
-            %   chd -                   New ChannelData object
+            % chd = FOCUSTX(..., 'interp', freq, 'length', 'pow2') expands 
+            % the data to the next power of 2. This accelerates the fft
+            % computation, but uses more memory.
+            %
+            % Example:
+            % 
+            % % Define the setup
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % 
+            % % Compute the data for an FSA acquistion
+            % us.sequence = Sequence('type', 'FSA', 'c0', us.sequence.c0, 'numPulse', us.xdc.numel);
+            % chd = greens(us, targ); % compute the response
+            %
+            % % Create plane-wave data by synthesizing the transmits with
+            % plane-wave delays
+            % seq_pw = SequenceRadial('type', 'PW', 'c0', us.sequence.c0, ...
+            %  'angles', -25:0.5:25, 'ranges', 1); % plane-wave sequence
+            % chd_pw = focusTx(us, chd, seq_pw); % synthesize transmits
+            %
+            % % Beamform the plane-wave data
+            % us.sequence = seq_pw;
+            % b = DAS(us, chd_pw); % beamform the data
+            % 
+            % % Display the image
+            % bim = mod2db(b); % log-compression
+            % figure;
+            % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
+            % colormap gray; colorbar;
             %
             % See also CHANNELDATA/SAMPLE
 
@@ -2414,7 +2737,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd0 ChannelData
                 seq (1,1) Sequence = self.sequence;
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-                kwargs.length double {mustBeScalarOrEmpty} = [];
+                kwargs.length string {mustBeScalarOrEmpty} = [];
             end
 
             % Copy semantics
@@ -2437,22 +2760,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % legacy: pick new signal length
             L = kwargs.length;
             if kwargs.interp == "freq",
-                if isempty(L) % default
-                    L = chd.T;
-                elseif ischar(L) % strategy
-                    switch L
-                        case 'min'
-                            L = chd.T;
-                        case 'pow2'
-                            L = 2^(nextpow2(chd.T));
-                        otherwise
-                            error('Unrecognized strategy for DFT length');
-
-                    end
-                elseif isscalar(L) % size
-                    if L < chd.T, warning('Signal length may be too short!'); end
+                if isempty(L),               L = chd.T; % default
+                elseif L == "min",           L = chd.T; % strategy
+                elseif L == "pow2",          L = 2^(nextpow2(chd.T)); % strategy
+                elseif ~isnan(str2double(L)),L = str2double(L); % size
+                    if L < chd.T, warning('Signal length may be too short!'); end % soft error
                 else
-                    error("L must be a scalar or one of {'min' | 'pow2'}");
+                    error("L must be a length or one of {'min' | 'pow2'}"); % unrecognized input
                 end
                 
                 % expand to match requested FFT length (do not shrink)
@@ -2467,7 +2781,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % sample and store
             z = chd.sample(chd.time - tau_focal, kwargs.interp, apod, chd.mdim); % sample (perm(T' x N x 1) x F x ... x M')
             z = swapdim(z, chd.mdim, D); % replace transmit dimension (perm(T' x N x M') x F x ...)
-            chd.data = z;% store output channel data % (perm(T' x N x M') x F x ...)
+            chd.data = z; % store output channel data % (perm(T' x N x M') x F x ...)
         end
         
         function b = bfAdjoint(self, chd, c0, kwargs)
@@ -2479,14 +2793,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % received data in the frequency domain.
             % 
             % b = BFADJOINT(self, chd, c0) uses a beamforming sound speed 
-            % of c0.
+            % of c0. c0 can be a scalar or an NDarray that is broadcastable
+            % to size (I1 x I2 x I3) where  [I1, I2, I3] == self.scan.size. 
+            % The default is self.sequence.c0.
             %             
             % b = BFADJOINT(..., 'apod', apod) uses an apodization matrix
             % of apod. It must be singular in the receive dimension, the 
             % transmit dimension, or all image dimensions. The apodization
             % matrix must be broadcastable to size (I1 x I2 x I3 x N x M)
-            % where (I1 x I2 x I3) is the size of self.scan, N is the
-            % number of receive elements, and M is the number of transmits.
+            % where [I1, I2, I3] == self.scan.size, N is the number of 
+            % receive elements, and M is the number of transmits.
             % 
             % b = BFADJOINT(..., 'Nfft', K) uses a K-point FFT when
             % converting the received to the frequency domain.
@@ -2508,6 +2824,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % accelerate computation but with a loss of accuracy. The
             % default is -Inf.
             %
+            % Example:
+            % 
+            % % Define the setup
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % 
+            % % Compute the image
+            % chd = greens(us, targ); % compute the response
+            % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            % b = bfAdjoint(us, chd); % beamform the data
+            % 
+            % % Display the image
+            % bim = mod2db(b); % log-compression
+            % figure;
+            % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
+            % colormap gray; colorbar;
+            %
             % See also BFEIKONAL BFDAS DAS FOCUSTX
 
             % TODO: test for tall types where receive diomension is tall -
@@ -2515,7 +2848,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) double = self.sequence.c0
+                c0 (:,:,:) double = self.sequence.c0
                 kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
                 kwargs.apod {mustBeNumeric} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
                 kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
@@ -2555,7 +2888,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             D = max(4, gather(ndims(chd.data))); % >= 4
             Pi = self.scan.getImagingGrid();
             Pi = cellfun(@(x) {shiftdim(x, -D)}, Pi); % place I past max data dims 5-7
-            Pi = cat(1,Pi{:}); % 3 x 1 x 1 x 1 x ... x [I]
+            Pi = cat(1,Pi{:});     % 3 x 1 x 1 x 1 x ... x [I]
+            c0 = shiftdim(c0, -D); % 1 x 1 x 1 x 1 x ... x [I]
 
             % get the receive apodization, spliced if it can be applied
             apod = kwargs.apod;
@@ -2576,8 +2910,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % get the delays for the transmit/receive green's matrix
             % kernels
-            tau_tx = vecnorm(self.tx.positions() - Pi,2,1) / c0; % 1 x M x 1 x 1 x ... x [I]
-            tau_rx = vecnorm(self.rx.positions() - Pi,2,1) / c0; % 1 x N x 1 x 1 x ... x [I]
+            tau_tx = vecnorm(self.tx.positions() - Pi,2,1) ./ c0; % 1 x M x 1 x 1 x ... x [I]
+            tau_rx = vecnorm(self.rx.positions() - Pi,2,1) ./ c0; % 1 x N x 1 x 1 x ... x [I]
 
             % get the transmit steering vector weights and delays
             del_tx  = self.sequence.delays(self.tx);      % M x V
@@ -2654,14 +2988,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         function b = bfEikonal(self, chd, medium, cscan, kwargs)
             % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
             %
-            % b = BFEIKONAL(self, chd, medium, cscan) creates a b-mode
+            % b = BFEIKONAL(self, chd, medium) creates a b-mode
             % image b from the ChannelData chd and Medium medium using the
             % delays given by the solution to the eikonal equation defined
-            % on the ScanCartesian cscan. The transmitter and receiver must
-            % fall within the cscan. The step size in each dimension must
-            % be identical. The equation is solved via the fast marching
-            % method.
+            % on the ScanCartesian cscan == self.scan.
+            % 
+            % The transmitter and receiver must fall within the cscan. The 
+            % step size in each dimension must be identical. The eikonal 
+            % equation is solved via the fast marching method.
             %
+            % b = BFEIKONAL(self, chd, medium, cscan) uses the given 
+            % ScanCartesian cscan instead of self.scan.
+            % 
             % b = BFEIKONAL(..., Name,Value, ...) defines additional
             % parameters via Name/Value pairs
             %
@@ -2843,71 +3181,86 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % BFDAS - Delay-and-sum beamformer
             %
             % b = BFDAS(self, chd, c0) creates a b-mode image b from the 
-            % ChannelData chd and sound speed c0 (m/s). 
+            % ChannelData chd and sound speed c0.
             % 
             % b = BFDAS(..., Name, Value, ...) passes additional Name/Value
             % pair arguments
             % 
+            % b = BFDAS(..., 'apod', apod) uses an apodization matrix
+            % of apod. It must be singular in the receive dimension, the 
+            % transmit dimension, or all image dimensions. The apodization
+            % matrix must be broadcastable to size (I1 x I2 x I3 x N x M)
+            % where [I1, I2, I3] == self.scan.size, N is the number of 
+            % receive elements, and M is the number of transmits.
             % 
-            % Inputs:
-            %   
-            % keep_rx -     setting this to true returns an extra dimension
-            %               containing the data for each receive prior to
-            %               summation. The default is false.
+            % b = BFDAS(..., 'keep_tx', true) preserves the transmit
+            % dimension in the output image b.
             %
-            % keep_tx -     setting this to true returns an extra dimension
-            %               containing the data for each transmit prior to
-            %               summation. The default is false.
+            % b = BFDAS(..., 'keep_rx', true) preserves the receive
+            % dimension in the output image b.
             %
-            % interp  -     specifies the method for interpolation. Support 
-            %               is provided by the ChannelData/sample method. 
-            %               The default is 'linear'.
-            % 
+            % b = BFDAS(..., 'bsize', B) uses an block size of B to
+            % compute at most B transmits at a time. A larger block size 
+            % will run faster, but use more memory. The default is chosen
+            % heuristically.
             %   
-            % apod    -     specifies and ND-array A for apodization. A must 
-            %               be broadcastable to size  I1 x I2 x I3 x N x M 
-            %               where I1 x I2 x I3 is the size of the image, N 
-            %               is the number of receivers, and M is the number
-            %               of transmits. The default is 1.
+            % b = BFDAS(..., 'interp', method) specifies the method for
+            % interpolation. Support is provided by the ChannelData/sample 
+            % method. The default is 'cubic'.
             % 
-            %   
-            % bsize   -     sets the ChannelData block size to at most B 
-            %               transmits at a time in order to limit memory 
-            %               usage. If memory is a concern, lowering B may 
-            %               help. If there is ample memory available, a 
-            %               higher value of B may yield better performance.
+            % b = DAS(..., 'device', index) uses the gpuDevice with ID
+            % index. If index == -1, the current device is used. Index == 0
+            % avoids using a gpuDevice. The default is -1 if a gpu is
+            % available.
+            %
+            % b = BFDAS(..., 'parenv', clu) or
+            % b = BFDAS(..., 'parenv', hcp) uses a parallel.Cluster clu 
+            % or a parallel.Pool hcp to parallelize computations. 
+            % b = BFDAS(..., 'parenv', 0) avoids using a 
+            % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
+            % GPU or if memory usage explodes on a parallel.ProcessPool.
             % 
-            %   
-            % parcluster  - specifies a parcluster object for 
-            %               parallelization. The default is the current 
-            %               parallel pool returned by gcp.
-            %               Setting clu = 0 avoids using a parallel cluster
-            %               or pool. 
-            %               A parallel.ThreadPool will tend to perform 
-            %               better than a parallel.ProcessPool because
-            %               threads are allowed to share memory.
-            %               Use 0 when operating on a GPU or if memory 
-            %               usage explodes on a parallel.ProcessPool.
+            % The default is the current parallel pool returned by gcp.
             % 
-            % See also DAS BFADJOINT CHANNELDATA/SAMPLE PARCLUSTER
+            % A parallel.ThreadPool will tend to perform better than a 
+            % parallel.ProcessPool because threads are allowed to share 
+            % memory.
+            %        
+            % Example:
+            % 
+            % % Define the setup
+            % us = UltrasoundSystem(); % get a default system
+            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % 
+            % % Compute the image
+            % chd = greens(us, targ); % compute the response
+            % b = bfDAS(us, chd); % beamform the data
+            % 
+            % % Display the image
+            % bim = mod2db(b); % log-compression
+            % figure;
+            % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
+            % colormap gray; colorbar;
+            %
+            % See also DAS BFADJOINT CHANNELDATA/SAMPLE PARCLUSTER PARPOOL
 
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) double = self.sequence.c0
+                c0 (:,:,:) double = self.sequence.c0
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumeric} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
-                kwargs.parcluster = gcp('nocreate');
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Pool", "parallel.Cluster", "double"])} = gcp('nocreate');
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
                 % 1 Gibibyte limit on the size of the delays
             end
 
             % get cluster
-            clu = kwargs.parcluster;
-            if isempty(clu) || isa(chd.data, 'gpuArray'), clu = 0; end % run on CPU by default
+            penv = kwargs.parenv;
+            if isempty(penv) || isa(chd.data, 'gpuArray'), penv = 0; end % run on CPU by default
 
             % get image pixels, outside of range of data
             Pi = self.scan.getImagingGrid();
@@ -2954,7 +3307,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % move image dimensions beyond the data
             D = max([ndims(chd.data), ndims(dv), ndims(dr), 5]); % highest dimension of data
-            [dv, dr, apod] = dealfun(@(x) swapdim(x, 1:3, D+(1:3)), dv, dr, apod);
+            [dv, dr, apod, cinv] = dealfun(@(x) swapdim(x, 1:3, D+(1:3)), dv, dr, apod, cinv);
             sdim = []; % dimensions to sum after apodization
             if sumrx, sdim = [sdim, chd.ndim]; end 
             if sumtx, sdim = [sdim, chd.mdim]; end 
@@ -2979,11 +3332,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             b = 0; % initialize
             % hw = waitbar(0,'Beamforming ...'); % create a wait bar
-            for m = 1:numel(chds)
-            % parfor (m = 1:numel(chds), clu) % for each transmit
+            % for m = 1:numel(chds)
+            parfor (m = 1:numel(chds), penv) % for each transmit
                 tau = cinv .* (dvm{m} + dr); % get sample times (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
                 if isscalar(am), a = am{1}; else, a = am{m}; end % (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
-                % a = sub(apod, min(m, Ma), 5); % recieve apodization 
+
                 % move to permutation of (1 x N x M) - N/M aligned with ChannelData
                 tau = swapdim(tau, [4,5], [chds(m).ndim, chds(m).mdim]); 
                 a   = swapdim(a  , [4,5], [chds(m).ndim, chds(m).mdim]); 
