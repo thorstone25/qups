@@ -712,7 +712,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % plotting and display
     methods
-        function h = imagesc(self, m, varargin)
+        function h = imagesc(self, m, ax, im_args)
             % IMAGESC - Overload of imagesc function
             %
             % h = IMAGESC(self, m) displays transmit m of the channel data 
@@ -735,13 +735,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % imagesc(fft(chd), 1, 'YData', 1e-6*f);
             %
             % See also IMAGESC
-
-            % parse inputs
-            if nargin < 2, m = floor((self.M+1)/2); end
-            if nargin >= 3 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
-                ax = varargin{1}; varargin(1) = [];
-            else
-                ax = gca;
+            arguments
+                self
+                m {mustBeInteger} = floor((self.M+1)/2); 
+                ax (1,1) matlab.graphics.axis.Axes = gca
+                im_args.?matlab.graphics.primitive.Image
             end
 
             % get full data sizing
@@ -773,10 +771,12 @@ classdef ChannelData < matlab.mixin.Copyable
             t = gather(double(sub(self.time, num2cell(it), fdims)));
 
             % choose which dimensions to show
-            axes_args = {'XData', 1:self.N, 'YData', t}; % ndim, tdim labels
+            if ~isfield(im_args, 'XData'), im_args.XData = 1:self.N; end
+            if ~isfield(im_args, 'YData'), im_args.YData = t; end 
 
             % show the data
-            h = imagesc(ax, d, axes_args{:}, varargin{:});
+            im_args = struct2nvpair(im_args);
+            h = imagesc(ax, d, im_args{:});
         end
 
         function h = animate(self, varargin)
