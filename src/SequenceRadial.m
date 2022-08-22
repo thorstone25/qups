@@ -12,17 +12,17 @@ classdef SequenceRadial < Sequence
     % See also: SEQUENCE TRANSDUCERCONVEX
     
     properties
-        apex (3,1) {mustBeNumeric} = [0;0;0] % 3 x 1 center of polar coordinate system
+        apex (3,1) {mustBeNumeric} = [0;0;0] % Center of polar coordinate system
     end
     
     properties(Dependent)
-        ranges (1,:) {mustBeNumeric} % range from the apex, or length of the vector (m)
+        ranges (1,:) {mustBeNumeric} % range from the apex, or length of the vector
         angles (1,:) {mustBeNumeric} % angle with respect to the z-axis (deg)
     end
     
     methods
         % constructor
-        function self = SequenceRadial(varargin, seq_args, seqr_args)
+        function self = SequenceRadial(seq_args, seqr_args)
             % SEQUENCERADIAL - SequenceRadial constructor
             %
             % seq = SEQUENCERADIAL() constructs a Sequence
@@ -48,38 +48,32 @@ classdef SequenceRadial < Sequence
             %
             % See also SEQUENCERADIAL WAVEFORM
 
-            arguments(Repeating)
-                varargin
-            end
             arguments % Sequence arguments
-                seq_args.type (1,1) string {mustBeMember(seq_args.type, ["PW", "VS"])} = "PW"
-                % seq_args.focus (3,:) double % this object sets the focus
-                seq_args.c0 (1,1) double
-                seq_args.pulse (1,1) Waveform
+                seq_args.?Sequence
+                seq_args.type (1,1) string {mustBeMember(seq_args.type, ["PW", "VS"])} = "PW" % restrict 
             end
             arguments % SequenceRadial arguments
                 seqr_args.apex (3,1) {mustBeNumeric} = [0;0;0]
-                seqr_args.ranges (1,:) {mustBeNumeric} = 1
-                seqr_args.angles (1,:) {mustBeNumeric} = 0
+                seqr_args.ranges (1,:) {mustBeNumeric}
+                seqr_args.angles (1,:) {mustBeNumeric}
             end
             
-            % forward unrecognized inputs to Sequence constructor
-            for i = 1:2:numel(varargin), seq_args.(varargin{i}) = varargin{i+1}; end
-
             % initialize Sequence properties
-            seq_args = struct2nvpair(seq_args);
-            self@Sequence(seq_args{:}); % initialize with all other N/V pairs
+            seq_args_ = struct2nvpair(seq_args);
+            self@Sequence(seq_args_{:});
             
             % initialize SequenceRadial properties 
             self.apex = seqr_args.apex; 
 
             % initialize range/angle together
-            [r, a] = deal(seqr_args.ranges, seqr_args.angles);
-            if isempty(r) && isempty(a) % both empty - do nothing
-            elseif ~isempty(r) && ~isempty(a), % both set - init
-                self.setPolar(r, a);
-            else % error
-                error('Both range and angle must be set together.')
+            if isfield(seq_args, 'focus') % focus is set -> range/angle invalid
+                if isfield(seqr_args, 'ranges') || isfield(seqr_args, 'angles') 
+                    error("The focus must be set either by focus or by range/angle.");
+                end
+            else  % focus not set -> range/angle
+                if ~isfield(seqr_args, 'ranges'), seqr_args.ranges = 1; end % initialize if not set
+                if ~isfield(seqr_args, 'angles'), seqr_args.angles = 0; end % initialize if not set
+                self.setPolar(seqr_args.ranges, seqr_args.angles); % set the focus
             end
         end
         
