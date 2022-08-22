@@ -358,8 +358,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             wv = conv(self.rx.impulse, ...
                 conv(self.tx.impulse, self.sequence.pulse, 4*self.fs), ...
                 4*self.fs); % transmit waveform, 4x intermediate convolution sampling
-            tk = wv.getSampleTimes(self.fs);
-            kern = wv.sample(tk);
+            wv.fs = self.fs;
+            kern = wv.samples;
 
             F = numel(target);
             if kwargs.verbose, hw = waitbar(0); end
@@ -405,7 +405,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % cast data / map inputs
                 [x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_] = dealfun(cfun, ...
-                    x, pos.', amp.', ptc_rx, ptc_tx, kern, t(1)/fs_, tk(1), fs_, 1/c0 ...
+                    x, pos.', amp.', ptc_rx, ptc_tx, kern, t(1)/fs_, wv.t0, fs_, 1/c0 ...
                     );
 
                 % re-map sizing
@@ -464,7 +464,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             % get 0-based sample time delay
                             % switch time and scatterer dimension
                             % S x T x N x M x 1 x 1
-                            t0 = gather(tk(1)); % 1 x 1
+                            t0 = gather(wv.t0); % 1 x 1
 
                             % S x T x N x M x 1 x 1
                             if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
@@ -658,7 +658,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_tx_max = ceil(max(tau_tx_pix, [],'all') / dT) .* dT; % maxmium additional delay
             wv_tx = conv(self.xdc.impulse, self.sequence.pulse, 10/dT); % get the waveform transmitted into the medium
             wv_tx.tend = wv_tx.tend + tau_tx_max; % extend waveform to cover maximum delay
-            t = wv_tx.getSampleTimes(1/dT); % get discrete sampling times
+            wv_tx.dt = dT; % set the sampling interval
+            t = wv_tx.time; % get discrete sampling times
             nTic = numel(t); % number of transmit samples
             
             % get transmit signal per input-pixel, time index, transmit for nTic time
@@ -1149,19 +1150,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             vec = @(x) x(:); % column-vector helper function
 
             % get the Tx/Rx impulse response function / excitation function
-            wv_tx = self.tx.impulse; % transmitter impulse
-            wv_rx = self.rx.impulse; % receiver impulse
-            wv_pl = self.sequence.pulse;
+            wv_tx = copy(self.tx.impulse); % transmitter impulse
+            wv_rx = copy(self.rx.impulse); % receiver impulse
+            wv_pl = copy(self.sequence.pulse);
             
             % get the time axis (which passes through t == 0)
-            t_tx = wv_tx.getSampleTimes(self.fs);
-            t_rx = wv_rx.getSampleTimes(self.fs);
-            t_pl = wv_pl.getSampleTimes(self.fs);
+            [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(self.fs);
+            t_tx = wv_tx.time;
+            t_rx = wv_rx.time;
+            t_pl = wv_pl.time;
 
             % define the impulse and excitation pulse
-            tx_imp = gather(double(real(vec(wv_tx.fun(t_tx))')));
-            rx_imp = gather(double(real(vec(wv_rx.fun(t_rx))')));
-            tx_pls = gather(double(real(vec(wv_pl.fun(t_pl))')));
+            tx_imp = gather(double(real(vec(wv_tx.samples)')));
+            rx_imp = gather(double(real(vec(wv_rx.samples)')));
+            tx_pls = gather(double(real(vec(wv_pl.samples)')));
 
             % choose the cluster to operate on: avoid running on ThreadPools
             parenv = kwargs.parenv;
@@ -1276,19 +1278,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % get the Tx/Rx impulse response function / excitation function
-            wv_tx = self.tx.impulse; % transmitter impulse
-            wv_rx = self.rx.impulse; % receiver impulse
-            wv_pl = self.sequence.pulse;
+            wv_tx = copy(self.tx.impulse); % transmitter impulse
+            wv_rx = copy(self.rx.impulse); % receiver impulse
+            wv_pl = copy(self.sequence.pulse);
 
             % get the time axis (which passes through t == 0)
-            t_tx = wv_tx.getSampleTimes(self.fs);
-            t_rx = wv_rx.getSampleTimes(self.fs);
-            t_pl = wv_pl.getSampleTimes(self.fs);
+            [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(self.fs);
+            t_tx = wv_tx.time;
+            t_rx = wv_rx.time;
+            t_pl = wv_pl.time;
 
             % define the impulse and excitation pulse
-            tx_imp = gather(double(real(vec(wv_tx.fun(t_tx))')));
-            rx_imp = gather(double(real(vec(wv_rx.fun(t_rx))')));
-            tx_pls = gather(double(real(vec(wv_pl.fun(t_pl))')));
+            tx_imp = gather(double(real(vec(wv_tx.samples)')));
+            rx_imp = gather(double(real(vec(wv_rx.samples)')));
+            tx_pls = gather(double(real(vec(wv_pl.samples)')));
 
             % get the apodization and time delays across the aperture
             apod_tx = self.sequence.apodization(self.tx); % N x M
@@ -1532,13 +1535,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             dt = dt_us / time_step_ratio;
             
-            % get the source signal and the Tx impulse response function
-            tx_impulse_waveform = self.tx.impulse();
-            
             % get temporal buffer as twice the longest signal
-            t_buf = 2* max(...
-                abs(tx_impulse_waveform.tend - tx_impulse_waveform.t0), ...
-                abs(self.sequence.pulse.tend - self.sequence.pulse.t0)...
+            t_buf = 2 * max(...
+                self.tx.impulse.tx_impulse_waveform.duration, ...
+                self.sequence.pulse.duration ...
                 );
 
             % get a default ending time based on the longest possible 
@@ -1581,11 +1581,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % define the transmitted signal
             % get the source signal and the Tx impulse response function
             tx_impulse_waveform = self.tx.impulse;
-            chirp_waveform = arrayfun(@(c)copy(c), self.sequence.pulse); % copy the waveforms ([1|N] x [1|S])
+            chirp_waveform = copy(self.sequence.pulse); % copy the waveforms ([1|N] x [1|S])
             
             % choose the longest signal in time for the time-domain
-            imp_dur = tx_impulse_waveform.tend - tx_impulse_waveform.t0;
-            sig_dur = reshape([chirp_waveform.tend] - [chirp_waveform.t0], size(chirp_waveform));
+            imp_dur = tx_impulse_waveform.duration;
+            sig_dur = reshape([chirp_waveform.duration], size(chirp_waveform));
             
             % get the largest subelement-surface to pixel step size
             grid_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0;
@@ -1858,7 +1858,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % define the rx impulse response function
             max_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0; % maximum grid delay
-            rx_imp = self.rx.impulse(); % rx temporatl impulse response function
+            rx_imp = self.rx.impulse; % rx temporatl impulse response function
             n0  = floor((rx_imp.t0   - max_delay) / kgrid.dt);
             nend = ceil((rx_imp.tend + max_delay) / kgrid.dt);
             t_rx = vec(n0 : 1 : nend) * kgrid.dt; % includes zero if t0 <= 0 <= tend
@@ -2420,9 +2420,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             kgrid.setTime(Nt, kgrid.dt);
 
             % get the receive impulse response function
-            rx_imp = self.rx.impulse;
-            t_rx = rx_imp.getSampleTimes(fs_);
-            rx_sig = gather(real(rx_imp.sample(t_rx(:))));
+            rx_imp = copy(self.rx.impulse);
+            rx_imp.fs = fs_;
+            t_rx = rx_imp.time;
+            rx_sig = gather(real(vec(rx_imp.samples)));
 
             % simulation start time
             t0 = gather(t_tx(1) + t_rx(1));

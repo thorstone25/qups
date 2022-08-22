@@ -1,167 +1,260 @@
 % WAVEFORM Arbitrary Waveform definition class
 %
-% 
-classdef Waveform < handle
+% The Waveform class stores the function form of a signal and relevant time
+% domain so that it can be sampled and resampled as needed by relevant 
+% methods. All waveforms must have a start time and end time after which 
+% the function goes to 0.
+%
+% When a Waveform has a sampling frequency, the 'time' and 'samples'
+% properties will be available for discrete sampling. The time axis is
+% guaranteed to include t == 0 if t0 <= 0 and tend >= 0. 
+%
+% See also TRANSDUCER SEQUENCE
+classdef Waveform < matlab.mixin.Copyable
     
-    properties(GetAccess=public, SetAccess=public)
+    properties(Access=public)
+        % WAVEFORM/FUN - Function defining the waveform
+        %
+        % FUN is a function_handle to a function that accepts an ND-array 
+        % of time samples and returns a corresponding ND-array of samples 
+        % at those points in time.
+        %
+        % See also FUNCTION_HANDLE
         fun function_handle = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
+        % WAVEFORM/T0 - Start time of the Waveform
+        %
+        % T0 defines the start of the Waveform. All samples prior to this
+        % point are 0.
+        %
+        % See also WAVEFORM.TEND WAVEFORM.DURATION
         t0 (1,1) {mustBeNumeric} = -1 / 5e6         % start time
+        % WAVEFORM/TEND - End time of the Waveform
+        %
+        % T0 defines the start of the Waveform. All samples after to this
+        % point are 0.
+        %
+        % See also WAVEFORM.T0 WAVEFORM.DURATION
         tend (1,1) {mustBeNumeric} = 1 / 5e6        % end time
-    end
-    
-    properties(GetAccess=public, SetAccess=public)
-        samples = []         % sampled form of the waveform
-        mode (1,1) string {mustBeMember(mode, ["fun", "samp"])} = 'fun'         % echo mode {*fun | samp}
-        dt {mustBeNumeric, mustBeScalarOrEmpty} = []              % time resolution in sampled mode
+        % WAVEFORM/FS - Sampling frequency for the Waveform
+        %
+        % FS defines a sampling frequency for sampling the Waveform. When
+        % defined, the Waveform/dt, Waveform/time, and Waveform/samples
+        % properties are available.
+        %
+        % See also WAVEFORM.DT WAVEFORM.TIME WAVEFORM.SAMPLES
+        fs {mustBePositive, mustBeNumeric, mustBeScalarOrEmpty} % sampling frequency
     end
     
     properties(Dependent)
-       time
-       duration
+        % WAVEFORM/DURATION - duration of the signal
+        %
+        % The duration of the signal is portion of the signal that may be 
+        % non-zero, defined as Waveform/tend - Waveform/t0.
+        %
+        % See also WAVEFORM/FS WAVEFORM/TIME WAVEFORM/TEND WAVEFORM/T0
+
+        duration % non-zero duration of the signal
+        % WAVEFORM/DT - sampling interval
+        %
+        % The sampling interval is the inverse of the sampling frequency 
+        % i.e. DT = 1 / Waveform/fs
+        %
+        % See also WAVEFORM/FS WAVEFORM/TIME
+
+        dt (1,1) {mustBePositive, mustBeNumeric, mustBeScalarOrEmpty} % sampling interval
+        % WAVEFORM/SAMPLES - Waveform samples
+        %
+        % When the sampling frequency Waveform/fs is set, the 'samples' 
+        % property is the set of samples of the Waveform at the times given
+        % by Waveform/time.
+        % See also WAVEFORM/TIME WAVEFORM/FS
+
+        samples % Waveform samples
+
+        % WAVEFORM/TIME - Waveform time axis
+        %
+        % When the sampling frequency Waveform/fs is set, the 'time' 
+        % property provides a time axis for the non-zero portion of the 
+        % signal. The time axis is guaranteed to pass through t == 0.
+        %
+        % See also WAVEFORM/FS
+
+        time    % Waveform sample times
+    end
+    properties(Hidden)
+        tscale (1,1) double = 1; % scaling factor
+        % TLIM - Time axis szie limit
+        %
+        % TLIM is the maximum size of the time axis. A larger sized time
+        % axis will produce an error when calling the time function. This
+        % is meant to prevent dependent properties from producing
+        % unreasonably large temporary results, such as if for example the 
+        % sampling frequency is temporarily set to be 1e6 times larger than
+        % it's final state.
+        Tlim (1,1) double = 2^10; % limit on size of time axes 
+    end
+    properties(Dependent, Hidden)
+        T % size of the time axis
     end
     
     % constructor / actions
     methods(Access=public)
-        function self = Waveform(varargin)
-            % WAVEFORM/WAVEFORM - Waveform constructor
+        function wv = Waveform(kwargs)
+            % WAVEFORM - Waveform constructor
             % 
-            % Waveform(Name,Value, ...) constructs a Waveform using
-            % name-value pairs to create a Waveform object by specifying a 
-            % start/end time t0/tend or time samples t and specifying 
-            % either a function valid in the range t0 <= t <= tend or 
-            % samples defined on t0 <= t <= tend. Pass arguments as 
-            % name/value pairs. The Waveform object operates in *either* 
-            % function or sampled mode
+            % wv = Waveform('t0', t0, 'tend', tend, 'fun', fun) creates a
+            % Waveform defined from time t0 to time tend with a sample
+            % generating function fun.
+            % 
+            % wv = Waveform('t', t_axis, 'samples', s) creates a Waveform 
+            % defined on the regularaly spaced time axis t_axis with 
+            % samples s.
             %
-            % See also SEQUENCE
-            for i = 1:2:nargin
-                switch varargin{i}
-                    case {'fun', 't0', 'tend'}
-                        self.(varargin{i})  = varargin{i+1};
+            % wv = Waveform(..., 'fs', fs) sets the output sampling 
+            % frequency to be fs, and implicitly defines the Waveform/time,
+            % Waveform/samples and Waveform/dt properties.
+            % 
+            % wv = Waveform(..., 'dt', dt) sets the output sampling
+            % interval dt = 1/fs. It has the same effect as setting the
+            % sampling frequency.
+            %
+            % Example:
+            % 
+            % % Create a 5Hz sinusoid
+            % wv1 = Waveform('t0', -1.0, 'tend', 1.0, 'fun', @(t)  cospi(10*t ));
+            % 
+            % % Create a symmetric comb window from sampled data
+            % wv2 = Waveform('t', -0.3:0.1:0.3, 'samples', [1 0 1 0 1 0 1])
+            %
+            % % Set the sampling frequency of the signal to 25Hz
+            % [wv1.fs, wv2.fs] = deal(25);
+            %
+            % % Convolve with an intermediate upsampling frequency of 100Hz
+            % wvc = conv(wv1, wv2, 100);
+            %
+            % % Plot the results
+            % figure;
+            % hold on;
+            % plot(wv1, '.-', 'DisplayName', 'Sinusoid');
+            % plot(wv2, '.-', 'DisplayName', 'Comb');
+            % plot(wvc, '.-', 'DisplayName', 'Convolution');
+            % 
+            % See also SEQUENCE TRANSDUCER
+            arguments
+                kwargs.fun function_handle
+                kwargs.t0 (1,1) {mustBeNumeric}
+                kwargs.tend (1,1) {mustBeNumeric}
+                kwargs.t (:,1) {mustBeNumeric}
+                kwargs.samples (:,1) {mustBeNumeric}
+                kwargs.dt {mustBeNumeric, mustBeScalarOrEmpty}
+                kwargs.fs {mustBeNumeric, mustBeScalarOrEmpty}
+            end
+
+            % set time and functions
+            for f = string(fieldnames(kwargs))'
+                switch f
+                    case {'fun', 't0', 'tend', 'dt', 'fs'}
+                        wv.(f)  = kwargs.(f);
                     case 't'
-                        t = varargin{i+1};
-                        self.t0           = t(1);
-                        self.tend         = t(end);
-                        self.dt = mode(diff(t));
-                    case 'samples'
-                        % check if dt given after
-                        if i + 2 <= nargin ...
-                                && strcmpi(varargin{i + 2}, 'dt')
-                            self.setSampled(varargin{i+1}, 1 / varargin{i+3});
-                        else
-                            self.setSampled(varargin{i+1});
-                        end
-                        
+                        t = kwargs.(f);
+                        wv.t0   = t(1);
+                        wv.tend = t(end);
+                        wv.dt   = mode(diff(t));
                 end
+            end
+                    
+            % make a function out of the samples if given
+            if isfield(kwargs, 'samples')
+                wv.fun = griddedInterpolant(wv.time, gather(kwargs.samples), 'cubic', 'none');
             end
         end
         
-        function s = toSampled(self, fs)
-            % samples the waveform over the valid time period at sampling
-            % frequency fs
-            
-            % if already in sampled mode, do nothing
-            if strcmp(self.mode, 'samp'), return, end
-            
-            % get sample times
-            t = self.getSampleTimes(fs);
-            
-            % sample it
-            samps = self.sample(t);
-            
-            % set the mode (clears the function)
-            self.setSampled(samps, fs);
-            
-            s = self.samples;
-        end
-        
-        function varargout = plot(self, varargin)
+        function varargout = plot(wv, axs, kwargs, plot_args)
             % WAVEFORM/PLOT - plot the Waveform
             % 
-            % PLOT(self) plots the Waveform
+            % PLOT(wv) plots the Waveform
             %
-            % PLOT(self, ax) uses axes ax instead of the current axes
+            % PLOT(wv, ax) uses axes ax instead of the current axes
             %
             % PLOT(..., 'freqs', true) toggles whether to also plot the
             % frequency domain of the waveform
             % 
             % PLOT(..., Name, Value, ...) passes name-value pairs to the
             % built-in plot function.
+            %
+            % h = PLOT(...) returns a handle to the plot of the signal in
+            % the time-domain.
+            %
+            % [ht, hf] = PLOT(..., 'freqs', true, ...) also returns a
+            % handle to the plot of the signal in the frequency domain.
             % 
-            % arguments for plot can be passed as with the plot function
-            % set the property 'freqs' to true to plot frequencies
-            % returns a handle to the plot or to 2 plots if 'freqs' is an
-            % input
+            % Example:
+            % 
+            % % Create a 5Hz sinusoid
+            % wv1 = Waveform('t0', -1.0, 'tend', 1.0, 'fun', @(t)  cospi(10*t ));
+            % % Create a 0.2 second rect window
+            % wv2 = Waveform('t0', -0.1, 'tend', 0.1, 'fun', @(t) ones(size(t)));
+            %
+            % % Set the sampling frequency of the signal to 25Hz
+            % [wv1.fs, wv2.fs] = deal(25);
+            %
+            % % Convolve with an intermediate upsampling frequency of 100Hz
+            % wvc = conv(wv1, wv2, 100);
+            %
+            % % Plot the results
+            % figure;
+            % plot(wvc, '.-');
+            % 
+            % See also PLOT
 
             % parse inputs
-            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
-                axs = varargin{1}; varargin(1) = [];
-            else
-                axs = gca;
-            end
-            
-            % search for a 'freqs' argument
-            plot_freqs = false;
-            for i = 1:2:numel(varargin)
-                switch varargin{i}
-                    case 'freqs'
-                        l = i;
-                        plot_freqs = logical(varargin{i+1});
-                end
-            end
-            
-            % remove axes and freqs arguments
-            if exist('l','var'), varargin(l:l+1) = []; end
+            arguments
+                wv Waveform
+                axs (1,1) matlab.graphics.axis.Axes = gca
+                kwargs.freqs (1,1) logical = false
+                plot_args.?matlab.graphics.chart.primitive.Line
+            end            
             
             % get data
-            switch self.mode
-                case 'fun'
-                    p = nextpow2(1e4);
-                    N = 2^p;
-                    fs = (N - 1)/(self.tend - self.t0);
-                    if isinf(fs), fs = 1e9; end % handle divide by zero
-                    t = self.getSampleTimes(fs);
-                    v = self.sample(t);
-                    w = abs(fftshift(fft(v,N,1),1));
-                    % dt = mode(diff(t)); %#ok<PROPLC,CPROPLC>
-                    % fs = 1 / dt; %#ok<PROPLC>
-                    k = (((0 : (N - 1)) / N ) - 1 / 2) * fs;
-                case 'samp'
-                    t = self.getSampleTimes();
-                    v = self.samples;
-                    M = numel(t);
-                    % p = nextpow2(M);
-                    %echo N = 2^p;
-                    N = M;
-                    w = abs(fftshift(fft(v,N,1),1));
-                    fs = 1 / self.dt;
-                    k = (((0 : (N - 1)).' / N ) - 1 / 2) * fs;
+            if isempty(wv.fs)
+                wv = copy(wv); % don't modify the original
+                N = 2^nextpow2(1e4);
+                fs_ = (N - 1)/(wv.duration);
+                if isinf(fs_), fs_ = 1e9; end % handle divide by zero
+            else
+                N = 2^nextpow2(max(1e4,wv.T)); % use at least 1e4-point DFT
+                fs_ = wv.fs; % use original sampling frequency
             end
+            t = wv.time;
+            v = wv.samples;
+            w = abs(fftshift(fft(v,N,1),1));
+            k = (((0 : (N - 1)) / N ) - 1 / 2) * fs_;
             
             % show complex components
-            if isreal(v), 
+            if isreal(v) 
                 [v, lbl] = deal(v(:), {'real'});
-            else, 
+            else
                 v = [real(v(:)), imag(v(:)), abs(v(:))];
                 lbl = {'real', 'imag', 'abs'};
             end
             t = t(:);
             
             % plot with arguments
-            if plot_freqs
+            plot_args = struct2nvpair(plot_args);
+            if kwargs.freqs
                 h_time = subplot(2,1,1);
-                hp = plot(h_time, t, v, varargin{:});
+                hp = plot(h_time, t, v, plot_args{:});
                 xlabel('Time');
                 ylabel('Amplitude');
                 grid on;
                 
                 h_freq = subplot(2,1,2);
-                hp2 = plot(h_freq, k, w, varargin{:});
+                hp2 = plot(h_freq, k, w, plot_args{:});
                 xlabel('Frequency');
                 ylabel('Amplitude');
                 grid on;
             else
-                hp = plot(axs, t, v, varargin{:});
+                hp = plot(axs, t, v, plot_args{:});
                 xlabel(axs, 'Time');
                 ylabel(axs, 'Amplitude');
                 grid on;
@@ -172,144 +265,140 @@ classdef Waveform < handle
             if nargout > 0, varargout{1} = hp; varargout{2} = hp2; end
         end
         
-        function w = copy(self)
-            params = {'t0', self.t0, 'tend', self.tend};        
-            switch self.mode
-                case 'fun'
-                    params = [params(:)', {'fun'}, {self.fun}];
-                case 'samp'
-                    params = [params(:)', {'samples'}, {self.samples}];
-            end
-            w = Waveform(params{:});
-        end
-
-        function wv = scale(self, kwargs)
+        function wv = scale(wv, kwargs)
+            % SCALE - Scale the units of the Waveform
+            %
+            % wv = SCALE(wv, 'time', tscale) scales the values of
+            % time by tscale, and values of (temporal) frequency by the
+            % inverse of tscale.
+            %
+            % Example:
+            % % Define a system in meters, seconds
+            % wv = Waveform('t0', -1/5e6, 'tend', 1/5e6, 'fun', @(t)cos(2i*pi*5e6*t)); % defined in meters, seconds
+            %
+            % % Scale the values to millimiters, microseconds
+            % wv = scale(wv, 'time', 1e6);
+            % 
+            %
             arguments
-                self Waveform
+                wv Waveform
                 kwargs.time (1,1) double
             end
-            % create a new waveform object with the properties scaled
-            w = kwargs.time; % factor
-            f = self.fun; % function
-            if self.mode == "fun"
-                wv = Waveform( ...
-                    't0', w * self.t0, 'tend', w * self.tend, ...
-                    'fun', @(t) f(t./w) ...
-                    );
-            elseif self.mode == "samp"
-                wv = Waveform( ...
-                    't0', w * self.t0, 'tend', w * self.tend, ...
-                    'dt', w * self.dt ...
-                    );
-            else 
-                error('Undefined state.')
-            end
+            wv = copy(wv);
+            [wv.t0, wv.tend] = dealfun(@(x) kwargs.time * x, wv.t0, wv.tend);
+            if ~isempty(wv.dt), wv.dt = wv.dt * kwargs.time; end
+            wv.tscale = wv.tscale ./ kwargs.time;
         end
         
-        function s = sample(self, t)
+        function s = sample(wv, t)
+            % SAMPLE - Sample the Waveform
+            %
+            % s = SAMPLE(wv, t) samples the Waveform wv at times t.
+            %
+            % To ensure proper sampling, set the sampling frequency i.e. 
+            % the 'fs' property and use the 'samples' property.
+            %
+            % Example:
+            % 
+            % % Create a waveform (10 periods @ 5Hz)
+            % wv = Waveform('t0', -1, 'tend', 1, 'fun', @(t)cos(2i*pi*5*t));
+            %
+            % % Re-sample a continuous waveform with offsets
+            % wv.fs = 100; % 100 Hz
+            % toff = (rand([wv.T, 1]) - 0.5) / 5 / 20; % pi/10 phase noise
+            % sig = wv.sample(wv.time + toff); % sample with phase noise
+            % 
+            % % Plot
+            % figure;
+            % plot(wv.time, wv.samples, '.-', 'DisplayName', 'Noiseless');
+            % plot(wv.time, sig       , '.-', 'DisplayName', 'Noisy');
+            %
+            % 
+           arguments
+               wv Waveform
+               t {mustBeNumeric}
+           end
+           
             % Get waveform samples for the times specified in the vector t.
-            % If in sampled mode, t must match the sample time axis
-            switch self.mode
-                case 'fun'
-                    s = zeros(size(t), 'like', t);
-                    n = self.t0 <= t & t <= self.tend;
-                    s(n) = self.fun(t(n));
-                case 'samp'
-                    % make sure all time points are actually sampled
-                    t_s = self.getSampleTimes();
-                    [m, i] = ismembertol(t, t_s, self.dt / 16);
-                    
-                    % if all points are sampled, return sampled points
-                    if all(m)
-                        s = self.samples(i);
-                    else
-                        error('The requested times do not match the sampled times for this Waveform.');
-                    end
-            end
+            s = zeros(size(t), 'like', t);
+            n = wv.t0 <= t & t <= wv.tend;
+            s(n) = wv.fun(wv.tscale .* t(n));
         end
         
-        function wv = conv(self, other, fs)
+        function wv = conv(this, that, fs)
             % CONV Waveform convolution
             %
-            % wv = CONV(self, other) convoles 2 Waveform objects with
+            % wv = CONV(this, that) convoles 2 Waveform objects with
             % matching sampling modes to form another Waveform
             %
-            % wv = CONV(self, other, fs) uses an intermediate sampling
+            % wv = CONV(this, that, fs) uses an intermediate sampling
             % frequency of fs when sampling the waveform to perform the 
-            % convolution.
+            % convolution. The default is the maximum sampling frequency.
             %
-            % Note: this function needs to undergo more testing
+            % Example:
+            % 
+            % % Create a 5Hz sinusoid
+            % wv1 = Waveform('t0', -1.0, 'tend', 1.0, 'fun', @(t)  cospi(10*t ));
+            % % Create a 0.2 second rect window
+            % wv2 = Waveform('t0', -0.1, 'tend', 0.1, 'fun', @(t) ones(size(t)));
+            %
+            % % Set the sampling frequency of the signal to 25Hz
+            % [wv1.fs, wv2.fs] = deal(25);
+            %
+            % % Convolve with an intermediate upsampling frequency of 100Hz
+            % wvc = conv(wv1, wv2, 100);
             %
             % See also WAVEFORM/SAMPLE
 
-            assert(isequal(self.mode, other.mode), "Both waveforms must have matching sample type.")
-            if self.mode == "samp" % sampled
-                if self.dt == other.dt % matching sampling frequency
-                wv = Waveform(...
-                    'samples', conv(self.samples, other.samples), ...
-                    'dt', self.dt, 't0', self.t0 + other.t0, ...
-                    'tend', self.tend + other.tend...
-                    );
-                else
-                    error('Cannot convolve waveforms with different sampling freuqencies (not implemented)');
-                end
-            else
-                % make a convolution function, using the sampling freuqency fs
-                if self.t0 == self.tend
-                    % this is a delta function: use the identity
-                    f = @(t) self.sample(0) * other.sample(t);
-                elseif other.t0 == other.tend
-                    % that is a delta function: use the identity
-                    f = @(t) other.sample(0) * self.sample(t);
-                else
-                    k = (floor((self.t0+other.t0)*fs) : ceil((self.tend+other.tend)*fs)) / fs; % 1 x K
-                    f = @(t) reshape(self.sample(t(:) - k) * other.sample(k'), size(t));
-                end
-                wv = Waveform('fun', f, 't0', self.t0 + other.t0, 'tend', self.tend + other.tend);
+            arguments
+                this (1,1) Waveform
+                that (1,1) Waveform
+                fs double = max([this.fs, that.fs])
             end
+
+            % make a convolution function, using the sampling freuqency fs
+            if this.t0 == this.tend
+                % this is a delta function: use the identity
+                f = @(t) this.sample(0) * that.sample(t);
+            elseif that.t0 == that.tend
+                % that is a delta function: use the identity
+                f = @(t) that.sample(0) * this.sample(t);
+            else % this and that are not deltas: resample and convolve via matrix multiplication
+                k = (floor((this.t0+that.t0)*fs) : ceil((this.tend+that.tend)*fs)) / fs; % 1 x K
+                f = @(t) reshape(this.sample(t(:) - k) * that.sample(k'), size(t));
+            end
+            wv = Waveform('fun', f, 't0', this.t0 + that.t0, 'tend', this.tend + that.tend, 'fs', max([this.fs, that.fs]));
         end
     end
     
     % get/set methods
+    %{
     methods(Access=public)
-        function t = getSampleTimes(self, fs)
-            switch self.mode
-                case 'samp'
-                    if nargin ~= 1
-                        error('No arguments expected in sampled mode');
-                    end
-                    t = self.t0 : self.dt : self.tend;
-                case 'fun'
-                    if nargin ~= 2
-                        error('1 argument expected in function mode');
-                    end
-                    dt = 1/fs; %#ok<PROPLC>
-                    t = (ceil(self.t0 / dt) : 1 : floor(self.tend / dt)) * dt; %#ok<PROPLC>
-                otherwise
-                    error('Waveform in an undefined state.');
-            end
-            t = t(:);
-        end
-        
-        function setSampled(self, samples, fs)
-            if nargin < 3
-                self.dt = abs(self.tend - self.t0) / numel(samples);
-            else
-                self.dt = 1/fs;
-            end
-            self.samples = samples;
-            self.mode = 'samp';
-            self.fun = @(t) interp1(self.samples, 1 + (t - self.t0) * fs, "cubic", 0);
+        function t = getSampleTimes(wv, fs)
+            wv.fs = fs;
+            t = wv.time;
         end        
     end    
-    
+    %}
     methods
-        function dur = get.duration(self), dur = self.tend - self.t0; end
-        function t = get.time(self), t = self.getSampleTimes(); end
+        function s = get.samples(wv), s = wv.sample(wv.time); end
+        function dur = get.duration(wv), dur = wv.tend - wv.t0; end
+        function t = get.time(wv)
+            if wv.T >= wv.Tlim, error("Time axis too large to compute. If more than " + wv.Tlim + " values are required, increase the 'Tlim' property."); end
+            t = (floor(wv.t0 * wv.fs) : 1 : ceil(wv.tend * wv.fs))' .* wv.dt;            
+        end
+        function T_ = get.T(wv), T_ = 1 + ceil(wv.tend * wv.fs) - floor(wv.t0 * wv.fs);  end 
+        function dt = get.dt(wv), dt = 1./wv.fs; end
+        function set.dt(wv, dt), wv.fs = 1./dt; end
     end
 
     methods(Static)
         function wv = Delta()
+            % DELTA - Delta function Waveform constructor
+            %
+            % wv = WAVEFORM.DELTA() constructs a Delta function waveform
+            %
+            % 
             wv = Waveform('t0', 0, 'tend', 0, 'fun', @(t) t == 0);
         end
     end
