@@ -1,3 +1,10 @@
+% TRANSDUCERARRAY - Linear Array Transducer class
+% 
+% A TransducerArray defines a linear transducer by it's pitch (a.k.a.
+% element spacing) and number of elements.
+% 
+% See also TRANSDUCER TRANSDUCERCONVEX TRANSDUCERPISTON
+
 classdef TransducerArray < Transducer
 
     properties
@@ -12,47 +19,31 @@ classdef TransducerArray < Transducer
     % constructor and get/set methods
     methods(Access=public)
         % constructor: accept name/value pairs
-        function self = TransducerArray(varargin)
+        function self = TransducerArray(array_args, xdc_args)
+            % TRANSDUCERARRAY - TransducerArray constructor
+            %
+            % xdc = TRANSDUCERARRAY(Name, Value, ...) constructs a
+            % TransducerArray using name/value pair arguments.
+            %
+            % xdc = TRANSDUCERARRAY(uff_probe) construct a linear array
+            % from the uff.linear_array uff_probe.
+            %
+            % See also TRANSDUCERCONVEX
+            arguments
+                array_args.pitch double {mustBeScalarOrEmpty} 
+                array_args.kerf double {mustBeScalarOrEmpty} 
+                xdc_args.?Transducer
+            end
             
-            % setup the transducer args
-            if nargin == 1 && isa(varargin{1}, 'struct'), varargin = struct2nvpair(varargin{1}); end
-            
-            % initialize the (inherited) Transducer
-            self@Transducer(varargin{:}) % assume we don't error on bad inputs
+            % initialize the Transducer
+            xdc_args = struct2nvpair(xdc_args);
+            self@Transducer(xdc_args{:}) 
             
             % initialize the TransducerArray 
-            if nargin == 1 && isa(varargin{1}, 'uff.linear_array') % (uff object)
-                probe = varargin{1};
-                props = fieldnames(probe)';
-                for p = props
-                    switch p{1}
-                        case 'pitch', self.pitch = probe.(p{1});
-                    end
-                end
-                
-            else % (name-value)
-                for i = 1:2:numel(varargin)
-                    switch varargin{i}
-                        case 'pitch'
-                            self.pitch = varargin{i+1};
-                            
-                        case 'kerf'
-                            if ~isempty(self.width) % we have the width
-                                self.kerf = varargin{i+1};
-                            elseif ~isempty(self.pitch) % no width: we have pitch
-                                kerf = varargin{i+1};
-                                self.width = self.pitch - kerf;
-                            else % no pitch nor width already:
-                                % create an error if no width nor pitch
-                                % provided already
-                                msgid = 'UltrasoundSimulation:TransducerArray:InvalidArgument';
-                                msgtext = 'Either width or pitch must be specified before kerf';
-                                ME = MException(msgid, msgtext);
-                                throw(ME);
-                            end
-                    end
-                end
+            for f = string(fieldnames(array_args))'
+                self.(f) = array_args.(f);
             end
+
             % if kerf not set, default it to 30% pitch
             if isempty(self.pitch), self.kerf = 0.3 * self.width; end
         end
@@ -99,19 +90,7 @@ classdef TransducerArray < Transducer
             p = cat(1, x, zeros(2, numel(x))) + self.offset;
         end
         
-        function [theta, phi, normal, width, height] = getOrientations(self)
-            % Outputs:
-            %
-            %   - theta:    the azimuthal angle in cylindrical coordinates
-            %
-            %   - phi:      the elevation angle in cylindrical coordinates
-            %
-            %   - normal:   a 3 x N array of the element normals
-            %
-            %   - width:    a 3 x N array of element width vectors
-            %
-            %   - height:   a 3 x N array of element height vectors
-            
+        function [theta, phi, normal, width, height] = getOrientations(self)            
             theta = zeros([1, self.numel]);
             phi   = zeros(size(theta));
             ZERO  = zeros(size(theta));
@@ -166,10 +145,6 @@ classdef TransducerArray < Transducer
     % Field II conversion function
     methods(Access=public)
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
-            % creates a transmit / recieve aperture in Field II from the
-            % transducer array
-            
-            % set defaults
             if nargin < 2 || isempty(focus), focus = [0 0 realmax('single')]; end % ~ 0-deg plane wave
             if nargin < 3, element_sub_divisions = [1,3]; end % no sub divisions
                         
@@ -186,6 +161,7 @@ classdef TransducerArray < Transducer
             
             % ensure double type
             xdc_lin_array_params = cellfun(@double, xdc_lin_array_params, 'UniformOutput', false);
+            xdc_lin_array_params = cellfun(@gather, xdc_lin_array_params, 'UniformOutput', false);
             
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
@@ -438,7 +414,24 @@ classdef TransducerArray < Transducer
                 'pitch', 1e-3*Trans.spacingMm, ... % probe pitch [m]
                 'focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
                 );
-
+        end
+        function xdc = UFF(probe)
+            % TRANSDUCERARRAY.UFF - TransducerArray conversion
+            %
+            % xdc = TRANSDUCERARRAY.UFF(probe) converts the 
+            % uff.linear_array probe to a TransducerArray xdc.
+            %
+            %
+            arguments
+                probe (1,1) {mustBeA(probe, 'uff.linear_array')}
+            end
+            xdc = TransducerArray(...
+                "pitch", probe.pitch, ...
+                "width", probe.element_width, ...
+                "height", probe.element_height, ...
+                "numel", probe.N_elements, ...
+                "offset", - probe.origin.xyz ...
+                );
         end
 
     end
