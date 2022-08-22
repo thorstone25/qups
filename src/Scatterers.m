@@ -107,7 +107,7 @@ classdef Scatterers < handle
     
     % plot methods
     methods 
-        function h = plot(self, varargin)
+        function h = plot(self, axs, plot_args)
             % PLOT - overload the plot function
             % 
             % PLOT(self) plots the locations of the Scatterers self.
@@ -123,16 +123,15 @@ classdef Scatterers < handle
             % Plots only the x-z slice.
             % 
             % See also MEDIUM/IMAGESC
-            
-            % parse inputs
-            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
-                axs = varargin{1}; varargin(1) = [];
-            else
-                axs = gca;
+            arguments
+                self (1,1) Scatterers
+                axs (1,1) matlab.graphics.axis.Axes = gca
+                plot_args.?matlab.graphics.chart.primitive.Line
             end
 
             % plot
-            h = plot(axs, self.pos(1,:), self.pos(3,:), varargin{:});
+            plot_args = struct2nvpair(plot_args);
+            h = plot(axs, self.pos(1,:), self.pos(3,:), plot_args{:});
         end        
     end
     

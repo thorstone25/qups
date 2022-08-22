@@ -480,7 +480,7 @@ classdef Scan < matlab.mixin.Copyable
             end
         end
 
-        function h = plot(self, varargin)
+        function h = plot(self, hax, plot_args)
             % PLOT - Overload of plot
             %
             % h = PLOT(self) plots the pixels of the Scan onto the current 
@@ -493,18 +493,19 @@ classdef Scan < matlab.mixin.Copyable
             %
             % See also PLOT
 
-            % determine the axis
-            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
-                hax = varargin{1}; varargin(1) = []; % delete this input
-            else
-                hax = gca;
+            arguments
+                self (1,1) Scan
+                hax (1,1) matlab.graphics.axis.Axes = gca
+                plot_args.?matlab.graphics.chart.primitive.Line
             end
+
 
             % get the imaging grid
             [X, ~, Z] = getImagingGrid(self);
 
             % plot the positions with the options given in the inputs
-            h = plot(hax, X(:), Z(:), varargin{:});
+            plot_args = struct2nvpair(plot_args);
+            h = plot(hax, X(:), Z(:), plot_args{:});
         end
     end
 end
