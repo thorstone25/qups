@@ -444,38 +444,49 @@ classdef Scan < matlab.mixin.Copyable
         end
 
 
-        function h = imagesc(self, b, varargin)
+        function h = imagesc(self, b, ax, im_args)
             % IMAGESC - Overload of imagesc
             %
-            % h = IMAGESC(b) displays the data b on the Scan.
+            % h = IMAGESC(self, b) displays the data b on the Scan self.
             %
-            % h = IMAGESC(b, ax) uses the axes ax instead of the current
-            % axes.
+            % h = IMAGESC(self, b, ax) uses the axes ax instead of the 
+            % current axes.
             %
-            % h = IMAGESC(..., Name, Value, ...) forwards arguments to
-            % MATLAB's IMAGESC function.
+            % h = IMAGESC(..., Name, Value) forwards arguments to MATLAB's 
+            % built-in IMAGESC function.
             %
             % See also IMAGESC
 
-            if nargin >= 3 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
-                ax = varargin{1}; varargin(1) = [];
-            else
-                ax = gca;
+            arguments
+                self (1,1) Scan
+                b {mustBeNumeric}
+                ax (1,1) matlab.graphics.axis.Axes = gca
+                im_args.?matlab.graphics.primitive.Image
             end
+            % imagesc arguments
+            im_args = struct2nvpair(im_args);
+
+            % make sure the data size and image size are the same
+            assert(all(size(b, 1:3) == self.size, "all"), ...
+                "The image size does not match the scan.") %#ok<CPROPLC> 
+
+            % get the axis argumentts
+            ax_args = arrayfun(@(c) self.(c), lower(self.order)); % get axis in order
+            ax_sing = find(self.size == 1, 1, 'last'); % find singleton dimension
+            ax_args = ax_args(~ismember(1:3, ax_sing)); % strip the singleton dimension
+            ax_args = ax_args([2 1]); % swap x,y axis arguments
+ 
+            % plot
             if isa(self, 'ScanCartesian')
-                % assumes that data is in 'ZXY' order
-                if self.order ~= "ZXY", warning('Scan axes are incorrect - this function may give unexpected results.'); end
-                h = imagesc(ax, self.x, self.z, b, varargin{:});
-                xlabel(ax,'Lateral (m)');
-                ylabel(ax,'Axial (m)');
+                h = imagesc(ax, ax_args{:}, b, im_args{:});
+                xlabel(ax,'Lateral');
+                ylabel(ax,'Axial');
                 axis(ax, 'image');
 
             elseif isa (self, 'ScanPolar')
-                % assumes that data is in 'RAY' order
-                if self.order ~= "RAY", warning('Scan axes are incorrect - this function may give unexpected results.'); end
-                h = imagesc(ax, self.a, self.r, b, varargin{:});
+                h = imagesc(ax, ax_args{:}, b, im_args{:});
                 xlabel(ax,'Angle (^o)');
-                ylabel(ax,'Range (m)');
+                ylabel(ax,'Range');
                 axis(ax, 'tight')
             end
         end
