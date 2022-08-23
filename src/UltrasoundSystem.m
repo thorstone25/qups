@@ -2423,7 +2423,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             rx_imp = copy(self.rx.impulse);
             rx_imp.fs = fs_;
             t_rx = rx_imp.time;
-            rx_sig = gather(real(vec(rx_imp.samples)));
+            rx_sig = gather(real(rx_imp.samples(:)));
 
             % simulation start time
             t0 = gather(t_tx(1) + t_rx(1));
