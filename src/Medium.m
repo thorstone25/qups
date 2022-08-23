@@ -41,7 +41,7 @@ classdef Medium < handle
             end
         end
         
-        function [c, rho, BoA, alpha, alphap] = props(self, scan, prop)
+        function [c, rho, BoA, alpha, alphap] = props(self, scan, prop) %#ok<STOUT> 
             % PROPS - Return the properties of the medium
             %
             % c = PROPS(self, scan) returns the sound speed of the Medium
@@ -313,7 +313,7 @@ classdef Medium < handle
 
     % visualization methods
     methods
-        function h = imagesc(self, scan, varargin)
+        function h = imagesc(self, scan, axs, im_args, kwargs)
             % IMAGESC - Image the Medium (without scatterers)
             %
             % h = IMAGESC(self, scan) plots the Medium on the region
@@ -322,60 +322,56 @@ classdef Medium < handle
             % h = IMAGESC(self, scan, ax) uses the axes ax for plotting
             % instead of the current axes
             %
-            % h = IMAGESC(..., prop, ...) plots the property prop instead
-            % of the sound speed. Prop must be one of {'c', 'rho', 'BoA', 
-            % 'alpha', 'alphap'}.
+            % h = IMAGESC(..., 'props', props) plots the properties in the string 
+            % array or cell array of characters prop instead of just the 
+            % sound speed. The values must each be one of 
+            % {'c', 'rho', 'BoA', 'alpha', 'alphap'}.
             %
-            % h = IMAGESC(..., arg1, arg2, ...) passes following arguments
+            % h = IMAGESC(..., 'linkaxs', true) links the x and y axes for 
+            % all of the images.
+            %
+            % h = IMAGESC(..., Name, Value, ...) passes following arguments
             % to the built-in IMAGESC function
             %
-            % See also SCAN/IMAGESC, IMAGESC
+            % See also SCAN/IMAGESC IMAGESC LINKAXES
+            arguments
+                self Medium
+                scan Scan
+                axs  (1,:) matlab.graphics.axis.Axes = gca
+                im_args.?matlab.graphics.primitive.Image
+                kwargs.props (1,:) string {mustBeMember(kwargs.props, ["c", "rho", "BoA", "alpha", "alphap"])} = "c"
+                kwargs.linkaxs (1,1) logical = false
+            end
             
             % compute the properties on the grid
             [c, rho, BoA, alpha, alphap] = self.props(scan);
 
+            % place properties into a cell array of plot objects
             x = {}; % init
-            i = 1; % manual iteration
-            axs = {}; % no known axes for plotting
-            while i <= numel(varargin), % go through each argument
-                v = varargin{i}; % extract it
-                if isa(v, 'matlab.graphics.axis.Axes')
-                    axs = arrayfun(@(v){{v}},v); varargin(i) = []; continue; % we found the axes to plot on
-                elseif (ischar(v) || isstring(v) || iscellstr(v)) % look for a keyword
-                    v_ = string(v); % convert all to a string for easier parsing
-                    for j = 1:numel(v_) % for each argument
-                    switch v_(j)
-                        case 'c',       x = [x, {c}];
-                        case 'rho',     x = [x, {rho}];
-                        case 'BoA',     x = [x, {BoA}];
-                        case 'alpha',   x = [x, {alpha}];
-                        case 'alphap',  x = [x, {alphap}];
-                        otherwise, i = i + 1; continue; % not a prop -> move along
-                    end
-                    end
-                    % was a prop: delete it - don't pass to imagesc
-                    varargin(i) = []; 
-                else % not a prop - move along
-                    i = i + 1; 
+            for p = kwargs.props % for each argument
+                switch p
+                    case 'c',       x = [x, {c}];
+                    case 'rho',     x = [x, {rho}];
+                    case 'BoA',     x = [x, {BoA}];
+                    case 'alpha',   x = [x, {alpha}];
+                    case 'alphap',  x = [x, {alphap}];
                 end
             end
-            
-            % if no props found, just show the sound speed
-            if isempty(x), x = {c}; end
+
             N = numel(x); % number of plots to show
-            if isempty(axs), % make a subplot for each property
-                if N == 1
-                    axs = {{}}; % don't pass an argument still
-                else
-                for i = 1:N, axs{i} = {subplot(1,N,i)}; end % create subplots
-                end
+            if N > 1 % make a subplot for each property
+                axs = arrayfun(@(i) {{subplot(1,N,i)}}, 1:N); % create subplots
+            else
+                axs = {{axs}}; % place in a nested cell array
             end
 
             % plot the sound speed on the scan (no scaling!)
             % TODO: allow user to toggle properties by linking data or
             % making a GUI or something
+            im_args = struct2nvpair(im_args);
+            h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, im_args{:}), x, axs);
 
-            h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, varargin{:}), x, axs);
+            if kwargs.linkaxs && N > 1, linkaxes(axs); end
         end
     end
 end
