@@ -318,23 +318,35 @@ classdef Sequence < matlab.mixin.Copyable
 
     % plotting methods
     methods
-        function h = plot(self, varargin)
-            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes') % determine the axis
-                hax = varargin{1}; varargin(1) = []; % delete this input
+        function h = plot(self, varargin, plot_args)
+            arguments
+                self (1,1) Sequence
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
+                plot_args.?matlab.graphics.chart.primitive.Line
+            end
+            
+            % extract axis and other non-Name/Value pair arguments
+            if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes')
+                hax = varargin{1}; varargin(1) = [];
             else 
                 hax = gca;
             end
 
+            plot_args = struct2nvpair(plot_args);
             switch self.type
                 case{'PW',}
                     % make a quiver plot, starting at the origin, and
                     % pointing in the vector direction
                     [x, y] = deal(zeros([1, self.numPulse]));
                     [u, v] = deal(self.focus(1,:), self.focus(3,:));
-                    h = quiver(hax, x, y, u, v, varargin{:});
+                    h = quiver(hax, x, y, u, v, varargin{:}, plot_args{:});
                 otherwise
                     % plot the positions with the options given in the inputs
-                    h = plot(hax, self.focus(1,:), self.focus(3,:), varargin{:});
+                    h = plot(hax, self.focus(1,:), self.focus(3,:), varargin{:}, plot_args{:});
             end
         end
     end

@@ -179,10 +179,21 @@ classdef SequenceRadial < Sequence
 
     % plotting functions
     methods
-        function h = plot(self, varargin)
-            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes') % determine the axis
-                hax = varargin{1}; varargin(1) = []; % delete this input
-            else
+        function h = plot(self, varargin, quiver_args)
+            arguments
+                self (1,1) SequenceRadial
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
+                quiver_args.?matlab.graphics.chart.primitive.Quiver
+            end
+            
+            % extract axis and other non-Name/Value pair arguments
+            if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes')
+                hax = varargin{1}; varargin(1) = [];
+            else 
                 hax = gca;
             end
 
@@ -192,7 +203,8 @@ classdef SequenceRadial < Sequence
             og = repmat(self.apex, [1,size(vecs,2)]);
             [x, y] = deal(og(1,:), og(3,:));
             [u, v] = deal(vecs(1,:), vecs(3,:));
-            h = quiver(hax, x, y, u, v, varargin{:});
+            quiver_args = struct2nvpair(quiver_args);
+            h = quiver(hax, x, y, u, v, varargin{:}, quiver_args{:});
         end
     end
         
