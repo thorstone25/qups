@@ -11,7 +11,7 @@
 % 
 % * simus via MUST
 % * calc_scat_all, calc_scat_multi via FieldII
-% * kspaceFirstOrderND via K-wave
+% * kspaceFirstOrder via K-wave
 % * fullwaveSim via Fullwave
 % 
 % Multiple beamformers are provided which include
@@ -21,7 +21,7 @@
 % * bfEikonal - a sound speed delay-and-sum beamformer using the eikonal equation
 % * bfAdjoint - a frequency domain beamformer
 % 
-% See also CHANNELDATA TRANSDUCER SEQUENCE SCAN TARGET MEDIUM 
+% See also CHANNELDATA TRANSDUCER SEQUENCE SCAN SCATTERERS MEDIUM 
 
 classdef UltrasoundSystem < matlab.mixin.Copyable
     
@@ -35,7 +35,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % parameters
     properties
-        fs (1,1) {mustBeNumeric} = 40e6   % simulation sampling frequency (Hz)
+        % FS - Simulation sampling frequency 
+        %
+        % ULTRASOUNDSYSTEM.FS sets the sampling frequency for simulation
+        % routines.
+        %
+        % Example:
+        %
+        % us = UltrasoundSystem('xdc', TransducerArray());
+        % 
+        % 
+        % See also GREENS SIMUS CALC_SCAT_MULTI KSPACEFIRSTORDER
+        fs (1,1) {mustBeNumeric} = 40e6   % simulation sampling frequency
     end
     
     properties(Dependent)
@@ -269,16 +280,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % Modified Green's function based direct computations
     methods
-        function [chd, wv] = greens(self, target, element_subdivisions, kwargs)
+        function [chd, wv] = greens(self, scat, element_subdivisions, kwargs)
             % GREENS - Simulate ChannelData via a shifted Green's function.
             % 
-            % chd = GREENS(self, target)
-            % computes the full synthetic aperture data using a simple
-            % Green's function kernel applied to all sub elements and all
-            % point scatterers. It then applies the transmit sequence to
-            % form the channel data.
+            % chd = GREENS(self, scat) simulates the response of the 
+            % Scatterers scat from the UltrasoundSystem self and returns 
+            % the corresponding ChannelData chd. It first computes the full
+            % synthetic aperture data using a simple Green's function 
+            % kernel applied to all sub-elements and all point scatterers 
+            % and then applies the transmit Sequence via focusTx.
             %
-            % chd = GREENS(self, target, element_subdivisions) uses the 
+            % chd = GREENS(self, scat, element_subdivisions) uses the 
             % length 2 array element_subdivisions to specifiy the 
             % subdivision of each element into a grid of sub-apertures 
             % in the integration. This argument is passed to FieldII to 
@@ -310,19 +322,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
-            % chd = greens(us, targ); % simulate the ChannelData
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = greens(us, scat); % simulate the ChannelData
             % 
             % % Display the data
             % figure;
             % imagesc(real(chd));
             % colorbar;
             %
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI CHANNELDATA/SAMPLE
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI ULTRASOUNDSYSTEM/FOCUSTX CHANNELDATA/SAMPLE
             
             arguments
                 self (1,1) UltrasoundSystem
-                target Scatterers
+                scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
             end
             arguments
@@ -350,8 +362,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % sound speed to give an upper bound)
             maxdist = @(p) max(vecnorm(p,2,1), [], 'all');
             mindist = @(p) min(vecnorm(p,2,1), [], 'all');
-            taumax = arrayfun(@(target)(2 * maxdist(target.pos) + maxdist(ptc_tx) + maxdist(ptc_rx)) ./ min(target.c0), shiftdim(target(:),-3));
-            taumin = arrayfun(@(target)(2 * mindist(target.pos) + mindist(ptc_tx) + mindist(ptc_rx)) ./ max(target.c0), shiftdim(target(:),-3));
+            taumax = arrayfun(@(scat)(2 * maxdist(scat.pos) + maxdist(ptc_tx) + maxdist(ptc_rx)) ./ min(scat.c0), shiftdim(scat(:),-3));
+            taumin = arrayfun(@(scat)(2 * mindist(scat.pos) + mindist(ptc_tx) + mindist(ptc_rx)) ./ max(scat.c0), shiftdim(scat(:),-3));
             
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
@@ -361,10 +373,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             wv.fs = self.fs;
             kern = wv.samples;
 
-            F = numel(target);
+            F = numel(scat);
             if kwargs.verbose, hw = waitbar(0); end
 
-            for f = F:-1:1 % for each target
+            for f = F:-1:1 % for each point target
             % get minimum/maximum sample times
             tmin = taumin(f) + wv.t0;
             tmax = taumax(f) + wv.tend;
@@ -378,9 +390,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             x   = complex(zeros([1 T N M]));
 
             % splice
-            c0  = target(f).c0;
-            pos = target(f).pos.'; % S x 3
-            amp = target(f).amp.'; % S x 1
+            c0  = scat(f).c0;
+            pos = scat(f).pos.'; % S x 3
+            amp = scat(f).amp.'; % S x 1
             fs_ = self.fs;
             if kwargs.device && exist('greens.ptx', 'file') ... % use the GPU kernel
                     && (ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]))
@@ -409,7 +421,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     );
 
                 % re-map sizing
-                [QI, QS, QT, QN, QM] = deal(target(f).numScat, length(t), length(kern), N, M);
+                [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
 
                 % grab the kernel reference
                 k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
@@ -442,8 +454,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % for each tx/rx pair, extra subelements ...
                 % TODO: parallelize where possible
-                svec = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:target(f).numScat-1), 1);
-                svec{end} = svec{end}(svec{end} <= target(f).numScat);
+                svec = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:scat(f).numScat-1), 1);
+                svec{end} = svec{end}(svec{end} <= scat(f).numScat);
                 S = numel(svec); % number of scatterer blocks
 
                 for sv = 1:S, s = svec{sv}; % vector of indices
@@ -539,8 +551,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % conf = FULLWAVECONF(self, medium) creates a simulation
             % configuration struct to be used with fullwaveJob to simulate 
-            % the response from the Target targ using the UltrasoundSystem 
-            % self and the Medium medium. 
+            % the response from the Medium medium using the 
+            % UltrasoundSystem self.
             % 
             % conf = FULLWAVECONF(self, medium, sscan) uses the  
             % ScanCartesian sscan as the simulation region. The default is
@@ -945,10 +957,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % SIMUS calls
     methods
-        function chd = simus(self, target, kwargs, simus_kwargs)
+        function chd = simus(self, scat, kwargs, simus_kwargs)
             % SIMUS - Simulate channel data via MUST
             %
-            % chd = SIMUS(self, target) simulates the Target target and
+            % chd = SIMUS(self, scat) simulates the Scatterers scat and
             % returns a ChannelData object chd.
             %
             % When calling this function the transmit sequence pulse is 
@@ -987,8 +999,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % us.rx = us.tx; % ensure the receiver and transmitter are identical
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
-            % chd = simus(us, targ); % simulate the ChannelData
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = simus(us, scat); % simulate the ChannelData
             % 
             % % Display the data
             % figure;
@@ -999,7 +1011,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             arguments
                 self (1,1) UltrasoundSystem
-                target (1,1) Scatterers
+                scat (1,1) Scatterers
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 simus_kwargs.periods (1,1) {mustBePositive} = 1
@@ -1016,9 +1028,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %end
             
             % get the points and the dimensions of the simulation(s)
-            [X, Y, Z, A] = arrayfun(@(target) ...
-                deal(sub(target.pos,1,1), sub(target.pos,2,1), sub(target.pos,3,1), target.amp), ...
-                target, 'UniformOutput',false);
+            [X, Y, Z, A] = arrayfun(@(scat) ...
+                deal(sub(scat.pos,1,1), sub(scat.pos,2,1), sub(scat.pos,3,1), scat.amp), ...
+                scat, 'UniformOutput',false);
             if isempty(simus_kwargs.dims) 
                 if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
                 else, kwargs.dims = 3; end
@@ -1041,10 +1053,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             p.TXapodization = zeros([self.xdc.numel,1]); % set tx apodization
             p.RXdelay = zeros([self.xdc.numel,1]); % receive delays (none)
             
-            % set options per target
-            p = repmat(p, [1,1,1,numel(target)]); % (1 x 1 x 1 x F)
-            pxdc = arrayfun(@(target) {getSIMUSParam(target)}, target); % properties per target
-            for f = 1:numel(target), 
+            % set options per Scatterers
+            p = repmat(p, [1,1,1,numel(scat)]); % (1 x 1 x 1 x F)
+            pxdc = arrayfun(@(scat) {getSIMUSParam(scat)}, scat); % properties per Scatterers
+            for f = 1:numel(scat), 
                 for fn = string(fieldnames(pxdc{f}))', 
                     p(f).(fn) = pxdc{f}.(fn); % join the structs manually
                 end 
@@ -1069,9 +1081,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isloc, [pclu, parenv] = deal(parenv, 0); else, pclu = 0; end % cluster or local
 
             % call the sim: FSA approach
-            [M, F] = deal(self.xdc.numel, numel(target)); % splice
-            for f = F:-1:1 % per target
-                argf = {X{f},Y{f},Z{f},A{f},zeros([M,1]),p(f),opt}; % args per target
+            [M, F] = deal(self.xdc.numel, numel(scat)); % splice
+            for f = F:-1:1 % per scat
+                argf = {X{f},Y{f},Z{f},A{f},zeros([M,1]),p(f),opt}; % args per scat
                 parfor (m = 1:M, pclu) % use parallel rules, but execute on main thread
                     args = argf; % copy settings for this frame
                     args{6}.TXapodization(m) = 1; % transmit only on element m
@@ -1098,13 +1110,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     % Field II calls
     methods
-        function chd = calc_scat_all(self, target, element_subdivisions, kwargs)
+        function chd = calc_scat_all(self, scat, element_subdivisions, kwargs)
             % CALC_SCAT_ALL - Simulate channel data via FieldII
             %
-            % chd = CALC_SCAT_ALL(self, target) simulates the Target target
-            % and returns a ChannelData object chd.
+            % chd = CALC_SCAT_ALL(self, scat) simulates the Scatterers
+            % scat and returns a ChannelData object chd.
             % 
-            % chd = CALC_SCAT_ALL(self, target, element_subdivisions)
+            % chd = CALC_SCAT_ALL(self, scat, element_subdivisions)
             % specifies the number of subdivisions in width and height for 
             % each element. The default is [1,1].
             %
@@ -1128,8 +1140,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
-            % chd = calc_scat_all(us, targ); % simulate the ChannelData
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = calc_scat_all(us, scat); % simulate the ChannelData
             % 
             % % Display the data
             % figure;
@@ -1140,7 +1152,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                target Scatterers
+                scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
@@ -1170,9 +1182,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
             % splice
-            [M, F] = deal(self.sequence.numPulse, numel(target)); % number of transmits/frames
+            [M, F] = deal(self.sequence.numPulse, numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), target); % splice
+            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
 
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool'), 
@@ -1183,7 +1195,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
-            % for each target (frame)
+            % for each scat (frame)
             parfor (f = 1:F, parenv) % each transmit pulse
             % reinitialize field II
             field_init(-1);
@@ -1222,13 +1234,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd = self.focusTx(chd, self.sequence, 'interp', kwargs.interp);
         end        
 
-        function chd = calc_scat_multi(self, target, element_subdivisions, kwargs)
+        function chd = calc_scat_multi(self, scat, element_subdivisions, kwargs)
             % CALC_SCAT_MULTI - Simulate channel data via FieldII
             %
-            % chd = CALC_SCAT_MULTI(self, target) simulates the Target target
-            % and returns a ChannelData object chd.
+            % chd = CALC_SCAT_MULTI(self, scat) simulates the Scatterers 
+            % scat and returns a ChannelData object chd.
             %
-            % chd = CALC_SCAT_MULTI(self, target, element_subdivisions)
+            % chd = CALC_SCAT_MULTI(self, scat, element_subdivisions)
             % specifies the number of subdivisions in width and height for
             % each element. The default is [1, 1].
             %
@@ -1248,8 +1260,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
-            % chd = calc_scat_multi(us, targ); % simulate the ChannelData
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % chd = calc_scat_multi(us, scat); % simulate the ChannelData
             % 
             % % Display the data
             % figure;
@@ -1260,7 +1272,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                target Scatterers
+                scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
             end
@@ -1303,9 +1315,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             parenv = kwargs.parenv;
             if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
-            [M, F] = deal(self.sequence.numPulse, numel(target)); % number of transmits/frames
+            [M, F] = deal(self.sequence.numPulse, numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), target); % splice
+            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
             
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool'), 
@@ -1317,7 +1329,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
             parfor (m = 1:M, parenv) % each transmit pulse
-            for (f = F:-1:1) % each target frame            
+            for (f = F:-1:1) % each scat frame            
                 % (re)initialize field II
                 field_init(-1);
 
@@ -1368,794 +1380,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
     
-    % k-Wave calls (old)
-    methods(Hidden)
-        function [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] ...
-                = getkWaveGrid(self, target, varargin)
-            % GETKWAVEGRID - Create a kWaveGrid for the Target
-            % 
-            % [kgrid, PML_size, kgrid_origin, kgrid_size, kgrid_step, 
-            % kmedium] = GETKWAVEGRID(self, target) creates a kWaveGrid
-            % kgrid for the given Target target and also returns the 
-            % selected sizing for the perfectly matched layers (PML) and 
-            % the corresponding sizing and offset for the absolute
-            % coordinate system.
-            %
-            % This signature (inputs/outputs) is likely to change.
-            %
-            % Inputs:
-            %   target -       a Target object
-            %
-            % Name-Value Pair Inputs:
-            %   dims -         number of dimensions (default = 2)
-            %
-            %   PML_min -      minimum PML size (default = 4)
-            %
-            %   PML_max -      minimum PML size (default = 48)
-            %
-            %   CLF_max -      maximum CFL: the kgrid will use a physical
-            %                   and temporal spacing beneath this value
-            %                   that is a ratio of the sampling frequency
-            %                   (default = 0.25)
-            %
-            %   buffer(3 x 2) - 3 x 2 array specifying computational 
-            %                   buffer to provide spacing from the other 
-            %                   objects including the transmitter, 
-            %                   receiver, and target objects. This is the 
-            %                   amount of room that the grid is expanded 
-            %                   by. Given in meters as 
-            %                   [xlo, xhi; ylo, yhi, zlo, zhi] 
-            %                   (default = repmat(5e-3, [3,2]) )
-            %
-            %   resolution-ratio - sets the ratio of grid spacing to
-            %                   spatial wavelength assuming a given a 
-            %                   reference speed of sound from the target
-            %                   (default = 0.25)
-            %
-            %   reference-sound-speed - overrides the reference sound
-            %                   speed for the resolution ratio. 
-            %                   (default = target.c0)
-            %
-            % Outputs:
-            %   kgrid -            a kWaveGrid object
-            %
-            %   PML_size (3 x 1) - the chosen PML size that minimizes the
-            %                       maximum prime number within PML-min and
-            %                       PML-max
-            %
-            %   kgrid_origin (3 x 1) - cartesian grid origin to recover the
-            %                       original coordinates when using
-            %                       kgrid.{x|y|z} or similar functions
-            %
-            %   kgrid_size (3 x 1) - size of the computational grid, 
-            %                       without the PML. The size is 1 for
-            %                       sliced dimensions
-            %
-            %   kgrid_step (3 x 1) - descritization size in each dimension
-            %                       in meters. The size is inf for sliced
-            %                       dimensions
-            %   kmedium            - kWave compatible medium structure
-            %
-            % 
-            
-            % defaults 
-            lam_res = 0.25; % default resolution as proportion of wavelength
-            PML_min_size = int64(4); % minimum (one-sided) PML size
-            PML_max_size = int64(48); % maximum (one-sided) PML size
-            max_cfl = 0.25; % maximum cfl number (for stability)
-            cbuf = repmat(5e-3, [3,2]); % x/y/z computational buffer
-            c0 = target.c0; % get reference sound speed
-            dims = 2; % default simulation dimensions
-            pb_u = zeros([3,0]); % default user provided bounds
-            
-            % override defaults with name-value pairs
-            % TODO: switch to kwargs properties
-            for i = 1:2:nargin-2
-                switch varargin{i}
-                    case 'dims'
-                        dims = varargin{i+1};
-                    case 'PML_min'
-                        PML_min_size = int64(varargin{i+1});
-                    case 'PML_max'
-                        PML_max_size = int64(varargin{i+1});
-                    case 'CFL_max'
-                        max_cfl = varargin{i+1};
-                    case 'buffer'
-                        cbuf = varargin{i+1};
-                    case 'bounds'
-                        pb_u = varargin{i+1};
-                    case 'resolution_ratio'
-                        lam_res = varargin{i+1};
-                    case 'reference_sound_speed'
-                        c0 = varargin{i+1};
-                end
-            end
-                        
-            % operate at ratio of lambda min in x/y/z
-            lam = c0 ./ max(max(self.rx.bw, self.tx.bw));
-            [dx, dy, dz] = deal(lam_res * min(lam));
-            dp = [dx;dy;dz]; % vector difference
-            
-            % finds the smallest PML buffer from PML_min_size to search_max that
-            % minimizes the factoring size
-            PML_buf = @(n) (argmin(arrayfun(@(a)max(factor(n+2*a)), PML_min_size:PML_max_size)) + PML_min_size - 1);
-            
-            % get total min/max bounds for the transducers and the target
-            pb_t = target.getBounds(); % get min/max bounds of the target
-            pb_tx = self.tx.bounds(); % get min/max bounds of the tx
-            pb_rx = self.rx.bounds(); % get min/max bounds of the rx
-            pb_all = cat(2, pb_t, pb_tx, pb_rx, pb_u); % min/max bounds for all objects
-            pb = [min(pb_all,[],2), max(pb_all,[],2)]; % reduce
-            
-            % get kgrid and outer PML sizing with computational buffer
-            pb_buf = pb + [-1, 1] .* cbuf;
-            Np_g = ceil(diff(pb_buf,1,2) ./ dp); % minimum grid size
-            Np_g = Np_g + (1-mod(Np_g,2)); % enforce odd grid size
-            Np_p = double(arrayfun(PML_buf, Np_g)); % get complimentary PML buffer with good FFT sizing
-                        
-            % get cartesian grid origin to interface with k-wave's centered grid
-            p_kw_og = min(pb_buf,[],2) + dp .* ((Np_g - 1) ./ 2); % k-wave origin
-            
-            % translate into additional outputs in kwave format
-            ind_map = [3,1,2]; % UltrasoundSystem to k-wave coordinate mapping
-            PML_size = Np_p(ind_map); % PML size
-            kgrid_origin = p_kw_og(ind_map); % grid origin
-            kgrid_size = Np_g(ind_map); % grid size - size 1 in sliced dimensions
-            kgrid_step = dp(ind_map); % step size - inf in sliced dimensions
-
-            % apply k-wave <-> UltrasoundSystem dimension mapping: x/y/z -> z/x/y
-            switch dims
-                case 1
-                    kgrid = kWaveGrid(kgrid_size(1), kgrid_step(1));
-                    [kgrid_size(2:3), PML_size(2:3), kgrid_step(2:3), kgrid_origin(2:3)] = deal(1, 0, inf, 0);
-                case 2
-                    kgrid = kWaveGrid(kgrid_size(1), kgrid_step(1), kgrid_size(2), kgrid_step(2));
-                    [kgrid_size(3), PML_size(3), kgrid_step(3), kgrid_origin(3)] = deal(1, 0, inf, 0);
-                case 3
-                    kgrid = kWaveGrid(kgrid_size(1), kgrid_step(1), kgrid_size(2), kgrid_step(2), kgrid_size(3), kgrid_step(3));
-            end
-            
-            
-            % get sound speed bounds
-            kmedium = target.getKWaveMedium(kgrid, kgrid_origin);
-            c = kmedium.sound_speed;
-            [c_min, c_max] = deal(min(c,[],'all'), max(c, [], 'all'));
-            
-            % get the sampling interval as the largest value within the cfl
-            dt_cfl_max = max_cfl * min(kgrid_step) / c_max;
-            
-            % use a time step that aligns with the sampling frequency
-            dt_us = inv(self.fs);
-            cfl_ratio = dt_cfl_max / dt_us;
-            if cfl_ratio  >= 1
-                time_step_ratio = inv(floor(cfl_ratio));
-            else
-                warning('Upsampling the kWave time step for an acceptable CFL.');
-                time_step_ratio = ceil(inv(cfl_ratio));
-            end
-            dt = dt_us / time_step_ratio;
-            
-            % get temporal buffer as twice the longest signal
-            t_buf = 2 * max(...
-                self.tx.impulse.tx_impulse_waveform.duration, ...
-                self.sequence.pulse.duration ...
-                );
-
-            % get a default ending time based on the longest possible 
-            % single-way reflection
-            tend = t_buf + 2 * norm([kgrid.x_size, kgrid.y_size, kgrid.z_size]) / c_min;
-            
-            % define the time axis
-            kgrid.setTime(ceil(tend/dt), dt);            
-            
-        end        
-        
-        function [ksource, tsig, sig0] = getKWaveSource(self, kgrid, kgrid_origin, el_sub_div, c0)
-            % GETKWAVESOURCE - Create a k-wave compatible source structures
-            % 
-            % [ksource, tsig, sig0] = GETKWAVESOURCE(self, kgrid, kgrid_origin, el_sub_div, c0)
-            % creates k-Wave compatible source structures.
-            % 
-            % See also ULTRASOUNDSYSTEM/GETKWAVEGRID
-            % ULTRASOUNDSYSTEM/GETKWAVERECEIVE
-
-            %
-            if nargin < 4 || isempty(el_sub_div), el_sub_div = [1,1]; end
-            if nargin < 5 || isempty(c0)        , c0 = 1540; end
-            
-            nPulse = self.sequence.numPulse; % number of pulses
-            if(isnan(nPulse)), nPulse = self.tx.numel; end % for FSA apertures
-
-            % helper function
-            vec = @(x) x(:);
-            
-            % beamforming
-            sigt0 = self.sequence.t0Offset(); % 1 x S
-            steering_delays = -sigt0 - self.sequence.delays(self.tx); % (N x S)
-            el_apodization  = self.sequence.apodization(self.tx); % ([1|N] x [1|S])
-            el_apodization = el_apodization + zeros([self.tx.numel nPulse]); % (N x S)
-            
-            % get the frequency upsampling ratio
-            % kwave_upsampling_ratio = round(inv(kgrid.dt * self.fs));
-
-            % define the transmitted signal
-            % get the source signal and the Tx impulse response function
-            tx_impulse_waveform = self.tx.impulse;
-            chirp_waveform = copy(self.sequence.pulse); % copy the waveforms ([1|N] x [1|S])
-            
-            % choose the longest signal in time for the time-domain
-            imp_dur = tx_impulse_waveform.duration;
-            sig_dur = reshape([chirp_waveform.duration], size(chirp_waveform));
-            
-            % get the largest subelement-surface to pixel step size
-            grid_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0;
-            
-            % check for delta functions - functions less than a max delay
-            sig_is_delta = abs(sig_dur) < grid_delay;
-            imp_is_delta = abs(imp_dur) < grid_delay;
-            
-            % get minimum and maximum steering angle delays
-            [min_steer, max_steer] = deal(min(steering_delays(:)), max(steering_delays(:)));
-            
-            % get max cumulative delay to ensure that signal is sampled
-            % starting from before the first waveform begins until after
-            % the last waveform ends
-            tdur = imp_dur + sig_dur + grid_delay;
-            
-            % get the signal time domain 
-            t0   = tx_impulse_waveform.t0   + min([chirp_waveform.t0])   - tdur + min_steer;
-            tend = tx_impulse_waveform.tend + max([chirp_waveform.tend]) + tdur + max_steer;
-            [n0, nend] = deal(floor(t0 / kgrid.dt), ceil(tend / kgrid.dt));
-            t  = (  n0   : 1 :   nend  )' * kgrid.dt; % includes zero if t0 <= 0 <= tend
-            tc = (2*n0-1 : 1 : 2*nend-1)' * kgrid.dt; % includes zero if t0 <= 0 <= tend
-            tsig = tc + shiftdim(sigt0(:),-2); % offset output time zero (T x 1 x [1|S])
-
-            % tests
-            assert(min(t) <= 0 && max(t) >= 0, 'The sampled signal does not begin and end after 0.'); % test that we are actually sampling through t == 0
-            assert(any(t==0), 'The sampled signal does not pass through 0.'); % test we pass through 0.
-            
-            % define the sampling functional: 
-            % always the same length as t
-            % t always includes 0
-            function sig = shiftSignal(delay,ind)
-                % check for delta functions - functions less than a max delay
-                sig_is_delta = abs(sig_dur(ind)) < grid_delay; 
-                imp_is_delta = abs(imp_dur) < grid_delay;
-                
-                if(~imp_is_delta) % impulse not a delta: delay the impulse
-                    sig_samp = vec(tx_impulse_waveform(ind).sample(t - delay));
-                    imp_samp = vec(chirp_waveform.sample(t));
-                    sig = conv(sig_samp, imp_samp, 'full');
-                elseif(~sig_is_delta) % signal is not a delta: delay on signal
-                    sig_samp = vec(tx_impulse_waveform(ind).sample(t));
-                    imp_samp = vec(chirp_waveform.sample(t - delay));
-                    sig = conv(sig_samp, imp_samp, 'full');
-                else % both are deltas use linear resampling (sketchy)
-                    sig_samp = vec(tx_impulse_waveform(ind).sample(t));
-                    imp_samp = vec(chirp_waveform.sample(t));
-                    sig = interp1(t,conv(sig_samp, imp_samp, 'full'), t - delay, 'linear', 0);
-                end
-                % sig = real(sig) .* inv(norm(vec(abs(sig))));
-                % normalize samples?
-                nsig = norm(vec(abs(sig)));
-                isig = nsig > 0;
-                sig(isig) = real(sig(isig)) .* inv(nsig(isig));
-            end
-            
-            % output the non-delayed signals
-            for ind = numel(chirp_waveform):-1:1, sig0(:,ind) = shiftSignal(0, ind); end
-            sig0 = reshape(sig0, [size(sig0,1), size(chirp_waveform)]);
-            
-            % get the sensor, sensor masks, and element orientations
-            [ksensor, ~, sens_map] = self.tx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
-            
-            % initialize the transmit sources
-            parfor puls = 1:nPulse
-                % get the apodization elements for this pulse
-                pulse_apodization = el_apodization(:, puls);
-                el_non_zero = pulse_apodization ~= 0;
-                
-                % get the mask for this pulse
-                pulse_mask = false(size(ksensor{1}.mask)); %#ok<PFBNS>
-                for k = 1:numel(el_non_zero), if el_non_zero(k), pulse_mask = pulse_mask | ksensor{k}.mask; end, end
-                
-                % initialize output source
-                ksource{puls} = struct(...
-                    'u_mask', pulse_mask ...
-                    );
-            end
-            
-            % send constant inputs to the workers
-            if(isvalid(gcp('nocreate')))
-                sendDataToWorkers = @parallel.pool.Constant;
-            else
-                sendDataToWorkers = @(s)struct('Value', s);
-            end
-            [t_vec] = dealfun(sendDataToWorkers, vec(t));
-            
-            % dereference
-            [nTx, T] = deal(self.tx.numel, numel(tc));
-            
-            % define the transmit sources
-            fprintf('\nDefining sources ...\n');
-            ticBytes(gcp('nocreate'));
-            parfor (puls = 1:nPulse)
-                % report performance
-                fprintf('\nProcessing %i samples for all %i elements of pulse %i ... \n', T, nTx, puls); tt = tic;
-                
-                % dereference
-                t_ = t_vec.Value; %#ok<PFBNS>
-                
-                % initialize
-                ind_msk_pulse   = find(ksource{puls}.u_mask);
-                ksource_vec_vel = zeros([3, numel(ind_msk_pulse), T], 'like', t_);
-                
-                for el = 1:nTx
-                    % steering delay for the element
-                    tau_steer = steering_delays(el,puls);
-
-                    % get sensitivity map for this element
-                    sens_map_el = sens_map(:,el); %#ok<PFBNS>
-                    
-                    % get sensitivity mapping for all subelements
-                    %{
-                    for i = nSub:-1:1
-                        [ind_msk, dis, el_dir, amp] = deal(...
-                            vec(sens_map_el(i).mask_indices).', ...
-                            vec(sens_map_el(i).dist).', ...
-                            vec(sens_map_el(i).element_dir),...
-                            vec(sens_map_el(i).amp) ...
-                            );
-                        
-                        % vector amplitude
-                        vec_amp_i{i} = amp .* el_dir + zeros(size(dis));
-                        
-                        % corresponding indices
-                        ind_msk_i{i} = ind_msk;
-                        
-                        % get distance from element center to grid points
-                        % + the steering delay for the element
-                        delays_i{i} = dis ./ c0 + tau_steer;
-                    end
-                    %}
-                    
-                    [vec_amp_i, ind_msk_i, delays_i] = arrayfun(@(sme)deal(...
-                        vec(sme.amp).' .* (sme.element_dir) + zeros(size(sme.dist(:)')), ...
-                        vec(sme.mask_indices).', ...
-                        vec(sme.dist).' ./ c0 + tau_steer ...
-                        ), sens_map_el, 'UniformOutput', false);
-                    
-                    % combine
-                    [vec_amp, ind_msk, delays] = dealfun(@cell2mat, vec_amp_i(:)', ind_msk_i(:)', delays_i(:)');
-                    
-                    % filter out zero amplitudes
-                    ind_non_zero = any(logical(vec_amp),1); % amplitude zero in all dims
-                    if(~any(ind_non_zero)), continue, end % move to next element if everything is zero
-                    [vec_amp, ind_msk, delays] = dealfun(@(x)x(:,ind_non_zero), vec_amp, ind_msk, delays);
-                    
-                    % get mask indices
-                    [~, ind_umsk] = ismember(ind_msk, ind_msk_pulse);
-                    if(~any(ind_umsk)), continue, end % move to next element if no valid elements
-                    
-                    % resample with the delay                    
-                    %%%
-                    if(~imp_is_delta) % impulse not a delta: delay the impulse
-                        imp_samp = (tx_impulse_waveform.sample(t_ - delays));  %#ok<PFBNS>
-                        sig_samp = (chirp_waveform.sample(     t_));           %#ok<PFBNS>
-                        sig = convn(imp_samp, sig_samp, 'full');
-                    elseif(~sig_is_delta) % signal is not a delta: delay on signal
-                        imp_samp = (tx_impulse_waveform.sample(t_));
-                        sig_samp = (chirp_waveform.sample(     t_ - delays));
-                        sig = convn(sig_samp, imp_samp, 'full');
-                    else % both are deltas use linear resampling (sketchy)
-                        warning('UltrasoundSystem:getKWaveSource:convolvingDeltas', ...
-                            ['Using linear interpolation to convolve two delta functions with a shift. ', ...
-                            'Use a small rect function to avoid this. ']);
-                        sig_samp = (tx_impulse_waveform.sample(t_));
-                        imp_samp = (chirp_waveform.sample(     t_));
-                        t_samp = t_vec.Value - delays;
-                        conv_samp = griddedInterpolant(t_, conv(sig_samp, imp_samp, 'full'), 'linear', 'none');
-                        sig = reshape(conv_samp(vec(t_samp).'), size(t_samp));
-                    end
-                    
-                    % normalize samples?
-                    nsig = norm(vec(abs(sig)));
-                    isig = nsig > 0;
-                    sig(isig) = real(sig(isig)) .* inv(nsig(isig));
-                    %%%
-
-                    % add contributing signal from each subsample to each identical pixels
-                    ind_umsk_unique = flip(unique(ind_umsk(ind_umsk ~= 0)));
-                    for i=ind_umsk_unique(:)'
-                        ksource_vec_vel(:,i,:) =  ksource_vec_vel(:,i,:) ...
-                            + sum(vec_amp(:,ind_umsk == i) .* permute(sig(:,ind_umsk == i),[3 2 1]), 2);
-                    end
-                                        
-                    %{
-                    % initialize output variable
-                    % ksource_vec_vel_sz = [3, numel(ind_msk_pulse), numel(t)];
-                    kvv = zeros(ksource_vec_vel_sz);
-
-                    % add contributing signal from each subsample to each identical pixels
-                    ind_umsk_unique = flip(unique(ind_umsk));
-                    for i=ind_umsk_unique, kvv(:,i,:) = sum(vec_amp(:,ind_umsk == i) .* permute(sig(:,ind_umsk == i),[3 2 1]), 2); end
-                    
-                    % add contributions from this element to all elements
-                    ksource_vec_vel = ksource_vec_vel + kvv;
-                    %}
-                    
-                    fprintf('.');
-                end
-                
-                % move x/y/z vector to the corresponding fields and remove
-                % vector version
-                if any(ksource_vec_vel(1,:) > 0), ksource{puls}.ux = shiftdim(ksource_vec_vel(1,:,:),1); end
-                if any(ksource_vec_vel(2,:) > 0), ksource{puls}.uy = shiftdim(ksource_vec_vel(2,:,:),1); end
-                if any(ksource_vec_vel(3,:) > 0), ksource{puls}.uz = shiftdim(ksource_vec_vel(3,:,:),1); end
-
-                % report
-                fprintf('\nFinished processing pulse %i (%0.5g seconds).', puls, toc(tt))
-            end            
-            tocBytes(gcp('nocreate'));
-        end
-        
-        function [resp, t_resp] = getKWaveReceive(self, kgrid, ksensor, sens_map, sensor_data, c0, varargin)
-            % GETKWAVERECEIVE - Get the received response from the simulation
-            %
-            % [resp, t_resp] = GETKWAVERECEIVE(self, kgrid, ksensor, sens_map, sensor_data, c0)
-            % takes the kWaveGrid kgrid, the kWaveSensor ksensor, the
-            % transducer sensitivity map sens_map, a reference sound speed 
-            % c0, and the received data sensor_data and creates the element
-            % response resp and it's time axes t_resp.
-            %
-            % [...] = GETKWAVERECEIVE(..., Name, Value, ...) additionally
-            % specifies options via name/value pairs.
-            %
-            % Inputs:
-            %   device - GPU selection. 0 for no GPU, -1 to use the
-            %            currently selected GPU, or n to select and reset 
-            %            the GPU with id n in MATLAB.
-            %   interp - interpolation method. Interpolation is provided by
-            %   griddedInterpolant. This behaviour is likely to change.
-            %
-            % This signature (inputs/outputs) is likely to change.
-            % 
-            % See also TRANSDUCER/GETKWAVESENSOR GRIDDEDINTERPOLANT
-
-            % set defaults
-            kwargs.device = []; % use native type = -1 * logical(gpuDeviceCount); % use available gpu
-            kwargs.interp = 'linear';
-
-            % helper function
-            vec = @(x) x(:);
-            
-            % set options
-            for i = 1:numel(varargin)
-                kwargs.(varargin{i}) = varargin{i+1};
-            end
-
-            % set device
-            if isempty(kwargs.device), % do nothing
-            elseif kwargs.device > gpuDeviceCount
-                warning('Attempted to select device %i but only %i devices are available. Using the default device')
-            else
-                switch kwargs.device
-                    case -1
-                        % force on gpu
-                        sensor_data = gpuArray(sensor_data);
-                    case 0
-                        % don't place on gpu
-                    otherwise
-                        % select gpu, then place
-                        g = gpuDevice();
-                        if g.Index ~= kwargs.device
-                            sensor_data = gather(sensor_data);
-                            g = gpuDevice(kwargs.device);
-                            sensor_data = gpuArray(sensor_data);
-                        end
-                end
-            end
-            
-            % define the rx impulse response function
-            max_delay = hypot(hypot(kgrid.dx, kgrid.dy), kgrid.dz) / c0; % maximum grid delay
-            rx_imp = self.rx.impulse; % rx temporatl impulse response function
-            n0  = floor((rx_imp.t0   - max_delay) / kgrid.dt);
-            nend = ceil((rx_imp.tend + max_delay) / kgrid.dt);
-            t_rx = vec(n0 : 1 : nend) * kgrid.dt; % includes zero if t0 <= 0 <= tend
-            rx_imp_is_delta = (max(t_rx) - min(t_rx)) < max_delay; % check for delta functions - functions less than a max delay
-            [nst, nfin] = deal(n0 + 0 + 1, nend + kgrid.Nt - 1 - 1); % time axis after convolution
-            % [nst, nfin] = deal(min(n0, 0), max(nend, kgrid.Nt-1));
-            % rx_pad = [-nst, nfin - (kgrid.Nt-1)];
-            % T_data = kgrid.Nt; % size of kgrid data
-            
-            % set time to precision and device of sensor data
-            t_rx = real(cast(t_rx, 'like', sensor_data));
-            
-            % get output signal sizing
-            t_resp = vec(nst : 1 : nfin) * kgrid.dt; % includes zero if t0 <= 0 <= tend
-            T_resp = numel(t_resp); % size of kgrid data after convolution
-                        
-            % get index mapping
-            ind_msk_all = sort(find(ksensor.mask));
-            
-            % explicitly preallocate receiver outputs - 
-            % implicitly preallocated when using a parfor loop
-            % resp = zeros([T_resp, self.rx.numel], 'like', sensor_data);
-            
-            % splice
-            [device, interp] = deal(kwargs.device, kwargs.interp);
-
-            % for each (sub)element
-            parfor (el = 1:self.rx.numel)
-                
-                % rename distributed data
-                resp_samp = sensor_data;
-                sens_map_el = sens_map(:,el);
-                
-                % get indices, delays, amplitudes for all
-                % sub-elements
-                [amp_i, ind_msk_i, delays_i] = arrayfun(@(sme)deal(...
-                    vec(sme.amp) + zeros(size(sme.dist(:)')), ...
-                    vec(sme.mask_indices).', ...
-                    vec(sme.dist).' ./ c0 ...
-                    ), sens_map_el, 'UniformOutput', false);
-                
-                % combine
-                [amp, ind_msk, delays] = dealfun(@cell2mat, amp_i(:)', ind_msk_i(:)', delays_i(:)');
-                
-                % get sensor data indices for the subelement
-                [~, ind_sen] = ismember(ind_msk, ind_msk_all);
-                nSubEl = numel(ind_sen);
-
-                % get sensor data (T_data x nSubEl)
-                resp_samp = cat(1, ...
-                    ... zeros([rx_pad(1), numel(ind_sen)]), ...
-                    amp .* (resp_samp(ind_sen,:).') ...
-                    ... zeros([rx_pad(2), numel(ind_sen)])...
-                    ); % %#ok<PFBNS>
-                
-                % apply delay via convolution with a
-                % shifted impulse response function
-                % TODO: check that the signs here are okay
-                if(~rx_imp_is_delta) % rx impulse not a delta: delay the impulse
-                    imp_samp = rx_imp.sample(t_rx - delays); %#ok<PFBNS> % (T_data x nSubEl)
-                    resp_samp = convd(resp_samp, imp_samp, 1, 'full', 'device', device); % (T_resp x nSubEl)
-                else % impulse is a delta: use linear resampling (sketchy)
-                    warning('UltrasoundSystem:kWaveSensor2ChannelData:convolvingDeltas', ...
-                        ['Using linear interpolation to convolve two delta functions with a shift. ', ...
-                        'Use a small rect function to avoid this. ']);
-                    imp_samp = vec(rx_imp.sample(t_rx)); % (T_data x nSubEl)
-                    conv_samp = convn(resp_samp, imp_samp, 'full'); % (T_resp x nSubEl) % GPU OOM?
-                    conv_sampler = griddedInterpolant(t_resp, zeros([T_resp,1], 'like', t_resp), 'linear', 'none');
-                    resp_samp = zeros([T_resp, nSubEl], 'like', conv_samp);
-                    for i = nSubEl:-1:1
-                        conv_sampler.Values(:) = conv_samp(:,i);
-                        resp_samp(:,i) = conv_sampler(t_resp - delays(i));
-                    end
-                end
-                
-                % integrate over subelements
-                resp(:, el) = trapz_(resp_samp,2);
-            end
-        end
-    
-        function [chd, cgrid] = kspaceFirstOrderND(self, target, element_subdivisions, varargin)
-            % KSPACEFIRSTORDERND - Simulate channel data via k-Wave
-            % 
-            % chd = KSPACEFIRSTORDERND(self, target) simulates the Target
-            % target and returns a ChannelData object chd via k-Wave.
-            %
-            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions)
-            % uses the 1x2 array of element_subdivisions to subdivide the
-            % elements prior to placing them on the simulation grid.
-            %
-            % [chd, cgrid] = kspaceFirstOrderND(...) also returns a
-            % structure with the coordinate transforms from the kWaveGrid. 
-            % This behaviour is likely to be deprecated
-            %
-            % chd = KSPACEFIRSTORDERND(self, target, element_subdivisions, 
-            % Name, Value, ... ) specifies name value pairs.
-            %
-            % Inputs:
-            %     PML_min - minimum (one-sided) PML size
-            %     PML_max - maximum (one-sided) PML size
-            %     CFL_max - maximum cfl number (for stability)
-            %     buffer - x/y/z computational buffer (3 x 2)
-            %     resolution_ratio - grid resolution as proportion of wavelength
-            %     dims - dimensionality of the simulation (one of {2*,3})
-            %     parcluster - parallel cluster for running simulations (use 0 for no cluster)
-            %     bounds - minimum boundaries of the sim (3 x 2)
-            %
-            % Other Name/Value pairs that are valid for kWave's
-            % kspaceFirstOrderND functions are valid here with the
-            % exception of the PML definition
-            %
-            %
-            % See also ULTRASOUNDSYSTEM/FULLWAVESIM
-
-
-            % setup a default keyword arguments structure
-            kwargs = struct( ...
-                'PML_min', 20, ... minimum (one-sided) PML size
-                'PML_max', 56, ... maximum (one-sided) PML size
-                'CFL_max', 0.25, ... maximum cfl number (for stability)
-                'buffer', [0, 0; 0, 0; 0, 0], ... % x/y/z computational buffer
-                'resolution_ratio', 0.25, ... grid resolution as proportion of wavelength
-                'dims', 2, ... number of dimensions of the simulation
-                'parcluster', 0, ... parallel cluster for running simulations (use 0 for no cluster)
-                'bounds', [0, 0; 0, 0; 0, 0], ... boundaries of the sim (minimum)
-                'DataCast', 'gpuArray-single',...
-                'DataRecast', false, ...
-                'LogScale', true, ...
-                'MovieName', 'kwave-sim', ...
-                'PlotPML', false, ...
-                'PlotSim', false, ...
-                'RecordMovie', false, ...
-                'Smooth', true ...
-                );
-
-            if nargin < 3 || isempty(element_subdivisions), 
-                element_subdivisions = self.getLambdaSubDiv(kwargs.resolution_ratio, target.c0); 
-            end
-
-
-            % store NV pair arguments into kwargs
-            for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
-
-            %% define the kgrid and medium sizing
-            % check that the grid is larger than the transducer;
-            % expand if this is not the case
-            bc = [kwargs.bounds(:,1) >= sub(self.xdc.bounds,1,2), sub(self.xdc.bounds,2,2) >= kwargs.bounds(1,2)]; % boundary check
-            if any(bc)
-                warning('Expanding grid to encompass the transducer.');
-                bd = self.xdc.bounds(); % transducer boundaries
-                kwargs.bounds(find(bc)) = bd(bc); % set as the minumum boundaires for k-wave
-            end
-
-            % get arguments for the grid object
-            kgrid_args = kwargs; % all input arguments
-            gfields = {'PML_min', 'PML_max', 'CFL_max', 'CFL_max', 'resolution_ratio', 'dims', 'bounds'}; % grid args
-            kgrid_args = rmfield(kgrid_args , setdiff(fieldnames(kgrid_args), intersect(fieldnames(kgrid_args), gfields))); % isolate grid args
-            kgrid_args = struct2nvpair(kgrid_args);
-
-            % get a kWaveGrid object ( also outputs the medium,
-            % because it needs to set the CFL number )
-            % TODO: use a Scan definition to define the region for the
-            % simulation
-            [kgrid, kgrid_PML_size, kgrid_origin, kgrid_size, kgrid_step, kmedium] ...
-                = self.getkWaveGrid(target, kgrid_args{:});
-
-            % get the translated / permuted grid sizing
-            cgrid = struct(...
-                'origin', kgrid_origin([2,3,1]) + [kgrid.y_vec(1); kgrid.z_vec(1); kgrid.x_vec(1);], ...
-                'step'  , kgrid_step([2,3,1]), ...
-                'size'  , kgrid_size([2,3,1]) ...
-                );
-
-            % get subdivision length
-            el_sub_div = element_subdivisions;
-
-            % define the sensor on the grid
-            [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
-
-            % create the full sensor mask as the combination of all of the transducer
-            % elements
-            ksensor.mask = false;
-            for el = 1:self.rx.numel, ksensor.mask = ksensor.mask | ksensor_rx{el}.mask; end
-
-            % define the source signal(s) for each transmit in the
-            % pulse sequence
-            [ksource, t_sig, sig] = self.getKWaveSource(kgrid, kgrid_origin, el_sub_div, target.c0);
-
-            % check the size of the temporal response and
-            % maximum number of subelements. An array of this size
-            % will be created
-            nSubel = max(sum(arrayfun(@(s) numel(s.mask_indices), sens_map), 1), [], 2);
-            warning(sprintf('Using up to %i subelements for %i points in time (%0.2fGB / %0.2fGB single/double (complex) temp variables)', nSubel, kgrid.Nt, prod(kgrid.Nt * nSubel) * 2 * [4, 8] / 2^30))
-
-
-            %% Submit a k-wave simulation for each transmit
-            tt_kwave = tic;
-
-            % lam_min_grid_spac = min(kmedium.sound_speed,[],'all') / (self.us.xdc.fc + 0.5*self.us.xdc.bw);
-            % lam_max_temp_freq = min(kmedium.sound_speed,[],'all') / max([kgrid.dx, kgrid.dy, kgrid.dz]) / 2;
-            fprintf('There are %i points in the grid which is %0.3f megabytes per grid variable.\n', ...
-                kgrid.total_grid_points, kgrid.total_grid_points*4/2^20);
-
-            kwfields = { ...
-                'DataCast', 'DataRecast', 'LogScale', 'MovieName', ... 
-                'PlotPML', 'RecordMovie', 'Smooth', 'PlotSim' ...
-                };
-
-            % strip all other arguments from input
-            kwave_args = kwargs; % all input arguments
-            kwave_args = rmfield(kwave_args , setdiff(fieldnames(kwave_args), intersect(fieldnames(kwave_args), kwfields))); % isolate grid args
-            
-            % set global arguments
-            kwave_args.PMLInside = false;
-            kwave_args.PMLSize = kgrid_PML_size(1:kgrid.dim);
-
-            
-            % set per pulse properities
-            kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
-            for puls = 1:self.sequence.numPulse
-                if(isfield(kwave_args(puls), 'MovieName'))
-                    kwave_args(puls).MovieName = char(kwave_args(puls).MovieName + sprintf("_pulse%2.0i",puls));
-                end
-            end
-
-            % select function
-            switch kwargs.dims
-                case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2D;
-                case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3D;
-            end
-
-            % get all arguments
-            kwave_args_ = arrayfun(...
-                @(pulse) struct2nvpair(kwave_args(pulse)), ...
-                1:self.sequence.numPulse, ...
-                'UniformOutput', false ...
-                );
-
-            out = cell(self.sequence.numPulse, 2);
-            [c0, Np] = deal(target.c0, self.sequence.numPulse);
-            parfor (puls = 1:self.sequence.numPulse, kwargs.parcluster)
-                fprintf('\nComputing pulse %i of %i\n', puls, Np);
-                tt_pulse = tic;
-
-                % prealloc
-                outp = cell(1,2);
-                % gpuDevice(1+mod(pulse-1, ngpu));
-
-                % simulate
-                sensor_data = kspaceFirstOrderND_(kgrid, kmedium, ksource{puls}, ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
-
-                % Process the simulation data
-                [outp{1}, outp{2}] = self.getKWaveReceive(kgrid, ksensor, sens_map, sensor_data, c0); %#ok<PFBNS>
-
-                % enforce on the CPU - save to output var
-                outp = cellfun(@gather, outp, 'UniformOutput', false);
-                [out{puls,:}] = deal(outp{:});
-
-                % report timing
-                fprintf('\nFinished pulse %i of %i\n', puls, Np);
-                toc(tt_pulse)
-            end
-
-            % get voltages (T x N x M)
-            voltages = cast(cell2mat(shiftdim(out(:,1), -2)), 'single');
-
-            % get timing (T x 1 x M) -> (T x 1)
-            t_resp   = mode(cell2mat(shiftdim(out(:,2), -2)), 3);
-
-            % TODO: make reports optional
-            fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
-
-            % get time axis
-            time = t_resp + min(t_sig);
-
-            % get numerically correct frequency
-            fs_ = 1 ./ kgrid.dt;
-            if fs_ > self.fs, %#ok<BDSCI> % fs_ is scalar
-                fs_ = self.fs * round(fs_ / self.fs); % use the rounded upsampling factor
-            else
-                fs_ = self.fs / round(self.fs / fs_); % use the rounded downsampling factor
-            end
-
-            % Create a channel data object
-            chd = ChannelData('t0', sub(time,1,1), 'data', voltages, 'fs', fs_);
-        end
-    end
-
     % k-Wave calls (new)
     methods
-        function [chd, job] = kspaceFirstOrder(self, target, sscan, kwargs, karray_args, kwave_args)
+        function [chd, job] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
-            % chd = KSPACEFIRSTORDER(self, target) simulates the Target
-            % target and returns a ChannelData object chd via k-Wave.
+            % chd = KSPACEFIRSTORDER(self, med) simulates the Medium med 
+            % and returns a ChannelData object chd via k-Wave.
             %
-            % chd = KSPACEFIRSTORDER(self, target, sscan) operates using
+            % chd = KSPACEFIRSTORDER(self, med, sscan) operates using
             % the simulation region defined by the ScanCartesian sscan. The
             % default is self.scan.
             % 
@@ -2247,7 +1480,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM
             arguments % required arguments
                 self (1,1) UltrasoundSystem
-                target Medium
+                med Medium
                 sscan (1,1) ScanCartesian = self.scan
             end
             arguments % keyword arguments for this function
@@ -2256,7 +1489,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, % maximum cfl number (for stability)
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
-                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, target.c0), % element subdivisions (width x height)
+                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10, ...
@@ -2304,11 +1537,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [kgrid, Npml] = getkWaveGrid(sscan, 'PML', kwargs.PML);
 
             % get the kWave medium struct
-            kmedium = getMediumKWave(target, sscan);
+            kmedium = getMediumKWave(med, sscan);
 
             % make an iso-impedance medium
             kmedium_iso = kmedium;
-            kmedium_iso.density = (target.c0 * target.rho0) ./ kmedium.sound_speed;
+            kmedium_iso.density = (med.c0 * med.rho0) ./ kmedium.sound_speed;
 
             % get the minimum necessary time step from the CFL
             dt_cfl_max = kwargs.CFL_max * min([sscan.dz, sscan.dx, sscan.dy]) / max(kmedium.sound_speed,[],'all');
@@ -2358,7 +1591,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 case 'linear'
                     % get ambient sound speed
-                    c0map = target.c0;
+                    c0map = med.c0;
 
                     % get a mapping of delays and weights to all
                     % (sub-)elements (J' x M)
@@ -2414,7 +1647,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % set the total simulation time: default to a single round trip at ambient speed
             if isempty(kwargs.T)
-                kwargs.T = 2 * (vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) ./ target.c0);
+                kwargs.T = 2 * (vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) ./ med.c0);
             end
             Nt = 1 + floor((kwargs.T / kgrid.dt) + max(range(t_tx,1))); % number of steps in time
             kgrid.setTime(Nt, kgrid.dt);
@@ -2623,10 +1856,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
             % 
             % % Compute the image
-            % chd = greens(us, targ); % compute the response
+            % chd = greens(us, scat); % compute the response
             % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
             % b = DAS(us, chd); % beamform the data
             % 
@@ -2733,11 +1966,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
             % 
             % % Compute the data for an FSA acquistion
             % us.sequence = Sequence('type', 'FSA', 'c0', us.sequence.c0, 'numPulse', us.xdc.numel);
-            % chd = greens(us, targ); % compute the response
+            % chd = greens(us, scat); % compute the response
             %
             % % Create plane-wave data by synthesizing the transmits with
             % plane-wave delays
@@ -2853,10 +2086,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
             % 
             % % Compute the image
-            % chd = greens(us, targ); % compute the response
+            % chd = greens(us, scat); % compute the response
             % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
             % b = bfAdjoint(us, chd); % beamform the data
             % 
@@ -3320,10 +2553,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
             % 
             % % Compute the image
-            % chd = greens(us, targ); % compute the response
+            % chd = greens(us, scat); % compute the response
             % b = bfDAS(us, chd); % beamform the data
             % 
             % % Display the image

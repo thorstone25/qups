@@ -226,12 +226,12 @@ classdef ChannelData < matlab.mixin.Copyable
             % Example:
             % % Simulate some data
             % us = UltrasoundSystem('fs', 100e6); % get a default system
-            % targ = Target('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % targ = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
             % chd = greens(us, targ); % simulate the ChannelData
             % 
             % % Demodulate and downsample the data
             % ratio = 4;
-            % chdd = downsample(demodulate(chd, us.fs/ratio), ratio);
+            % chdd = downsample(demodulate(hilbert(chd), us.fs/ratio), ratio);
             % 
             % % Image the data
             % figure; 
