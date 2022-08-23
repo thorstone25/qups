@@ -471,7 +471,7 @@ classdef Scan < matlab.mixin.Copyable
                 "The image size does not match the scan.") %#ok<CPROPLC> 
 
             % get the axis argumentts
-            ax_args = arrayfun(@(c) self.(c), lower(self.order)); % get axis in order
+            ax_args = arrayfun(@(c) {self.(c)}, lower(self.order)); % get axis in order
             ax_sing = find(self.size == 1, 1, 'last'); % find singleton dimension
             ax_args = ax_args(~ismember(1:3, ax_sing)); % strip the singleton dimension
             ax_args = ax_args([2 1]); % swap x,y axis arguments
