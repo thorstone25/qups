@@ -341,34 +341,34 @@ classdef TransducerArray < Transducer
         function xdc = L12_3V()
             xdc = TransducerArray(...
                 'fc', mean([4e6 11e6]), ...
-                'bandwidth', ([4e6 11e6]), ...
+                'bw', ([4e6 11e6]), ...
                 'width', (0.18e-3), ... placeholder @ 90% pitch
                 'height', (2e-3), ... placeholder @ 10x picth
                 'numel', 192, ...
                 'pitch', 0.2e-3, ...
-                'focus', 20e-3 ...
+                'el_focus', 20e-3 ...
                 );
         end
         function xdc = L11_5V()
             xdc = TransducerArray(...
                 'fc', mean([4.5e6 10e6]), ...
-                'bandwidth', ([4.5e6 10e6]), ...
+                'bw', ([4.5e6 10e6]), ...
                 'width', (0.27e-3), ... placeholder @ 90% pitch
                 'height', (3e-3), ... placehoder @ 10x picth
                 'numel', 128, ...
                 'pitch', 0.3e-3, ...
-                'focus', 18e-3 ...
+                'el_focus', 18e-3 ...
                 );
         end
         function xdc = L11_2V()
             xdc = TransducerArray(...
                 'fc', 5.1333e+06, ... % Transducer center frequency [Hz]
-                'bandwidth', 5.1333e6 + 3e6*[-1 1]/2, ... % bandwidth [Hz]
+                'bw', 5.1333e6 + 3e6*[-1 1]/2, ... % bandwidth [Hz]
                 'width', 0.270e-3, ... % linear kerf
                 'height', 5e-3, ... % Height of element [m]
                 'numel', 128, ... % number of elements
                 'pitch', 0.300e-3, ... % probe pitch [m]
-                'focus', 20e-3 ... % elevation focal depth
+                'el_focus', 20e-3 ... % elevation focal depth
                 );
 
         end
@@ -376,12 +376,12 @@ classdef TransducerArray < Transducer
             % Transducer parameters pulled from verasonics L12-5 50mm probe
             xdc = TransducerArray(...
                 'fc', 7.5e6, ... % Transducer center frequency [Hz]
-                'bandwidth', ([5 11])*1e6, ... % bandwidth [Hz]
+                'bw', ([5 11])*1e6, ... % bandwidth [Hz]
                 'width', hex2num('3f265251dc6ba641'), ... % element width [m]
                 'height', 7.5e-3, ... % Height of element [m]
                 'numel', 256, ... % number of elements
                 'pitch', hex2num('3f29992e39cf2ea7'), ... % probe pitch [m]
-                'focus', 20e-3 ... % elevation focal depth
+                'el_focus', 20e-3 ... % elevation focal depth
                 );
         end
         function xdc = Verasonics(Trans, c0)
@@ -407,12 +407,12 @@ classdef TransducerArray < Transducer
             % set relevant properties
             xdc = TransducerArray(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
-                'bandwidth', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
+                'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
                 'width', scale*Trans.elementWidth, ... % linear kerf
                 'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
                 'numel', Trans.numelements, ... % number of elements
                 'pitch', 1e-3*Trans.spacingMm, ... % probe pitch [m]
-                'focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
+                'el_focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
                 );
         end
         function xdc = UFF(probe)
