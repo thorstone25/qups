@@ -144,7 +144,6 @@ classdef Sequence < matlab.mixin.Copyable
                 t0 (1,1) double % bulk offset of the data
             end
 
-
             % initialize all wave objects
             N = self.numPulse;
             for n = N:-1:1, seq(n) = uff.wave(); end
@@ -177,8 +176,7 @@ classdef Sequence < matlab.mixin.Copyable
                     for n=1:N, seq(n).source.xyz = self.focus(:,n).'; end
                     [seq.delay] = deal(t0);
                     
-            end
-                
+            end   
         end
     end
     
@@ -199,7 +197,7 @@ classdef Sequence < matlab.mixin.Copyable
             % vector direction for the plane wave
             %
             % Inputs:
-            % - tx:        a Transducer
+            %   - tx:        a Transducer
             %
             % Outputs:
             %   - tau:      a (N x S) array of element delays (s)
@@ -223,7 +221,7 @@ classdef Sequence < matlab.mixin.Copyable
                 case 'PW'
                     % use inner product of plane-wave vector with the
                     % positions to get plane-aligned distance
-                    tau = sum(self.focus .* p, 1) ./ self.c0; % delay (1 x S x N)
+                    tau = -sum(self.focus .* p, 1) ./ self.c0; % delay (1 x S x N)
                 case 'FSA'
                     tau = zeros([1 size(p,3) size(p,3)]);
                 otherwise
