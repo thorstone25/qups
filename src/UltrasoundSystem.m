@@ -1356,24 +1356,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 xdc_apodization(Tx, 0, apod_tx(:,m)'); % set the apodization
                 
                 % call the sim
-                [voltages{m,f}, ts{1,1,m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
+                [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
             end
             end
             
             % adjust start time based on signal time definitions
-            t0 = cell2mat(ts) + ... % fieldII start time (1 x 1 x M x F)
+            t0 = ... cell2mat(ts) + ... % fieldII start time (1 x 1 x M x F)
                 (t_pl(1) + t_tx(1) + t_rx(1)) ... signal delays for impulse/excitation
                 + shiftdim(tau_offset,-1) ... 0-basing the delays across the aperture
                 ; % 1 x 1 x M
             
             % create the output QUPS ChannelData object 
-            chd = cellfun(@(x) ChannelData('data', x), voltages); % per transmit/frame (M x F) object array
+            chd = cellfun(@(x, t0) ChannelData('data', x, 't0', t0), voltages, ts); % per transmit/frame (M x F) object array
             chd = arrayfun(@(f) join(chd(:,f), 3), 1:F); % join over transmits (1 x F) object array
             chd = join(chd, 4); % join over frames (1 x 1) object array
 
             % set sampling frequency and transmit times for all
             chd.fs = self.fs;
-            chd.t0 = t0;
+            chd.t0 = chd.t0 + t0;
 
             % cleanup
             if field_started, evalc('field_end'); end
@@ -2032,7 +2032,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             
             % align dimensions
-            D = 1+ndims(chd.data); % get a free dimension for M'
+            D = 1+max(3,ndims(chd.data)); % get a free dimension for M'
             tau_focal = swapdim(tau_focal, [1,2], [chd.mdim, D]); % move data
             apod      = swapdim(apod     , [1,2], [chd.mdim, D]); % move data
 
