@@ -375,7 +375,6 @@ classdef Scan < matlab.mixin.Copyable
             thi = atan2d(Xi - sub(Pn2,1,1), Zi - sub(Pn2,3,1)); % angle at which the ray hits the element
             apod = abs(thi - thn) <= theta; % (I1 x I2 x I3 x N x M)
         end
-
     end
 
 
@@ -443,8 +442,7 @@ classdef Scan < matlab.mixin.Copyable
             imwrite(im, map, filename, nvkwargs{:});
         end
 
-
-        function h = imagesc(self, b, ax, im_args)
+        function h = imagesc(self, b, varargin, im_args)
             % IMAGESC - Overload of imagesc
             %
             % h = IMAGESC(self, b) displays the data b on the Scan self.
@@ -460,9 +458,21 @@ classdef Scan < matlab.mixin.Copyable
             arguments
                 self (1,1) Scan
                 b {mustBeNumeric}
-                ax (1,1) matlab.graphics.axis.Axes = gca
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
                 im_args.?matlab.graphics.primitive.Image
             end
+            
+            % find axis varargs
+            if numel(varargin) >= 1 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
+                ax = varargin{1}; varargin(1) = [];
+            else
+                ax = gca;
+            end
+
             % imagesc arguments
             im_args = struct2nvpair(im_args);
 
@@ -478,13 +488,13 @@ classdef Scan < matlab.mixin.Copyable
  
             % plot
             if isa(self, 'ScanCartesian')
-                h = imagesc(ax, ax_args{:}, b, im_args{:});
+                h = imagesc(ax, ax_args{:}, b, varargin{:},  im_args{:});
                 xlabel(ax,'Lateral');
                 ylabel(ax,'Axial');
                 axis(ax, 'image');
 
             elseif isa (self, 'ScanPolar')
-                h = imagesc(ax, ax_args{:}, b, im_args{:});
+                h = imagesc(ax, ax_args{:}, b, varargin{:}, im_args{:});
                 xlabel(ax,'Angle (^o)');
                 ylabel(ax,'Range');
                 axis(ax, 'tight')

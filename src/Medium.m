@@ -144,7 +144,7 @@ classdef Medium < matlab.mixin.Copyable
             arguments
                 self Medium
                 scan Scan
-                prop (1,:) string {mustBeMember(prop, ["c", "rho", "BoA", "alpha"])}
+                prop (1,:) string {mustBeMember(prop, ["c", "rho", "BoA", "alpha"])} = ["c", "rho", "BoA", "alpha"]
             end
 
             % get the grid points on the scan
@@ -438,7 +438,7 @@ classdef Medium < matlab.mixin.Copyable
 
     % visualization methods
     methods
-        function h = imagesc(self, scan, axs, im_args, kwargs)
+        function h = imagesc(self, scan, varargin, im_args, kwargs)
             % IMAGESC - Image the Medium (without scatterers)
             %
             % h = IMAGESC(self, scan) plots the Medium on the region
@@ -473,12 +473,23 @@ classdef Medium < matlab.mixin.Copyable
             arguments
                 self Medium
                 scan Scan
-                axs  (1,:) matlab.graphics.axis.Axes = gca
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
                 im_args.?matlab.graphics.primitive.Image
                 kwargs.props (1,:) string {mustBeMember(kwargs.props, ["c", "rho", "BoA", "alpha"])} = "c"
                 kwargs.linkaxs (1,1) logical = false
             end
-            
+
+            % find axs varargs
+            if numel(varargin) >= 1 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
+                axs = varargin{1}(:)'; varargin(1) = [];
+            else % default
+                axs = gca;
+            end
+
             % compute the properties on the grid
             [c, rho, BoA, alpha] = self.props(scan);
 
@@ -504,7 +515,7 @@ classdef Medium < matlab.mixin.Copyable
             % TODO: allow user to toggle properties by linking data or
             % making a GUI or something
             im_args = struct2nvpair(im_args);
-            h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, im_args{:}), x, axs);
+            h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, varargin{:}, im_args{:}), x, axs);
 
             if kwargs.linkaxs && N > 1, linkaxes(axs); end
         end

@@ -712,7 +712,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % plotting and display
     methods
-        function h = imagesc(self, m, ax, im_args)
+        function h = imagesc(self, m, varargin, im_args)
             % IMAGESC - Overload of imagesc function
             %
             % h = IMAGESC(self, m) displays transmit m of the channel data 
@@ -728,6 +728,12 @@ classdef ChannelData < matlab.mixin.Copyable
             % arguments to the imagesc function.
             %
             % Example:
+            % % Create some data
+            % chd = ChannelData('data', rand([256, 32, 5]));  
+            % 
+            % % Show the data
+            % figure;
+            % imagesc(chd); % shows the middle transmit
             %
             % % Show the data in the frequency domain in MHz
             % f = chd.fs*(0:chd.T-1)/chd.T; % frequency axis
@@ -736,10 +742,21 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also IMAGESC
             arguments
-                self
+                self ChannelData
                 m {mustBeInteger} = floor((self.M+1)/2); 
-                ax (1,1) matlab.graphics.axis.Axes = gca
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
                 im_args.?matlab.graphics.primitive.Image
+            end
+
+            % find axis varargs
+            if numel(varargin) >= 1 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
+                ax = varargin{1}; varargin(1) = [];
+            else
+                ax = gca;
             end
 
             % get full data sizing
@@ -776,7 +793,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % show the data
             im_args = struct2nvpair(im_args);
-            h = imagesc(ax, d, im_args{:});
+            h = imagesc(ax, d, varargin{:}, im_args{:});
         end
 
         function h = animate(self, varargin)
