@@ -1,4 +1,4 @@
-% TRANSDUCER Abstract Transducer class
+% TRANSDUCER - Abstract Transducer class
 %
 % Superclass for a medical ultrasound transducer. Any TRANSDUCER has
 % methods for the positions and orientations of it's elements as well as
