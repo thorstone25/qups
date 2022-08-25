@@ -356,13 +356,6 @@ classdef Scan < matlab.mixin.Copyable
             % defaults
             if nargin < 4, theta = 45; end
 
-            % soft validate the transmit sequence and transducer types.
-            if ~isa(rx, 'TransducerArray'), warning(...
-                    "Expected Transducer to be a TransducerArray but instead got a " + class(rx) + ". This may produce unexpected results."...
-                    )
-            end
-
-            % TODO: generalize to polar
             % get the receiver positions and orientations, N in dim 5
             Pn2 = swapdim(rx.positions   , 2, 4); % (3 x 1 x 1 x N)
             thn = swapdim(rx.orientations, 2, 4); % (3 x 1 x 1 x N)
