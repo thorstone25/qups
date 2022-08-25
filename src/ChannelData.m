@@ -255,7 +255,7 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = copy(chd);
             
             % demodulate directly with the temporal phasor
-            chd.data = chd.data .* exp(2i*pi*fc*chd.time);
+            chd.data = chd.data .* exp(-2i*pi*fc*chd.time);
             
             % TODO: make this computation more efficient for large data?
             % wn = exp(2i*pi*fc/chd.fs); % base phasor
