@@ -7,7 +7,7 @@ classdef BFTest < matlab.unittest.TestCase
     properties
         chd % ChannelData
         us % UltrasoundSystemct
-        targ % Target
+        scat % Scatterers
         scanc % Image Scan (Cartesian)
         tscan % Sound-speed Scan
     end
@@ -22,6 +22,7 @@ classdef BFTest < matlab.unittest.TestCase
             'crvfsa', string({"C5-2V",'FSA'}), ...
             'crvvs', string({"C5-2V",'sector'}) ...
             );
+        target_offset = struct('offset', 5e-3, 'centered', 0);
     end
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
@@ -42,14 +43,12 @@ classdef BFTest < matlab.unittest.TestCase
             if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
         end
 
-        function setupQUPSdata(test, xdc_seq_name)
+        function setupQUPSdata(test, xdc_seq_name, target_offset)
             % create point target data with the configuration
 
             % simple point target 30 mm depth
             target_depth = 30e-3;
-            targ = Target('pos', [0;0;target_depth], 'c0', 1500); 
-            targ.rho_scat = 2; % make density scatterers at 2x the density
-            targ.scat_mode = 'ratio';
+            scat = Scatterers('pos', [target_offset;0;target_depth], 'c0', 1500); 
 
             % Choose a transducer
             xdc_name = xdc_seq_name(1);
@@ -63,14 +62,14 @@ classdef BFTest < matlab.unittest.TestCase
             seq_name = xdc_seq_name(2);
             if isa(xdc, 'TransducerArray')
                 switch seq_name
-                    case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
+                    case 'FSA', seq = Sequence('type', 'FSA', 'c0', scat.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
                     case 'Plane-wave'
                         [amin, amax, Na] = deal( -25 ,  25 , 25 );
                         seq = SequenceRadial('type', 'PW', ...
-                            'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
+                            'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', scat.c0); % Plane Wave (PW) sequence
                     case 'Focused'
                         [xmin, xmax, Nx] = deal( -10 ,  10 , 21 );
-                        seq = Sequence('type', 'VS', 'c0', targ.c0, ...
+                        seq = Sequence('type', 'VS', 'c0', scat.c0, ...
                             'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
                             ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
                             );
@@ -80,22 +79,20 @@ classdef BFTest < matlab.unittest.TestCase
                 switch seq_name
                     case 'sector'
                         [amin, amax, Na] = deal( -15 ,  15 , 21 );
-                        seq = SequenceRadial('type', 'VS', 'c0', targ.c0, ...
+                        seq = SequenceRadial('type', 'VS', 'c0', scat.c0, ...
                             'angles', linspace(amin, amax, Na), ...
                             'ranges', norm(xdc.center) + 35e-3, 'apex', xdc.center ...
                             ); % sector scan sequence
                     case 'FSA'
-                        seq = SequenceRadial('type', 'FSA', 'numPulse', xdc.numel, 'c0', targ.c0 ...
-                            , 'apex', xdc.center ... % for convex transducer only!
-                            ); % FSA - convex sequence
+                        seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0); % FSA - convex sequence
                 end
             end
 
             % make a cartesian scan
             % set the scan at the edge of the transducer
             pn = xdc.positions(); % element positions
-            xb = pn(1,[1,end]); % x-limits are the edge of the aperture
-            zb = [-10e-3, 10e-3] + [min(targ.pos(3,:)), max(targ.pos(3,:))]; % z-limits surround the point target
+            xb = [-1 1] .* max(abs([pn(1,[1 end]), scat.pos(1,:)])); % x-limits are the edge of the aperture
+            zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
 
             Npixd = 2^8;
             scanc = ScanCartesian(...
@@ -109,8 +106,8 @@ classdef BFTest < matlab.unittest.TestCase
             if isa(xdc, 'TransducerArray'),
                 scan = scanc; % use the cartesian one
             elseif isa(xdc, 'TransducerConvex') % use with a SequenceRadial!
-                scan = ScanPolar('origin', seq.apex, 'a', -40:0.5:40, ...
-                    'r', norm(seq.apex) + linspace(zb(1), zb(end), Npixd+1)...
+                scan = ScanPolar('origin', xdc.center, 'a', -40:0.5:40, ...
+                    'r', norm(xdc.center) + linspace(zb(1), zb(end), Npixd+1)...
                     ); % R x A scan
                 scan.r(end) = [];
             end
@@ -135,7 +132,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Simulate a point target
             % run on CPU to use spline interpolation
-            chd = gather(greens(us, targ, [1,1], 'interp', 'linear')); % use a Greens function
+            chd = gather(greens(us, scat, [1,1], 'interp', 'linear')); % use a Greens function
 
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
@@ -146,7 +143,7 @@ classdef BFTest < matlab.unittest.TestCase
             % save QUPS objects for this test case
             test.chd    = chd; 
             test.us     = us; 
-            test.targ   = targ;
+            test.scat   = scat;
             test.scanc  = scanc;
             test.tscan  = tscan; 
 
@@ -157,7 +154,7 @@ classdef BFTest < matlab.unittest.TestCase
             % delete data
             test.chd    = [];
             test.us     = []; 
-            test.targ   = [];
+            test.scat   = [];
             test.scanc  = [];
             test.tscan  = []; 
         end
@@ -166,9 +163,9 @@ classdef BFTest < matlab.unittest.TestCase
     % some of these options aren't supported yet.
     properties(TestParameter)
         gdev = getdevs()
-        bf_name = {'DAS','DAS-direct','Eikonal','Adjoint'}
-        prec = struct('double', 'doubleT','single','singleT', 'halfT','halfT');
-        terp = {'nearest', 'linear', 'cubic'};
+        bf_name = {'DAS'}%,'DAS-direct'}%,'Eikonal','Adjoint'}
+        prec = struct('single','singleT')%,'double', 'doubleT','halfT','halfT');
+        terp = {'nearest'}%, 'linear', 'cubic'};
     end
     methods(TestMethodSetup)
         function resetGPU(test), if gpuDeviceCount, gpuDevice([]); end, end
@@ -201,8 +198,8 @@ classdef BFTest < matlab.unittest.TestCase
             % types and compute device.
 
             % unpack
-            [us, targ, scan, scanc, tscan] = deal(...
-                test.us, test.targ, test.us.scan, test.scanc, test.tscan...
+            [us, scat, scan, scanc, tscan] = deal(...
+                test.us, test.scat, test.us.scan, test.scanc, test.tscan...
                 );
 
             % exceptions
@@ -227,10 +224,10 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Beamform 
             switch bf_name
-                case "DAS",         b = bfDAS(us, chd, targ.c0,     'interp', terp);
-                case "DAS-direct",  b =   DAS(us, chd, targ.c0,     'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
-                case "Eikonal", b = bfEikonal(us, chd, targ, tscan, 'interp', terp); % use the eikonal equation
-                case "Adjoint", b = bfAdjoint(us, chd, targ.c0                    ); % use an adjoint matrix method
+                case "DAS",         b = bfDAS(us, chd, scat.c0,     'interp', terp);
+                case "DAS-direct",  b =   DAS(us, chd, scat.c0,     'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
+                case "Eikonal", b = bfEikonal(us, chd, scat, tscan, 'interp', terp); % use the eikonal equation
+                case "Adjoint", b = bfAdjoint(us, chd, scat.c0                    ); % use an adjoint matrix method
             end
 
             % show the image
@@ -241,7 +238,7 @@ classdef BFTest < matlab.unittest.TestCase
             end
 
             % TODO: peak should be ~near~ [0, 30mm] scan - check for this
-            [i,j] = deal(argmin(abs(scan.z - targ.pos(3))), argmin(abs(scan.x - targ.pos(1))));
+            [i,j] = deal(argmin(abs(scan.z - scat.pos(3))), argmin(abs(scan.x - scat.pos(1))));
             [xo,zo] = deal(scan.x(j), scan.z(i)); % ideal max, discrete
             nmax = argmax(b_im, [], 'all', 'linear');
             [X,~,Z] = scan.getImagingGrid();

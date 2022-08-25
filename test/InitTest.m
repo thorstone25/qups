@@ -66,16 +66,13 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(UltrasoundSystem(), IsInstanceOf('UltrasoundSystem'));
         end
-        function inittarg(test)
-            % INITTARG - Assert that a Target and it's subclasses
+        function initmedscat(test)
+            % INITMEDSCAT - Assert that a Scatterers and Mediums
             % initialize without arguments
             
-            % TODO: this will be reorganized so the Medium/Scatterers are
-            % subclasses of Target, at which point the test must be changed
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(Scatterers(), IsInstanceOf('Scatterers'));
             test.assertThat(Medium(), IsInstanceOf('Medium'));
-            test.assertThat(Target(), IsInstanceOf('Target'));
         end
     end
 

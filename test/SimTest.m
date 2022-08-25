@@ -8,7 +8,7 @@ classdef SimTest < matlab.unittest.TestCase
     %#ok<*INUSD> unused inputs
     properties
         us % UltrasoundSystem
-        targ % Target
+        scat % Scatterers
         scanc % Image Scan (Cartesian)
         tscan % Medium Scan
         med % Medium
@@ -72,9 +72,9 @@ classdef SimTest < matlab.unittest.TestCase
 
             % simple point target 30 mm depth
             target_depth = 30e-3;
-            targ = Target('pos', [0;0;target_depth], 'c0', 1500); 
-            targ.rho_scat = 2; % make density scatterers at 2x the density
-            targ.scat_mode = 'ratio';
+            scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500);
+            rho0 = 1000; % ambient density
+            rho_scat = 2; % make density scatterers at 2x the density
 
             % Choose a transducer
             xdc_name = xdc_seq_name(1);
@@ -89,14 +89,14 @@ classdef SimTest < matlab.unittest.TestCase
             seq_name = xdc_seq_name(2);
             if isa(xdc, 'TransducerArray')
                 switch seq_name
-                    case 'FSA', seq = Sequence('type', 'FSA', 'c0', targ.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
+                    case 'FSA', seq = Sequence('type', 'FSA', 'c0', scat.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
                     case 'Plane-wave'
                         [amin, amax, Na] = deal( -25 ,  25 , 3 );
                         seq = SequenceRadial('type', 'PW', ...
-                            'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', targ.c0); % Plane Wave (PW) sequence
+                            'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', scat.c0); % Plane Wave (PW) sequence
                     case 'Focused'
                         [xmin, xmax, Nx] = deal( -10 ,  10 , 3 );
-                        seq = Sequence('type', 'VS', 'c0', targ.c0, ...
+                        seq = Sequence('type', 'VS', 'c0', scat.c0, ...
                             'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
                             ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
                             );
@@ -106,13 +106,12 @@ classdef SimTest < matlab.unittest.TestCase
                 switch seq_name
                     case 'sector'
                         [amin, amax, Na] = deal( -40 ,  40 , 3 );
-                        seq = SequenceRadial('type', 'VS', 'c0', targ.c0, ...
+                        seq = SequenceRadial('type', 'VS', 'c0', scat.c0, ...
                             'angles', linspace(amin, amax, Na), ...
                             'ranges', norm(xdc.center) + target_depth, 'apex', xdc.center ...
                             ); % sector scan sequence
                     case 'FSA'
-                        seq = SequenceRadial('type', 'FSA', 'numPulse', xdc.numel, 'c0', targ.c0 ...
-                            , 'apex', xdc.center ... % for convex transducer only!
+                        seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0 ...
                             ); % FSA - convex sequence
                 end
             end
@@ -121,7 +120,7 @@ classdef SimTest < matlab.unittest.TestCase
             % set the scan at the edge of the transducer
             pn = xdc.positions(); % element positions
             xb = pn(1,[1,end]); % x-limits are the edge of the aperture
-            zb = [-10e-3, 10e-3] + [min(targ.pos(3,:)), max(targ.pos(3,:))]; % z-limits surround the point target
+            zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
 
             Npixd = 2^8;
             scanc = ScanCartesian(...
@@ -135,8 +134,8 @@ classdef SimTest < matlab.unittest.TestCase
             if isa(xdc, 'TransducerArray'),
                 scan = scanc; % use the cartesian one
             elseif isa(xdc, 'TransducerConvex') % use with a SequenceRadial!
-                scan = ScanPolar('origin', seq.apex, 'a', -40:0.5:40, ...
-                    'r', norm(seq.apex) + linspace(zb(1), zb(end), Npixd+1)...
+                scan = ScanPolar('origin', xdc.center, 'a', -40:0.5:40, ...
+                    'r', norm(xdc.center) + linspace(zb(1), zb(end), Npixd+1)...
                     ); % R x A scan
                 scan.r(end) = [];
             end
@@ -151,8 +150,8 @@ classdef SimTest < matlab.unittest.TestCase
             % (this logic will later be implemented in a class)
             s_rad = max([tscan.dx, tscan.dz]); %, 260e-6); % scatterer radius
             nextdim = @(p) ndims(p) + 1;
-            ifun = @(p) any(vecnorm(p - swapdim(targ.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p));
-            med = Medium('c0', targ.c0, 'rho0', targ.rho0, 'pertreg', {{ifun, [targ.c0*targ.c_scat, targ.rho0*targ.rho_scat]}});
+            ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p));
+            med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0 * rho_scat]}});
 
             % Construct an UltrasoundSystem object, combining all of these properties
             us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
@@ -166,12 +165,12 @@ classdef SimTest < matlab.unittest.TestCase
             % length of the signal go to 0, causing problems for interpolators
 
             % point per wavelength - aim for >2 for a simulation
-            ppw = targ.c0/xdc.fc/min([tscan.dx, tscan.dz]);
+            ppw = scat.c0/xdc.fc/min([tscan.dx, tscan.dz]);
             if ppw < 2, warning("Fewer than 2 points per wavelength (" + ppw + ")."); end
 
             % save QUPS objects for this test case
             test.us = us; 
-            test.targ = targ;
+            test.scat = scat;
             test.tscan = tscan; 
             test.med = med;
 
@@ -220,8 +219,8 @@ classdef SimTest < matlab.unittest.TestCase
             % types and compute device.
 
             % unpack
-            [us, targ, med, tscan, clu] = deal(...
-                test.us, test.targ, test.med, test.tscan, test.clu ...
+            [us, scat, med, tscan, clu] = deal(...
+                test.us, test.scat, test.med, test.tscan, test.clu ...
                 );
 
             % k-Wave doesn't use interpolation: pass on all but one option
@@ -236,10 +235,10 @@ classdef SimTest < matlab.unittest.TestCase
             % simulate based on the simulation routine
             opts = {'interp', terp, 'parenv', clu};
             switch sim_name
-                case 'FieldII',       chd = calc_scat_all   (us, targ, [1,1], opts{:}); % use FieldII,
-                case 'FieldII_multi', chd = calc_scat_multi (us, targ, [1,1], opts{:}); % use FieldII,
-                case 'SIMUS'  ,       chd = simus           (us, targ, 'periods', 1, 'dims', 3, opts{:}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-                case 'Greens' ,       chd = greens          (us, targ, [1,1], opts{1:2});
+                case 'FieldII',       chd = calc_scat_all   (us, scat, [1,1], opts{:}); % use FieldII,
+                case 'FieldII_multi', chd = calc_scat_multi (us, scat, [1,1], opts{:}); % use FieldII,
+                case 'SIMUS'  ,       chd = simus           (us, scat, 'periods', 1, 'dims', 3, opts{:}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
+                case 'Greens' ,       chd = greens          (us, scat, [1,1], opts{1:2});
                 case 'kWave',         if(gpuDeviceCount) && (clu == 0 || isa(clu, 'parallel.Cluster')), dtype = 'gpuArray-double'; else, dtype = 'double'; end % data type for k-Wave
                                       chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype); % run locally, and use an FFT friendly PML size
                 otherwise, warning('Simulator not recognized'); return;
@@ -250,10 +249,10 @@ classdef SimTest < matlab.unittest.TestCase
 
             % truncate the data if we observed the transmit pulse
             if sim_name == "kWave",
-                wind = 2*vecnorm(targ.pos) / targ.c0; % 2-way propagation time - use as a search window size
+                wind = 2*vecnorm(scat.pos) / scat.c0; % 2-way propagation time - use as a search window size
                 buf = 2*us.xdc.impulse.duration ... 2-way impulse
                     + range(us.sequence.delays(us.tx), 'all') ... delays
-                    + vecnorm(range(us.xdc.positions,2),2,1) ./ targ.c0 ... cross-talk
+                    + vecnorm(range(us.xdc.positions,2),2,1) ./ scat.c0 ... cross-talk
                     ... + 10e-6 ... % heuristic for things to calm down
                     ;
                 tfilt = chd.t0 + buf + wind/2 < chd.time & chd.time < chd.t0 + buf + 3/2*wind; % 40us window
@@ -280,7 +279,7 @@ classdef SimTest < matlab.unittest.TestCase
                 otherwise, error("Unrecognized sequence type " + us.sequence.type + ".");
             end
             switch sim_name
-                case "kWave", tol = 10*(tscan.dz / targ.c0); % within 10 samples of the true location
+                case "kWave", tol = 10*(tscan.dz / scat.c0); % within 10 samples of the true location
                 case "SIMUS", tol = 1/us.xdc.fc; % SIMUS does not have calibrated phase: be within 1 wavelength of the true location
                 otherwise,    tol = 1/chd.fs; % must be accurate down to the sample
             end
@@ -305,7 +304,7 @@ classdef SimTest < matlab.unittest.TestCase
             switch terp, case "cubic", return; end
 
             % unpack
-            [us, targ, clu] = deal(test.us, test.targ, test.clu);
+            [us, scat, clu] = deal(test.us, test.scat, test.clu);
 
             % test definitions
             import matlab.unittest.constraints.IsEqualTo;
@@ -317,11 +316,11 @@ classdef SimTest < matlab.unittest.TestCase
             switch sim_name
                 case 'Greens' ,
                     us.sequence.pulse.fun = @(t) single(t==0); % implicit cast to single type
-                    chd0 = gather(greens(us, targ, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
+                    chd0 = gather(greens(us, scat, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
                     [xo, to] = deal(chd0.data, chd0.t0);
                     for usetall = [true, false]
                         for dev = [0 -1]
-                            chd = doubleT(gather(greens(us, targ, [1,1], opts{1:2}, 'device', dev , 'tall', usetall)));
+                            chd = doubleT(gather(greens(us, scat, [1,1], opts{1:2}, 'device', dev , 'tall', usetall)));
                             [x, t] = deal(gather(chd.data), gather(chd.t0));
                             test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
                                 "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.sequence.type + " sequence."  ...
