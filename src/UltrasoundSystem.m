@@ -59,7 +59,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         tmp_folder (1,1) string = mktempdir() % temporary folder for compiled binaries
     end
         
-    % get/set & constructor
+    % constructor/destructor
     methods
         % constructor
         function self = UltrasoundSystem(kwargs, opts)
@@ -185,6 +185,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
         end
     end
+    
+    % overloading methods
     methods(Access=protected)
         % copy 
         function other = copyElement(self)
@@ -223,6 +225,66 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % ensure number of divisions is odd
             sub_div = sub_div + 1 - rem(sub_div, 2);
+        end
+    end
+
+    % display
+    methods
+        function h = plot(self, ax, im_args)
+            % PLOT - Plot the geometry of the UltrasoundSystem 
+            %
+            % h = PLOT(self) plots the UltrasoundSystem self by plotting 
+            % the transmit and receive transducer(s), the imaging pixels,
+            % and representation of the transmit sequence on the same axes.
+            %
+            % h = PLOT(self, ax) plots on the axes ax. The default is the
+            % current axes returned by gca.
+            %
+            % h = PLOT(..., Name, Value, ...) passes following arguments to
+            % the call to plot for each of the objects i.e. to the plot
+            % function for self.scan, self.sequence, and self.tx (and
+            % self.rx if necessary).
+            %
+            % Example:
+            % % Create a default system using a focused transmit
+            % xdc = TransducerArray();
+            % us = UltrasoundSystem('xdc', xdc);
+            % us.sequence.type = 'VS';
+            % us.sequence.focus = [0;0;30e-3] + ...
+            % linspace(-xdc.numel/4, xdc.numel/4, xdc.numel/2+1) .* [xdc.pitch;0;0];
+            %
+            % % plot it
+            % figure;
+            % h = plot(us, 'LineWidth', 2);
+            %
+            % See also PLOT ULTRASOUNDSYSTEM/XDC ULTRASOUNDSYSTEM/SCAN ULTRASOUNDSYSTEM/SEQUENCE
+
+            arguments
+                self UltrasoundSystem
+                ax (1,1) matlab.graphics.axis.Axes = gca;
+            end
+            arguments
+                im_args.?matlab.graphics.primitive.Line
+            end
+
+            hold(ax, 'on');
+            set(ax, 'ydir', 'reverse');
+            title(ax, 'Geometry');
+            plargs = struct2nvpair(im_args);
+            if self.tx == self.rx
+                hxdc = plot(self.xdc, ax, 'r+', 'DisplayName', 'Elements', plargs{:}); % elements
+            else
+                htx = plot(self.tx, ax, 'b+', 'DisplayName', 'Transmit Elements', plargs{:}); % tx elements
+                hrx = plot(self.rx, ax, 'r+', 'DisplayName', 'Receive Elements', plargs{:}); % rx elements
+                hxdc = [htx, hrx];
+            end
+            hps = plot(self.scan, 'w.', 'DisplayName', 'Image'); % the imaging points
+            switch self.sequence.type % show the transmit sequence
+                case 'PW', hseq = plot(self.sequence, ax, 3e-2, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % scale the vectors for the plot
+                otherwise, hseq = plot(self.sequence, ax, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % plot focal points, if they exist
+            end
+            h = [hxdc, hps, hseq];
+            legend(ax, h);
         end
     end
 
