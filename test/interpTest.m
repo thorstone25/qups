@@ -1,5 +1,5 @@
 classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
-    % KERNTEST - Test the compte kernels within QUPS
+    % KERNTEST - Test the compute kernels within QUPS
     %
     % This class test the various compute kernels within QUPS
 
@@ -32,11 +32,18 @@ classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
         terp = {'cubic', 'nearest', 'linear'}; % overlapping methods
         dsum = {[], [2], [3,4], 6} % summation dimensions
         wvecd = {[], 3, [3,4]} % different outer-product weights dimensions
-        type = {"double", "single"}%, "halfT"} % different precisions
-        dev = {'CPU'}%, 'GPU'} % gpu/cpu
+        type = {'double', 'single', 'halfT'} % different precisions
+        dev = {'CPU', 'GPU'} % gpu/cpu
     end
     methods(Test, ParameterCombination = 'exhaustive')
         function wsinterpdTest(test,dsize,terp,dsum,wvecd,type,dev)
+
+            if type == "halfT"
+                test.assumeTrue(logical(exist('halfT', 'class')));
+            end
+    	    if dev == "GPU"
+        		test.assumeTrue(gpuDeviceCount > 0);
+    	    end
 
             % get sizing
             tmp = num2cell(dsize);
@@ -86,8 +93,8 @@ classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
             tol = 1e2; 
             if terp == "cubic"
             switch type % needs much more room because the algs aren't the same
-                case "double", tol = tol * 1e10; 
-                case "single", tol = tol * 1e2;
+                case "double", tol = tol * 1e16; 
+                case "single", tol = tol * 1e8;
                 case "halfT",  tol = tol * 1;
             end
             end
