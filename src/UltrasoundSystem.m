@@ -1877,7 +1877,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 c0 {mustBeNumeric} = self.sequence.c0
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
-                kwargs.apod {mustBeNumeric} = 1
+                kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
@@ -2108,7 +2108,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd ChannelData
                 c0 (:,:,:) double = self.sequence.c0
                 kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
-                kwargs.apod {mustBeNumeric} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
+                kwargs.apod {mustBeNumericOrLogical} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
                 kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
                 kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
@@ -2370,7 +2370,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % defaults
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
-                kwargs.apod {mustBeNumeric} = 1;
+                kwargs.apod {mustBeNumericOrLogical} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
@@ -2572,7 +2572,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd ChannelData
                 c0 (:,:,:) double = self.sequence.c0
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
-                kwargs.apod {mustBeNumeric} = 1
+                kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
