@@ -281,7 +281,7 @@ classdef SimTest < matlab.unittest.TestCase
             switch sim_name
                 case "kWave", tol = 10*(tscan.dz / scat.c0); % within 10 samples of the true location
                 case "SIMUS", tol = 1/us.xdc.fc; % SIMUS does not have calibrated phase: be within 1 wavelength of the true location
-                otherwise,    tol = 1/chd.fs; % must be accurate down to the sample
+                otherwise,    tol = 1.1/chd.fs; % must be accurate down to the sample
             end
             
             % test
@@ -347,8 +347,6 @@ classdef SimTest < matlab.unittest.TestCase
             % computational effort / time 
             try addpath(fullfile(SimTest.proj_folder,'bin')); end %#ok<TRYNC>
         end
-
-
     end
 end
 
