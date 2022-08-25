@@ -119,7 +119,7 @@ classdef BFTest < matlab.unittest.TestCase
             end
 
             % Construct an UltrasoundSystem object, combining all of these properties
-            us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
+            us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6, 'recompile', false);
 
             % Make the transducer impulse tighter
             us.xdc.numel = 64; % reduce the number of elements
@@ -145,7 +145,7 @@ classdef BFTest < matlab.unittest.TestCase
             test.us     = us; 
             test.scat   = scat;
             test.scanc  = scanc;
-            test.tscan  = tscan; 
+            test.tscan  = tscan;
 
         end
     end
@@ -163,9 +163,9 @@ classdef BFTest < matlab.unittest.TestCase
     % some of these options aren't supported yet.
     properties(TestParameter)
         gdev = getdevs()
-        bf_name = {'DAS'}%,'DAS-direct'}%,'Eikonal','Adjoint'}
-        prec = struct('single','singleT')%,'double', 'doubleT','halfT','halfT');
-        terp = {'nearest'}%, 'linear', 'cubic'};
+        bf_name = {'DAS','DAS-direct','Eikonal','Adjoint'}
+        prec = struct('single','singleT','double', 'doubleT','halfT','halfT');
+        terp = {'nearest', 'linear', 'cubic'};
     end
     methods(TestMethodSetup)
         function resetGPU(test), if gpuDeviceCount, gpuDevice([]); end, end
@@ -202,6 +202,9 @@ classdef BFTest < matlab.unittest.TestCase
                 test.us, test.scat, test.us.scan, test.scanc, test.tscan...
                 );
 
+            % make an equivalent medium - assume density scatterers
+            med = Medium('c0', scat.c0);
+
             % exceptions
             % for the Eikonal beamformer, pass if not given FSA delays
             if bf_name == "Eikonal" && us.sequence.type ~= "FSA", return; end
@@ -224,9 +227,9 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Beamform 
             switch bf_name
-                case "DAS",         b = bfDAS(us, chd, scat.c0,     'interp', terp);
-                case "DAS-direct",  b =   DAS(us, chd, scat.c0,     'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
-                case "Eikonal", b = bfEikonal(us, chd, scat, tscan, 'interp', terp); % use the eikonal equation
+                case "DAS",         b = bfDAS(us, chd, scat.c0,    'interp', terp);
+                case "DAS-direct",  b =   DAS(us, chd, scat.c0,    'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
+                case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp); % use the eikonal equation
                 case "Adjoint", b = bfAdjoint(us, chd, scat.c0                    ); % use an adjoint matrix method
             end
 
