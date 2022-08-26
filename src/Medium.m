@@ -63,6 +63,8 @@ classdef Medium < matlab.mixin.Copyable
     end
     properties(Hidden)
         pscale (1,1) double = 1 % scale the distances of the points
+        cscale (1,1) double = 1 % scale the sound speed in the medium
+        rscale (1,1) double = 1 % scale the density of the medium
     end
     methods
         % constructor
@@ -160,8 +162,8 @@ classdef Medium < matlab.mixin.Copyable
             % output)
             nms = ["c", "rho", "BoA", "alpha"]; % property names
             prps(1,:) = cellstr(nms);
-            [prps{2,:}] = getPropertyMap(self, pts .* self.pscale); % values
-            prps = struct(prps{:}); %#ok<NASGU> % make a struct for easier output mapping
+            [prps{2,:}] = getPropertyMap(self, pts); % values, positions are scaled
+            prps = struct(prps{:});  %#ok<NASGU> % make a struct for easier output mapping
 
             % remap outputs based on prop input
             % TODO: there's gotta be a better way to get dynamic variables
@@ -179,7 +181,15 @@ classdef Medium < matlab.mixin.Copyable
             % SCALE - Scale the units of the Medium
             %
             % med = SCALE(med, 'dist', pscale) scales the values of
-            % distance by pscale.
+            % distance by pscale. This includes both the input units and
+            % the output units i.e. the sound speed and density are scaled
+            % as well.
+            %
+            % med = SCALE(med, 'time', tscale) scales the values of
+            % time by tscale.
+            %
+            % med = SCALE(med, 'mass', mscale) scales the values of
+            % mass by mscale.
             %
             % Example:
             % % Define a system in meters, seconds
@@ -206,12 +216,34 @@ classdef Medium < matlab.mixin.Copyable
             arguments
                 med Medium
                 kwargs.dist (1,1) double
+                kwargs.time (1,1) double
+                kwargs.mass (1,1) double
             end
             med = copy(med);
-            med.pscale = med.pscale ./ kwargs.dist;
+            
+            % compute cumulative scaling
+            cscale_ = 1; % speed -> dist / time
+            rscale_ = 1; % density -> mass / dist^3
+            % TODO: scale alpha0? -> time / dist ?
+            
+            if isfield(kwargs, 'dist')
+                cscale_ = cscale_ * kwargs.dist;
+                rscale_ = rscale_ / (kwargs.dist ^ 3);
+                med.pscale = med.pscale ./ kwargs.dist; % pos -> dist
+            end
+            if isfield(kwargs, 'time')
+                cscale_ = cscale_ / kwargs.time;
+            end
+            if isfield(kwargs, 'mass')
+                rscale_ = rscale_ * kwargs.mass;
+            end
+
+            % apply scaling
+            med.cscale = med.cscale * cscale_;
+            med.rscale = med.rscale * rscale_;
+            med.c0 = med.c0 * cscale_;
+            med.rho0 = med.rho0 * rscale_;
         end
-
-
     end
 
     methods(Access=private)
@@ -220,7 +252,7 @@ classdef Medium < matlab.mixin.Copyable
             
             
             assert(size(points,1) == 3) % points is 3 x N x ...
-            
+
             % preallocate output matrix
             sz = size(points);
             sz(1) = 1; % functions collapse points in dimension 1
@@ -237,12 +269,12 @@ classdef Medium < matlab.mixin.Copyable
                     if isa(self.pertreg{reg}, 'cell') && numel(self.pertreg{reg}) == 2 % this is a masked region
                         % get points within region
                         fun = self.pertreg{reg}{1};
-                        ind = gather(fun(points));
+                        ind = gather(fun(self.pscale * points));
                         
                         % modify the property
                         nfout = length(self.pertreg{reg}{2});
-                        if nfout >= 1, c  (ind)    = self.pertreg{reg}{2}(1); end
-                        if nfout >= 2, rho(ind)    = self.pertreg{reg}{2}(2); end
+                        if nfout >= 1, c  (ind)    = self.cscale * self.pertreg{reg}{2}(1); end
+                        if nfout >= 2, rho(ind)    = self.rscale * self.pertreg{reg}{2}(2); end
                         if nfout >= 3, BoA(ind)    = self.pertreg{reg}{2}(3); end
                         if nfout >= 4, alpha(ind)  = self.pertreg{reg}{2}(4); end
 
@@ -257,7 +289,7 @@ classdef Medium < matlab.mixin.Copyable
                         for nfout = 4:-1:1
                             out = cell(1, nfout);
                             try
-                                [out{:}] = fun(points);
+                                [out{:}] = fun(self.pscale * points);
                                 break;
                             catch
                             end
@@ -272,8 +304,8 @@ classdef Medium < matlab.mixin.Copyable
                         
                         % set the value for valid points
                         ind = cellfun(@isnan, {c_r, rho_r, BoA_r, alpha_r}, 'UniformOutput', false);
-                        if nfout >= 1, c(~ind{1})      = c_r(~ind{1});      end
-                        if nfout >= 2, rho(~ind{2})    = rho_r(~ind{2});    end
+                        if nfout >= 1, c(~ind{1})      = self.cscale * c_r(~ind{1});      end
+                        if nfout >= 2, rho(~ind{2})    = self.rscale * rho_r(~ind{2});    end
                         if nfout >= 3, BoA(~ind{3})    = BoA_r(~ind{3});    end
                         if nfout >= 4, alpha(~ind{4})  = alpha_r(~ind{4});  end
                     end
