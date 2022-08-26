@@ -20,7 +20,7 @@ classdef Waveform < matlab.mixin.Copyable
         % at those points in time.
         %
         % See also FUNCTION_HANDLE
-        fun function_handle = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
+        fun {mustBeA(fun, {'function_handle', 'griddedInterpolant'})} = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
         % WAVEFORM/T0 - Start time of the Waveform
         %
         % T0 defines the start of the Waveform. All samples prior to this
