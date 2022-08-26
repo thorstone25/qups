@@ -12,7 +12,7 @@
 % See also TRANSDUCER SEQUENCE
 classdef Waveform < matlab.mixin.Copyable
     
-    properties(Access=public)
+    properties
         % WAVEFORM/FUN - Function defining the waveform
         %
         % FUN is a function_handle to a function that accepts an ND-array 
@@ -53,7 +53,7 @@ classdef Waveform < matlab.mixin.Copyable
         %
         % See also WAVEFORM/FS WAVEFORM/TIME WAVEFORM/TEND WAVEFORM/T0
 
-        duration % non-zero duration of the signal
+        duration (1,1) % non-zero duration of the signal
         % WAVEFORM/DT - sampling interval
         %
         % The sampling interval is the inverse of the sampling frequency 
@@ -69,7 +69,7 @@ classdef Waveform < matlab.mixin.Copyable
         % by Waveform/time.
         % See also WAVEFORM/TIME WAVEFORM/FS
 
-        samples % Waveform samples
+        samples (:,1) {mustBeNumeric} % Waveform samples
 
         % WAVEFORM/TIME - Waveform time axis
         %
@@ -79,7 +79,7 @@ classdef Waveform < matlab.mixin.Copyable
         %
         % See also WAVEFORM/FS
 
-        time    % Waveform sample times
+        time (:,1) {mustBeNumeric}    % Waveform sample times
     end
     properties(Hidden)
         tscale (1,1) double = 1; % scaling factor
@@ -98,7 +98,7 @@ classdef Waveform < matlab.mixin.Copyable
     end
     
     % constructor / actions
-    methods(Access=public)
+    methods
         function wv = Waveform(kwargs)
             % WAVEFORM - Waveform constructor
             % 
@@ -141,7 +141,7 @@ classdef Waveform < matlab.mixin.Copyable
             % 
             % See also SEQUENCE TRANSDUCER
             arguments
-                kwargs.fun function_handle
+                kwargs.fun {mustBeA(kwargs.fun, {'function_handle', 'griddedInterpolant'})}
                 kwargs.t0 (1,1) {mustBeNumeric}
                 kwargs.tend (1,1) {mustBeNumeric}
                 kwargs.t (:,1) {mustBeNumeric}
@@ -371,17 +371,9 @@ classdef Waveform < matlab.mixin.Copyable
         end
     end
     
-    % get/set methods
-    %{
-    methods(Access=public)
-        function t = getSampleTimes(wv, fs)
-            wv.fs = fs;
-            t = wv.time;
-        end        
-    end    
-    %}
     methods
         function s = get.samples(wv), s = wv.sample(wv.time); end
+        function set.samples(wv, s), wv.fun = griddedInterpolant(wv.time, s, 'cubic', 'none'); end
         function dur = get.duration(wv), dur = wv.tend - wv.t0; end
         function t = get.time(wv)
             if wv.T >= wv.Tlim, error("Time axis too large to compute. If more than " + wv.Tlim + " values are required, increase the 'Tlim' property."); end
