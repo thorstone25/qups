@@ -1442,7 +1442,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
     
-    % k-Wave calls (new)
+    % k-Wave calls
     methods
         function [chd, job] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
@@ -1494,12 +1494,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % simulations can be recalled later from the job reference.
             % 
             % [chd, job] = KSPACEFIRSTORDER(..., 'parenv', clu) also 
-            % returns a parallel.Job job with a function to read the output
-            % of the Job into a ChannelData object. If these outputs are 
-            % requested, chd is  empty and the job is not submitted. The 
-            % job can be submitted with the submit function. When the job 
-            % has completed, it can be read into a ChannelData object with 
-            % job.UserData.readfun(job).
+            % returns a parallel.Job job. If these outputs are requested,
+            % chd is empty and the job is not submitted. The job can be
+            % submitted with the submit function. When the job has
+            % completed, it can be read into a ChannelData object with
+            % UltrasoundSystem.readKspaceFirstOrderJob(). 
             %
             % chd = KSPACEFIRSTORDER(..., 'parenv', 0) avoids using a
             % parallel.Cluster or parallel.Pool. 
@@ -1539,7 +1538,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % figure;
             % imagesc(real(chd));
             % 
-            % See also ULTRASOUNDSYSTEM/FULLWAVESIM
+            % See also ULTRASOUNDSYSTEM/FULLWAVESIM ULTRASOUNDSYSTEM.READKSPACEFIRSTORDERJOB
             arguments % required arguments
                 self (1,1) UltrasoundSystem
                 med Medium
@@ -1836,27 +1835,41 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % add simulation and processing task
                 job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim], 'CaptureDiary',true);
 
-                % function to read into a ChannelData object
-                % reshape and convole with receive impulse-response
-                % we can make this a lambda because we only
-                % have one output per task
-                job.UserData = struct('t0', gather(t0), 'fs', gather(fs_));
-                job.UserData.readfun = @(job) ...
-                    ChannelData('t0', job.UserData.t0, 'fs', job.UserData.fs, 'data', ...
-                    diff(cell2mat(shiftdim(reshape([job.Tasks.OutputArguments], [], 2), -2)),1,4) ...
-                    );
+                % create an aliased tag with th start time and sampling
+                % frequency so that it can be recalled later 
+                tsz = size(t0, 1:4);
+                v = double(gather([fs_, tsz, t0]));
+                job.Tag = char(typecast(v, 'uint8'));
 
                 % if no job output was requested, run the job and
                 % create the ChannelData
                 if nargout < 2,
                     submit(job);
                     wait(job);
-                    chd = job.UserData.readfun(job);
+                    chd = UltrasoundSystem.readKspaceFirstOrderJob(job);
 
                     % TODO: make reports optional
                     fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
                 end
             end
+        end
+    end
+    methods(Static)
+        function chd = readKspaceFirstOrderJob(job)
+            % READKSPACEFIRSTORDERJOB - Read a kspaceFirstOrder job
+            %
+            % chd = READKSPACEFIRSTORDERJOB(job) reads the parallel.Job job
+            % into a ChannelData object chd. The job must have been
+            % launched via kspaceFirstOrder.
+            % 
+            % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDER
+            arguments, job (1,1) parallel.Job, end
+            v = typecast(uint8(job.Tag), 'double'); % aliased data
+            [fs_, tsz, t0] = deal(v(1), v(2:5), v(6:end)); 
+            x = cell2mat(reshape([job.Tasks.OutputArguments],1,1,[],2));
+            chd = ChannelData( ...
+                't0', reshape(t0,tsz), 'fs', fs_, 'data', diff(x,1,4) ...
+                );
         end
     end
     
