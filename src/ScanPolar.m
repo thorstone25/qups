@@ -11,9 +11,9 @@
 % See also SCAN SCANCARTESIAN
 classdef ScanPolar < Scan
     properties
-        r = 1e-3*linspace(0,40,128)   % image range values (m)
+        r = 1e-3*linspace(0,40,128)   % image range values
         a = linspace(-45,45,128)      % image angle values (deg)
-        y = 0                         % image elevation values (m)
+        y = 0                         % image elevation values
         order = 'RAY';                % order of the dimensions
         origin = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
@@ -21,20 +21,19 @@ classdef ScanPolar < Scan
     % dependent parameters
     properties(Dependent)
         size                % size of the final image
-        rb                  % image bounds in range (m)
-        ab                  % image bounds in angle (deg)
-        yb                  % image bounds in elevation (m)
         nPix                % number of pixels in the imaging grid
+        rb                  % image bounds in range
+        ab                  % image bounds in angle (deg)
+        yb                  % image bounds in elevation
+        dr                  % step size in range if linearly spaced
+        da                  % step size in angle if linearly spaced
+        dy                  % step size in elevation if linearly spaced
     end
     
     properties(Dependent, Hidden)
         nr                  % number of samples in range
         na                  % number of samples in angle
         ny                  % number of samples in elevation
-        res                 % resolution in all coordinates
-        resr                % resolution in range (m)
-        resa                % resolution in angle (deg)
-        resy                % resolution in elevation (m)
     end
     
     % get/set & constructor
@@ -247,6 +246,7 @@ classdef ScanPolar < Scan
             sz = sz(self.getPermuteOrder());            
         end
         function set.size(self, sz)
+            sz(numel(sz)+1:3) = 1; % send omitted dimensions to size 1
             iord = arrayfun(@(c) find(c == self.order), 'RAY');
             [self.nr, self.na, self.ny] = deal(sz(iord(1)), sz(iord(2)), sz(iord(3)));
         end
@@ -266,30 +266,17 @@ classdef ScanPolar < Scan
         function set.rb(self, b), self.r = linspace(min(b), max(b), self.nr); end
         function set.ab(self, b), self.a = linspace(min(b), max(b), self.na); end
         function set.yb(self, b), self.y = linspace(min(b), max(b), self.ny); end
-        function rlim(self, rb), self.rb = rb; end
-        % set boundaries in r
-        function alim(self, ab), self.ab = ab; end
-        % set boundaries in a
-        function ylim(self, yb), self.yb = yb; end
-        % set boundaries in y
 
-        % get resolution
-        function r = get.resr(self), r = diff(self.rb) / (self.nr - 1); end
-        function r = get.resa(self), r = diff(self.ab) / (self.na - 1); end
-        function r = get.resy(self), r = diff(self.yb) / (self.ny - 1); end
-        function r = get.res(self), r = cat(1, self.resr, self.resa, self.resy); end
+        % get step size - Inf for scalar axes, NaN if not regularly spaced
+        function d = get.dr(self), d = uniquetol(diff(self.r)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.da(self), d = uniquetol(diff(self.a)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dy(self), d = uniquetol(diff(self.y)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
-        % set resolution -> change number of points
-        function set.resr(self,r)
-            if ~isnan(r), self.nr = ceil(diff(self.rb) / r) + 1; end
-        end
-        function set.resa(self,r)
-            if ~isnan(r), self.na = ceil(diff(self.ab) / r) + 1; end
-        end
-        function set.resy(self,r)
-            if ~isnan(r), self.ny = ceil(diff(self.yb) / r) + 1; end
-        end
-        function set.res(self,r), [self.resr, self.resa, self.resy] = deal(r(1), r(2), r(3)); end
+        % set step size - preserve/expand the image bounds, but gaurantee
+        % spacing - also gaurantee passes through zero
+        function set.dr(self, dr), if isinf(dr), self.r = 0; else, self.r = dr * (floor(min(self.r) / dr) : ceil(max(self.r) / dr)); end, end
+        function set.da(self, da), if isinf(da), self.a = 0; else, self.a = da * (floor(min(self.a) / da) : ceil(max(self.a) / da)); end, end
+        function set.dy(self, dy), if isinf(dy), self.y = 0; else, self.y = dy * (floor(min(self.y) / dy) : ceil(max(self.y) / dy)); end, end
     end
 
     % overloads
