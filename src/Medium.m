@@ -61,7 +61,9 @@ classdef Medium < matlab.mixin.Copyable
         % imagesc(med, scan, ["c", "rho"]);
         pertreg (1,:) cell = cell.empty([1,0]); % perturbation regions
     end
-    
+    properties(Hidden)
+        pscale (1,1) double = 1 % scale the distances of the points
+    end
     methods
         % constructor
         function self = Medium(kwargs)
@@ -158,7 +160,7 @@ classdef Medium < matlab.mixin.Copyable
             % output)
             nms = ["c", "rho", "BoA", "alpha"]; % property names
             prps(1,:) = cellstr(nms);
-            [prps{2,:}] = getPropertyMap(self, pts); % values
+            [prps{2,:}] = getPropertyMap(self, pts .* self.pscale); % values
             prps = struct(prps{:}); %#ok<NASGU> % make a struct for easier output mapping
 
             % remap outputs based on prop input
@@ -172,6 +174,44 @@ classdef Medium < matlab.mixin.Copyable
                 for n = nms, eval(n + "=prps.('" + n + "');"); end
             end
         end
+    
+        function med = scale(med, kwargs)
+            % SCALE - Scale the units of the Medium
+            %
+            % med = SCALE(med, 'dist', pscale) scales the values of
+            % distance by pscale.
+            %
+            % Example:
+            % % Define a system in meters, seconds
+            % scan = ScanCartesian(...
+            %   'x', linspace(-20e-3, 20e-3, 1+40*2^3), ...
+            %   'z', linspace(-02e-3, 38e-3, 1+40*2^3)  ...
+            % );
+            % c = rand(scan.size);
+            % rho = rand(scan.size);
+            % med = Medium.Sampled(scan, c, rho); % defined in meters
+            %
+            % % Scale the values to millimiters
+            % med_mm = scale(med, 'dist', 1e3);
+            % scan_mm = scale(scan, 'dist', 1e3);
+            %
+            % % Display the Mediums
+            % figure;
+            % subplot(1,2,1);
+            % imagesc(med, scan);
+            % subplot(1,2,2);
+            % imagesc(med_mm, scan_mm);
+            %
+            %
+            arguments
+                med Medium
+                kwargs.dist (1,1) double
+            end
+            med = copy(med);
+            med.pscale = med.pscale ./ kwargs.dist;
+        end
+
+
     end
 
     methods(Access=private)
