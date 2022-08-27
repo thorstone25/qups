@@ -271,6 +271,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             set(ax, 'ydir', 'reverse');
             title(ax, 'Geometry');
             plargs = struct2nvpair(im_args);
+            hps = plot(self.scan, 'm.', 'DisplayName', 'Image', plargs{:}); % the imaging points
             if self.tx == self.rx
                 hxdc = plot(self.xdc, ax, 'r+', 'DisplayName', 'Elements', plargs{:}); % elements
             else
@@ -278,13 +279,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 hrx = plot(self.rx, ax, 'r+', 'DisplayName', 'Receive Elements', plargs{:}); % rx elements
                 hxdc = [htx, hrx];
             end
-            hps = plot(self.scan, 'w.', 'DisplayName', 'Image'); % the imaging points
             switch self.sequence.type % show the transmit sequence
                 case 'PW', hseq = plot(self.sequence, ax, 3e-2, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % scale the vectors for the plot
                 otherwise, hseq = plot(self.sequence, ax, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % plot focal points, if they exist
             end
             h = [hxdc, hps, hseq];
             legend(ax, h);
+            grid(ax, 'on'); 
+            grid(ax, 'minor')
         end
     end
 
