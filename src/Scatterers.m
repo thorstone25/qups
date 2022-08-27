@@ -232,6 +232,62 @@ classdef Scatterers < matlab.mixin.Copyable
         end
     end
 
+    % overloaded arithmetic
+    methods
+        function c = plus(a, b)
+            % PLUS - Add two Scatterers
+            %
+            % out = scat_lhs + scat_rhs adds the Scatterers scat_lhs and 
+            % the Scatterers scat_rhs to create a new Scatterers out. The
+            % Scatterers must have matching medium properties i.e. c0 and
+            % alpha0 must match.
+            %
+            %
+            arguments
+                a Scatterers
+                b Scatterers
+            end
+            c = copy(a);
+            if prop_match(a, b)
+                c.pos = [a.pos, b.pos];
+                c.amp = [a.amp, b.amp];
+            else
+                error('Cannot combine Scatterers whos properties do not match.');
+            end
+
+            
+        end
+    end
+
+    % internal type checking convenience methods
+    methods(Hidden)
+        function tf = prop_match(self, other)
+            % PROP_MATCH - Property matching utility
+            %
+            % tf = PROP_MATCH(self, other) returns true if the set of 
+            % propertiesrequired to combine the objects self and other 
+            % match or false if otherwise.
+            % 
+            % This means that properties that must be identical to
+            % meaningfully combine two objects.
+            %
+            % For Scatterers, this is the c0 and alpha0 properties
+            %
+            %
+            arguments
+                self Scatterers
+                other Scatterers
+            end
+            
+            tf = true; 
+            % require that c0 matches
+            tf = tf && isequaln(self.c0, other.c0);
+
+            % require the alpha0 matches
+            tf = tf && isequaln(self.alpha0, other.alpha0);
+        end
+    end
+
     
     % dependent variables
     methods
