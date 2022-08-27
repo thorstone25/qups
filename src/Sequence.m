@@ -116,7 +116,9 @@ classdef Sequence < matlab.mixin.Copyable
             self = copy(self);
             cscale = 1;
             if isfield(kwargs, 'dist')
-                self.focus = kwargs.dist * self.focus; % scale distance (e.g. m -> mm)
+                if self.type ~= "PW" % interpret PW as unit vector
+                    self.focus = kwargs.dist * self.focus; % scale distance (e.g. m -> mm)
+                end
                 cscale = cscale * kwargs.dist;
             end
             if isfield(kwargs, 'time')
