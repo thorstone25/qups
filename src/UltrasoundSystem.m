@@ -149,7 +149,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             defs = self.getMexFileDefs();
             fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
             e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
-            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls); % move there if not?
+            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(~e)); % move there if not?
             if opts.recompile && any(~s), self.recompileMex(); end % attempt to recompile code
 
         end
