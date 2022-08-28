@@ -32,8 +32,9 @@ classdef BFTest < matlab.unittest.TestCase
             % adds the cached bin folder - this prevents recompilation for
             % each and every test, which can be a majority of the
             % computational effort / time 
-            try mkdir  (fullfile(BFTest.proj_folder,'bin')); end %#ok<TRYNC>
-            try addpath(fullfile(BFTest.proj_folder,'bin')); end %#ok<TRYNC>
+            cache_folder = fullfile(BFTest.proj_folder,'bin');
+            if ~exist(cache_folder, 'dir'), try mkdir(cache_folder); end, end %#ok<TRYNC>
+            if  exist(cache_folder, 'dir')    addpath(cache_folder); end 
         end
 
         % Shared setup for the entire test class
@@ -214,7 +215,7 @@ classdef BFTest < matlab.unittest.TestCase
             if bf_name == "Adjoint", 
                 test.assumeTrue( ...
                        logical(exist('pagemtimes'   , 'builtin')) ...
-                    && logical(exist('pagetranspose', 'builtin')) ...
+                    && logical(exist('pagetranspose', 'file')) ...
                     ); 
             end
 
@@ -226,11 +227,12 @@ classdef BFTest < matlab.unittest.TestCase
             if gdev, chd = gpuArray(chd); else, chd = gather(chd); end % move data to GPU if requested
 
             % Beamform 
+            % TODO: test that we can keep dimensions and sum later
             switch bf_name
                 case "DAS",         b = bfDAS(us, chd, scat.c0,    'interp', terp);
                 case "DAS-direct",  b =   DAS(us, chd, scat.c0,    'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
                 case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp, 'verbose', false); % use the eikonal equation
-                case "Adjoint", b = bfAdjoint(us, chd, scat.c0                    ); % use an adjoint matrix method
+                case "Adjoint", b = bfAdjoint(us, chd, scat.c0                   , 'verbose', false); % use an adjoint matrix method
             end
 
             % show the image
