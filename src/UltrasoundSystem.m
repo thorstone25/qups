@@ -2451,6 +2451,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
+                kwargs.verbose (1,1) logical = true;
                 % 1 Gibibyte limit on the size of the delays
             end
 
@@ -2481,7 +2482,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % check the grid spacing is identical in non-singleton 
             % dimensions
             assert(numel(dp) == 1, ...
-                'The cgrid must have equally sized steps in all non-singleton dimensions.'...
+                "The simulation scan must have equally sized steps in all non-singleton dimensions." ...
                 );
 
             % check the data is FSA and matches transmit / receive
@@ -2506,7 +2507,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get one-way delays within the field then generate samplers, using
             % reduced dimensions ([M|N] x {Cx x Cy x Cz})
             gi_opts = {'cubic', 'none'}; % interpolater options
-            tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
+            if kwargs.verbose 
+                tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
+            end
             parfor (n = 1:chd.N, parenv)
                 % fprintf('rx %i\n', n);
                 [tau_map_rx] = msfm(squeeze(cnorm.Value), double(Prc(:,n))); %#ok<PFBNS> % travel time to each point
@@ -2521,7 +2524,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 tx_samp{m} = griddedInterpolant(grd, tau_map_tx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
             end
             end
-            fprintf('\nEikonal time delays completed in %0.3f seconds.\n', toc(tt));
+            if kwargs.verbose
+                fprintf('\nEikonal time delays completed in %0.3f seconds.\n', toc(tt));
+            end
 
             % get the imaging grid
             gi = self.scan.getImagingGrid(); % {I1 x I2 x I3} each
@@ -2554,7 +2559,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if sumrx, sdim = [sdim, chd.ndim]; end % rx dimensions
             
             b = 0; % initialize
-            hw = waitbar(0,'Beamforming ...'); % create a wait bar
+            kvb = kwargs.verbose; % splice
+            if kvb, hw = waitbar(0,'Beamforming ...'); else, hw = []; end % create a wait bar
             parfor (m = 1:Mp, 0) % for each transmit (no cluster because parpool may cause memory issues here)
                 % make the eikonal delays and apodization align with the channel data
                 tau = tau_rx + tau_tx{m}; % I1 x I2 x I3 x N x M
@@ -2567,10 +2573,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 
                 % sum or accumulate over transmit blocks
                 if sumtx, b = b + ym; else, bm{m} = ym; end 
-                if isvalid(hw), waitbar((Mp-m+1)/Mp, hw); end % update if not closed: parfor loops go backwards
+                if kvb && isvalid(hw), waitbar((Mp-m+1)/Mp, hw); end % update if not closed: parfor loops go backwards
             end
             if ~sumtx, b = cat(chd.mdim,bm{:}); end % combine if not summing tx
-            if isvalid(hw), close(hw); end % close waitbar if not already closed
+            if kwargs.verbose && isvalid(hw), close(hw); end % close waitbar if not already closed
 
             % move image output into lower dimension
             if istall(b), b = gather(b); end % we have to gather tall arrays to place anything in dim 1
