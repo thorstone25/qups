@@ -229,7 +229,7 @@ classdef BFTest < matlab.unittest.TestCase
             switch bf_name
                 case "DAS",         b = bfDAS(us, chd, scat.c0,    'interp', terp);
                 case "DAS-direct",  b =   DAS(us, chd, scat.c0,    'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
-                case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp); % use the eikonal equation
+                case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp, 'verbose', false); % use the eikonal equation
                 case "Adjoint", b = bfAdjoint(us, chd, scat.c0                    ); % use an adjoint matrix method
             end
 
