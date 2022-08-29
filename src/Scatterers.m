@@ -19,7 +19,7 @@ classdef Scatterers < matlab.mixin.Copyable
         % {'x', 'y', 'z'}.
         %
         % See also SCATTERERS/AMP SCATTERERS/C0 SCATTERERS/BOUNDS
-        pos (3,:) double = zeros([3, 0]) % positions for scatterers
+        pos (3,:) double = [0;0;30e-3] % positions for scatterers
         % AMP - amplitude of the scatterers
         %
         % AMP defines the amplitude of the reflection from each scatterer.
@@ -27,7 +27,7 @@ classdef Scatterers < matlab.mixin.Copyable
         % defined by the Scatterers/pos property.
         %
         % See also SCATTERERS/POS SCATTERERS/C0
-        amp (1,:) double = ones([1, 0]) % amplitude for the scatterers
+        amp (1,:) double = 1 % amplitude for the scatterers
         % C0 - ambient sound speed
         %
         % C0 defines the speed of sound of the homogeneous medium on which
