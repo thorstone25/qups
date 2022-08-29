@@ -85,7 +85,8 @@ classdef TransducerConvex < Transducer
             if isfield(kwargs, 'dist')
                 w = kwargs.dist;
                 % scale distance (e.g. m -> mm)
-                [self.radius] = deal(w*self.radius);
+                [self.radius, self.center] = deal(w*self.radius, w*self.center);
+                
             end
         end
     end

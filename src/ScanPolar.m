@@ -84,6 +84,7 @@ classdef ScanPolar < Scan
                 w = kwargs.dist;
                 % scale distance (e.g. m -> mm)
                 [self.y, self.r] = deal(w*self.y, w*self.r);
+                [self.origin] = w*self.origin;
             end
         end
     end
