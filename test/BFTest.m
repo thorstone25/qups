@@ -45,7 +45,7 @@ classdef BFTest < matlab.unittest.TestCase
         end
 
         function setupQUPSdata(test, xdc_seq_name, target_offset)
-            % create point target data with the configuration
+            %% create point target data with the configuration
 
             % simple point target 30 mm depth
             target_depth = 30e-3;
@@ -141,7 +141,14 @@ classdef BFTest < matlab.unittest.TestCase
             if isreal(chd), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
             chd = gather(chd); % bring to CPU
 
-            % save QUPS objects for this test case
+            % scale the problem
+            us = scale(us, 'dist', 1e3, 'time', 1e6);
+            scat = scale(scat, 'dist', 1e3, 'time', 1e6);
+            chd = scale(chd, 'time', 1e6);
+            scanc = scale(scanc, 'dist', 1e3);
+            tscan = scale(tscan, 'dist', 1e3);
+
+            %% save QUPS objects for this test case
             test.chd    = chd; 
             test.us     = us; 
             test.scat   = scat;
@@ -239,7 +246,7 @@ classdef BFTest < matlab.unittest.TestCase
             b_im = mod2db(b); % convert to power in dB
 
             if ~isa(scan, 'ScanCartesian')
-                [b_im, scan] = deal(scanConvert(scan, b_im, scanc), scanc); % interpolate in dB - could also do abs, as long as it's not complex!
+                [b_im, scan] = deal(scanConvert(us.scan, b_im, scanc), scanc); % interpolate in dB - could also do abs, as long as it's not complex!
             end
 
             % TODO: peak should be ~near~ [0, 30mm] scan - check for this
