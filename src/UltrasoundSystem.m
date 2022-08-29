@@ -1822,20 +1822,31 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 clu = kwargs.parenv;
                 job = createJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true);
 
+                % extract the arguments needed to reconstruct the kWaveGrid
+                % class - this is because classes case mat-file memeory 
+                % usage to explode on read.
+                kgrid_Ndp = {kgrid.Nx, kgrid.dx, kgrid.Ny, kgrid.dy, kgrid.Nz, kgrid.dz};
+                [kdt, kNt] = deal(kgrid.dt, kgrid.Nt);
+
                 % arguments for each simulation
                 parfor (puls = 1:self.sequence.numPulse, 0)
                     kargs_sim{puls} = [...
-                        {kgrid, kmedium    , ksource(puls), ksensor}, ...
+                        {kmedium    , ksource(puls), ksensor}, ...
                         kwave_args_{puls}(:)'...
                         ];
                     kargs_sim_iso{puls} = [...
-                        {kgrid, kmedium_iso, ksource(puls), ksensor}, ...
+                        {kmedium_iso, ksource(puls), ksensor}, ...
                         kwave_args_{puls}(:)'...
                         ];
                 end
 
                 % add simulation and processing task
-                job.createTask(@(varargin) proc_fun(kspaceFirstOrderND_(varargin{:})), 1, [kargs_sim_iso, kargs_sim], 'CaptureDiary',true);
+                job.createTask(@(varargin) ...
+                    proc_fun(kspaceFirstOrderND_( ... 
+                    setfield(setfield(kWaveGrid(kgrid_Ndp{:}), 'dt', kdt), 'Nt', kNt), ... % reconstruct kWaveGrid
+                    varargin{:} ... % all other arguments
+                    )),... % simulate and post-process
+                    1, [kargs_sim_iso, kargs_sim], 'CaptureDiary', true);
 
                 % create an aliased tag with th start time and sampling
                 % frequency so that it can be recalled later 
