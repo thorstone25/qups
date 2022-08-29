@@ -91,7 +91,7 @@ classdef Waveform < matlab.mixin.Copyable
         % unreasonably large temporary results, such as if for example the 
         % sampling frequency is temporarily set to be 1e6 times larger than
         % it's final state.
-        Tlim (1,1) double = 2^10; % limit on size of time axes 
+        Tlim (1,1) double = 2^13; % limit on size of time axes 
     end
     properties(Dependent, Hidden)
         T % size of the time axis
