@@ -2195,9 +2195,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % validate precision: doesn't work for halfT
+            % TODO: switch to single precision compute, half precision
+            % storage
             if classUnderlying(chd) == "halfT"
                 warning('QUPS:bfAdjoint:InsufficientPrecision', ...
                     'Half precision data is insufficient for frequency-domain beamforming.' ...
+                    );
+            end
+
+            % validate sequence/transducer: doesn't work for
+            % non-linear/focused - not sure why yet - seems like a
+            % difficult to trace phase error bug.
+            if ~isa(self.tx, 'TransducerArray') && ~isa(self.rx, 'TransducerArray') && self.sequence.type == "VS"
+                warning('QUPS:bfAdjoint:UnsupportedSequence', ...
+                    'This function is unsupported for focused transmits with non-linear transducers.' ...
                     );
             end
 
@@ -2209,7 +2220,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % preserve the time axis
             K = kwargs.Nfft; % DFT length
             f = shiftdim(chd.fs * (0 : K - 1)' / K, 1-chd.tdim); % frequency axis
-            df = chd.fs * 1 / K; % frequency step size
+            df = chd.fs / K; % frequency step size
             x = fft(chd.data,K,chd.tdim); % perm(K x N x M) x ...
             x = x .* exp(-2i*pi*f.*chd.t0); % phase shift to re-align time axis
 
@@ -2251,6 +2262,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the transmit steering vector weights and delays
             del_tx  = self.sequence.delays(self.tx);      % M x V
             apod_tx = self.sequence.apodization(self.tx); % M x V
+            del_tx = del_tx - self.sequence.t0Offset(); % offset to transducer origin
 
             % transform to frequency step kernels
             w_rx    = exp(-2i*pi*df.*tau_rx); %  receive greens function
@@ -2281,7 +2293,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 k_ = shiftdim(k{ik}, -2); % 1 x 1 x F
 
                 % report progress
-                lbl = "Beamforming: " + min(gather(f(k_))) + " - " + max(gather(f(k_)));% + " MHz";
+                lbl = "Beamforming freqs: " + min(gather(f(k_))) + " - " + max(gather(f(k_)));% + " MHz";
                 if kwargs.verbose && isvalid(hw), waitbar(ik/numel(k), hw, char(lbl)); end
                 % fprintf(lbl + "\n");
 
