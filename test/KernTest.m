@@ -23,7 +23,7 @@ classdef KernTest < matlab.unittest.TestCase
     properties(TestParameter)
         prec = {'double', 'single', 'halfT'}
         complexity = struct('real', 'real', 'complex', 'complex');
-        gdev = getdevs() %struct('no_dev', 0); %, 'dev', -1');
+        gdev = getdevs()
     end
 
     methods(TestMethodSetup)
@@ -33,13 +33,11 @@ classdef KernTest < matlab.unittest.TestCase
     % dispatch
     % Github test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github'})
-        function github_runconvd(test, prec, complexity, gdev)
-            switch prec, case {'halfT'}, return; end % not supported
-            runconvd(test, prec, complexity, gdev)% forward remaing
+        function github_runconvd(test, prec, complexity)
+            runconvd(test, prec, complexity, 0)% forward remaing
         end
-        function github_runinterpd(test, prec, complexity, gdev)
-            switch prec, case {'halfT'}, return; end % not supported
-            runinterpd(test, prec, complexity, gdev)
+        function github_runinterpd(test, prec, complexity)
+            runinterpd(test, prec, complexity, 0)
         end
     end
 
@@ -58,6 +56,7 @@ classdef KernTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.NumericComparator;
             import matlab.unittest.constraints.IsEqualTo;
             import matlab.unittest.constraints.RelativeTolerance;
+            if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
 
             % create random values
             [N,M] = deal(2^10, 1);
@@ -65,8 +64,8 @@ classdef KernTest < matlab.unittest.TestCase
             B = complex(randn([N,M]), randn([N,M]));
             [A,B] = dealfun(str2func(prec), A, B); % cast to type
             switch prec
-                case "double", tol = 1e10;
-                case "single", tol = 1e2; 
+                case "double", tol = 1e14;
+                case "single", tol = 1e4; 
                 case "halfT" , tol = 1e2;
             end
             switch complexity, case "real", [A,B] = deal(real(A), real(B)); end
@@ -90,6 +89,7 @@ classdef KernTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.NumericComparator;
             import matlab.unittest.constraints.IsEqualTo;
             import matlab.unittest.constraints.RelativeTolerance;
+            if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
 
             % test the interpd fuction behaves like interp1 but better
             % create random values
