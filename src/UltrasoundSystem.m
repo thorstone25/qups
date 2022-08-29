@@ -2861,14 +2861,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % get all source code definitions
             defs = UltrasoundSystem.getCUDAFileDefs();
-            
+
+            % get the current gpu's compute capability support
+            try  
+                g = gpuDevice();
+                arch = "compute_" + replace(g.ComputeCapability,'.','');
+            catch
+                warning("Unable to recompile code!");
+                return
+            end
+
             % compile each
             for d = defs
                 % make full command
                 com = join(cat(1,...
                     "nvcc ", ...
                     "--ptx " + fullfile(src_folder, d.Source), ...
-                    "-arch=native ", ... % for half types: TODO move to compile option
+                    "-arch=" + arch + " ", ... compile for active gpu
                     "-o " + fullfile(self.tmp_folder, strrep(d.Source, '.cu', '.ptx')), ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
