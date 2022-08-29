@@ -165,16 +165,6 @@ classdef SequenceRadial < Sequence
                     a = ones([size(tx.positions(),2) self.numPulse]); % N x S
             end
         end
-        function t0 = t0Offset(self)
-            arguments, self SequenceRadial, end
-            switch self.type
-                case 'VS' % for virtual source, t0 is at the foci
-                    % transducer intersects 0: offset to that distance
-                    t0 = - (self.ranges - vecnorm(self.apex,2,1)) ./ self.c0; % (1 x S)
-                otherwise % PW - t0 is at origin; FSA - t0 at the element
-                    t0 = 0; % (1 x 1)
-            end
-        end
     end
 
     % plotting functions
