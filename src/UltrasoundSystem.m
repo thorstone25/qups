@@ -1671,6 +1671,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 case {'karray-direct', 'karray-depend'}
                     % [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
+                    karray_args.BLIType = char(karray_args.BLIType);
                     karray_opts = struct2nvpair(karray_args);
                     karray = kWaveArray(self.rx, kgrid.dim, kgrid_origin, karray_opts{:});
                     mask = karray.getArrayBinaryMask(kgrid);
@@ -1680,6 +1681,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % it can be used in fullwave or some other FDTD method
                     switch kwargs.ElemMapMethod
                         case 'karray-direct'
+                            % define locally
+                            vec = @(x) x(:);
+
                             % get the offgrid source weights
                             elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:self.xdc.numel);  % (J x {M})
                             elem_weights = cat(2, elem_weights{:}); % (J x M)
@@ -1697,7 +1701,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                                 {cast(karray.getDistributedSourceSignal(kgrid, x.'), 'like', x)}, ...
                                 num2cell(real(txsamp), [1,2]) ...
                                 );
-                            psig = cat(3, psig); % (J' x T' x V)
+                            psig = cat(3, psig{:}); % (J' x T' x V)
                     end
             end
 
@@ -1765,11 +1769,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % processing step: get sensor data, enforce on CPU (T x N)
             switch kwargs.ElemMapMethod
                 case 'karray-depend'
-                    proc_fun = @(x) gather(convn( karray.combineSensorData(kgrid, x.ux).', rx_sig, 'full'));
+                    rx_args = {kgrid, karray};
+                    % proc_fun = @(x) gather(convn( karray.combineSensorData(kgrid, x.ux).', rx_sig, 'full'));
                 case {'karray-direct'}
-                    proc_fun = @(x) gather(convn(x.ux.' * full(elem_weights)), rx_sig, 'full'); % (J' x T)' x (J' x N) -> T x N
+                    rx_args = {elem_weights};
+                    % proc_fun = @(x) gather(convn(x.ux.' * full(elem_weights)), rx_sig, 'full'); % (J' x T)' x (J' x N) -> T x N
                 case {'nearest'}
-                    proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full')); % -> (T x N)
+                    rx_args = {};
+                    %proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full')); % -> (T x N)
                 case 'linear'
                     % create the advanced impulse response function with
                     % which to convolve the output
@@ -1777,17 +1784,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     N = self.rx.numel;
                     rx_sig = gather(real(rx_imp.sample(t_rx(:)' + el_dist(:)/c0map))); % J'' x T''
                     el_map_el = ((1:N) == vec(ones(size(el_ind)) .* (1:N)))'; % map from convolved samples to elements
-                    proc_fun = @(x) gather(...
-                        (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
-                        ...
-                        ); % [(N x J'') x (J'' x T)]' -> T x N
+                    rx_args = {el_weight, el_map_grd, el_map_el};
+                    % `proc_fun = @(x) gather(...
+                    %     (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
+                    %     ...
+                    %     ); % [(N x J'') x (J'' x T)]' -> T x N
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
-                    proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full'));
+                    rx_args = {};
+                    % proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full'));
             end
 
             % choose where to compute the data
             % parfor behaviour - for now, only parenv == 0 -> parfor
+            elemmethod = kwargs.ElemMapMethod;
             if ~isa(kwargs.parenv, 'parallel.Cluster') % no cluster
                 % process directly in a parfor loop if 0
                 out = cell(self.sequence.numPulse, 1); % init
@@ -1804,7 +1814,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
 
                     % Process the simulation data
-                    out{puls} = proc_fun(sensor_data) - proc_fun(sensor_data_iso); %#ok<PFBNS> data is small
+                    out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data    , rx_sig, elemmethod, rx_args{:}) ...
+                              - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data_iso, rx_sig, elemmethod, rx_args{:}); %#ok<PFBNS> data is small
 
                     % report timing % TODO: make this part of some 'info' logger or something
                     fprintf('\nFinished pulse %i of %i\n', puls, Np);
@@ -1825,26 +1836,32 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % extract the arguments needed to reconstruct the kWaveGrid
                 % class - this is because classes case mat-file memeory 
                 % usage to explode on read.
-                kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx, kgrid.Ny, kgrid.dy, kgrid.Nz, kgrid.dz};
-
+                switch kgrid.dim
+                    case 1, kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx};
+                    case 2, kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx, kgrid.Ny, kgrid.dy};
+                    case 3, kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx, kgrid.Ny, kgrid.dy, kgrid.Nz, kgrid.dz};
+                end
+                
                 % arguments for each simulation
                 parfor (puls = 1:self.sequence.numPulse, 0)
                     kargs_sim{puls} = [...
-                        {kgrid_Ndp, kmedium    , ksource(puls), ksensor}, ...
+                        {kmedium    , ksource(puls), ksensor}, ...
                         kwave_args_{puls}(:)'...
                         ];
                     kargs_sim_iso{puls} = [...
-                        {kgrid_Ndp, kmedium_iso, ksource(puls), ksensor}, ...
+                        {kmedium_iso, ksource(puls), ksensor}, ...
                         kwave_args_{puls}(:)'...
                         ];
                 end
 
                 % add simulation and processing task
-                job.createTask(@(kgrid_Ndp, varargin) ...
+                proc_fun = @UltrasoundSystem.kspaceFirstOrderPostProc;
+                job.createTask(@(varargin) ...
                     proc_fun(kspaceFirstOrderND_( ... 
                     setfield(setfield(kWaveGrid(kgrid_Ndp{3:end}), 'dt', kgrid_Ndp{2}), 'Nt', kgrid_Ndp{1}), ... % reconstruct kWaveGrid
-                    varargin{:} ... % all other arguments
-                    )),... % simulate and post-process
+                    varargin{:} ... % all other kspace arguments
+                    ), ... % simulate 
+                    rx_sig, elemmethod, rx_args{:}),... post-process
                     1, [kargs_sim_iso, kargs_sim], 'CaptureDiary', true);
 
                 % create an aliased tag with th start time and sampling
@@ -1882,6 +1899,31 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd = ChannelData( ...
                 't0', reshape(t0,tsz), 'fs', fs_, 'data', diff(x,1,4) ...
                 );
+        end
+    end
+    methods(Static, Hidden)
+        function y = kspaceFirstOrderPostProc(x, rx_sig, method, varargin)
+            % processing step: get sensor data, enforce on CPU (T x N)
+            switch method
+                case 'karray-depend'
+                    [kgrid, karray] = deal(varargin{:});
+                    y = gather(convn( karray.combineSensorData(kgrid, x.ux).', rx_sig, 'full'));
+                case {'karray-direct'}
+                    elem_weights = deal(varargin{:});
+                    y = gather(convn(x.ux.' * full(elem_weights), rx_sig, 'full')); % (J' x T)' x (J' x N) -> T x N
+                case {'nearest'}
+                    y = gather(convn(x.ux.', rx_sig, 'full')); % -> (T x N)
+                case 'linear'
+                    [el_weight, el_map_grd, el_map_el] = deal(varargin{:});
+                    % create the advanced impulse response function with
+                    % which to convolve the output
+                    y = gather(... [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
+                        (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % 
+                        ); % [(N x J'') x (J'' x T)]' -> T x N
+
+                otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
+                   y = gather(convn(x.ux.', rx_sig, 'full'));
+            end
         end
     end
     
@@ -2877,7 +2919,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 g = gpuDevice();
                 arch = "compute_" + replace(g.ComputeCapability,'.','');
             catch
-                warning("Unable to recompile code!");
+                warning("Unable to access GPU - code will not be recompiled.");
                 return
             end
 
