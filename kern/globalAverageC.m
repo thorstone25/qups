@@ -40,8 +40,8 @@ function c_avg = globalAverageC(med, scan, pa, pb)
 arguments
     med (1,1) Medium
     scan (1,1) ScanCartesian 
-    pa (2,1) % aperture positions in 2D
-    pb (2,:) % endpoint positions in 2D
+    pa (2,1) {mustBeNumeric} % aperture positions in 2D
+    pb (2,:) {mustBeNumeric} % endpoint positions in 2D
 end
 
 % invalidate OOB points

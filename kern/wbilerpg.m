@@ -40,12 +40,12 @@ function [cxy, ixo, iyo] = wbilerpg(x, y, xa, ya, xb, yb)
 % See also XIAOLINWU_K_SCALED SPARSE WBILERP
 
 arguments
-    x (:,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    y (:,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    xa      {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    ya      {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    xb      {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    yb      {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
+    x (:,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    y (:,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    xa      {mustBeReal, mustBeNumeric, mustBeFloat}
+    ya      {mustBeReal, mustBeNumeric, mustBeFloat}
+    xb      {mustBeReal, mustBeNumeric, mustBeFloat}
+    yb      {mustBeReal, mustBeNumeric, mustBeFloat}
 end
 
 % ensure floating point, sorted, grid in vector form
@@ -105,17 +105,19 @@ for ineg = [false, true], for isteep = [false, true], for irev = [false, true]
             pmu = complex(min(xg(end), vx), min(yg(end), vy)); % upper bound (1 x I)
 
             % sort in x, then y, so that we have a non-descreasing line
-            pall = arrayfun(@(ux, uy, vx, vy, m, mi) ...
-                sortpoints([...
+            [ux, uy, vx, vy, m, mi] = dealfun(@(x) shiftdim(x(:), -2), ux, uy, vx, vy, m, mi); % move to 1 x 1 x I
+            
+            % all points ([N+1] x 2 x I)
+            pall = [...
                 ux, uy; ... endpoint
                 vx, vy; ... endpoint
-                [xg, uy + m  .* (xg - ux)]; ...  x-intercepts
-                [ux + mi .* (yg - uy), yg]; ...  y-intercepts
-                ], m), ...
-                ux, uy, vx, vy, m, mi, ...
-                'UniformOutput', false); %([N+1] x 2 x {I})
+                [xg + 0*uy, uy + m  .* (xg - ux)]; ...  x-intercepts
+                [ux + mi .* (yg - uy), yg + 0*uy]; ...  y-intercepts
+                ];
 
-            pall = permute(cat(3, pall{:}), [2,1,3]); % -> (2 x [N+1] x I)
+            % sort and reshape them -> (2 x [N+1] x I)
+            parfor (i = 1:I, 0), pall(:,:,i) = sortpoints(pall(:,:,i), m(i)); end
+            pall = pagetranspose(pall);
             pall = complex(pall(1,:,:), pall(2,:,:)); % typecast
 
             % input/output sizing

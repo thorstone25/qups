@@ -38,12 +38,12 @@ function [cxy, ixo, iyo] = wbilerp(x, y, xa, ya, xb, yb)
 % See also XIAOLINWU_K_SCALED SPARSE WBILERPG
 
 arguments
-    x  (:,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    y  (:,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    xa (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    ya (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    xb (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    yb (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
+    x  (:,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    y  (:,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    xa (1,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    ya (1,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    xb (1,1) {mustBeReal, mustBeNumeric, mustBeFloat}
+    yb (1,1) {mustBeReal, mustBeNumeric, mustBeFloat}
 end
 
 % ensure floating point, sorted, grid in vector form
