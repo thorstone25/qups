@@ -17,7 +17,7 @@
 % assert(isequal(x(2,:,:,:,:,:,:), sub(x,2,1))); 
 % assert(isequal(x(:,2:3,4,:,:,:,:), sub(x,{2:3,4},[2 3])))
 %
-% See also SUBSREF SUBSASGN SUBSTRUCT
+% See also SEL SUBSREF SUBSASGN SUBSTRUCT
 
 function y = sub(x, ind, dim, expr)
 % default to dim 1. TODO: default to 1st non-singleton
