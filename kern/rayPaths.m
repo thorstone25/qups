@@ -61,7 +61,7 @@ arguments
     kwargs.gpu (1,1) logical = logical(gpuDeviceCount())
     kwargs.method (1,1) string {mustBeMember(kwargs.method, ["bilerp", "xiaolin"])} = "bilerp"
     kwargs.verbose (1,1) logical = false;
-    kwargs.prototype = zeros([0, 0], 'like', pj) % prototype
+    kwargs.prototype = zeros([0, 0], 'like', [pj(end), pa(end)]) % prototype
 end
 
 % output: I x J x A, I = Z x X
@@ -101,7 +101,7 @@ for j = 1:numel(js)
     % (1 x J' x M)
     D = max(ndims(pa), ndims(pj_));
     psz = [1, max(size(pa,2:D),size(pj_,2:D))]; % broadcast size
-    ZERO = false(psz); % broadcasting identity
+    ZERO = zeros(psz, 'like', dproto); % broadcasting identity
     pax = sub(pa,1,1)  + ZERO;
     paz = sub(pa,2,1)  + ZERO;
     pbx = sub(pj_,1,1) + ZERO;
