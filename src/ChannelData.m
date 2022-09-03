@@ -1027,10 +1027,17 @@ classdef ChannelData < matlab.mixin.Copyable
             tind = ind; % separate copy for the time indices
             tind(size(chd.time,dim) == 1) = {1}; % set singleton where t0 is sliced
             has_tdim = any(dim == chd.tdim); % whether we are idnexing in the time dimension too
-            if has_tdim, 
+            if has_tdim 
                 n = tind{dim == chd.tdim}; % get the time indices
-                assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
-                    'The temporal index must be a strictly increasing set of indices.');
+                if isnumeric(n)
+                    assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
+                        'The temporal index must be a strictly increasing set of indices.');
+                elseif islogical(n)
+                    np = find(n);
+                    assert(issorted(np, 'strictascend') && all(np == round(np)), ... % check the index in time is sorted, continous
+                        'The temporal index must be a strictly increasing set of indices.');
+                else % not sure, but allow ...
+                end
             end
             t0_   = sub(chd.t0, tind(dim ~= chd.tdim), dim(dim ~= chd.tdim)); % extract start time
             data_ = sub(chd.data, ind, dim); % extract data
