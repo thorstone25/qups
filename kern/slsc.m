@@ -42,6 +42,8 @@ function z = slsc(x, dim, L, method, kdim)
 % in IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
 % vol. 58, no. 7, pp. 1377-1388, July 2011.  
 % doi: 10.1109/TUFFC.2011.1957
+%
+% See also APCOHERENCE
 
 % defaults
 arguments
