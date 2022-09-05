@@ -28,12 +28,16 @@ function c_avg = globalAverageC(med, scan, pa, pb)
 %
 % % Plot the average sound speed as a function of depth
 % figure;
+% subplot(1,2,1);
+% imagesc(med, scan, 'props', 'c');
+% subplot(1,2,2);
 % plot(p_foc(2,:), c_avg, '.-');
 % grid on;
 % grid minor;
-% xlabel('Depth (mm)')
+% xlabel('Depth (mm)');
 % ylabel('Sound Speed (mm/us)');
 % title('Layered Model Average Sound Speed')
+% view(90, 90);
 % 
 % See also RAYPATHS
 
@@ -54,7 +58,7 @@ cg = props(med, scan); % size(cg) <-> scan.size
 % compute the raypaths from the point pa to the points pb on
 % the grid points given by grid
 [~, xzind] = ismember('ZX', scan.order); % get the correct order for Z and X 
-[w, l] = rayPaths(scan.x, scan.z, pa, pb, 'ord', scan.order(xzind)); % [X x Z] x J
+[w, l] = rayPaths(scan.x, scan.z, pa, swapdim(pb,2,3), 'ord', scan.order(xzind)); % [X x Z] x J
 
 % compute the average sound speed from A to B using the
 % integral of the inverse sound speed times each grid cell

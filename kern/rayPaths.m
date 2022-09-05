@@ -52,10 +52,10 @@ function [w, d] = rayPaths(xg, zg, pj, pa, kwargs)
 arguments
     xg (1,:) {mustBeFinite, mustBeReal} % 1 x X
     zg (1,:) {mustBeFinite, mustBeReal} % 1 x Z
-    pj (2,:,1,:,:) {mustBeReal} % 2 x J x 1 x ...
-    pa (2,:,1,:,:) {mustBeReal} % 2 x A x 1 x ...
+    pj (2,:,:) {mustBeReal} % 2 x J x M x ...
+    pa (2,:,:) {mustBeReal} % 2 x J x M x ...
     kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,floor(2^33 /... 
-         ((numel(pa) / 2) * ((1 + numel(xg) + numel(zg)) * 4) * 4 * 8) ... output size per batch in btyes
+         (max(size(pj,3),size(pa,3)) * ((1 + numel(xg) + numel(zg)) * 4) * 4 * 8) ... output size per batch in btyes
          ))
     kwargs.ord (1,1) string {mustBeMember(kwargs.ord, ["XZ", "ZX"])} = "ZX"
     kwargs.gpu (1,1) logical = logical(gpuDeviceCount())
@@ -64,17 +64,15 @@ arguments
     kwargs.prototype = zeros([0, 0], 'like', [pj(end), pa(end)]) % prototype
 end
 
-% output: I x J x A, I = Z x X
+% output: I x J x M, I = Z x X
 dproto = kwargs.prototype;
 
+[X, Z] = dealfun(@numel, xg, zg);
+I = X * Z;
+szjm = max(size(pj,1:3), size(pa,1:3));
+[J, M] = deal(szjm(2), szjm(3)); 
+
 % buffer size: 4*(Nx + Nz + 1)
-[X, Z, J, M] = dealfun(@numel, xg, zg, pj, pa);
-[I, J, M] = deal(X*Z, J/2, M/2);
-
-% move A to dim 3 - TODO: make this dim ndims(pa)+1
-pa = permute(pa, [1 3 2 4:ndims(pa)]);
-
-% output size from grid size
 switch kwargs.method
     case "bilerp",  Kmax = 4*(X + Z + 1);
     case "xiaolin", Kmax = 2*(X + Z + 1); 
@@ -95,15 +93,24 @@ for j = 1:numel(js)
     if kwargs.verbose, fprintf('\n'); end
 
     % get input data
-    pj_ = pj(:,js{j});
+    if size(pj,2) == 1,
+        pj_ = pj;
+    else
+        pj_ = sub(pj,js{j},2);
+    end
+    if size(pa,2) == 1,
+        pa_ = pa;
+    else
+        pa_ = sub(pa,js{j},2);
+    end
 
     % convert to pixel coordinates and brodcast to all angles
     % (1 x J' x M)
-    D = max(ndims(pa), ndims(pj_));
-    psz = [1, max(size(pa,2:D),size(pj_,2:D))]; % broadcast size
+    D = max(ndims(pa_), ndims(pj_));
+    psz = [1, max(size(pa_,2:D),size(pj_,2:D))]; % broadcast size
     ZERO = zeros(psz, 'like', dproto); % broadcasting identity
-    pax = sub(pa,1,1)  + ZERO;
-    paz = sub(pa,2,1)  + ZERO;
+    pax = sub(pa_,1,1) + ZERO;
+    paz = sub(pa_,2,1) + ZERO;
     pbx = sub(pj_,1,1) + ZERO;
     pbz = sub(pj_,2,1) + ZERO;
 
