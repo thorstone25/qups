@@ -48,10 +48,11 @@ __device__ void greens_temp(T2 * __restrict__ y,
                     r = cinv * (length(pi[i] - pr[n + ne*N]) + length(pi[i] - pv[m + me*M])); // (virtual) transmit to pixel vector
                     
                     // get kernel delay for the scatterer
-                    tau = (float)s + (s0 - r - t0)*fs;
+                    tau = (U)s + (s0 - r - t0)*fs;
                     
                     // sample the kernel and add to the signal at this time
-                    val += a[i] * sample(x, tau, iflag, zero_v); // out of bounds: extrap 0            
+                    if(0 <= tau & tau < QUPS_T)
+                        val += a[i] * sample(x, tau, iflag, zero_v); // out of bounds: extrap 0            
                 }
             }
         }
