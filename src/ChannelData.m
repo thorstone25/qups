@@ -211,57 +211,74 @@ classdef ChannelData < matlab.mixin.Copyable
         % convert to a uint8 array
     end
 
+    % math overloads
+    methods
+        function c = times(a, b)
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                c = copy(a); c.data = times(a.data, b);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                c = copy(b); c.data = times(a, b.data);
+            else % if both are ChannelData, we check that the time axis is identical
+                if all(a.ord == b.ord) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
+                    c = copy(a); c.data = a.data * b.data;
+                else
+                    error('ChannelData does not match - cannot perform arithmetic')
+                end                
+            end
+        end
+    end
+
     % DSP overloads 
     methods
-        function chd = demodulate(chd, fc)
-            % DEMODULATE Demodulate ChannelData
+        function chd = downmix(chd, fc)
+            % DOWNMIX - Shift a signal's spectrum down
             %
-            % chd = DEMODULATE(chd, fc) demodulates the data with respect
-            % to frequency fc and the time axis.
+            % chd = DOWNMIX(chd, fc) mixes the data with a complex
+            % exponential in order to shift the frequency spectrum of the
+            % data down by fc.
             %
-            % Demodulation can be combined with downssampling to reduce
+            % Downmixing can be combined with downsampling to reduce
             % the sampling frequency while retaining the information
-            % content of the data.
+            % content of the data. This process may be referred to as
+            % demodulation.
             % 
             % Example:
             % % Simulate some data
             % us = UltrasoundSystem('fs', 100e6); % get a default system
+            % us.tx = us.rx; % use the same transducer
             % targ = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
             % chd = greens(us, targ); % simulate the ChannelData
+            % chd = zeropad(chd, 0, max(0, 2^10-chd.T)); % ensure at least 2^10 samples
             % 
-            % % Demodulate and downsample the data
-            % ratio = 4;
-            % chdd = downsample(demodulate(hilbert(chd), us.fs/ratio), ratio);
+            % % Downmix and downsample the data
+            % fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency 
+            % ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
+            % chdd = downmix(hilbert(chd), us.xdc.fc); % downmix
+            % chdd = downsample(chdd, ratio); % downsample
             % 
             % % Image the data
             % figure; 
             % subplot(1,2,1);
             % imagesc(us.scan, mod2db(DAS(us, chd)));
-            % colormap gray; colorbar;
+            % colormap gray; colorbar; caxis([-60 0] + max(caxis));
             % title('Original sampling frequency');
             %
             % subplot(1,2,2);
-            % imagesc(us.scan, mod2db(DAS(us, chdd)));
-            % colormap gray; colorbar;
+            % imagesc(us.scan, mod2db(DAS(us, chdd, 'fmod', us.xdc.fc)));
+            % colormap gray; colorbar; caxis([-60 0] + max(caxis));
             % title("Downsampled by " + ratio + "x");
             %
             % See also DOWNSAMPLE FILTER HILBERT FFT
             arguments
                 chd ChannelData
-                fc (1,1) double {mustBeFinite}
+                fc (1,1) {mustBeNumeric, mustBeFinite}
             end
             
             % copy semantics
             chd = copy(chd);
             
-            % demodulate directly with the temporal phasor
-            chd.data = chd.data .* exp(-2i*pi*fc*chd.time);
-            
-            % TODO: make this computation more efficient for large data?
-            % wn = exp(2i*pi*fc/chd.fs); % base phasor
-            % w0 = exp(2i*pi*fc*chd.t0); % time offset
-            % n = shiftdim((0 : chd.T - 1)', 1 - chd.tdim); % time indices
-            % chd.data = chd.data .* w0 .* (wn .^ n); 
+            % downmix directly with the temporal phasor
+            chd.data = chd.data .* exp(-2i*pi*fc*chd.time);            
         end
         function D = getPassbandFilter(chd, bw, N)
             % GETPASSBANDFILTER Get a passband filter
@@ -469,18 +486,17 @@ classdef ChannelData < matlab.mixin.Copyable
             % reduce the sampling frequency by ratio.
             %
             % Example:
-            % 
             % chd = ChannelData('data', rand([2^10,1]), 'fs', 8);
             % chd = downsample(chd, 4) % downsample by a factor of 4
             % 
-            % See also RESAMPLE DEMODULATE
+            % See also RESAMPLE DOWNMIX
             arguments
                 chd ChannelData
-                ratio (1,1) double {mustBePositive, mustBeInteger}
+                ratio (1,1) {mustBePositive, mustBeInteger}
             end
             chd = copy(chd); % copy semantics
             chd = sub(chd, 1:ratio:chd.T, chd.tdim); % sub-index
-            chd.fs = chd.fs / ratio; % reduce sampling frequency
+            chd.fs(:) = chd.fs / ratio; % reduce sampling frequency
         end
         function chd = resample(chd, fs, varargin)
             % RESAMPLE - Resample the data in time
@@ -607,7 +623,7 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.t0 = t0_; % make new object
         end
     
-        function y = sample(chd, tau, interp, w, sdim)
+        function y = sample(chd, tau, interp, w, sdim, fmod)
             % SAMPLE Sample the channel data in time
             %
             % y = SAMPLE(chd, tau) samples the ChannelData chd at the times
@@ -644,7 +660,7 @@ classdef ChannelData < matlab.mixin.Copyable
             %    ***  GPU support is enabled via interp1
             %    **** GPU support is native
             % 
-            % y = SAMPLE(x, t, interp, w) applies the weighting array via 
+            % y = SAMPLE(x, t, interp, w) applies the weighting array w via 
             % point-wise  multiplication after sampling the the data. The 
             % dimensions must be compatible with the sampling array t in 
             % the sampling dimension dim. The default is 1.
@@ -653,9 +669,14 @@ classdef ChannelData < matlab.mixin.Copyable
             % dimension(s) sdim after the weighting matrix has been applied.
             % The default is [] (no dimensions).
             % 
+            % y = SAMPLE(x, t, interp, w, sdim, fmod) upmixes the data at a
+            % modulation frequency fmod. This undoes the effect of 
+            % downmixing at the same frequency.
+            % 
             % See also INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 
             % defaults
+            if nargin < 6, fmod = 0; end
             if nargin < 5, sdim = [];           end
             if nargin < 4, w = 1;               end
             if nargin < 3, interp = 'linear';   end
@@ -671,6 +692,9 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % compute the integer delays (I x [1|N] x [1|M] x [1|F] x ...) (default order)
             ntau = (tau - chd.t0) * chd.fs;
+
+            % apply the modulation vector as weights
+            if fmod, w = w .* exp(2i*pi*fmod/chd.fs .* ntau); end
 
             % dispatch
             if interp ~= "freq" 
