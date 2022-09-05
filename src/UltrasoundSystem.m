@@ -1500,8 +1500,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % returns a parallel.Job job. If these outputs are requested,
             % chd is empty and the job is not submitted. The job can be
             % submitted with the submit function. When the job has
-            % completed, it can be read into a ChannelData object with
-            % UltrasoundSystem.readKspaceFirstOrderJob(). 
+            % completed, the ChannelData object can be extracted using
+            % parallel.Job/fetchOutputs.
             %
             % chd = KSPACEFIRSTORDER(..., 'parenv', 0) avoids using a
             % parallel.Cluster or parallel.Pool. 
@@ -1541,7 +1541,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % figure;
             % imagesc(real(chd));
             % 
-            % See also ULTRASOUNDSYSTEM/FULLWAVESIM ULTRASOUNDSYSTEM.READKSPACEFIRSTORDERJOB
+            % See also ULTRASOUNDSYSTEM/FULLWAVESIM PARALLEL.JOB/FETCHOUTPUTS
             arguments % required arguments
                 self (1,1) UltrasoundSystem
                 med Medium
@@ -1594,6 +1594,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % intialize empty outputs
             [chd, job] = deal([]);
+
+            % start measuring total execution time
+            tt_kwave = tic;
 
             % get the kWaveGrid
             % TODO: check that the stpe sizes are all equal - this is
@@ -1729,9 +1732,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % simulation start time
             t0 = gather(t_tx(1) + t_rx(1));
 
-            %% Submit a k-wave simulation for each transmit
-            tt_kwave = tic;
-
             fprintf('There are %i points in the grid which is %0.3f megabytes per grid variable.\n', ...
                 kgrid.total_grid_points, kgrid.total_grid_points*4/2^20);
 
@@ -1786,7 +1786,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     rx_sig = gather(real(rx_imp.sample(t_rx(:)' + el_dist(:)/c0map))); % J'' x T''
                     el_map_el = ((1:N) == vec(ones(size(el_ind)) .* (1:N)))'; % map from convolved samples to elements
                     rx_args = {el_weight, el_map_grd, el_map_el};
-                    % `proc_fun = @(x) gather(...
+                    % proc_fun = @(x) gather(...
                     %     (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
                     %     ...
                     %     ); % [(N x J'') x (J'' x T)]' -> T x N
@@ -1799,107 +1799,44 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % choose where to compute the data
             % parfor behaviour - for now, only parenv == 0 -> parfor
             elemmethod = kwargs.ElemMapMethod;
+            
+            % get the arguments to run the sim
+            args = {...
+                kspaceFirstOrderND_, ...
+                kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
+                rx_sig, elemmethod, rx_args, ...
+                t0, fs_ ...
+                };
+
             if ~isa(kwargs.parenv, 'parallel.Cluster') % no cluster
-                % process directly in a parfor loop if 0
-                out = cell(self.sequence.numPulse, 1); % init
-                [Np] = deal(self.sequence.numPulse); % splice
+                args{end+1} = kwargs.parenv; % parfor arg: execution environment
 
-                % for puls = self.sequence.numPulse:-1:1
-                parfor (puls = 1:self.sequence.numPulse, kwargs.parenv)
-                    % TODO: make this part of some 'info' logger or something
-                    fprintf('\nComputing pulse %i of %i\n', puls, Np);
-                    tt_pulse = tic;
-
-                    % simulate
-                    sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
-                    sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
-
-                    % Process the simulation data
-                    out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data    , rx_sig, elemmethod, rx_args{:}) ...
-                              - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data_iso, rx_sig, elemmethod, rx_args{:}); %#ok<PFBNS> data is small
-
-                    % report timing % TODO: make this part of some 'info' logger or something
-                    fprintf('\nFinished pulse %i of %i\n', puls, Np);
-                    toc(tt_pulse)
-                end
-
-                % create ChannelData objects
-                chd = ChannelData('data', cat(3, out{:}), 't0', t0, 'fs', fs_);
+                chd = UltrasoundSystem.kspaceRunSim(args{:}); 
 
                 % TODO: make reports optional
                 fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
 
             else
+                % set the parfor options argument
+                args{end+1} = Inf; % parfor arg: max number of workers
+
                 % make a job on the cluster
+                % TODO: modify so that the launcher task does not request a gpu
                 clu = kwargs.parenv;
-                job = createJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true);
+                job = createCommunicatingJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool');
+                job.createTask(@UltrasoundSystem.kspaceRunSim, 1, args, 'CaptureDiary',true);
 
-                % extract the arguments needed to reconstruct the kWaveGrid
-                % class - this is because classes case mat-file memeory 
-                % usage to explode on read.
-                switch kgrid.dim
-                    case 1, kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx};
-                    case 2, kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx, kgrid.Ny, kgrid.dy};
-                    case 3, kgrid_Ndp = {kgrid.Nt, kgrid.dt, kgrid.Nx, kgrid.dx, kgrid.Ny, kgrid.dy, kgrid.Nz, kgrid.dz};
-                end
-                
-                % arguments for each simulation
-                parfor (puls = 1:self.sequence.numPulse, 0)
-                    kargs_sim{puls} = [...
-                        {kmedium    , ksource(puls), ksensor}, ...
-                        kwave_args_{puls}(:)'...
-                        ];
-                    kargs_sim_iso{puls} = [...
-                        {kmedium_iso, ksource(puls), ksensor}, ...
-                        kwave_args_{puls}(:)'...
-                        ];
-                end
-
-                % add simulation and processing task
-                proc_fun = @UltrasoundSystem.kspaceFirstOrderPostProc;
-                job.createTask(@(varargin) ...
-                    proc_fun(kspaceFirstOrderND_( ... 
-                    setfield(setfield(kWaveGrid(kgrid_Ndp{3:end}), 'dt', kgrid_Ndp{2}), 'Nt', kgrid_Ndp{1}), ... % reconstruct kWaveGrid
-                    varargin{:} ... % all other kspace arguments
-                    ), ... % simulate 
-                    rx_sig, elemmethod, rx_args{:}),... post-process
-                    1, [kargs_sim_iso, kargs_sim], 'CaptureDiary', true);
-
-                % create an aliased tag with th start time and sampling
-                % frequency so that it can be recalled later 
-                tsz = size(t0, 1:4);
-                v = double(gather([fs_, tsz, t0]));
-                job.Tag = char(typecast(v, 'uint8'));
-
-                % if no job output was requested, run the job and
-                % create the ChannelData
+                % if no job output was requested, run the job 
                 if nargout < 2,
                     submit(job);
                     wait(job);
-                    chd = UltrasoundSystem.readKspaceFirstOrderJob(job);
+                    out = job.fetchOutputs();
+                    chd = out{1};
 
                     % TODO: make reports optional
                     fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
                 end
             end
-        end
-    end
-    methods(Static)
-        function chd = readKspaceFirstOrderJob(job)
-            % READKSPACEFIRSTORDERJOB - Read a kspaceFirstOrder job
-            %
-            % chd = READKSPACEFIRSTORDERJOB(job) reads the parallel.Job job
-            % into a ChannelData object chd. The job must have been
-            % launched via kspaceFirstOrder.
-            % 
-            % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDER
-            arguments, job (1,1) parallel.Job, end
-            v = typecast(uint8(job.Tag), 'double'); % aliased data
-            [fs_, tsz, t0] = deal(v(1), v(2:5), v(6:end)); 
-            x = cell2mat(reshape([job.Tasks.OutputArguments],1,1,[],2));
-            chd = ChannelData( ...
-                't0', reshape(t0,tsz), 'fs', fs_, 'data', diff(x,1,4) ...
-                );
         end
     end
     methods(Static, Hidden)
@@ -1925,6 +1862,34 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
                    y = gather(convn(x.ux.', rx_sig, 'full'));
             end
+        end
+    
+        function chd = kspaceRunSim(kspaceFirstOrderND_, ...
+                kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
+                rx_sig, elemmethod, rx_args, t0, fs_, W ...
+                )
+
+            Np = numel(ksource);
+            parfor (puls = 1:Np, W)
+                % TODO: make this part of some 'info' logger or something
+                fprintf('\nComputing pulse %i of %i\n', puls, Np);
+                tt_pulse = tic;
+
+                % simulate
+                sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
+                sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
+
+                % Process the simulation data
+                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data    , rx_sig, elemmethod, rx_args{:}) ...
+                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data_iso, rx_sig, elemmethod, rx_args{:}); %#ok<PFBNS> data is small
+
+                % report timing % TODO: make this part of some 'info' logger or something
+                fprintf('\nFinished pulse %i of %i\n', puls, Np);
+                toc(tt_pulse)
+            end
+
+            % create ChannelData objects
+            chd = ChannelData('data', cat(3, out{:}), 't0', t0, 'fs', fs_);
         end
     end
     
