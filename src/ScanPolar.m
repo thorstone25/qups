@@ -34,6 +34,9 @@ classdef ScanPolar < Scan
         nr                  % number of samples in range
         na                  % number of samples in angle
         ny                  % number of samples in elevation
+        rdim                % range dimension
+        adim                % angle dimension
+        ydim                % elevation dimension
     end
     
     % get/set & constructor
@@ -278,6 +281,11 @@ classdef ScanPolar < Scan
         function set.dr(self, dr), if isinf(dr), self.r = 0; else, self.r = dr * (floor(min(self.r) / dr) : ceil(max(self.r) / dr)); end, end
         function set.da(self, da), if isinf(da), self.a = 0; else, self.a = da * (floor(min(self.a) / da) : ceil(max(self.a) / da)); end, end
         function set.dy(self, dy), if isinf(dy), self.y = 0; else, self.y = dy * (floor(min(self.y) / dy) : ceil(max(self.y) / dy)); end, end
+
+        % get the named dimension
+        function d = get.rdim(self), d = find(self.order == 'R'); end
+        function d = get.adim(self), d = find(self.order == 'A'); end
+        function d = get.ydim(self), d = find(self.order == 'Y'); end
     end
 
     % overloads

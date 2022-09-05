@@ -33,6 +33,9 @@ classdef ScanCartesian < Scan
         nx                  % number of samples in x
         ny                  % number of samples in y
         nz                  % number of samples in z
+        xdim                % x-dimension
+        ydim                % y-dimension
+        zdim                % z-dimension
     end
     
     % get/set & constructor
@@ -255,6 +258,11 @@ classdef ScanCartesian < Scan
         function set.dx(self, dx), if isinf(dx), self.x = 0; else, self.x = dx * (floor(min(self.x) / dx) : ceil(max(self.x) / dx)); end, end
         function set.dy(self, dy), if isinf(dy), self.y = 0; else, self.y = dy * (floor(min(self.y) / dy) : ceil(max(self.y) / dy)); end, end
         function set.dz(self, dz), if isinf(dz), self.z = 0; else, self.z = dz * (floor(min(self.z) / dz) : ceil(max(self.z) / dz)); end, end
+    
+        % get the named dimension
+        function d = get.xdim(self), d = find(self.order == 'X'); end
+        function d = get.ydim(self), d = find(self.order == 'Y'); end
+        function d = get.zdim(self), d = find(self.order == 'Z'); end
     end
 
     % overloads
