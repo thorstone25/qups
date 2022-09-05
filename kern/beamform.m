@@ -87,6 +87,7 @@ if gpuDeviceCount && any(cellfun(@(v)isa(v, 'gpuArray'), {Pi, Pr, Pv, Nv, x}))
 else
     device = 0; % CPU
 end
+fmod = 0; % modulation frequency
 
 % optional inputs
 nargs = int64(numel(varargin));
@@ -112,6 +113,9 @@ while (n <= nargs)
         case 'apod',
             n = n + 1; 
             apod = varargin{n};
+        case 'modulation'
+            n = n + 1;
+            fmod = varargin{n};
         otherwise
             error('Unrecognized option');
     end
@@ -282,7 +286,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         case {'DAS','SYN','BF'}
             for f = F:-1:1 % beamform each data frame
                 yf = cellfun(@(pi) ...
-                    k.feval(yg, pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, t0, fs), ...
+                    k.feval(yg, pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [t0, fs, fmod]), ...
                      Pif, per_cell{:});
 
                 % concatentate pixels
@@ -345,8 +349,11 @@ else
     dv = shiftdim(dv, 1); 
     dr = shiftdim(dr, 1);
     
-    % time vector
-    % t = t0 + cast(colon(0,T-1).', 'like', t0) ./ fs;
+    % apply modulation frequency
+    if fmod       
+        t = t0 + ((0:T-1).') ./ fs; % time vector
+        x = x .* exp(2i*pi*fmod.*t); apply
+    end
     
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3]); % pack for I

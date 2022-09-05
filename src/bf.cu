@@ -48,11 +48,12 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     const U * __restrict__ Pv, const U * __restrict__ Nv, 
 	const U2 * __restrict__ a, const U * __restrict__ cinv, const size_t * acstride, 
     const U2 * __restrict__ x,
-	const U t0fs[2], const int flag) {
+	const U t0fsfc[3], const int flag) {
     
     // unpack
-    const U t0   = t0fs[0];
-    const U fs   = t0fs[1];
+    const U t0   = t0fsfc[0]; // start time
+    const U fs   = t0fsfc[1]; // sampling frequency
+    const U fc   = t0fsfc[2]; // modulation frequency
     const size_t * astride = acstride;
     const size_t * cstride = acstride + 5;
 
@@ -79,7 +80,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     // temp vars
     const U2 zero_v = {0, 0};
     U2 w = {1, 0};
-    U rf, dv, dr, tau;
+    U dv, dr, tau;
     U2 val, pix = zero_v;
     U3 rv;
 
@@ -102,11 +103,11 @@ void __device__ DAS_temp(U2 * __restrict__ y,
                 const U ci = cinv[cbase + n * cstride[3] + m * cstride[4]];
                 tau = (ci * (dv + dr) - t0);
 
-                // TODO: enable demod: {w.x = cospi(2*fs/4*tau); w.y = -sinpi(2*fs/4*tau);}
-                rf = tau * fs;
+                // apply demodulation if non zero
+                if (fc) {w.x = cospi(2*fc*tau); w.y = sinpi(2*fc*tau);}
 
                 // sample the trace
-                val = sample(&x[(n + m * N) * T], rf, flag & 7, zero_v); // out of bounds: extrap 0
+                val = sample(&x[(n + m * N) * T], tau * fs, flag & 7, zero_v); // out of bounds: extrap 0
 
                 // apply apodization
                 val *= w * a[abase + n * astride[3] + m * astride[4]];
@@ -132,8 +133,7 @@ __global__ void DAS(double2 * __restrict__ y,
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
     const double2 * __restrict__ a, const double * __restrict__ cinv, const size_t * acstride,
 	const double2 * __restrict__ x, const int iflag,
-	const double t0, const double fs) {
-    const double tvars[2] = {t0, fs};
+	const double tvars[3]) {
     DAS_temp<double, double2, double3>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag);
 }
 
@@ -142,8 +142,7 @@ __global__ void DASf(float2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
     const float2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride,
 	const float2 * __restrict__ x, const int iflag,
-	const float t0, const float fs) {
-    const float tvars[2] = {t0, fs};
+	const float tvars[3]) {
     DAS_temp<float, float2, float3>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag);
 
 }
@@ -154,8 +153,7 @@ __global__ void DASh(ushort2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
 	const ushort2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride, 
     const ushort2 * __restrict__ x, const int iflag,
-	const float t0, const float fs) {
-    const float tvars[2] = {t0, fs};
+	const float tvars[3]) {
     DAS_temp<float, half2, float3>((half2 *)y, Pi, Pr, Pv, Nv, (const half2 *)a, cinv, acstride, (const half2 *)x, tvars, iflag);
 }
 #endif
@@ -165,8 +163,7 @@ __global__ void SYN(double2 * __restrict__ y,
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
     const double2 * __restrict__ a, const double * __restrict__ cinv, const size_t * acstride,
 	const double2 * __restrict__ x, const int iflag,
-	const double t0, const double fs) {
-    const double tvars[2] = {t0, fs};
+	const double tvars[3]) {
     DAS_temp<double, double2, double3>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag+8);
 }
 
@@ -175,8 +172,7 @@ __global__ void SYNf(float2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
     const float2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride,
 	const float2 * __restrict__ x, const int iflag,
-	const float t0, const float fs) {
-    const float tvars[2] = {t0, fs};
+	const float tvars[3]) {
     DAS_temp<float, float2, float3>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag+8);
 }
 
@@ -186,8 +182,7 @@ __global__ void SYNh(ushort2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
 	const ushort2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride, 
     const ushort2 * __restrict__ x, const int iflag,
-	const float t0, const float fs) {
-    const float tvars[2] = {t0, fs};
+	const float tvars[3]) {
     DAS_temp<float, half2, float3>((half2 *)y, Pi, Pr, Pv, Nv, (const half2 *)a, cinv, acstride, (const half2 *)x, tvars, iflag+8);
 }
 #endif
@@ -198,8 +193,7 @@ __global__ void BF(double2 * __restrict__ y,
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
     const double2 * __restrict__ a, const double * __restrict__ cinv, const size_t * acstride,
 	const double2 * __restrict__ x, const int iflag,
-	const double t0, const double fs) {
-    const double tvars[2] = {t0, fs};
+	const double tvars[3]) {
     DAS_temp<double, double2, double3>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag+24);
 }
 
@@ -208,8 +202,7 @@ __global__ void BFf(float2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
     const float2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride,
 	const float2 * __restrict__ x, const int iflag,
-	const float t0, const float fs) {
-    const float tvars[2] = {t0, fs};
+	const float tvars[3]) {
     DAS_temp<float, float2, float3>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag+24);
 }
 
@@ -219,8 +212,7 @@ __global__ void BFh(ushort2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
 	const ushort2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride, 
     const ushort2 * __restrict__ x, const int iflag,
-	const float t0, const float fs) {
-    const float tvars[2] = {t0, fs};
+	const float tvars[3]) {
     DAS_temp<float, half2, float3>((half2 *)y, Pi, Pr, Pv, Nv, (const half2 *)a, cinv, acstride, (const half2 *)x, tvars, iflag+24);
 }
 #endif
