@@ -169,7 +169,7 @@ classdef Waveform < matlab.mixin.Copyable
             end
         end
         
-        function varargout = plot(wv, axs, kwargs, plot_args)
+        function varargout = plot(wv, varargin, kwargs, plot_args)
             % WAVEFORM/PLOT - plot the Waveform
             % 
             % PLOT(wv) plots the Waveform
@@ -210,11 +210,21 @@ classdef Waveform < matlab.mixin.Copyable
             % parse inputs
             arguments
                 wv Waveform
-                axs (1,1) matlab.graphics.axis.Axes = gca
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
                 kwargs.freqs (1,1) logical = false
                 plot_args.?matlab.graphics.chart.primitive.Line
-            end            
-            
+            end
+
+            % extract axis and other non-Name/Value pair arguments
+            if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes')
+                axs = varargin{1}; varargin(1) = [];
+            else, axs = gca;
+            end
+
             % get data
             if isempty(wv.fs)
                 wv = copy(wv); % don't modify the original
@@ -243,18 +253,18 @@ classdef Waveform < matlab.mixin.Copyable
             plot_args = struct2nvpair(plot_args);
             if kwargs.freqs
                 h_time = subplot(2,1,1);
-                hp = plot(h_time, t, v, plot_args{:});
+                hp = plot(h_time, t, v, varargin{:}, plot_args{:});
                 xlabel('Time');
                 ylabel('Amplitude');
                 grid on;
                 
                 h_freq = subplot(2,1,2);
-                hp2 = plot(h_freq, k, w, plot_args{:});
+                hp2 = plot(h_freq, k, w, varargin{:}, plot_args{:});
                 xlabel('Frequency');
                 ylabel('Amplitude');
                 grid on;
             else
-                hp = plot(axs, t, v, plot_args{:});
+                hp = plot(axs, t, v, varargin{:}, plot_args{:});
                 xlabel(axs, 'Time');
                 ylabel(axs, 'Amplitude');
                 grid on;
