@@ -23,7 +23,7 @@ end
 
 % create index axes for each dimension from ind
 i = arrayfun(@(I) {int32(1):I}, size(x)); % use int32 to save data?
-i{dim} = 1; % don't expand selected dimension
+i{dim} = int32(1):size(ind, dim); % use dimensions of the indexing
 
 % expand grid to all dimensions in x (except dim)
 [i{:}] = ndgrid(i{:}); % implies [a, b, ...] = ndgrid(a, b, ...);
