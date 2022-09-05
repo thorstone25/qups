@@ -432,15 +432,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
             wv = conv(self.rx.impulse, ...
-                conv(self.tx.impulse, self.sequence.pulse, 4*self.fs), ...
-                4*self.fs); % transmit waveform, 4x intermediate convolution sampling
+                conv(self.tx.impulse, self.sequence.pulse, self.fs), ...
+                self.fs); % transmit waveform, convolved at US frequency
             wv.fs = self.fs;
             kern = wv.samples;
 
             F = numel(scat);
             if kwargs.verbose, hw = waitbar(0); end
 
-            for f = F:-1:1 % for each point target
+            for f = F:-1:1 % for each Scatterers
             % get minimum/maximum sample times
             tmin = taumin(f) + wv.t0;
             tmax = taumax(f) + wv.tend;
@@ -489,10 +489,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % grab the kernel reference
                 k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
-                k.setConstantMemory( ...
-                    'QUPS_I', uint64(QI), 'QUPS_T', uint64(QT), 'QUPS_S', uint64(QS), ...
-                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ... , 'QUPS_F', uint64(QF) ...
-                    );
+                k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
+                try k.setConstantMemory('QUPS_T', uint64(QT), ...
+                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ...  'QUPS_I', uint64(QI),    , 'QUPS_F', uint64(QF) ...
+                    ); end % already set by const compiler
+                try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
                 k.ThreadBlockSize = min(k.MaxThreadsPerBlock,QS); 
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
@@ -1955,6 +1956,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % b = DAS(..., 'keep_rx', true) preserves the receive
             % dimension in the output image b.
             %
+            % b = DAS(..., 'fmod', fc) upmixes the data at a modulation
+            % frequency fc. This undoes the effect of demodulation at the
+            % same freuqency.
+            %
             % b = DAS(..., 'interp', method) specifies the method for
             % interpolation. Support is provided by interp1 on the CPU or
             % is restricted to one of {'nearest', 'linear', 'cubic'} on the
@@ -2003,7 +2008,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 {mustBeNumeric} = self.sequence.c0
+                c0(:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
+                kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumericOrLogical} = 1
@@ -2028,7 +2034,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [X, Y, Z, image_size] = self.scan.getImagingGrid();
 
             % reshape into I x N x M
-            apod_args = {'apod', kwargs.apod};
+            apod_args = {'apod', kwargs.apod, 'modulation', kwargs.fmod};
             
             % convert to x/y/z in 1st dimension
             P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 == 3 x [I]
@@ -2200,6 +2206,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % b = BFADJOINT(..., 'keep_rx', true) preserves the receive
             % dimension in the output image b.
             %
+            % b = BFADJOINT(..., 'fmod', fc) upmixes the data at a
+            % modulation frequency fc. This undoes the effect of
+            % demodulation at the same frequency.
+            %
             % b = BFADJOINT(..., 'bsize', B) uses an block size of B when
             % vectorizing computations. A larger block size will run
             % faster, but use more memory. The default is chosen
@@ -2235,7 +2245,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (:,:,:) double = self.sequence.c0
+                c0 (:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
+                kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
                 kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
                 kwargs.apod {mustBeNumericOrLogical} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
                 kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
@@ -2264,17 +2275,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     );
             end
 
-            % parse inputs
+            % parse inpcccuts
             sumtx = ~kwargs.keep_tx;
             sumrx = ~kwargs.keep_rx;
+            fmod = kwargs.fmod;
 
             % move the data to the frequency domain, being careful to
             % preserve the time axis
             K = kwargs.Nfft; % DFT length
             f = shiftdim(chd.fs * (0 : K - 1)' / K, 1-chd.tdim); % frequency axis
             df = chd.fs / K; % frequency step size
-            x = fft(chd.data,K,chd.tdim); % perm(K x N x M) x ...
-            x = x .* exp(-2i*pi*f.*chd.t0); % phase shift to re-align time axis
+            x = chd.data; % reference the data perm(K x N x M) x ...
+            x = x .* exp( 2i*pi*fmod .* chd.time); % remodulate data
+            x = fft(x,K,chd.tdim); % get the fft
+            x = x .* exp(-2i*pi*f    .* chd.t0  ); % phase shift to re-align time axis
 
             % choose frequencies to evaluate
             xmax = max(x, [], chd.tdim); % maximum value per trace
@@ -2408,10 +2422,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % b = BFEIKONAL(..., 'keep_tx', true) preserves the tranmit 
             % dimension
             %
+            % b = BFEIKONAL(..., 'fmod', fc) upmixes the data at a
+            % modulation frequency fc. This undoes the effect of
+            % demodulation at the same frequency.
+            %
             % b = BFEIKONAL(..., 'apod',A) uses an apodization defined by
-            % the ND-array A. A must be broadcastable to size 
-            % I1 x I2 x I3 x N x M where I1 x I2 x I3 is the size of the 
-            % image, N is the number of receivers, and M is the number of 
+            % the ND-array A. A must be broadcastable to size
+            % I1 x I2 x I3 x N x M where I1 x I2 x I3 is the size of the
+            % image, N is the number of receivers, and M is the number of
             % transmits.
             %
             % b = BFEIKONAL(..., 'bsize',B) computes using a B 
@@ -2507,8 +2525,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd ChannelData
                 medium Medium
                 cscan (1,1) ScanCartesian = self.scan
-
-                % defaults
+                kwargs.fmod (1,1) {mustBeNumeric} = 0
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 kwargs.apod {mustBeNumericOrLogical} = 1;
@@ -2522,6 +2539,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get summation options
             sumtx = ~kwargs.keep_tx;
             sumrx = ~kwargs.keep_rx;
+            fmod = kwargs.fmod;
 
             % get cluster
             parenv = kwargs.parenv; % compute cluster/pool/threads
@@ -2633,7 +2651,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 tau = ipermute(tau, ord); % both: perm(1 x N x M) [x 1 x ... ] x I1 x I2 x I3
                     
                 % sample and unpack the data (perm(1 x N x M) [x F x ... ] x I1 x I2 x I3)
-                ym = sample(chds(m), tau, interp_method, a, sdim); % sample and sum over rx/tx maybe
+                ym = sample(chds(m), tau, interp_method, a, sdim, fmod); % sample and sum over rx/tx maybe
                 
                 % sum or accumulate over transmit blocks
                 if sumtx, b = b + ym; else, bm{m} = ym; end 
@@ -2674,11 +2692,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % will run faster, but use more memory. The default is chosen
             % heuristically.
             %   
+            % b = BFDAS(..., 'fmod', fc) upmixes the data at a modulation
+            % frequency fc. This undoes the effect of demodulation at the
+            % same frequency.
+            %
             % b = BFDAS(..., 'interp', method) specifies the method for
-            % interpolation. Support is provided by the ChannelData/sample 
+            % interpolation. Support is provided by the ChannelData/sample
             % method. The default is 'cubic'.
             % 
-            % b = DAS(..., 'device', index) uses the gpuDevice with ID
+            % b = BFDAS(..., 'device', index) uses the gpuDevice with ID
             % index. If index == -1, the current device is used. Index == 0
             % avoids using a gpuDevice. The default is -1 if a gpu is
             % available.
@@ -2717,7 +2739,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (:,:,:) double = self.sequence.c0
+                c0 (:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
+                kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
@@ -2774,9 +2797,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             cinv = 1 ./ c0;
             sumtx = ~kwargs.keep_tx;
             sumrx = ~kwargs.keep_rx;
+            fmod = kwargs.fmod;
 
             % move image dimensions beyond the data
-            D = max([ndims(chd.data), ndims(dv), ndims(dr), 5]); % highest dimension of data
+            D = max([ndims(chd.data), ndims(dv), ndims(dr), ndims(cinv), 5]); % highest dimension of data
             [dv, dr, apod, cinv] = dealfun(@(x) swapdim(x, 1:3, D+(1:3)), dv, dr, apod, cinv);
             sdim = []; % dimensions to sum after apodization
             if sumrx, sdim = [sdim, chd.ndim]; end 
@@ -2812,7 +2836,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 a   = swapdim(a  , [4,5], [chds(m).ndim, chds(m).mdim]); 
 
                 % sample, apodize, and sum over rx if requested
-                z = sample(chds(m), tau, interp_method, a, sdim); % (perm(1 x N x M) x F x ... x I1 x I2 x I3)
+                z = sample(chds(m), tau, interp_method, a, sdim, fmod); % (perm(1 x N x M) x F x ... x I1 x I2 x I3)
 
                 % swap the imaging and time/aperture dimensions
                 z = ipermute(z, [tord, 4:gather(ndims(z))]); % 1 x N x M x F x ...
@@ -2872,6 +2896,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % RECOMPILEMEX(self) recompiles all mex binaries and stores
             % them in self.tmp_folder.
             %
+            % RECOMPILECUDA(self, defs) compiles for the compiler 
+            % definition structs defs. These structures are generated by
+            % the UltrasoundSystem class. The default is all the
+            % definitions returned by UltrasoundSystem.getMexFileDefs().
+            % 
             % See also ULTRASOUNDSYSTEM/RECOMPILECUDA
             % ULTRASOUNDSYSTEM/RECOMPILE
             
@@ -2899,28 +2928,36 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
    
         end
-        function recompileCUDA(self)
+        function recompileCUDA(self, defs)
             % RECOMPILECUDA - Recompile CUDA ptx files
             %
             % RECOMPILECUDA(self) recompiles all CUDA files and stores
             % them in self.tmp_folder.
             %
-            % See also ULTRASOUNDSYSTEM/RECOMPILEBFCONST
-            % ULTRASOUNDSYSTEM/RECOMPILE ULTRASOUNDSYSTEM/RECOMPILEMEX
+            % RECOMPILECUDA(self, defs) compiles for the compiler 
+            % definition structs defs. These structures are generated by
+            % the UltrasoundSystem class. The default is all the
+            % definitions returned by UltrasoundSystem.getCUDAFileDefs().
+            % 
+            % See also ULTRASOUNDSYSTEM.RECOMPILEBFCONST
+            % ULTRASOUNDSYSTEM.RECOMPILE ULTRASOUNDSYSTEM.RECOMPILEMEX 
+            % ULTRASOUNDSYSTEM.GETCUDAFILEDEFS
+
+            arguments
+                self (1,1) UltrasoundSystem
+                defs (1,:) struct = UltrasoundSystem.getCUDAFileDefs();
+            end
             
             % src file folder
             src_folder = UltrasoundSystem.getSrcFolder();
             
-            % get all source code definitions
-            defs = UltrasoundSystem.getCUDAFileDefs();
-
             % get the current gpu's compute capability support
             try  
                 g = gpuDevice();
-                arch = "compute_" + replace(g.ComputeCapability,'.','');
+                arch = "compute_" + replace(g.ComputeCapability,'.',''); % use the current GPU's CC number
             catch
-                warning("Unable to access GPU - code will not be recompiled.");
-                return
+                warning("Unable to access GPU.");
+                arch = string.empty; % don't use this argument
             end
 
             % compile each
@@ -2973,7 +3010,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the other sizes for beamform.m
             VS = ~(self.sequence.type == "PW"); % whither virtual source
             Isz = self.scan.size; % size of the scan
-            N = self.xdc.numel; % number of receiver elements
+            N = self.rx.numel; % number of receiver elements
             M = self.sequence.numPulse; % number of transmits
             assert(~isnan(M) && M > 0); % M must be defined
             
@@ -2995,7 +3032,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % if T is provided, include it
             if nargin >= 2
                 defs.DefinedMacros = [defs.DefinedMacros; ...
-                    {"T="+chd.T}; ... number of time samples
+                    {"QUPS_T="+chd.T}; ... number of time samples
                     ];
             end
             
@@ -3022,12 +3059,98 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 end
             end
         end
+        function recompileGREENSCONST(self, scat)
+            % RECOMPILEBFCONST - Constant size compilation for beamforming
+            %
+            % RECOMPILEBFCONST(self) recompiles the beamforming cuda
+            % executables for the current scan, transducer, and
+            % transmit sequence.
+            %
+            % Using a fixed data size triggers compiler-level optimizations
+            % that can improve performance for iterative calls.
+            %
+            % After calling this function, calls with a different size of
+            % data will have unexpected results. Use
+            % UltrasoundSystem/recompileCUDA to reset the binaries to
+            % handle variable sizes.
+            %
+            % RECOMPILEBFCONST(self, chd) additionally uses a fixed size
+            % ChannelData object.
+            %
+            % See also ULTRASOUNDSYSTEM/RECOMPILECUDA
+            % ULTRASOUNDSYSTEM/RECOMPILE
+            arguments
+                self (1,1) UltrasoundSystem
+                scat Scatterers {mustBeScalarOrEmpty} = Scatterers.empty
+            end
+
+            % src file folder
+            src_folder = UltrasoundSystem.getSrcFolder();
+
+            % get the Waveform length
+            wv = conv(self.rx.impulse, ...
+                conv(self.tx.impulse, self.sequence.pulse, self.fs), ...
+                self.fs); % transmit waveform, convolved at US frequency
+            wv.fs = self.fs;
+            T = length(wv.samples);
+
+            % get the other sizes for greens.cu
+            N = self.rx.numel; % number of receiver elements
+            M = self.tx.numel; % number of transmits
+
+            % get all source code definitions
+            defs = UltrasoundSystem.genCUDAdef_greens();
+
+            % add the defined macros
+            defs.DefinedMacros = cat(1, ...
+                defs.DefinedMacros, ... keep the current defs
+                "QUPS_" + {... prepend 'QUPS_'
+                "T="+T,... elements
+                "N="+N,... elements
+                "M="+M,... transmits
+                }');
+
+            % if I is provided, include it
+            if ~isempty(scat)
+                defs.DefinedMacros = [defs.DefinedMacros; ...
+                    {"QUPS_I="+scat.numScat}; ... number of time samples
+                    ];
+            end
+
+            % compile each
+            for d = defs
+                % make full command
+                com = join(cat(1,...
+                    "nvcc --ptx ", ...
+                    "-arch=native ", ... % for half types: TODO move to compile option
+                    fullfile(src_folder, d.Source) + " ", ...
+                    "-o " + fullfile(self.tmp_folder, strrep(d.Source, '.cu', '.ptx')), ...
+                    join("--" + d.CompileOptions),...
+                    join("-I" + d.IncludePath), ...
+                    join("-L" + d.Libraries), ...
+                    join("-W" + d.Warnings), ...
+                    join("-D" + d.DefinedMacros)...
+                    ));
+
+                try
+                    s = system(com);
+                    if s, warning("Error recompiling code!"); else, disp("Success recompiling " + d.Source); end
+                catch
+                    warning("Unable to recompile code!");
+                end
+            end
+        end
     end
-    
-    % source file recompilation definitions
-    methods(Static,Hidden)
+    methods(Static)
         function defs = getCUDAFileDefs()
-            % no halp :(
+            % GETCUDAFILEDEFS - Get the CUDA compilation definition structs
+            %
+            % defs = GETCUDAFILEDEFS() returns a struct array with fields 
+            % and values specifying compilation arguments. These are used
+            % by UltrasoundSystem.recompileCUDA to recompile code for the
+            % current host machine.
+            %
+            % See also RECOMPILECUDA ULTRASOUNDSYSTEM.GETMEXFILEDEFS
             
             % get all source code definitions
             defs = [...
@@ -3040,7 +3163,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
 
         function defs = getMexFileDefs()
-            % no halp :(
+            % GETMEXFILEDEFS - Get the mex compilation definition structs
+            %
+            % defs = GETMEXFILEDEFS() returns a struct array with fields 
+            % and values specifying compilation arguments. These are used
+            % by UltrasoundSystem.recompileMex to recompile code for the
+            % current host machine.
+            %
+            % See also RECOMPILEMEX ULTRASOUNDSYSTEM.GETCUDAFILEDEFS
             
             % get all source code definitions
             defs = [...
@@ -3048,6 +3178,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 ];
         end
 
+    end
+    
+    % source file recompilation definitions
+    methods(Static,Hidden)
         function f = getSrcFolder()
             f = fileparts(mfilename('fullpath'));
         end
