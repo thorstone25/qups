@@ -1447,7 +1447,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % k-Wave calls
     methods
-        function [chd, job] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args)
+        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(self, med) simulates the Medium med 
@@ -1491,18 +1491,34 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chd = KSPACEFIRSTORDER(..., 'parenv', clu) or 
             % chd = KSPACEFIRSTORDER(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to compute
-            % each pulse in parallel.
+            % each pulse in parallel via parfor. 
             % 
+            % When using a parallel.Cluster clu, the settings for clu must
+            % be setup for an independent parallel.Job as separate job is
+            % created for each pulse. For example, if using a SLURM cluster
+            % with multiple GPUs, clu.SubmitArguments should contain 
+            % ' --gpus=1' so that 1 GPU is requested per pulse.
+            % 
+            % [job, readfun] = KSPACEFIRSTORDER(..., 'parenv', clu) instead 
+            % returns a communicating parallel.Job job and a function to
+            % read the ChannelData object from the completed job. Use
+            % the submit function to begin running the job.
+            % 
+            % The settings for clu should must be setup for a communicating
+            % parallel.Job as a single MPI job is created for all pulses. 
+            % For example, if using a SLURM cluster with multiple GPUs,
+            % clu.SubmitArguments should contain the number of GPUs desired
+            % for execution e.g. ' --gpus=4' and clu.NumWorkers should
+            % equal the maximum number of simulataneous CPUs to use e.g. 4.
+            % If more CPUs than GPUs are requested, MATLAB will share GPUs
+            % between multiple CPUs. 
+            % 
+            % When the job has completed successfully, the ChannelData
+            % object can be extracted using 'chd = readfun(job)'.
+            %
             % A MATLAB parallel.Job is saved until it is deleted, so
             % simulations can be recalled later from the job reference.
             % 
-            % [chd, job] = KSPACEFIRSTORDER(..., 'parenv', clu) also 
-            % returns a parallel.Job job. If these outputs are requested,
-            % chd is empty and the job is not submitted. The job can be
-            % submitted with the submit function. When the job has
-            % completed, the ChannelData object can be extracted using
-            % parallel.Job/fetchOutputs.
-            %
             % chd = KSPACEFIRSTORDER(..., 'parenv', 0) avoids using a
             % parallel.Cluster or parallel.Pool. 
             %
@@ -1591,9 +1607,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % parse
             if isinf(sscan.dx), kwargs.el_sub_div(1) = 1; end % don't use sub-elements laterally for 1D sims
             if isinf(sscan.dy), kwargs.el_sub_div(2) = 1; end % don't use sub-elements in elevation for 2D sims
-
-            % intialize empty outputs
-            [chd, job] = deal([]);
 
             % start measuring total execution time
             tt_kwave = tic;
@@ -1808,34 +1821,27 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 t0, fs_ ...
                 };
 
-            if ~isa(kwargs.parenv, 'parallel.Cluster') % no cluster
+            if nargout < 2 || ~isa(kwargs.parenv, 'parallel.Cluster') % no job/cluster requested
                 args{end+1} = kwargs.parenv; % parfor arg: execution environment
 
-                chd = UltrasoundSystem.kspaceRunSim(args{:}); 
+                chd = UltrasoundSystem.kspaceRunSim(args{:});
 
                 % TODO: make reports optional
                 fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
-
             else
                 % set the parfor options argument
                 args{end+1} = Inf; % parfor arg: max number of workers
 
                 % make a job on the cluster
-                % TODO: modify so that the launcher task does not request a gpu
+                % TODO: use a modified independent launch script to create
+                % tasks but without massive memory overhead.
                 clu = kwargs.parenv;
                 job = createCommunicatingJob(clu, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool');
                 job.createTask(@UltrasoundSystem.kspaceRunSim, 1, args, 'CaptureDiary',true);
 
-                % if no job output was requested, run the job 
-                if nargout < 2,
-                    submit(job);
-                    wait(job);
-                    out = job.fetchOutputs();
-                    chd = out{1};
-
-                    % TODO: make reports optional
-                    fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
-                end
+                % map the outputs
+                chd = job;
+                readfun = @(job) subsref(job.fetchOutputs(), substruct('{}', {1}));
             end
         end
     end
@@ -1876,6 +1882,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 tt_pulse = tic;
 
                 % simulate
+                % TODO: try to run these two in parallel on the same GPU?
                 sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
                 sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
 
