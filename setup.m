@@ -50,7 +50,7 @@ while i <= nargin % go through arguments sequentially
             end
             
         case 'cache'
-            us = UltrasoundSystem(); % needs paths to have been added already
+            us = UltrasoundSystem('recompile', false); % needs paths to have been added already
             us.recompile(); % attempt to recompile code
             copyfile(us.tmp_folder, fullfile(base_path, "bin")); % copy it
             addpath(fullfile(base_path, 'bin')); % add new cache path
