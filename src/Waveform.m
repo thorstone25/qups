@@ -235,6 +235,9 @@ classdef Waveform < matlab.mixin.Copyable
                 N = 2^nextpow2(max(1e4,wv.T)); % use at least 1e4-point DFT
                 fs_ = wv.fs; % use original sampling frequency
             end
+            wv = copy(wv); 
+            wv.Tlim = N+1;
+            wv.fs = fs_;
             t = wv.time;
             v = wv.samples;
             w = abs(fftshift(fft(v,N,1),1));
@@ -386,7 +389,7 @@ classdef Waveform < matlab.mixin.Copyable
         function set.samples(wv, s), wv.fun = griddedInterpolant(wv.time, s, 'cubic', 'none'); end
         function dur = get.duration(wv), dur = wv.tend - wv.t0; end
         function t = get.time(wv)
-            if wv.T >= wv.Tlim, error("Time axis too large to compute. If more than " + wv.Tlim + " values are required, increase the 'Tlim' property."); end
+            if wv.T > wv.Tlim, error("Time axis too large to compute. If more than " + wv.Tlim + " values are required, increase the 'Tlim' property."); end
             t = (floor(wv.t0 * wv.fs) : 1 : ceil(wv.tend * wv.fs))' .* wv.dt;            
         end
         function T_ = get.T(wv), T_ = 1 + ceil(wv.tend * wv.fs) - floor(wv.t0 * wv.fs);  end 
