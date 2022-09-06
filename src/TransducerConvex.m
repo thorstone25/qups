@@ -24,57 +24,32 @@ classdef TransducerConvex < Transducer
     % constructor and get/set methods
     methods(Access=public)
         % constructor: accept name/value pairs
-        function self = TransducerConvex(varargin)
-            
-            % setup the transducer args
-            if nargin == 1 && isa(varargin{1}, 'struct'), varargin = struct2nvpair(varargin{1}); end
-
-            % initialize the (inherited) Transducer
-            self@Transducer(varargin{:}) % assume we don't error on bad inputs
-            
-            % initialize the TransducerConvex
-            if nargin == 1 && isa(varargin{1}, 'uff.curvilinear_array') % (uff object)
-                probe = varargin{1};
-                props = fieldnames(probe)';
-                for p = props
-                    switch p{1}
-                        case 'radius', self.radius = probe.(p{1});
-                    end
-                end
-                for p = props  % must be set last due to depenedent variable property ordering
-                    switch p{1}
-                        case 'pitch',  self.pitch  = probe.(p{1}); 
-                    end
-                end
-            else % (name-value)
-                for i = 1:2:numel(varargin)
-                    switch varargin{i}
-                        case 'angular_pitch'
-                            self.angular_pitch = (varargin{i+1});
-                        case 'radius'
-                            self.radius = (varargin{i+1});
-                        case 'pitch'
-                            self.pitch = varargin{i+1};
-                        case 'kerf'
-                            if ~isempty(self.width) % we have the width
-                                self.kerf = varargin{i+1};
-                            elseif ~isempty(self.pitch) % no width: we have pitch
-                                kerf = varargin{i+1};
-                                self.width = self.pitch - kerf;
-                            else % no pitch nor width already:
-                                % create an error if no width nor pitch
-                                % provided already
-                                msgid = 'UltrasoundSimulation:TransducerArray:InvalidArgument';
-                                msgtext = 'Either width or pitch must be specified before kerf';
-                                ME = MException(msgid, msgtext);
-                                throw(ME);
-                            end
-                    end
-                end
+        function self = TransducerConvex(array_args, xdc_args)
+            arguments
+                array_args.pitch double {mustBeScalarOrEmpty}
+                array_args.kerf double {mustBeScalarOrEmpty}
+                array_args.radius double {mustBeScalarOrEmpty}
+                array_args.angular_pitch double {mustBeScalarOrEmpty}
+                array_args.center (3,1) double 
+                xdc_args.?Transducer
             end
-            
-            % if kerf not set, default it to 30% pitch
-            if isempty(self.pitch), self.kerf = 0.3 * self.width; end
+
+            % if width not set but pitch is, make it the pitch
+            if ~isfield(xdc_args, 'width') && isfield(array_args, 'pitch'),
+                xdc_args.width = array_args.pitch;
+            end
+
+            % initialize the Transducer
+            xdc_args = struct2nvpair(xdc_args);
+            self@Transducer(xdc_args{:})
+
+            % initialize the TransducerConvex
+            for f = string(fieldnames(array_args))'
+                self.(f) = array_args.(f);
+            end
+
+            % if kerf not set, default it to 0
+            if isempty(self.pitch), self.kerf = 0; end
         end
     end
     
