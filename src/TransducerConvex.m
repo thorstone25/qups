@@ -3,8 +3,7 @@
 % A TransducerConvex defines a convex transducer where all elements lie on
 % a circle.
 % 
-% See also TRANSDUCER TRANSDUCERCONVEX
-
+% See also TRANSDUCER TRANSDUCERARRAY
 
 classdef TransducerConvex < Transducer
     
@@ -23,8 +22,13 @@ classdef TransducerConvex < Transducer
     
     % constructor and get/set methods
     methods(Access=public)
-        % constructor: accept name/value pairs
         function self = TransducerConvex(array_args, xdc_args)
+            % TRANSDUCERCONVEX - TransducerConvex constructor
+            %
+            % xdc = TRANSDUCERCONVEX(Name, Value, ...) constructs a
+            % TransducerConvex using name/value pair arguments.
+            %
+            % See also TRANSDUCERARRAY
             arguments
                 array_args.pitch double {mustBeScalarOrEmpty}
                 array_args.kerf double {mustBeScalarOrEmpty}

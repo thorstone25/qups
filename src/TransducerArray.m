@@ -21,9 +21,6 @@ classdef TransducerArray < Transducer
         function self = TransducerArray(array_args, xdc_args)
             % TRANSDUCERARRAY - TransducerArray constructor
             %
-            % xdc = TRANSDUCERARRAY(uff_probe) constructs a TransducerArray
-            % from the uff.linear_array uff_probe.
-            %
             % xdc = TRANSDUCERARRAY(Name, Value, ...) constructs a
             % TransducerArray using name/value pair arguments.
             %
