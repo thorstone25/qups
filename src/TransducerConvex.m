@@ -1,17 +1,24 @@
+% TRANSDUCERCONVEX - Convex Array Transducer class
+% 
+% A TransducerConvex defines a convex transducer where all elements lie on
+% a circle.
+% 
+% See also TRANSDUCER TRANSDUCERCONVEX
+
 
 classdef TransducerConvex < Transducer
     
     properties
         % verasonics C5-2V defaults
-        radius = 50e-3          % inner radius of curvature (m)
+        radius = 50e-3          % inner radius of curvature
         angular_pitch = 0.5872  % the interelement angular distance (deg)
     end
        
     properties(Dependent)
-        pitch                   % interelement spacing along the arc (m)
-        kerf                    % the spacing between elements along the arc (m)
+        pitch                   % interelement spacing along the arc 
+        kerf                    % the spacing between elements along the arc
         angular_aperture_size   % size of the aperture (deg)
-        center                  % center of the circle defining the transducer (m)
+        center                  % center of the circle defining the transducer
     end
     
     % constructor and get/set methods
@@ -102,7 +109,7 @@ classdef TransducerConvex < Transducer
     end
     
     % define position methods
-    methods
+    methods(Hidden)
         % get methods                
         function p = findPositions(self)
             % returns a 3 x N vector of the positions of the N elements with
@@ -174,13 +181,12 @@ classdef TransducerConvex < Transducer
     % Field II conversion function
     methods(Access=public)
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
-            % creates a transmit / recieve aperture in Field II from the
-            % ransducer array
-            
-            % set defaults
-            if nargin < 2 || isempty(focus), focus = [0 0 1e-3]; end % ~ 0-deg plane wave
-            if nargin < 3 || isempty(element_sub_divisions), element_sub_divisions = [1,1]; end % compute
-            
+            arguments
+                self TransducerConvex
+                focus (3,1) double = [0 0 1e-3]'
+                element_sub_divisions (1,2) double = [1,1];
+            end
+                       
             % Field II parameters
             xdc_convex_params = { ...
                 self.numel,     ... no of elements in x direciton
@@ -190,7 +196,7 @@ classdef TransducerConvex < Transducer
                 self.radius,    ... inner convex radius (circumscribed)
                 element_sub_divisions(1), ... x sub-divisions
                 element_sub_divisions(2), ... y sub-divisions
-                focus           ... focal depth
+                focus.'         ... focal depth
                 };
             
             % Generate aperture for emission
@@ -363,19 +369,13 @@ classdef TransducerConvex < Transducer
     % dependent variable methods
     methods
         % get the pitch
-        function p = get.pitch(self)
-            p = 2 * self.radius * sind(self.angular_pitch / 2);
-        end
+        function p = get.pitch(self), p = 2 * self.radius * sind(self.angular_pitch / 2); end
         
         % set the pitch
-        function set.pitch(self, p)
-            self.angular_pitch = 2 * asind(p / 2 / self.radius);
-        end
+        function set.pitch(self, p), self.angular_pitch = 2 * asind(p / 2 / self.radius); end
         
         % get the kerf
-        function k = get.kerf(self)
-            k = self.pitch - self.width;
-        end
+        function k = get.kerf(self), k = self.pitch - self.width; end
         
         % set the kerf
         function set.kerf(self, k)
@@ -386,14 +386,10 @@ classdef TransducerConvex < Transducer
         end
         
         % get the aperture size
-        function a = get.angular_aperture_size(self)
-            a = (self.numel - 1) * self.angular_pitch;            
-        end
+        function a = get.angular_aperture_size(self), a = (self.numel - 1) * self.angular_pitch; end
 
         % get the center of the transducer
-        function p = get.center(self)
-            p = - [0; 0; self.radius] + self.offset;
-        end
+        function p = get.center(self), p = - [0; 0; self.radius] + self.offset; end
 
         % set the center of the transducer
         function set.center(self, p)
@@ -415,23 +411,16 @@ classdef TransducerConvex < Transducer
             );
         end
         function xdc = Verasonics(Trans, c0)
-            % xdc = VERASONICS(Trans)
-            %
-            % Create a Convex Array from the properties defined a
-            % Verasonics 'Trans' struct.
-            %
-            % xdc = VERASONICS(Trans, c0) uses c0 as the sound speed
-            % instead of 1540. This is typicaly set by the Verasonics
-            % property 'Resource.Parameters.speedOfSound'. Be sure to
-            % explicitly set this if other than 1540.
-
-            if nargin < 2, c0 = 1540; end
+            arguments
+                Trans struct
+                c0 (1,1) double = 1540
+            end
 
             % determine the scaling of the properties
             switch Trans.units
                 case 'wavelengths', scale = c0 / Trans.frequency * 1e-6;
                 otherwise
-                    warning('Conversion from Verasonics Trans to TransducerArray not supported when units not in wavelengths; values may be incorrect.');
+                    warning('Conversion from Verasonics Trans to TransducerConvex not supported for units not in wavelengths.');
             end
 
             % set relevant properties
@@ -444,6 +433,20 @@ classdef TransducerConvex < Transducer
                 'radius', Trans.radiusMm, ... % radius [m]
                 'pitch', 1e-3*Trans.spacingMm, ... % probe pitch [m]
                 'el_focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
+                );
+        end
+        function xdc = UFF(probe)
+            arguments
+                probe (1,1) {mustBeA(probe, 'uff.curvilinear_array')}
+            end
+            warning('Pitch may be inaccurate.');
+            if isempty(probe.origin), probe.origin.xyz = [0;0;0]; end % force 0 if empty
+            xdc = TransducerConvex(...
+                "pitch", probe.pitch, ...
+                "width", probe.element_width, ...
+                "height", probe.element_height, ...
+                "numel", probe.N_elements, ...
+                "offset", - probe.origin.xyz ...
                 );
         end
     end    

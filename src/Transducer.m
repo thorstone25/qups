@@ -13,8 +13,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     properties
         fc (1,1) double = 5e6        % center frequency
         bw (1,2) double = [3.5e6 6.5e6] % bandwidth
-        width (1,1) double = 1.19e-4 % width of an element (m)
-        height (1,1) double = 6e-3   % height of an element (m)
+        width (1,1) double = 1.5e-4 % width of an element
+        height (1,1) double = 6e-3   % height of an element
         numel (1,1) double = 128     % number of elements
         offset (3,1) double = [0;0;0]% the offset from the origin compared to fieldII's definitions
         impulse Waveform {mustBeScalarOrEmpty} = Waveform.empty() % the impulse response function of the element
@@ -25,7 +25,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     properties(GetAccess=public, SetAccess=protected, Dependent)
-        area            % area of an element (m^2)
+        area            % area of an element
     end
 
     properties(Dependent)
@@ -37,11 +37,34 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % constructor
     methods
-        function xdc = Transducer(varargin)
-            if nargin == 1 && isa(varargin{1}, 'Transducer') % copy constructor
-               xdc = copy(varargin{1}); 
-            elseif nargin == 1 && isa(varargin{1}, 'uff.probe') % uff Constructor
-                probe = varargin{1};
+        function xdc = Transducer(probe, kwargs)
+            % TRANSDUCER - Transducer constructor
+            %
+            % xdc = TRANSDUCERARRAY(uff_probe) constructs a Transducer from
+            % the uff.probe uff_probe.
+            %
+            % xdc = TRANSDUCER(Name, Value, ...) constructs a
+            % Transducer using name/value pair arguments.
+            %
+            % A Transducer is an abstract class and cannot be instantiated
+            % directly.
+            % 
+            % See also TRANSDUCERARRAY TRANSDUCERCONVEX
+
+            arguments
+                probe {mustBeScalarOrEmpty} = []
+                kwargs.width
+                kwargs.height
+                kwargs.fc
+                kwargs.bw
+                kwargs.el_focus
+                kwargs.numel
+                kwargs.offset
+                kwargs.impulse
+                kwargs.origin
+                kwargs.bw_frac
+            end
+            if nargin == 1 && isa(probe, 'uff.probe') % uff Constructor
                 props = string(fieldnames(probe))';
                 for p = props
                     switch p
@@ -52,25 +75,22 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
                     end
                 end
             else % name-value pair initialization
-                for i = 1:2:nargin
-                    p = lower(varargin{i});
-                    switch p
-                        case {'width', 'height', 'fc', 'bw', 'el_focus', 'numel', 'offset', 'impulse'}
-                            xdc.(p) = (varargin{i+1});
-                        case {'bandwidth'}
-                            xdc.bw = (varargin{i+1});
-                        case {'focus'}
-                            xdc.el_focus = varargin{i+1};
-                    end
+                % if width set but not height, default to 20x
+                if isfield(kwargs,'width') && ~isfield(kwargs, 'height')
+                    kwargs.height = 20*kwargs.width;
                 end
+
+                % set all properties except bw_frac
+                for f = setdiff(string(fieldnames(kwargs)), {'bw_frac'})', xdc.(f) = kwargs.(f); end
+                
+                % if frequency but not bandwidth or fractional bandwidth is
+                % set, default to 60%
+                if ~isfield(kwargs, 'bw') && ~isfield(kwargs, 'bw_frac')
+                    kwargs.bw_frac = 0.6; 
+                end
+                
                 % set fractional bandwidth last
-                for i = 1:2:nargin
-                    p = lower(varargin{i});
-                    switch p
-                        case {'fractional_bandwidth', 'bw_frac'}
-                            xdc.setBandwidthFractional(varargin{i+1});
-                    end
-                end
+                if isfield(kwargs, 'bw_frac'), xdc.bw_frac = kwargs.bw_frac; end
             end
 
             % regardless of input, if impulse is empty, initialize it
@@ -100,9 +120,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % xdc = TransducerArray() % m, s, Hz
             %
             % % convert from meters to millimeters, hertz to megahertz
-            % xdc = scale(xdc, 'dist', 1e3, 'time', 1e6); % mm, us, MHz
-            % xdc.width
-            % xdc.fc
+            % xdc = scale(xdc, 'dist', 1e3, 'time', 1e6) % mm, us, MHz
             %
 
             arguments
@@ -128,7 +146,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % transducer specific methods
     methods (Abstract)
-        % inferred position methods
         % POSITIONS - Positions of the elements
         %
         % p = POSITIONS(xdc) returns a 3 x N array representing the 
@@ -136,6 +153,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % 
         % See also ORIENTATIONS TRANSDUCER/PLOT
         p = positions(xdc); 
+
         % ORIENTATIONS - Orientation of the elements
         %
         % [theta, phi] = ORIENTATIONS(xdc) returns the azimuth and
@@ -148,12 +166,29 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % vector with the direction and mangitude of the height of the
         % element.
         %
-        % See also POSITIONS
+        % See also POSITIONS TRANSDUCER/PLOT
         [theta, phi, normal, width, height] = orientations(xdc); % compute the orientations
+        
+        % BOUNDS - Compute the boundaries of the arrays
+        %
+        % pb = BOUNDS(xdc) returns a 3 x 2 array of the minimum and maximum 
+        % cartesian coordinate in x/y/z for the Transducer xdc.
+        %
+        % 
         pb = bounds(xdc); % compute the 3 x 2 array of x/y/z by min/max
-        pch = patches(xdc,sub_div); % computes a [Ndiv x Nel] cell array of
-        % {X,Y,Z,C} tuples of 2x2 matrices specifying four corners of each
-        % patch that is a subdivision of the elements
+        
+        % PATCHES - Compute a matrix of sub-elements
+        % 
+        % pch = PATCHES(xdc,sub_div) computes a cell matrix where each
+        % element contains {X,Y,Z,C} tuples of 2x2 matrices specifying four
+        % corners of each patch, where each patch is a subdivision of the
+        % elements into sub-elements specified by the 1 x 2 array sub_div.
+        % pch is a [Ndiv x Nel] matrix where Nel is the number of elements
+        % and Ndiv is the number of sub-elements given by the
+        % prod(sub_div).
+        %
+        % See also POSITIONS
+        pch = patches(xdc,sub_div); % return a matrix of sub-elements
     end
 
     % toolbox conversion functions
@@ -183,27 +218,54 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % Verasonics conversion functions
     methods (Abstract, Static)
-        % xdc = VERASONICS(Trans)
+        % VERASONICS - Construct a Transducer from A Verasonics struct
+        % 
+        % xdc = VERASONICS(Trans) constructs a Transducer from the 
+        % properties defined in the Verasonics 'Trans' struct.
         %
-        % Construct a Transducer from the properties defined a
-        % Verasonics 'Trans' struct.
-        %
+        % To construct a linear array, use TransducerArray.Verasonics(). 
+        % To construct a curvilinear or convex array, use
+        % TransducerConvex.Verasonics().
+        % 
         % xdc = VERASONICS(Trans, c0) uses c0 as the sound speed
         % instead of 1540. This is typicaly set by the Verasonics
         % property 'Resource.Parameters.speedOfSound'. Be sure to
         % explicitly set this if other than 1540.
+        %
+        % 
         xdc = Verasonics(Trans, c0)
 
     end
 
     % SIMUS functions
     methods (Abstract)
+        % GETSIMUSPARAM - Create a MUST compatible parameter struct
+        %
+        % p = GETSIMUSPARAM(xdc) returns a structure with properties
+        % for a call to simus().
+        %
+        % See also ULTRASOUNDSYSTEM/SIMUS
         p = getSIMUSParam(xdc)
     end
 
-    % kWave functions
-    methods
+    methods (Abstract)
+        % UFF - Construct a Transducer from a UFF probe
+        %
+        % xdc = TRANSDUCER.UFF(probe) converts the uff.probe probe to a
+        % Transducer xdc. Use TRANSDUCERARRAY.UFF for a uff.linear_array or
+        % use TRANSDUCERCONVEX.UFF for a uff.curvilinear_array.
+        %
+        % See also GETUSTBPROBE
+        xdc = UFF(probe)
+    end
+
+    % kWave functions (old)
+    methods(Hidden)
         function [ksensor, ksensor_ind, sens_map] = getKWaveSensor(xdc, kgrid, kgrid_origin, el_sub_div)
+            % GETKWAVESENSOR - Get a kWave compatible sensor struct
+            % 
+            % ksensor = GETKWAVESENSOR(xdc, kgrid, kgrid_origin)
+            % 
             % TODO: doc this function: it gives you a k-Wave ready sensor
             % structure
             %             arguments
@@ -342,22 +404,27 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         function [mask, el_weight, el_dist, el_ind] = elem2grid(xdc, scan, el_sub_div)
             % ELEM2GRID - Transducer element to grid mapping
             %
-            % [mask, el_ind, el_weight, el_dist] = ELEM2GRID(xdc, scan)
+            % [mask, el_weight, el_dist, el_ind] = ELEM2GRID(xdc, scan)
             % returns a binary mask and a set of indices, weights, and
             % distances defined for each element give a Transducer self and
             % a ScanCartesian scan. The element indicies are defined on the
             % vectorized non-zero indices of the mask i.e. on the indices
             % of `find(mask)`.
+            %
+            % [...] = ELEM2GRID(xdc, scan, el_sub_div) subdivides the
+            % elements in width and height by el_sub_div. The default is
+            % [1,1].
+            % 
+            % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDER
 
-            % arguments
-            %     xdc (1,1) Transducer
-            %     scan (1,1) ScanCartesian
-            %     el_sub_div (1,2) double = [1,1]
-            % end
-            if nargin < 3, el_sub_div = [1,1]; end
+            arguments
+                xdc (1,1) Transducer
+                scan (1,1) ScanCartesian
+                el_sub_div (1,2) {mustBeInteger, mustBePositive} = [1,1]
+            end
 
-            % get the sensor and source masks. This is the hard part: how do I do this
-            % for a convex probe on a grid surface?
+            % get the sensor and source masks. This is the hard part: how 
+            % do I do this for a convex probe on a grid surface?
 
             vec = @(x)x(:); % define locally for compatibility
 
@@ -485,7 +552,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     methods
-        function karray = kWaveArray(xdc, dim, og, varargin)
+        function karray = kWaveArray(xdc, dim, og, karray_args)
             % KWAVEARRAY - Create a kWaveArray object from the Transducer
             %
             % karray = KWAVEARRAY(self, dim, og) creates a kWaveArray from the
@@ -502,17 +569,28 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             %   UpsamplingRate
             %
             % See also KWAVEARRAY
+            arguments
+                xdc Transducer
+                dim {mustBeInteger, mustBeInRange(dim, 2,3)}
+                og (:,1) {mustBeNumeric}
+                karray_args.Axisymmetric (1,1) logical
+                karray_args.UpsamplingRate (1,1) double
+                karray_args.BLITolerance (1,1) double {mustBeInRange(karray_args.BLITolerance, 0, 1)}
+                karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])}
+            end
 
             % TODO: set axisymmetric if it makes sense
-            % TODO: allow input argument to specify dimensions
+            % TODO: allow for elevation
 
             % initialize
-            karray = kWaveArray(varargin{:});
+            karray_args = struct2nvpair(karray_args);
+            karray = kWaveArray(karray_args{:});
 
             % get positions and orientations
             p = xdc.positions; % TODO: translate the entire array?
             [th, phi] = xdc.orientations;
             n = xdc.numel;
+            if any(phi), warning('kWaveArray initialization with elevation angle is untested.'); end
 
             % build the rotation vectors
             % v = [cosd(phi); cosd(phi); sind(phi)] .* [cosd(th); sind(th); 1];
@@ -526,7 +604,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
                 case 3,
                     [p, rot] = deal(p([3,1,2],:), rot([3,1,2],:)); % I think this is right?
                     [arr_off, arr_rot] = deal(-og(1:3), [0;0;0]);
-                otherwise, error("Wrong number of dimensions (" + dim + "). An array requires 2 or 3 dimensions.");
             end
 
             % add each element to the array
@@ -554,25 +631,24 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         %       - nOutPx        number of output pixels
         %       - incoords      (x,y,1,el) coordinate pairs of the input pixels
         %       - outcoords     (x,y,1,el) coordinate pairs of the output pixels
+        %
+        % See also ULTRASOUNDSYSTEM/FULLWAVESIM
         xdc_fw = getFullwaveTransducer(xdc, scan)
     end
 
-    methods
+    % legacy
+    methods(Hidden)
         % get positions
         function p = getPositions(xdc)
             % returns a 3 x N vector of the positions of the N elements with
             % the center element at the origin
             p = xdc.positions();
         end
-
-        % get number of elements
-        function n = nTx(xdc), n = xdc.numel; end
-        function n = nRx(xdc), n = xdc.numel; end
     end
 
 
     % Field II calls - rely on being able to get a FieldII aperture
-    methods(Access=public)
+    methods
         function p = getFieldIIPositions(xdc)
             % GETFIELDIIPOSITIONS - get an array of element positions
             % 
@@ -665,43 +741,34 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     % internal subroutines
-    methods(Access=public)
-        function impulse = ultrasoundTransducerImpulse(xdc, opt)
+    methods
+        function impulse = ultrasoundTransducerImpulse(xdc)
             % ULTRASOUNDTRANSDUCERIMPULSE - create an impulse response Waveform
             % 
-            % impulse = ultrasoundTransducerImpulse(xdc) creates a gaussian
+            % impulse = ULTRASOUNDTRANSDUCERIMPULSE(xdc) creates a gaussian
             % pulse Waveform with the bandwidth and fractional bandwidth of
             % the Transducer xdc.
             % 
-            % impulse = ultrasoundTransducerImpulse(xdc, 'delta') creates a
-            % delta function Waveform.
-            %
             % See also WAVEFORM.DELTA()
 
             % defaults
             arguments
                 xdc Transducer
-                opt (1,1) string {mustBeMember(opt, ["pulse", "delta"])} = 'pulse'
             end
 
-            switch opt
-                case 'pulse'
-                    % get energy strength cutoff time
-                    bwr = -6;
-                    tpr = -80;
+            % get energy strength cutoff time
+            bwr = -6;
+            tpr = -80;
 
-                    tc = gauspuls('cutoff',xdc.fc, xdc.bw_frac, bwr, tpr);
-                    xfc = xdc.fc;
-                    bwf = xdc.bw_frac;
+            tc = gauspuls('cutoff',xdc.fc, xdc.bw_frac, bwr, tpr);
+            xfc = xdc.fc;
+            bwf = xdc.bw_frac;
 
-                    % get the function
-                    impulse_fun = Transducer.cgauspulsfun(xfc, bwf, bwr);
+            % get the function
+            impulse_fun = Transducer.cgauspulsfun(xfc, bwf, bwr);
 
-                    % make a Waveform object
-                    impulse = Waveform('fun', impulse_fun, 't0', -tc, 'tend', tc);
-                case 'delta'
-                    impulse = Waveform('fun', @(t) complex(ones(size(t))), 't0', 0, 'tend', 0);
-            end
+            % make a Waveform object
+            impulse = Waveform('fun', impulse_fun, 't0', -tc, 'tend', tc);
         end
     end
 
@@ -726,7 +793,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     % plot functions
-    methods(Access=public)
+    methods
         function varargout = patch(self, el_sub_div, varargin)
             % PATCH - Overload of patch for a transducer
             %
@@ -802,6 +869,22 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
 
         function varargout = plot(self, varargin, plot_args)
+            % PLOT - overload the plot function
+            %
+            % PLOT(xdc) plots the locations of the Transducer xdc.
+            %
+            % PLOT(xdc, ax) uses the axes ax instead of the current axes.
+            %
+            % PLOT(..., Name, Value, ...) passes name-value pair arguments
+            % to the built-in plot function so that name value pairs that
+            % are valid for plot are valid here.
+            %
+            % h = PLOT(...) returns the handle to the plot.
+            %
+            % Plots only the x-z slice.
+            %
+            % See also TRANSDUCER/PATCH 
+
             arguments
                 self (1,1) Transducer
             end
@@ -813,7 +896,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             end
             
             % extract axis and other non-Name/Value pair arguments
-            if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes')
+            if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes') %#ok<CPROPLC> use built-in numel 
                 axs = varargin{1}; varargin(1) = []; 
             else, axs = gca;
             end
@@ -830,7 +913,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
 
         function varargout = surf(self, varargin)
-            % see Transducer.patch
+            % See also TRANSDUCER/PATCH
             varargout = cell([1, nargout]);
             [varargout{:}] = patch(self, varargin{:});
         end

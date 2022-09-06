@@ -1,38 +1,42 @@
 % TRANSDUCERARRAY - Linear Array Transducer class
 % 
-% A TransducerArray defines a linear transducer by it's pitch (a.k.a.
-% element spacing) and number of elements.
+% A TransducerArray defines a linear transducer where all elements lie on a
+% line.
 % 
 % See also TRANSDUCER TRANSDUCERCONVEX TRANSDUCERPISTON
 
 classdef TransducerArray < Transducer
 
     properties
-        pitch               % the interelement distance (m)
+        pitch               % the interelement distance
     end
     
     properties(Dependent)
-        kerf                % the spacing between elements (m)
-        aperture_size       % size of the aperture
+        kerf                % the spacing between elements
+        aperture_size       % width of the full aperture
     end
     
-    % constructor and get/set methods
+    % constructor 
     methods(Access=public)
-        % constructor: accept name/value pairs
         function self = TransducerArray(array_args, xdc_args)
             % TRANSDUCERARRAY - TransducerArray constructor
             %
+            % xdc = TRANSDUCERARRAY(uff_probe) constructs a TransducerArray
+            % from the uff.linear_array uff_probe.
+            %
             % xdc = TRANSDUCERARRAY(Name, Value, ...) constructs a
             % TransducerArray using name/value pair arguments.
-            %
-            % xdc = TRANSDUCERARRAY(uff_probe) construct a linear array
-            % from the uff.linear_array uff_probe.
             %
             % See also TRANSDUCERCONVEX
             arguments
                 array_args.pitch double {mustBeScalarOrEmpty} 
                 array_args.kerf double {mustBeScalarOrEmpty} 
                 xdc_args.?Transducer
+            end
+
+            % if width not set but pitch is, make it the pitch
+            if ~isfield(xdc_args, 'width') && isfield(array_args, 'pitch'), 
+                xdc_args.width = array_args.pitch; 
             end
             
             % initialize the Transducer
@@ -44,8 +48,8 @@ classdef TransducerArray < Transducer
                 self.(f) = array_args.(f);
             end
 
-            % if kerf not set, default it to 30% pitch
-            if isempty(self.pitch), self.kerf = 0.3 * self.width; end
+            % if kerf not set, default it to 0
+            if isempty(self.pitch), self.kerf = 0; end
         end
     end
     
@@ -53,6 +57,26 @@ classdef TransducerArray < Transducer
     methods
         % scaling
         function self = scale(self, kwargs)
+            % SCALE - Scale units
+            %
+            % xdc = SCALE(xdc, 'dist', factor) scales the distance of the
+            % properties by factor. This can be used to convert from meters
+            % to millimeters for example.
+            %
+            % xdc = SCALE(xdc, 'time', factor) scales the temporal
+            % properties by factor. This can be used to convert from
+            % seconds to microseconds and hertz to megahertz.
+            %
+            % Example:
+            %
+            % % Create a TransducerArray
+            % xdc = TransducerArray('fc', 5e6, 'width', 0.3e-3); % m, s, Hz
+            %
+            % % convert from meters to millimeters, hertz to megahertz
+            % xdc = scale(xdc, 'dist', 1e3, 'time', 1e6) % mm, us, MHz
+            %
+            %
+
             arguments
                 self Transducer
                 kwargs.dist (1,1) double
@@ -80,7 +104,7 @@ classdef TransducerArray < Transducer
 
     
     % define position methods
-    methods    
+    methods(Hidden, Access=private)    
         % get methods
         function p = findPositions(self)
             % returns a 1 x N vector of the positions of the N elements with 0
@@ -319,9 +343,7 @@ classdef TransducerArray < Transducer
     % dependent variable methods
     methods
         % get the kerf
-        function k = get.kerf(self)
-            k = self.pitch - self.width;
-        end
+        function k = get.kerf(self), k = self.pitch - self.width; end
         
         % set the kerf
         function set.kerf(self, k)
@@ -332,9 +354,7 @@ classdef TransducerArray < Transducer
         end
         
         % get the aperture size
-        function a = get.aperture_size(self)
-            a = self.numel * self.pitch;            
-        end
+        function a = get.aperture_size(self), a = self.numel * self.pitch; end
     end
     
     methods(Static)
@@ -385,23 +405,16 @@ classdef TransducerArray < Transducer
                 );
         end
         function xdc = Verasonics(Trans, c0)
-            % xdc = VERASONICS(Trans)
-            %
-            % Create a Linear Array from the properties defined a
-            % Verasonics 'Trans' struct.
-            %
-            % xdc = VERASONICS(Trans, c0) uses c0 as the sound speed
-            % instead of 1540. This is typicaly set by the Verasonics
-            % property 'Resource.Parameters.speedOfSound'. Be sure to
-            % explicitly set this if other than 1540.
-
-            if nargin < 2, c0 = 1540; end
+            arguments
+                Trans struct
+                c0 (1,1) double = 1540
+            end
 
             % determine the scaling of the properties
             switch Trans.units
                 case 'wavelengths', scale = c0 / Trans.frequency * 1e-6;
                 otherwise
-                    error('Conversion from Verasonics trans to TransducerArray not implemented when units not in wavelengths.');
+                    error('Conversion from Verasonics trans to TransducerArray not implemented for units not in wavelengths.');
             end
 
             % set relevant properties
@@ -416,15 +429,10 @@ classdef TransducerArray < Transducer
                 );
         end
         function xdc = UFF(probe)
-            % TRANSDUCERARRAY.UFF - TransducerArray conversion
-            %
-            % xdc = TRANSDUCERARRAY.UFF(probe) converts the 
-            % uff.linear_array probe to a TransducerArray xdc.
-            %
-            %
             arguments
                 probe (1,1) {mustBeA(probe, 'uff.linear_array')}
             end
+            if isempty(probe.origin), probe.origin.xyz = [0;0;0]; end % force 0 if empty
             xdc = TransducerArray(...
                 "pitch", probe.pitch, ...
                 "width", probe.element_width, ...

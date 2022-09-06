@@ -228,9 +228,16 @@ classdef Scatterers < matlab.mixin.Copyable
     % interfaces
     methods
         % get SIMUS medium params
-        function p = getSIMUSParam(self)
-            p = struct('c', self.c0);
-            if ~isnan(self.alpha0), p.attenuation = self.alpha0; end
+        function p = getSIMUSParam(scat)
+            % GETSIMUSPARAM - Create a MUST compatible parameter struct
+            %
+            % p = GETSIMUSPARAM(scat) returns a structure with properties
+            % for a call to simus().
+            %
+            % See also ULTRASOUNDSYSTEM/SIMUS 
+
+            p = struct('c', scat.c0);
+            if ~isnan(scat.alpha0), p.attenuation = scat.alpha0; end
         end
     end
 
