@@ -732,6 +732,9 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = rectifyt0(chd, interp, n0_  / chd.fs); % set data on the same time axis
             [chd.t0, chd.fs] = deal(n0_, 1);
         end    
+        function f = fftaxis(chd)
+            f = cast(shiftdim((0 : chd.T - 1)', 1-chd.tdim) .* chd.fs ./ chd.T, 'like', real(chd.data));
+        end
     end
 
     % plotting and display
