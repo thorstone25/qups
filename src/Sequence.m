@@ -294,31 +294,34 @@ classdef Sequence < matlab.mixin.Copyable
                 warning("Expected a function handle or numeric type; instead got a " + class(apod) + ".");
             end
             self.apodization_ = apod; 
-        end
-        
-        % set the transmit type
-        function set.type(self, t)
-            switch t
-                case {'PW','FSA','VS'}
-                    self.type = t;
-                otherwise
-                    error('UltrasoundSystem:Sequence:ArgumentError', 'Unknown sequence type');
-            end
-        end
-        
-        % set the focal points
-        function set.focus(self, f)
-            assert(size(f,1)==3, 'The focus must be a (3 x S) vector')
-            self.focus = f;
-        end
-        function f = get.focus(self)
-            f = self.focus;
-        end
+        end        
     end
 
     % plotting methods
     methods
         function h = plot(self, varargin, plot_args)
+            % PLOT - overload the plot function
+            %
+            % PLOT(seq) plots the locations of the foci of the Sequence seq
+            % based on it's type. 
+            % 
+            % If the Sequence type is 'PW', the foci are interpreted as
+            % normal vectors and are plotted via quiver. Otherwise, the 
+            % foci are plotted as points.
+            %
+            % PLOT(xdc, ax) uses the axes ax instead of the current axes.
+            %
+            % PLOT(..., Name, Value, ...) passes name-value pair arguments
+            % to the built-in plot function so that name value pairs that
+            % are valid for plot are valid here.
+            %
+            % h = PLOT(...) returns the handle to the plot.
+            %
+            % Plots only the x-z slice.
+            %
+            % See also TRANSDUCER/PATCH QUIVER
+
+
             arguments
                 self (1,1) Sequence
             end
