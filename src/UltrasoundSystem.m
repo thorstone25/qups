@@ -6,9 +6,10 @@
 % by the transmit and receive Transducer, the transmit Sequence, and the
 % Scan defining the region for simulation or beamforming.
 %
-% Multiple simulators are supported, but must be installed by the user. 
-% They include:
+% Multiple simulators are supported, but external simulators must be
+% installed separately. They include:
 % 
+% * greens via QUPS
 % * simus via MUST
 % * calc_scat_all, calc_scat_multi via FieldII
 % * kspaceFirstOrder via K-wave
@@ -447,10 +448,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % create time vector (T x 1)
             % this formulation is guaranteed to pass through t == 0
-            t = (floor(tmin * self.fs) : ceil(tmax * self.fs))';
+            % expand t to the nearest length 32 vector for data locality
+            n0 = floor(tmin * self.fs);
+            ne = ceil(tmax * self.fs);
+            tmod = 32; % extension modulus
+            ne = ne + (tmod - mod(ne - n0 + 1, tmod));
+            t = (n0 : ne)';
 
             % pre-allocate output
-            [T, N, M, E] = deal(size(t,1), self.rx.numel, self.tx.numel, prod(element_subdivisions));
+            [T, N, M, E] = deal(numel(t), self.rx.numel, self.tx.numel, prod(element_subdivisions));
             x   = complex(zeros([1 T N M]));
 
             % splice
@@ -491,14 +497,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
                 k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
                 try k.setConstantMemory('QUPS_T', uint64(QT), ...
-                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ...  'QUPS_I', uint64(QI),    , 'QUPS_F', uint64(QF) ...
+                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ... 
                     ); end % already set by const compiler
                 try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
                 k.ThreadBlockSize = min(k.MaxThreadsPerBlock,QS); 
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
                 % call the kernel
-                x = k.feval(x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_, [E,E], flagnum);
+                x = k.feval(x, ps, as, pn, pv, kn, t0k, [t0x, fs_, cinv_], [E,E], flagnum);
 
             else % operate in native MATLAB
                 % make time in dim 2
