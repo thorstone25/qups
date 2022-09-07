@@ -461,11 +461,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % splice
             c0  = scat(f).c0;
-            pos = scat(f).pos.'; % S x 3
-            amp = scat(f).amp.'; % S x 1
+            pos = scat(f).pos; % 3 x S
+            amp = scat(f).amp; % 1 x S
             fs_ = self.fs;
             if kwargs.device && exist('greens.ptx', 'file') ... % use the GPU kernel
                     && (ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]))
+                % compute the minimum and maximum time delay for each
+                % scatterer
+                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
+                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(pos - p, 2, 1) ./ c0); end % minimum scat time
+                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(pos - p, 2, 1) ./ c0); end % maximum scat time
+                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(pos - p, 2, 1) ./ c0); end % minimum scat time
+                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(pos - p, 2, 1) ./ c0); end % maximum scat time
+                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+
+                % sort points by their maximum delay
+                [~, i] = sort(rmax);
+                [pos, amp] = deal(pos(:,i), amp(:,i));
+                [rmin, rmax] = deal(rmin(:,i), rmax(:,i));
+
                 % function to determine type
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
@@ -487,8 +501,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % cast data / map inputs
                 [x, ps, as, pn, pv, kn, t0k, t0x, fs_, cinv_] = dealfun(cfun, ...
-                    x, pos.', amp.', ptc_rx, ptc_tx, kern, t(1)/fs_, wv.t0, fs_, 1/c0 ...
+                    x, pos, amp, ptc_rx, ptc_tx, kern, t(1)/fs_, wv.t0, fs_, 1/c0 ...
                     );
+
+                % get the index bounds for the output time axis
+                sb = ([rmin; rmax] + t0x - t0k) * fs_;
 
                 % re-map sizing
                 [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
@@ -504,7 +521,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
                 % call the kernel
-                x = k.feval(x, ps, as, pn, pv, kn, t0k, [t0x, fs_, cinv_], [E,E], flagnum);
+                x = k.feval(x, ps, as, pn, pv, kn, sb, [t0k, t0x, fs_, cinv_], [E,E], flagnum);
 
             else % operate in native MATLAB
                 % make time in dim 2
@@ -536,13 +553,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             % TODO: do this via ray-path propagation through a
                             % medium
                             % S x 1 x N x M x 1 x 1
-                            r_rx = vecnorm(sub(pos,s,1) - sub(ptc_rx, en, 5),2,2);
-                            r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
+                            r_rx = vecnorm(sub(pos.',s,1) - sub(ptc_rx, en, 5),2,2);
+                            r_tx = vecnorm(sub(pos.',s,1) - sub(ptc_tx, em, 6),2,2);
                             tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
                             tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
 
                             % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
-                            att = sub(amp,s,1);% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
+                            att = sub(amp.',s,1);% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
 
                             % get 0-based sample time delay
                             % switch time and scatterer dimension

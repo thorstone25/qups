@@ -9,15 +9,16 @@ template<typename T2, typename U, typename U3>
 __device__ void greens_temp(T2 * __restrict__ y, 
     const U * __restrict__ Pi, const T2 * __restrict__ a, 
     const U * __restrict__ Pr, const U * __restrict__ Pv, 
-    const T2 * __restrict__ x, const U s0,
-	const U t0fscinv[3],
+    const T2 * __restrict__ x, const U * __restrict__ sb, 
+	const U s0t0fscinv[4],
     const int * E, const int iflag
     ) {
 
     // extract time parameters
-    const U t0   = t0fscinv[0];
-    const U fs   = t0fscinv[1];
-    const U cinv = t0fscinv[2];
+    const U s0   = s0t0fscinv[0];
+    const U t0   = s0t0fscinv[1];
+    const U fs   = s0t0fscinv[2];
+    const U cinv = s0t0fscinv[3];
     
     // get starting index of this scatterer
     const size_t s = threadIdx.x + blockIdx.x * blockDim.x; // time 
@@ -42,22 +43,23 @@ __device__ void greens_temp(T2 * __restrict__ y,
 
     // if valid scat, for each tx/rx
     if(s < S){
-        #pragma unroll
         for(size_t i = 0; i < I; ++i){ // for each scatterer
-            # pragma unroll 
-            for(size_t me = 0; me < E[1]; ++me){ // for each tx sub-aperture
+            if(s >  sb[2*i+1]) break; // early terminate if we will never sample again
+            if(s >= sb[2*i+0] - QUPS_T){ // if within sampling window
                 # pragma unroll 
-                for(size_t ne = 0; ne < E[0]; ++ne){ // for each rx sub-aperture
-
-                    // 2-way path time
-                    r = cinv * (length(pi[i] - pr[n + ne*N]) + length(pi[i] - pv[m + me*M])); // (virtual) transmit to pixel vector
-                    
-                    // get kernel delay for the scatterer
-                    tau = (U)s + (s0 - r - t0)*fs;
-                    
-                    // sample the kernel and add to the signal at this time
-                    if(0 <= tau & tau < QUPS_T)
-                        val += a[i] * sample(x, tau, iflag, zero_v); // out of bounds: extrap 0            
+                for(size_t me = 0; me < E[1]; ++me){ // for each tx sub-aperture
+                    # pragma unroll 
+                    for(size_t ne = 0; ne < E[0]; ++ne){ // for each rx sub-aperture
+    
+                        // 2-way path time
+                        r = cinv * (length(pi[i] - pr[n + ne*N]) + length(pi[i] - pv[m + me*M])); // (virtual) transmit to pixel vector
+                        
+                        // get kernel delay for the scatterer
+                        tau = (U)s - (r + t0 - s0)*fs;
+                        
+                        // sample the kernel and add to the signal at this time
+                        val += a[i] * sample(x, tau, iflag, zero_v); // out of bounds: extrap 0
+                    }
                 }
             }
         }
@@ -70,21 +72,21 @@ __device__ void greens_temp(T2 * __restrict__ y,
 __global__ void greensf(float2 * __restrict__ y, 
     const float * __restrict__ Pi, const float2 * __restrict__ a, 
     const float * __restrict__ Pr, const float * __restrict__ Pv, 
-    const float2 * __restrict__ x, const float s0,
-	const float t0fscinv[3],
+    const float2 * __restrict__ x, const float * __restrict__ sb, 
+	const float s0t0fscinv[4],
     const int * E, const int iflag
     ) {
-    greens_temp<float2, float, float3>(y, Pi, a, Pr, Pv, x, s0, t0fscinv, E, iflag);
+    greens_temp<float2, float, float3>(y, Pi, a, Pr, Pv, x, sb, s0t0fscinv, E, iflag);
 }
 
 __global__ void greens(double2 * __restrict__ y, 
     const double * __restrict__ Pi, const double2 * __restrict__ a, 
     const double * __restrict__ Pr, const double * __restrict__ Pv, 
-    const double2 * __restrict__ x, const double s0,
-	const double t0fscinv[3],
+    const double2 * __restrict__ x, const double * __restrict__ sb, 
+	const double s0t0fscinv[4],
     const int * E, const int iflag
     ) {
-    greens_temp<double2, double, double3>(y, Pi, a, Pr, Pv, x, s0, t0fscinv, E, iflag);
+    greens_temp<double2, double, double3>(y, Pi, a, Pr, Pv, x, sb, s0t0fscinv, E, iflag);
 }
 
 #if (__CUDA_ARCH__ >= 530)
@@ -92,10 +94,10 @@ __global__ void greens(double2 * __restrict__ y,
 __global__ void greensh(ushort2 * __restrict__ y, 
     const float * __restrict__ Pi, const short2 * __restrict__ a, 
     const float * __restrict__ Pr, const float * __restrict__ Pv, 
-    const ushort2 * __restrict__ x, const float s0,
-	const float t0fscinv[3],
+    const ushort2 * __restrict__ x, const float * __restrict__ sb,
+	const float s0t0fscinv[4],
     const int * E, const int iflag
     ) {
-    greens_temp<half2, float, float3>((half2 *)y, Pi, (const half2 *)a, Pr, Pv, (const half2 *)x, s0, t0fscinv, E, iflag);
+    greens_temp<half2, float, float3>((half2 *)y, Pi, (const half2 *)a, Pr, Pv, (const half2 *)x, sb, s0t0fscinv, E, iflag);
 }
 #endif
