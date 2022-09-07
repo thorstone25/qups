@@ -448,11 +448,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % create time vector (T x 1)
             % this formulation is guaranteed to pass through t == 0
-            % expand t to the nearest length 32 vector for data locality
             n0 = floor(tmin * self.fs);
             ne = ceil(tmax * self.fs);
-            tmod = 32; % extension modulus
-            ne = ne + (tmod - mod(ne - n0 + 1, tmod));
             t = (n0 : ne)';
 
             % pre-allocate output
@@ -466,27 +463,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             fs_ = self.fs;
             if kwargs.device && exist('greens.ptx', 'file') ... % use the GPU kernel
                     && (ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]))
-                % compute the minimum and maximum time delay for each
-                % scatterer
-                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(pos - p, 2, 1) ./ c0); end % minimum scat time
-                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(pos - p, 2, 1) ./ c0); end % maximum scat time
-                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(pos - p, 2, 1) ./ c0); end % minimum scat time
-                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(pos - p, 2, 1) ./ c0); end % maximum scat time
-                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
-
-                % sort points by their maximum delay
-                [~, i] = sort(rmax);
-                [pos, amp] = deal(pos(:,i), amp(:,i));
-                [rmin, rmax] = deal(rmin(:,i), rmax(:,i));
-
                 % function to determine type
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
                 % determine the data type
-                if     isftype(kern, 'double'), suffix = "" ;  cfun = @double;
-                elseif isftype(kern, 'single'), suffix = "f";  cfun = @single;
-                elseif isftype(kern, 'halfT'  ), suffix = "h"; cfun = @(x) alias(halfT(x));
+                if     isftype(kern, 'double'), suffix = "" ; cfun = @double;
+                elseif isftype(kern, 'single'), suffix = "f"; cfun = @single;
+                elseif isftype(kern, 'halfT' ), suffix = "h"; cfun = @(x) alias(halfT(x));
                 else,   error("Datatype " + class(kern) + " not recognized as a GPU compatible type.");
                 end
 
@@ -504,11 +487,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     x, pos, amp, ptc_rx, ptc_tx, kern, t(1)/fs_, wv.t0, fs_, 1/c0 ...
                     );
 
-                % get the index bounds for the output time axis
-                sb = ([rmin; rmax] + t0x - t0k) * fs_;
-
                 % re-map sizing
                 [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
+
+                % compute the minimum and maximum time delay for each scatterer
+                ps = gpuArray(ps);
+                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
+                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1) ./ c0); end % minimum scat time
+                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1) ./ c0); end % maximum scat time
+                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1) ./ c0); end % minimum scat time
+                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1) ./ c0); end % maximum scat time
+                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+
+                % sort points by their maximum delay
+                [~, i] = sort(rmax); % get sorting
+                [ps, as, rmin, rmax] = dealfun(@(x)sub(x,i,2), ps,as,rmin,rmax); % apply to all position variables
+
+                % get the index bounds for the output time axis
+                sb = ([rmin; rmax] + t0x - t0k) * fs_ + [0; QT];
 
                 % grab the kernel reference
                 k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
@@ -522,7 +518,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % call the kernel
                 x = k.feval(x, ps, as, pn, pv, kn, sb, [t0k, t0x, fs_, cinv_], [E,E], flagnum);
-
+                
             else % operate in native MATLAB
                 % make time in dim 2
                 tvec = reshape(t,1,[]); % 1 x T full time vector
@@ -606,9 +602,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % move back to GPU if requested
                 if kwargs.device, x = gpuArray(gather(x)); end
             end
-
+            
             % make a channel data object (T x N x M)
-            chd(f) = ChannelData('t0', sub(t,1,1) ./ fs_, 'fs', fs_, 'data', shiftdim(x,1));
+            x = reshape(x, size(x,2:ndims(x))); % same as shiftdim(x,1), but without memory copies on GPU
+            chd(f) = ChannelData('t0', sub(t,1,1) ./ fs_, 'fs', fs_, 'data', x);
 
             % truncate the data if possible
             iszero = all(chd(f).data == 0, 2:ndims(chd(f).data)); % true if 0 for all tx/rx/targs

@@ -45,7 +45,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     if(s < S){
         for(size_t i = 0; i < I; ++i){ // for each scatterer
             if(s >  sb[2*i+1]) break; // early terminate if we will never sample again
-            if(s >= sb[2*i+0] - QUPS_T){ // if within sampling window
+            if(s >= sb[2*i+0]){ // if within sampling window
                 # pragma unroll 
                 for(size_t me = 0; me < E[1]; ++me){ // for each tx sub-aperture
                     # pragma unroll 
