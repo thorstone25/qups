@@ -165,7 +165,17 @@ classdef Waveform < matlab.mixin.Copyable
                     
             % make a function out of the samples if given
             if isfield(kwargs, 'samples')
-                wv.fun = griddedInterpolant(wv.time, gather(kwargs.samples), 'cubic', 'none');
+                if isfield(kwargs, 't')
+                    wv.fun = griddedInterpolant(kwargs.t, gather(kwargs.samples), 'cubic', 'none');
+                elseif all(isfield(kwargs, {'t0', 'dt', 'tend'}))
+                    t = kwargs.t0 : kwargs.dt : kwargs.tend;
+                    wv.fun = griddedInterpolant(t, gather(kwargs.samples), 'cubic', 'none');
+                elseif all(isfield(kwargs, {'t0', 'fs', 'tend'}))
+                    t = kwargs.t0 : 1/kwargs.fs : kwargs.tend;
+                    wv.fun = griddedInterpolant(t, gather(kwargs.samples), 'cubic', 'none');
+                else
+                    wv.fun = griddedInterpolant(wv.time, gather(kwargs.samples), 'cubic', 'none');
+                end
             end
         end
         
