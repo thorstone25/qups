@@ -119,7 +119,7 @@ if exist('interpd.ptx', 'file') ...
         'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F) ...
         );
     k.ThreadBlockSize = min(k.MaxThreadsPerBlock,I*M); % I and M are indexed together
-    k.GridSize = [ceil(I*M ./ k.ThreadBlockSize(1)), N, 1];
+    k.GridSize = [ceil(I*M ./ k.ThreadBlockSize(1)), min(N, 2^15), ceil(N/2^15)];
 
     % translate the interp flag
     switch interp

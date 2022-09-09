@@ -212,8 +212,8 @@ __device__ void wsinterpd_temp(T2 * __restrict__ y,
 
     // get sampling index
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
-    // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y + gridDim.y * (threadIdx.z + blockIdx.z * blockDim.z);
+    // const size_t m = ;
     
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
