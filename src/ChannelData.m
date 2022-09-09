@@ -1033,8 +1033,8 @@ classdef ChannelData < matlab.mixin.Copyable
                     assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
                         'The temporal index must be a strictly increasing set of indices.');
                 elseif islogical(n)
-                    np = find(n);
-                    assert(issorted(np, 'strictascend') && all(np == round(np)), ... % check the index in time is sorted, continous
+                    n = find(n);
+                    assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
                         'The temporal index must be a strictly increasing set of indices.');
                 else % not sure, but allow ...
                 end
