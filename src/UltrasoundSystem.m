@@ -2036,7 +2036,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             P_rx = self.rx.positions(); % cast(self.rx.positions(), 'like', time(end)); % 3 x N
             
             % get the beamformer arguments
-            dat_args = {chd.data, chd.t0, chd.fs, c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
+            dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
             if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
             ext_args = [interp_args, apod_args]; % extra args
             
