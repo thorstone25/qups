@@ -1729,7 +1729,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:self.xdc.numel);  % (J x {M})
                             elem_weights = cat(2, elem_weights{:}); % (J x M)
                             elem_weights = elem_weights(mask(:),:); % (J' x M)
-                            psig = pagemtimes(full(elem_weights) .* wnorm, 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V x 1 x 3)
+                            psig = pagemtimes(full(elem_weights), 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
 
                             % get the offgrid source sizes
                             elem_meas = arrayfun(@(i)karray.elements{i}.measure, 1:self.xdc.numel);
@@ -1748,14 +1748,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % define the sensor
             ksensor.mask = mask; % pixels to record
-            ksensor.record = {'u'}; % record the original particle velocity
-            % ksensor.record = {'u','u_non_staggered', 'p'}; % record everything
 
             % define the source if it's not empty i.e. all zeros
-            if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 3)
-            if any(sub(psig,2,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 3)
-            if any(sub(psig,3,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 3)            
-            [ksource.u_mask] = deal(mask); % set transmit aperture mask
+            switch kwargs.ElemMapMethod
+                case {'nearest', 'linear'} % use vector velocity source
+                    ksensor.record = {'u'}; % record the original particle velocity
+                    if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    if any(sub(psig,2,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    if any(sub(psig,3,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    [ksource.u_mask] = deal(mask); % set transmit aperture mask
+                case {'karray-direct', 'karray-depend'} % use a pressure source
+                    ksensor.record = {'p'}; % record the original particle velocity
+                    if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).p = real(sub(psig,v,3)); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    [ksource.p_mask] = deal(mask); % set transmit aperture mask
+            end
 
             % set the total simulation time: default to a single round trip at ambient speed
             if isempty(kwargs.T)
@@ -1842,7 +1848,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elemmethod = kwargs.ElemMapMethod;
             
             % get the arguments to run the sim
-            wd = ismember(["ux", "uy", "uz"], fieldnames(ksource)); % wnorm fields
+            if contains(ksensor.record, 'u')
+                wd = 1 : kgrid.dim; % record up to dim dimensions
+            else
+                wd = ismember(["ux", "uy", "uz"], ksensor.record); % record corresponding fields
+            end
             args = {...
                 kspaceFirstOrderND_, ...
                 kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
@@ -1879,10 +1889,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % processing step: get sensor data, enforce on CPU (T x N)
             
             f = string(fieldnames(x)); % recorded fields
-            f = f(contains(f, 'u')); % velocity fields
-            u = arrayfun(@(f) {x.(f)}, f); % extract each velocity field
-            u = pagetranspose(cat(3, u{:})); % T x J' x D, D = 2 or 3
-            
+            switch method
+                case {'nearest', 'linear'}
+                    f = f(ismember(f, {'ux', 'uy', 'uz'})); % velocity fields
+                    u = arrayfun(@(f) {x.(f)}, f); % extract each velocity field
+                    u = pagetranspose(cat(3, u{:})); % T x J' x D, D = 2 or 3
+                case {'karray-depend', 'karray-direct'}
+                    u = x.p'; % pressure (T x J')
+            end
+
             switch method
                 case 'karray-depend'
                     [kgrid, karray] = deal(varargin{:});
@@ -1898,17 +1913,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     [el_weight, el_map_grd, el_map_el] = deal(varargin{:});
                     % create the advanced impulse response function with
                     % which to convolve the output
+                    D = size(u,3);
                     y = gather(... [(N x J'') x [[(J'' x J') x (J' x T' | D)] x (T' x T | J'')]]' -> (T x N)
                         pagetranspose(pagemtimes(...
-                        el_map_el, (el_weight(:) .* convd(el_map_grd' * pagetranspose(u), rx_sig, 2, 'full')) ...
+                        double(el_map_el), (el_weight(:) .* convd(pagetranspose(pagemtimes(u, double(el_map_grd))), repmat(rx_sig,[1,1,D]), 2, 'full')) ...
                         )) ... % 
                         ); % [(N x J'') x (J'' x T)]' -> T x N
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
                    y = gather(convn(u, rx_sig, 'full'));
             end
-            
-            y = sum(y .* wnorm, 3); % (T x N x D) * (1 x N x D) -> (T x N)
+
+            % multiply by a normal vector in the direction of each element
+            % to combine the velocities
+            switch method
+                case {'linear', 'nearest'}
+                    y = sum(y .* wnorm, 3); % (T x N x D) * (1 x N x D) -> (T x N)
+            end
         end
     
         function chd = kspaceRunSim(kspaceFirstOrderND_, ...
