@@ -40,7 +40,7 @@ classdef Sequence < matlab.mixin.Copyable
     
     properties(Hidden)
         FSA_n_tx (1,1) double = nan % hidden storage of the number of pulse for an FSA sequence
-        apodization_ = [] % hidden storage of user entered apodization values or function
+        apodization_ (:,:) {mustBeNumericOrLogical} = [] % hidden storage of user entered apodization values or function
     end
     
     methods
@@ -185,26 +185,25 @@ classdef Sequence < matlab.mixin.Copyable
     % temporal response methods
     methods   
         function tau = delays(self, tx)
-            % tau = DELAYS(self, tx)
+            % DELAYS - Transmit Sequence delays
+            % 
+            % tau = DELAYS(self, tx) returns the delays for the Sequence
+            % self and transmitting Transducer tx as an N x S array where N
+            % is the number of transmitter elements (tx.numel) and S is the
+            % number of transmit pulses (self.numPulse).
             %
-            % computes the steering delays for directing a transmitted beam
-            % given a focal point and sound speed. Delays are given such
-            % that for a fixed sound speed, t=0 is the time where all
-            % method = focus -> all waves reach the focal point
-            % method = diverge -> a wave from the focal point reaches the
-            %                       element
-            % method = plane -> the plane intersects the point [0;0;0]
+            % Delays are computed with respect to a time t=0 based on the
+            % Sequence type. 
+            % 
+            % Type:
+            %     'VS' : t = 0 when a wave intersects the focus
+            %     'PW' : t = 0 when a wave intersects the point [0;0;0]
+            %     'FSA': t = 0 when a wave intersects the transmit element
             %
-            % If using the plane wave method, the focal point is instead a
-            % vector direction for the plane wave
+            % If using the plane wave method, the focus is instead
+            % interpreted as a normal unit vector. 
             %
-            % Inputs:
-            %   - tx:        a Transducer
-            %
-            % Outputs:
-            %   - tau:      a (N x S) array of element delays (s)
-            %
-            % N -> number of elements, S -> number of transmits
+            % See also APODIZATION
             arguments
                 self Sequence
                 tx Transducer
@@ -235,6 +234,43 @@ classdef Sequence < matlab.mixin.Copyable
         end
 
         function a = apodization(self, tx)
+            % APODIZATION - Transmit Sequence apodization
+            % 
+            % a = APODIZATION(self, tx) returns the apodization values for
+            % the Sequence self and transmitting Transducer tx as an N x S 
+            % array where N is the number of transmitter elements
+            % (tx.numel) and S is the number of transmit pulses
+            % (self.numPulse).
+            %
+            % To use a custom apodization, set the hidden property
+            % self.apodization_ to be either an array of the proper size 
+            % for the Transducer that you plan to use or a function that
+            % accepts a Transducer and a Sequence and returns an N x S
+            % array of apodization values.
+            %
+            % Example:
+            % % Make a walking aperture sequence
+            % xdc = TransducerArray(); % get a transducer
+            % pn = xdc.positions(); % 3 x N
+            % xn = pn(1,:)'; % (N x 1) receiver x-positions
+            % 
+            % % define the focal points
+            % xf = xdc.pitch * (-10:1:10); % (1 x S) focal x-positions
+            % 
+            % % define the walking aperture apodization: use only 32
+            % elements nearest to the focus.
+            % apod = abs(xn - xf) <= 32/2; % (N x S) array
+            % 
+            % % construct the Sequence
+            % seq = Sequence(...
+            % 'type', 'VS', ...
+            % 'focus', [0;0;30e-3] + xf .* [1;0;0] ...
+            % );
+            % 
+            % % Define the apodization
+            % seq.apodization_ = apod; % set the hidden property
+            % 
+            % See also DELAYS
             arguments
                 self Sequence
                 tx Transducer
@@ -250,7 +286,7 @@ classdef Sequence < matlab.mixin.Copyable
                 end
             else
                 if isa(self.apodization_, 'function_handle')
-                    a = self.apodization_(tx); % call the function on tx
+                    a = self.apodization_(tx, self); % call the function on tx
                 elseif isnumeric(self.apodization_)
                     a = self.apodization_; % return the user supplied values
                 else, warning("Unable to interpret apodization; not a function handle or numeric type")
