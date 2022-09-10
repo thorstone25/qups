@@ -583,6 +583,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % TODO: allow for elevation
 
             % initialize
+            if isfield(karray_args,'BLIType')
+                karray_args.BLIType = char(karray_args.BLIType);
+            end
             karray_args = struct2nvpair(karray_args);
             karray = kWaveArray(karray_args{:});
 

@@ -1673,21 +1673,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             txsamp = permute(apod .* txsig.sample(t_tx - del), [3,1,2]); % transmit waveform (T' x M x V)
             
             % define the sensor on the grid 
+            % get the direction weights
+            [~,~,wnorm] = self.xdc.orientations;
+            wnorm(1:3,:) = wnorm([3 1 2],:); % k-Wave coordinate mapping
+            wnorm = swapdim(wnorm,1,5); % 1 x M x 1 x 1 x 3
+
             % generate {psig, mask, elem_weights}
             switch kwargs.ElemMapMethod
                 case 'nearest'
-                    pg = sscan.getImagingGrid(); % grid points {x, y, z}
-                    pg = cell2mat(cellfun(@(x)shiftdim(x,-1), pg(:), 'UniformOutput',false)); % -> 3 x Z x X x Y
-                    pn = self.rx.positions; % element positions
-                    [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing
+                    pg = sscan.getImagingGrid('vector', true); % -> 3 x Z x X x Y
+                    pn = self.xdc.positions; % element positions
+                    [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing ( 1 if sliced )
                     mask = false(Nx, Ny, Nz); % grid size
-                    assert(all(size(mask,1:3) == sscan.size), 'kWave mask and sacn size do not correspond.');
-                    for n = self.rx.numel:-1:1, % get nearest pixel for each element
+                    assert(all(size(mask,1:3) == sscan.size), 'kWave mask and Scan size do not correspond.');
+                    for n = self.xdc.numel:-1:1, % get nearest pixel for each element
                         ind(n) = argmin(vecnorm(pn(:,n) - pg,2,1),[],'all', 'linear');
                     end
                     mask(ind) = true;
-                    psig = permute(txsamp,[2,1,3]); % -> (J' x T' x V) with M == J'
-                    elem_weights = eye(self.rx.numel);
+                    psig = pagetranspose(txsamp .* wnorm); % -> (J' x T' x V x 1 x 3) with M == J'
+                    elem_weights = eye(self.xdc.numel) ; % J' x M with ( J' == M )
 
                 case 'linear'
                     % get ambient sound speed
@@ -1695,22 +1699,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                     % get a mapping of delays and weights to all
                     % (sub-)elements (J' x M)
-                    [mask, el_weight, el_dist, el_ind] = self.rx.elem2grid(sscan, kwargs.el_sub_div);% perm(X x Y x Z), (J' x M)
+                    [mask, el_weight, el_dist, el_ind] = self.xdc.elem2grid(sscan, kwargs.el_sub_div);% perm(X x Y x Z), (J' x M)
                     el_map_grd = ((1:nnz(mask))' == el_ind(:)'); % matrix mapping (J' x J'')
 
                     % apply to transmit signal: for each element
                     [del, apod, t_tx] = dealfun(@(x)shiftdim(x, -1), del, apod, t_tx); % (1 x M x V), (1 x 1 x 1 x T')
                     tau = t_tx - del - el_dist/c0map; % J''' x M x V x T'
-                    psig = permute(el_weight .* apod .* txsig.sample(tau), [1,2,4,3]); % per sub-element transmit waveform (J''' x M x T' x V)
-                    psig = reshape(psig, [prod(size(psig,1:2)) size(psig,3:4)]); % per element transmit waveform (J'' x T' x V)
-                    psig = pagemtimes(double(el_map_grd), psig); % per grid-point transmit waveform (J' x T' x V)
+                    psig = permute(el_weight .* wnorm .* apod .* txsig.sample(tau), [1,2,4,3,5]); % per sub-element transmit waveform (J''' x M x T' x V x 3)
+                    psig = reshape(psig, [prod(size(psig,1:2)), size(psig,3:4), 1, size(psig,5)]); % per element transmit waveform (J'' x T' x V x 1 x 3)
+                    psig = pagemtimes(double(el_map_grd), psig); % per grid-point transmit waveform (J' x T' x V x 1 x 3)
+
 
 
                 case {'karray-direct', 'karray-depend'}
-                    % [ksensor_rx, ksensor_ind, sens_map] = self.rx.getKWaveSensor(kgrid, kgrid_origin, el_sub_div);
                     karray_args.BLIType = char(karray_args.BLIType);
                     karray_opts = struct2nvpair(karray_args);
-                    karray = kWaveArray(self.rx, kgrid.dim, kgrid_origin, karray_opts{:});
+                    karray = kWaveArray(self.xdc, kgrid.dim, kgrid_origin, karray_opts{:});
                     mask = karray.getArrayBinaryMask(kgrid);
 
                     % assign source for each transmission (J' x T' x V)
@@ -1725,7 +1729,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:self.xdc.numel);  % (J x {M})
                             elem_weights = cat(2, elem_weights{:}); % (J x M)
                             elem_weights = elem_weights(mask(:),:); % (J' x M)
-                            psig = pagemtimes(full(elem_weights), 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
+                            psig = pagemtimes(full(elem_weights) .* wnorm, 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V x 1 x 3)
 
                             % get the offgrid source sizes
                             elem_meas = arrayfun(@(i)karray.elements{i}.measure, 1:self.xdc.numel);
@@ -1733,7 +1737,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             elem_norm = elem_meas ./ (kgrid.dx) .^ elem_dim; % normalization factor
                             elem_weights = elem_weights ./ elem_norm; 
 
-                        case 'karray-depend', % compute one at a time and apply casting rules
+                        case 'karray-depend' % compute one at a time and apply casting rules
                             psig = cellfun(@(x) ...
                                 {cast(karray.getDistributedSourceSignal(kgrid, x.'), 'like', x)}, ...
                                 num2cell(real(txsamp), [1,2]) ...
@@ -1742,11 +1746,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     end
             end
 
-            % define the source and sensor
+            % define the sensor
             ksensor.mask = mask; % pixels to record
             ksensor.record = {'u'}; % record the original particle velocity
             % ksensor.record = {'u','u_non_staggered', 'p'}; % record everything
-            for v = self.sequence.numPulse:-1:1, ksource(v).ux = real(sub(psig,v,3)); end % set transmit pulses
+
+            % define the source if it's not empty i.e. all zeros
+            if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 3)
+            if any(sub(psig,2,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 3)
+            if any(sub(psig,3,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 3)            
             [ksource.u_mask] = deal(mask); % set transmit aperture mask
 
             % set the total simulation time: default to a single round trip at ambient speed
@@ -1834,10 +1842,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elemmethod = kwargs.ElemMapMethod;
             
             % get the arguments to run the sim
+            wd = ismember(["ux", "uy", "uz"], fieldnames(ksource)); % wnorm fields
             args = {...
                 kspaceFirstOrderND_, ...
                 kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
-                rx_sig, elemmethod, rx_args, ...
+                rx_sig, elemmethod, wnorm(:,:,wd), rx_args, ...
                 t0, fs_ ...
                 };
 
@@ -1866,33 +1875,45 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
     methods(Static, Hidden)
-        function y = kspaceFirstOrderPostProc(x, rx_sig, method, varargin)
+        function y = kspaceFirstOrderPostProc(x, rx_sig, method, wnorm, varargin)
             % processing step: get sensor data, enforce on CPU (T x N)
+            
+            f = string(fieldnames(x)); % recorded fields
+            f = f(contains(f, 'u')); % velocity fields
+            u = arrayfun(@(f) {x.(f)}, f); % extract each velocity field
+            u = pagetranspose(cat(3, u{:})); % T x J' x D, D = 2 or 3
+            
             switch method
                 case 'karray-depend'
                     [kgrid, karray] = deal(varargin{:});
-                    y = gather(convn( karray.combineSensorData(kgrid, x.ux).', rx_sig, 'full'));
+                    for d = size(u,3):-1:1
+                        y(:,:,d) = gather(convn( karray.combineSensorData(kgrid, u(:,:,d).').', rx_sig, 'full'));
+                    end
                 case {'karray-direct'}
                     elem_weights = deal(varargin{:});
-                    y = gather(convn(x.ux.' * full(elem_weights), rx_sig, 'full')); % (J' x T)' x (J' x N) -> T x N
+                    y = gather(convn(pagemtimes(u, full(elem_weights)), rx_sig, 'full')); % (J' x T | D)' x (J' x N) -> T x N x D
                 case {'nearest'}
-                    y = gather(convn(x.ux.', rx_sig, 'full')); % -> (T x N)
+                    y = gather(convn(u, rx_sig, 'full')); % -> (T x N)
                 case 'linear'
                     [el_weight, el_map_grd, el_map_el] = deal(varargin{:});
                     % create the advanced impulse response function with
                     % which to convolve the output
-                    y = gather(... [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
-                        (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % 
+                    y = gather(... [(N x J'') x [[(J'' x J') x (J' x T' | D)] x (T' x T | J'')]]' -> (T x N)
+                        pagetranspose(pagemtimes(...
+                        el_map_el, (el_weight(:) .* convd(el_map_grd' * pagetranspose(u), rx_sig, 2, 'full')) ...
+                        )) ... % 
                         ); % [(N x J'') x (J'' x T)]' -> T x N
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
-                   y = gather(convn(x.ux.', rx_sig, 'full'));
+                   y = gather(convn(u, rx_sig, 'full'));
             end
+            
+            y = sum(y .* wnorm, 3); % (T x N x D) * (1 x N x D) -> (T x N)
         end
     
         function chd = kspaceRunSim(kspaceFirstOrderND_, ...
                 kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
-                rx_sig, elemmethod, rx_args, t0, fs_, W ...
+                rx_sig, elemmethod, wnorm, rx_args, t0, fs_, W ...
                 )
 
             Np = numel(ksource);
@@ -1907,8 +1928,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
 
                 % Process the simulation data
-                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data    , rx_sig, elemmethod, rx_args{:}) ...
-                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data_iso, rx_sig, elemmethod, rx_args{:}); %#ok<PFBNS> data is small
+                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data    , rx_sig, elemmethod, wnorm, rx_args{:}) ...
+                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data_iso, rx_sig, elemmethod, wnorm, rx_args{:}); %#ok<PFBNS> data is small
 
                 % report timing % TODO: make this part of some 'info' logger or something
                 fprintf('\nFinished pulse %i of %i\n', puls, Np);
