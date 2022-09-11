@@ -226,7 +226,7 @@ end
 
 function [ixo, iyo] = unapplyTrans(ixo, iyo, yneg, steep, Y)
 % set correct output for x and y in original coordinates
-if yneg, iyo(iyo > 0) = (Y - 1) - iyo(iyo > 0); end
+if yneg, j = iyo > 0; iyo(j) = (Y - 1) - iyo(j); end
 if steep, [ixo, iyo] = deal2(iyo, ixo); end
 
 end

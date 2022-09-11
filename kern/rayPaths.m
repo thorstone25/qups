@@ -54,7 +54,7 @@ arguments
     zg (1,:) {mustBeFinite, mustBeReal} % 1 x Z
     pj (2,:,:) {mustBeReal} % 2 x J x M x ...
     pa (2,:,:) {mustBeReal} % 2 x J x M x ...
-    kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,floor(2^33 /... 
+    kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,floor(2^32 /... 
          (max(size(pj,3),size(pa,3)) * ((1 + numel(xg) + numel(zg)) * 4) * 4 * 8) ... output size per batch in btyes
          ))
     kwargs.ord (1,1) string {mustBeMember(kwargs.ord, ["XZ", "ZX"])} = "ZX"
@@ -78,7 +78,13 @@ switch kwargs.method
     case "xiaolin", Kmax = 2*(X + Z + 1); 
 end
 
-% get data sizing
+% output data sizing
+switch kwargs.ord
+    case "ZX", [xstride, zstride] = deal(Z, 1);
+    case "XZ", [xstride, zstride] = deal(1, X);
+end
+
+% get input data sizing
 osz = [Kmax, J, M];
 [ix, iz] = deal(zeros(osz, 'int32'));
 iw = zeros(osz, 'like', dproto);
@@ -89,7 +95,7 @@ js = num2cell(uint64((1:kwargs.bsize)' + (0:kwargs.bsize:J)), 1);
 js{end} = js{end}(js{end} <= J);
 
 % allocate output data
-for j = 1:numel(js)
+for j = numel(js):-1:1
     if kwargs.verbose, fprintf('\n'); end
 
     % get input data
@@ -104,6 +110,8 @@ for j = 1:numel(js)
         pa_ = sub(pa,js{j},2);
     end
 
+    Jp = numel(js{j}); % == J'
+
     % convert to pixel coordinates and brodcast to all angles
     % (1 x J' x M)
     D = max(ndims(pa_), ndims(pj_));
@@ -115,8 +123,8 @@ for j = 1:numel(js)
     pbz = sub(pj_,2,1) + ZERO;
 
     % get output sizing and data
-    josz = osz; 
-    josz(2) = numel(js{j});
+    josz = [osz(1), Jp, osz(3)];
+
     % apply function for all start/end points
     tt = tic;
     switch kwargs.method
@@ -127,7 +135,7 @@ for j = 1:numel(js)
 
             if kwargs.gpu && exist('wbilerp.cu', 'file') % call the GPU version
                 [iwo(:), ixo(:), izo(:)] = wbilerpg(xg, zg, pax, paz, pbx, pbz);
-            else % call the CPU version in parallel
+            else % call the CPU version in parallel with defaults
                 parfor (jm = (1:numel(pax)))
                     [iwo(:,jm), ixo(:,jm), izo(:,jm)] = wbilerp(xg, zg, pax(jm), paz(jm), pbx(jm), pbz(jm));
                 end
@@ -147,8 +155,8 @@ for j = 1:numel(js)
             if kwargs.gpu, pul = {0}; else, pul = {}; end
             
             % Get the interpolation weights for each part of the line
-            % parfor (k = 1 : Kmax, pul{:})
-            for k = 1:Kmax/2
+            parfor (k = 1 : Kmax, pul{:})
+            % for k = 1:Kmax/2
                 [c1k, ix1k, iz1k, c2k, ix2k, iz2k] ...
                     = arrayfun(@xiaolinwu_k_scaled, ...
                     round((pax-x0)/dx), round((paz-z0)/dz), ...
@@ -163,52 +171,53 @@ for j = 1:numel(js)
             [~, izo] = ismember([iz1; iz2], round((zg-z0)/dz)); % find y-indices of the grid
 
     end
+    
+    % check that all values positive or nan
+    assert(all(iwo >= 0, 'all'), ...
+        "Found negative values - this is likely due to numerical precision issues. " ...
+        + "Consider changing the grid axes and ensure that the grid contains all endpoints. " ...
+        );
+    assert(all(~isnan(iwo), 'all'), 'Detected nan values - this is a bug :''(');
+    
+
+    % move results to MATLAB indexing % (K x J' x M)
+    ix = ixo - 1;
+    iz = izo - 1;
+    iw = iwo;
+
+    % get ray lengths
+    d(js{j},:) = gather(vecnorm(pa - pj_, 2, 1)); % (1 x J' x M)
+    
+    % filter indices outside range / nan values
+    % (Is x J' x M)
+    val = 0 <= ix & ix < X ...
+        & 0 <= iz & iz < Z ...
+        & ~isnan(iw);
+
+    % delete invalid indices
+    ix(~val) = [];
+    iz(~val) = [];
+    iw(~val) = [];
+
+    % get linear indexing
+    val = int32(find(val));
+
+    % compute sparse tensor as matrix indices (& add
+    % identical indices implicitly)
+    [~,jv,mv] = ind2sub([Kmax,Jp,M], val);
+    ijv = sub2ind([I,Jp],(1 + zstride .* iz(:) + xstride .* ix(:)), jv);
+    % [indij, indm] = ind2sub([int32(Kmax)*spsz(2), spsz(3)], find(val));
+    w{j} = sparse(ijv, mv, double(iw(:)), double(I*Jp), double(M)); % ([I x J'] x M)
+
     if kwargs.verbose, 
         fprintf('Completed batch %i of %i in %0.5f seconds.\n', ...
         j, numel(js), toc(tt)); 
     end
-
-    % check that all values positive or nan
-    assert(all(iwo >= 0 | isnan(iwo), 'all'), 'Negative or nan values - this is a bug :''(');
-
-    % move results to the CPU % (K x J' x M)
-    ix(:,js{j},:) = gather(ixo-1);
-    iz(:,js{j},:) = gather(izo-1);
-    iw(:,js{j},:) = gather(iwo);
-
-    % get ray lengths
-    d(js{j},:) = gather(vecnorm(pa - pj_, 2, 1)); % (1 x J' x M)
 end
 
-% collect results in cells as sparse matrices in I
-if kwargs.verbose, fprintf('\nStoring results ... '); end
-
-% data sizing
-switch kwargs.ord
-    case "ZX", [xstride, zstride] = deal(Z, 1);
-    case "XZ", [xstride, zstride] = deal(1, X);
-end
-
-% filter indices outside range / nan values
-% (Is x J x M)
-val = 0 <= ix & ix < X ...
-    & 0 <= iz & iz < Z ...
-    & ~isnan(iw);
-
-% delete invalid indices
-ix(~val) = [];
-iz(~val) = [];
-iw(~val) = [];
-
-% get linear indexing 
-val = int32(find(val));
-
-% compute sparse tensor as matrix indices (& add
-% identical indices implicitly)
-[~,jv,mv] = ind2sub([Kmax,J,M], val);
-ijv = sub2ind([I,J],(1 + zstride .* iz(:) + xstride .* ix(:)), jv);
-% [indij, indm] = ind2sub([int32(Kmax)*spsz(2), spsz(3)], find(val));
-w = sparse(ijv, mv, double(iw(:)), double(I*J), double(M)); % ([I x J] x M)
+% concatenate all sparse arrays to make a final sparse array
+% ([I x J'] x M) -> % ([I x J] x M)
+w = cat(1, w{:}); 
 
 if kwargs.verbose, fprintf('done!\n'); end
 
