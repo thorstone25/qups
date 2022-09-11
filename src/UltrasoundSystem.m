@@ -439,7 +439,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             kern = wv.samples;
 
             F = numel(scat);
-            if kwargs.verbose, hw = waitbar(0); end
+            % if kwargs.verbose, hw = waitbar(0); end
 
             for f = F:-1:1 % for each Scatterers
             % get minimum/maximum sample times
@@ -513,11 +513,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ... 
                     ); end % already set by const compiler
                 try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
-                k.ThreadBlockSize = min(k.MaxThreadsPerBlock,QS); 
+                k.ThreadBlockSize = min([k.MaxThreadsPerBlock, 32]); % smaller is better
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
+                % get the computational bounds
+                sblk = (0 : k.GridSize - 1)' * k.ThreadBlockSize(1); % block starting time index
+                sblocks = sblk <= [-inf, sb(2,:), inf]; % point at which we are in bounds
+                sbk = cellfun(@(x)find(x,1,'first'), num2cell(diff(sblocks,1,2), 2)); % get transition point
+                eblocks = (sblk + k.ThreadBlockSize(1)) < [-inf, sb(1,:), inf]; % point at which we are in bounds
+                ebk = cellfun(@(x)find(x,1,'last'), num2cell(diff(eblocks,1,2), 2)); % get transition point
+                
                 % call the kernel
-                x = k.feval(x, ps, as, pn, pv, kn, sb, [t0k, t0x, fs_, cinv_], [E,E], flagnum);
+                if kwargs.verbose, fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
+                x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fs_, cinv_], [E,E], flagnum);
                 
             else % operate in native MATLAB
                 % make time in dim 2
@@ -619,7 +627,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % close the waitbar if it (still) exists
-            if kwargs.verbose && isvalid(hw), delete(hw); end
+            % if kwargs.verbose && isvalid(hw), delete(hw); end
 
             % send data (back) to CPU
             % chd = gather(chd);

@@ -9,7 +9,7 @@ template<typename T2, typename U, typename U3>
 __device__ void greens_temp(T2 * __restrict__ y, 
     const U * __restrict__ Pi, const T2 * __restrict__ a, 
     const U * __restrict__ Pr, const U * __restrict__ Pv, 
-    const T2 * __restrict__ x, const U * __restrict__ sb, 
+    const T2 * __restrict__ x, const U * __restrict__ sb, const size_t * iblock,
 	const U s0t0fscinv[4],
     const int * E, const int iflag
     ) {
@@ -43,8 +43,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
 
     // if valid scat, for each tx/rx
     if(s < S){
-        for(size_t i = 0; i < I; ++i){ // for each scatterer
-            if(s >  sb[2*i+1]) break; // early terminate if we will never sample again
+        for(size_t i = iblock[2*blockIdx.x+0]; i < iblock[2*blockIdx.x+1]; ++i){ // for each scatterer
             if(s >= sb[2*i+0]){ // if within sampling window
                 # pragma unroll 
                 for(size_t me = 0; me < E[1]; ++me){ // for each tx sub-aperture
@@ -72,21 +71,21 @@ __device__ void greens_temp(T2 * __restrict__ y,
 __global__ void greensf(float2 * __restrict__ y, 
     const float * __restrict__ Pi, const float2 * __restrict__ a, 
     const float * __restrict__ Pr, const float * __restrict__ Pv, 
-    const float2 * __restrict__ x, const float * __restrict__ sb, 
+    const float2 * __restrict__ x, const float * __restrict__ sb, const size_t * iblock,
 	const float s0t0fscinv[4],
     const int * E, const int iflag
     ) {
-    greens_temp<float2, float, float3>(y, Pi, a, Pr, Pv, x, sb, s0t0fscinv, E, iflag);
+    greens_temp<float2, float, float3>(y, Pi, a, Pr, Pv, x, sb, iblock, s0t0fscinv, E, iflag);
 }
 
 __global__ void greens(double2 * __restrict__ y, 
     const double * __restrict__ Pi, const double2 * __restrict__ a, 
     const double * __restrict__ Pr, const double * __restrict__ Pv, 
-    const double2 * __restrict__ x, const double * __restrict__ sb, 
+    const double2 * __restrict__ x, const double * __restrict__ sb, const size_t * iblock,
 	const double s0t0fscinv[4],
     const int * E, const int iflag
     ) {
-    greens_temp<double2, double, double3>(y, Pi, a, Pr, Pv, x, sb, s0t0fscinv, E, iflag);
+    greens_temp<double2, double, double3>(y, Pi, a, Pr, Pv, x, sb, iblock, s0t0fscinv, E, iflag);
 }
 
 #if (__CUDA_ARCH__ >= 530)
@@ -94,10 +93,10 @@ __global__ void greens(double2 * __restrict__ y,
 __global__ void greensh(ushort2 * __restrict__ y, 
     const float * __restrict__ Pi, const short2 * __restrict__ a, 
     const float * __restrict__ Pr, const float * __restrict__ Pv, 
-    const ushort2 * __restrict__ x, const float * __restrict__ sb,
+    const ushort2 * __restrict__ x, const float * __restrict__ sb,const size_t * iblock,
 	const float s0t0fscinv[4],
     const int * E, const int iflag
     ) {
-    greens_temp<half2, float, float3>((half2 *)y, Pi, (const half2 *)a, Pr, Pv, (const half2 *)x, sb, s0t0fscinv, E, iflag);
+    greens_temp<half2, float, float3>((half2 *)y, Pi, (const half2 *)a, Pr, Pv, (const half2 *)x, sb, iblock, s0t0fscinv, E, iflag);
 }
 #endif
