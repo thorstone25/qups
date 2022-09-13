@@ -1804,7 +1804,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % make a new movie name for each pulse
             kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
-            mv_nm = {kwave_args.MovieName} + sprintf("_pulse%2.0i",1:self.sequence.numPulse);
+            mv_nm = cellstr({kwave_args.MovieName} + sprintf("_pulse%2.0i",1:self.sequence.numPulse));
             [kwave_args.MovieName] = deal(mv_nm{:});
 
             % select function
