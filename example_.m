@@ -3,7 +3,8 @@
 % QUPS is designed to be an accessible, verastile, shareable, lightweight codebase 
 % designed to make developing and running ultrasound algorithms quick and easy! 
 % It offers a standardization of data formatting that serves most common pulse-echo 
-% ultrasound systems and supports simulation programs such as k-Wave or Fullwave.
+% ultrasound systems and supports homogeneous sound speed simulators such as FieldII 
+% and MUST as well as heterogeneous simulation programs such as k-Wave.
 %% Why?
 % This package seeks to lower the barrier to entry for doing research in ultrasound 
 % by offering a lightweight, easy to use package. Most of the underlying implementations 
@@ -19,8 +20,6 @@
 % jointly
 % * Beamform using traditional delay-and-sum, the eikonal equation, or an adjoint 
 % matrix method to create a b-mode image
-% * 
-% * 
 %% 
 % Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -38,7 +37,6 @@ dev = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
 % setup;  % add all the necessary paths
 % setup parallel; % start a parpool for faster CPU processing
 setup CUDA cache;  % setup CUDA paths & recompile and cache local mex/CUDA binaries
-%% 
 %% Create a simple simulation
 % Choose a Target
 
@@ -49,7 +47,7 @@ switch "single"
         ps_x =  [1e-3;0;0] * (-10:5:10);
         ps = [ps_x + [0;0;30e-3], ps_x + [0;0;20e-3], ps_x + [0;0;40e-3]];
         scat = Scatterers('pos', ps, 'c0', 1500); % targets every 5mm
-    case 'diffuse', N = 2500; % a random number of scatterers
+    case 'diffuse', N = 2500; % number of random scatterers
                     scat = Scatterers('pos', 1e-3*[40;10;60].*([1;0;1].*rand(3,N)-[0.5;0;0]), 'amp', rand(1,N), 'c0', 1500); % diffuse scattering
 end
 % Choose a transducer
@@ -140,9 +138,13 @@ end
 % (this logic will later be implemented in a class)
 s_rad = max([tscan.dx, tscan.dz]); %, 260e-6); % scatterer radius
 nextdim = @(p) ndims(p) + 1;
-ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p));
 rho0 = 1000; % ambient density
-med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]}});
+if scat.numScat < 500
+    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p));
+    med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]}});
+else
+    med = Medium('c0', scat.c0, 'rho0', rho0);
+end
 %% 
 % 
 
@@ -178,9 +180,10 @@ set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
 % 
 
 % Construct an UltrasoundSystem object, combining all of these properties
-us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6, 'recompile', false);
+us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', single(40e6), 'recompile', false);
 
 % Simulate a point target
+tic;
 switch "Greens"
     case 'Greens' , chd0 = greens(us, scat); % use a Greens function with a GPU if available!su-vpn.stanford.edu
     case 'FieldII', chd0 = calc_scat_all(us, scat); % use FieldII, 
@@ -189,6 +192,7 @@ switch "Greens"
                     chd0 = simus(us, scat, 'periods', 1, 'dims', 3); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
     case 'kWave', chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
 end
+toc; 
 chd0
 %%
 
@@ -216,14 +220,14 @@ if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert 
 % optionally demodulate and downsample the data
 demod = true;
 demod_thresh_db = 80; % db threshold for demodulation
-if demod,
+if demod
     fpow = max(fft(chd).data, [], setdiff(1:ndims(chd.data), chd.tdim)); % max power per frequency
     if_max = gather(find(mod2db(fpow) > max(mod2db(fpow)) - demod_thresh_db, 1, 'last')); % dB threshold
-    f_max = (if_max - 1) * chd.fs / chd.T; % maximum frequency past the threshold
-    ratio = floor(chd.fs / f_max); % demodulation ratio, preserving the energy
-    chd = downsample(demodulate(hilbert(chd), chd.fs/ratio), ratio);
+    fmod = (if_max - 1) * chd.fs / chd.T; % maximum frequency past the threshold
+    chd = downmix(chd, fmod); % downmix - this reduces the central frequency of the data    
+    chd = downsample(chd, floor(chd.fs / fmod)); % now we can downsample without losing information
+
 end % demodulate and downsample (by any whole number)
-% if demod, chd = downsample(demodulate(hilbert(chd), us.xdc.fc), 1); end
 if dev, chd = gpuArray(chd); end % move data to GPU
 
 % Run a simple DAS algorithm
@@ -274,15 +278,16 @@ end
 %% 
 % Choose a beamforming method
 
+bf_args = {'apod', apod, 'fmod', fmod}; % arguments for all beamformers
 switch "DAS"
     case "DAS"
-        b = bfDAS(us, chd, scat.c0, 'apod', apod); % use a vanilla delay-and-sum beamformer
+        b = bfDAS(us, chd, scat.c0, bf_args{:}); % use a vanilla delay-and-sum beamformer
     case "Adjoint"
-        b = bfAdjoint(us, chd, scat.c0, 'apod', apod, 'fthresh', -20); % use an adjoint matrix method
+        b = bfAdjoint(us, chd, scat.c0, 'fthresh', -20, bf_args{:}); % use an adjoint matrix method
     case "Eikonal"
-        b = bfEikonal(us, chd, med, tscan, 'apod', apod); % use the eikonal equation
+        b = bfEikonal(us, chd, med, tscan, bf_args{:}); % use the eikonal equation
     case "DAS-direct"
-        b = DAS(us, chd, scat.c0, 'apod', apod); % use a specialized delay-and-sum beamformer
+        b = DAS(us, chd, scat.c0, bf_args{:}); % use a specialized delay-and-sum beamformer
 end
 
 % show the image
