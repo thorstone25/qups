@@ -31,7 +31,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     const U3 * pv = reinterpret_cast<const U3*>(Pv); // 3 x M x E
 
     // rename for readability
-    const size_t N = QUPS_N, I = QUPS_I, S = QUPS_S, M = QUPS_M;//, T = QUPS_T;
+    const size_t N = QUPS_N, S = QUPS_S, M = QUPS_M;//, I = QUPS_I, T = QUPS_T;
     // rxs, num scat, output time size, txs, kernel time size, 
     // S is size of output, T is size of input kernel, I the number of scats
     
