@@ -83,12 +83,10 @@ classdef TransducerConvex < Transducer
         function [theta, phi, normal, width, height] = orientations(self) 
             [theta, phi, normal, width, height] = getOrientations(self); 
         end
-        function pb = bounds(self), pb = getBounds(self); end
-        function pch = patches(self,sub_div), pch = getFieldIIPatches(self,sub_div); end
     end
     
     % define position methods
-    methods(Hidden)
+    methods(Hidden,Access=private)
         % get methods                
         function p = findPositions(self)
             % returns a 3 x N vector of the positions of the N elements with
@@ -122,21 +120,6 @@ classdef TransducerConvex < Transducer
             normal     = [cosd(phi).*sind(theta); sind(phi); cosd(phi).*cosd(theta)];
             width      = [cosd(theta);           sind(ZERO); -cosd(ZERO).*sind(theta)];
             height     = [sind(phi).*sind(ZERO);  cosd(phi); sind(phi).*cosd(ZERO)];
-        end
-        
-        function pb = getBounds(self)
-            % returns a 3 x 2 matrix of min / max values in x/y/z
-            
-            % transducer patches of {x,y,z,c} bound tuples
-            pch = self.patches([1,1]);
-                        
-            % get min/max bounds of the tx by iterating over each patch
-            pb = [inf(3,1), -inf(3,1)]; 
-            for i = 1:self.numel
-                pchi = pch{i}(1:3);
-                pb(:,1) = min(pb(:,1), cellfun(@(pch) min(pch, [], 'all'), pchi(:)));
-                pb(:,2) = max(pb(:,2), cellfun(@(pch) max(pch, [], 'all'), pchi(:)));
-            end
         end        
     end
 

@@ -168,27 +168,92 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         %
         % See also POSITIONS TRANSDUCER/PLOT
         [theta, phi, normal, width, height] = orientations(xdc); % compute the orientations
-        
-        % BOUNDS - Compute the boundaries of the arrays
-        %
-        % pb = BOUNDS(xdc) returns a 3 x 2 array of the minimum and maximum 
-        % cartesian coordinate in x/y/z for the Transducer xdc.
-        %
-        % 
-        pb = bounds(xdc); % compute the 3 x 2 array of x/y/z by min/max
-        
-        % PATCHES - Compute a matrix of sub-elements
-        % 
-        % pch = PATCHES(xdc,sub_div) computes a cell matrix where each
-        % element contains {X,Y,Z,C} tuples of 2x2 matrices specifying four
-        % corners of each patch, where each patch is a subdivision of the
-        % elements into sub-elements specified by the 1 x 2 array sub_div.
-        % pch is a [Ndiv x Nel] matrix where Nel is the number of elements
-        % and Ndiv is the number of sub-elements given by the
-        % prod(sub_div).
-        %
-        % See also POSITIONS
-        pch = patches(xdc,sub_div); % return a matrix of sub-elements
+    end        
+
+    % define derived functions from position and orientation proeprties
+    methods
+        function pch = patches(xdc, sub_div)
+            % PATCHES - Compute a matrix of sub-elements
+            %
+            % pch = PATCHES(xdc,sub_div) computes a cell matrix where each
+            % element contains {X,Y,Z,C} tuples of 2x2 matrices specifying four
+            % corners of each patch, where each patch is a subdivision of the
+            % elements into sub-elements specified by the 1 x 2 array sub_div.
+            % pch is a [Ndiv x Nel] matrix where Nel is the number of elements
+            % and Ndiv is the number of sub-elements given by the
+            % prod(sub_div).
+            %
+            % See also POSITIONS ORIENTATIONS
+            arguments
+                xdc
+                sub_div (1,2) {mustBeInteger} = [1,1]
+            end
+            % get the matrix of sub element patches
+
+
+            % dx = [-1; +1; -1; +1] ./ 2; % width difference from the center 4 x E
+            % dy = [-1; -1; +1; +1] ./ 2; % elevation difference from the center 4 x E
+
+            % get unweighted difference in width and height from element center
+            [dx, dy] = ndgrid(...
+                ((0 : sub_div(1) - 1) / sub_div(1)) - 0.5, ...
+                ((0 : sub_div(2) - 1) / sub_div(2)) - 0.5 ...
+                ); % E1 x E2
+            [dxs, dys] = deal(1 / sub_div(1), 1 / sub_div(2)); % sub difference
+
+            E = prod(sub_div);
+
+            % reshape to E x 4
+            dx = dx(:); dy = dy(:);
+            dx = [dx, dx + dxs, dx      , dx + dxs];
+            dy = [dy, dy      , dy + dys, dy + dys];
+
+            % move up to 1 x 1 x E x 4
+            [dx, dy] = deal(shiftdim(dx, -2), shiftdim(dy, -2));
+
+            % get the difference matrices (3 x N)
+            [~, ~, ~, w, h] = xdc.orientations; % difference vectors
+
+            % get the positions
+            pn = xdc.positions;
+
+            % get the element dimensions
+            wel = xdc.width;
+            hel = xdc.height;
+
+            pch = cell(xdc.numel, E); % pre-allocate
+            pc = pn + wel .* w .* dx + hel .* h .* dy; % 3 x N x E x 4
+            pc(4,:) = 1; % x/y/z/c x N x E x 4 - set apodization to 1 
+            pc = permute(pc, [5,4,1,2,3]);  % 1 x 4 x x/y/z/c x N x E
+            pc = reshape(pc, [2,2,size(pc,3:5)]); % 2 x 2 x x/y/z/c x N x E
+            
+            % convert to patch structure {{2 x 2} x x/y/z/c} x 1 x N x E
+            pch = cellfun(@(pc) shiftdim(num2cell(pc, [1:2]),1), num2cell(pc, 1:3), 'UniformOutput',false);
+            pch = shiftdim(pch, 3);
+                        
+        end
+    
+        function pb = bounds(self)
+            % BOUNDS - Compute the boundaries of the arrays
+            %
+            % pb = BOUNDS(xdc) returns a 3 x 2 array of the minimum and maximum
+            % cartesian coordinate in x/y/z for the Transducer xdc.
+            %
+            % See also POSITIONS ORIENTATIONS PATCHES
+
+            % returns a 3 x 2 matrix of min / max values in x/y/z
+
+            % transducer patches of {x,y,z,c} bound tuples
+            pch = self.patches([1,1]);
+
+            % get min/max bounds of the tx by iterating over each patch
+            pb = [inf(3,1), -inf(3,1)];
+            for i = 1:self.numel
+                pchi = pch{i}(1:3);
+                pb(:,1) = min(pb(:,1), cellfun(@(pch) min(pch, [], 'all'), pchi(:)));
+                pb(:,2) = max(pb(:,2), cellfun(@(pch) max(pch, [], 'all'), pchi(:)));
+            end
+        end
     end
 
     % toolbox conversion functions
@@ -234,7 +299,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         %
         % 
         xdc = Verasonics(Trans, c0)
-
     end
 
     % SIMUS functions
@@ -677,7 +741,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             %
             % el_patches = GETFIELDIIPATCHES(xdc, el_sub_div) uses the 
             % 2-element array el_sub_div to determine the number of 
-            % mathematical elements. 
+            % mathematical elements. The result is a (N x E) array where N
+            % is the number elements and E is the number of subelements.
             %
             % See also GETFIELDIIBARYCENTERS
             arguments
@@ -868,7 +933,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % return
             if nargout >= 1, varargout{1} = hp; end
             if nargout >= 2, varargout{2} = axs; end
-
         end
 
         function varargout = plot(self, varargin, plot_args)
