@@ -1,1 +1,1 @@
-function x = rsqrt(x), x = rdivide(1, sqrt(x));
+function x = rsqrt(x), if min(x,[],'all', 'omitnan') < 0, x = rdivide(1, sqrt(complex(x))); else,  x = rdivide(1, sqrt(x)); end
