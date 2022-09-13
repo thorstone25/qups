@@ -1,4 +1,4 @@
-function setup(varargin)
+function setup(opts)
 % SETUP - Setup the workspace for QUPS
 %
 % SETUP - by itself adds relevant paths for QUPS classes and functions.
@@ -17,16 +17,11 @@ function setup(varargin)
 % 'VCToolsInstallDir' environmental variable is set, it will use that C/C++
 % compiler.
 %
-% SETUP CUDA NVCC_PATH - specifies the path for the nvcc executable. On
-% Linux the default is '/usr/local/cuda/bin'. On Windows it is the first
-% installation under
-% '<drive>:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\<version>\bin'
-%
-% SETUP CUDA NVCC_PATH MSVC_CL_PATH - specifies the path for the C/C++
-% compilier under MSVC. By default this is the first installation under 
-% '<drive>:\Program Files*\Microsoft Visual Studio *\**\cl.exe'
-%
 % See also TEARDOWN
+
+arguments(Repeating)
+    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel"])}
+end
 
 base_path = fileparts(mfilename('fullpath'));
 rel_paths = {'.', 'kern', 'src', 'utils'};
@@ -36,7 +31,7 @@ addpath(paths{:});
 
 i = 1;
 while i <= nargin % go through arguments sequentially
-    switch varargin{i}
+    switch opts{i}
         case 'parallel'
             hcp = gcp('nocreate');
             if isvalid(hcp)
@@ -59,13 +54,15 @@ while i <= nargin % go through arguments sequentially
             
             % get the nvcc executable path
             if isunix
-                if i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
-                    p = varargin{i+1}; varargin(i+1) = []; % store user path
-                else 
+                p = getenv('CUDA_PATH'); % use env. var if set
+                if isfolder(p)
+                    p = fullfile(p, 'bin'); % bin should have nvcc
+                else
                     p = "/usr/local/cuda/bin"; % linux default nvcc path
                 end                
                 if ~exist(fullfile(p, 'nvcc')), warning("nvcc not found at " + p); end
                 p = pathsep + p; % prepend path separator here
+            
             elseif ispc
                 % get all the windows drives, from A to Z
                 isdrive = @(c) logical(exist([c ':\'], "dir"));
@@ -73,46 +70,40 @@ while i <= nargin % go through arguments sequentially
                 wdrvs = wdrvs(arrayfun(isdrive, wdrvs));
 
                 % get the nvcc path
-                if  i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
-                    p1 = varargin{i+1}; varargin(i+1) = []; % store user path
-                    i = i + 1; % move to next argument
-                else % find the windows (default) nvcc paths
-                    p1 = getenv('CUDA_PATH'); % use env. var if set
-                    if isfolder(p1)
-                        p1 = fullfile(p1, 'bin'); % bin should have nvcc
-                    else
-                        l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files\NVIDIA GPU Computing Toolkit\CUDA","**","nvcc*"))}, wdrvs); % search for nvcc
-                        l = cat(1, l{:});
-                        if ~isempty(l) % we found at least one
-                            p1 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
-                        else % nothing found
-                            p1 = repmat("", [1, 0]); % empty string
-                        end
+                % find the windows (default) nvcc paths
+                p1 = getenv('CUDA_PATH'); % use env. var if set
+                if isfolder(p1)
+                    p1 = fullfile(p1, 'bin'); % bin should have nvcc
+                else
+                    l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files\NVIDIA GPU Computing Toolkit\CUDA","**","nvcc*"))}, wdrvs); % search for nvcc
+                    l = cat(1, l{:});
+                    if ~isempty(l) % we found at least one
+                        p1 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
+                    else % nothing found
+                        p1 = repmat("", [1, 0]); % empty string
                     end
                 end
+
                 if isempty(p1),                          warning("nvcc not found.")
                 elseif ~exist(fullfile(p1, 'nvcc.exe')), warning("nvcc not found at " + p1); 
                 end
                 p1 = string(p1); % enforce string type for casting/sizing
                 
                 % MSVC find cl.exe
-                if i+1 <= nargin && isfolder(varargin{i+1}) % if next arg is user provided path
-                    p2 = varargin{i+1}; varargin(i+1) = []; % store user path
-                    i = i + 1; % move to next argument
-                else % search for cl.exe within MSVC default install directories
-                    p2 = getenv('VCToolsInstallDir');
-                    if isfolder(p2)
-                        p2 = fullfile(p2, 'bin', 'Hostx86','x64');
-                    else
-                        l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files*\Microsoft Visual Studio*",'**','Hostx86','x64', 'cl.exe'))}, wdrvs);
-                        l = cat(1, l{:});
-                        if ~isempty(l) % we found at least one
-                            p2 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
-                        else % nothing found
-                            p2 = repmat("", [1, 0]); % empty string
-                        end
+                % search for cl.exe within MSVC default install directories
+                p2 = getenv('VCToolsInstallDir');
+                if isfolder(p2)
+                    p2 = fullfile(p2, 'bin', 'Hostx86','x64');
+                else
+                    l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files*\Microsoft Visual Studio*",'**','Hostx86','x64', 'cl.exe'))}, wdrvs);
+                    l = cat(1, l{:});
+                    if ~isempty(l) % we found at least one
+                        p2 = l(1).folder;  % grab the 1st folder - TODO: grab the best instead
+                    else % nothing found
+                        p2 = repmat("", [1, 0]); % empty string
                     end
                 end
+                
                 if isempty(p2),                        warning("cl not found.");
                 elseif ~exist(fullfile(p2, 'cl.exe')), warning("cl not found at " + p2); end
                 p2 = string(p2); % enforce string type for casting/sizing
@@ -130,7 +121,7 @@ while i <= nargin % go through arguments sequentially
             setenv('PATH', fullfile(getenv('PATH'), p));
             
         otherwise
-            error("Unrecognized option " + varargin{i} + ".");
+            error("Unrecognized option " + opts{i} + ".");
     end
     i = i + 1; % move to next argument
 end
