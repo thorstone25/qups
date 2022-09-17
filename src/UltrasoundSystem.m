@@ -429,9 +429,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if all(element_subdivisions == 1) % no sub-elements
                 ptc_tx = self.tx.positions();
                 ptc_rx = self.rx.positions();
-            else % use FieldII's definitions
-                ptc_tx = self.tx.getFieldIIBaryCenters(element_subdivisions);
-                ptc_rx = self.rx.getFieldIIBaryCenters(element_subdivisions);
+            else % TODO: use xdc.patches
+                ptc_tx = self.tx.getBaryCenters(element_subdivisions);
+                ptc_rx = self.rx.getBaryCenters(element_subdivisions);
             end
 
             % cast dimensions to compute in parallel
@@ -448,8 +448,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
             wv = conv(self.rx.impulse, ...
-                conv(self.tx.impulse, self.sequence.pulse, kwargs.fs_kernel), ...
-                kwargs.fs_kernel); % transmit waveform, convolved at US frequency
+                conv(self.tx.impulse, self.sequence.pulse, kwargs.fsk), ...
+                kwargs.fsk); % transmit waveform, convolved at US frequency
             wv.fs = kwargs.fsk;
             kern = wv.samples;
 
@@ -2336,6 +2336,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % should be options here
             switch kwargs.method
                 case "tikhonov"
+                    % TODO: option to use pinv, as it is (slightly)
+                    % different than matrix division
                     A = pagemtimes(H, 'ctranspose', H, 'none') + (kwargs.gamma * eye(chd.M)); % A = (H'*H + gamma * I)
                     Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);

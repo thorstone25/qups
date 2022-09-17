@@ -143,7 +143,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
     end
 
-
     % transducer specific methods
     methods (Abstract)
         % POSITIONS - Positions of the elements
@@ -170,7 +169,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         [theta, phi, normal, width, height] = orientations(xdc); % compute the orientations
     end        
 
-    % define derived functions from position and orientation proeprties
+    % define methods derived from position and orientation properties
     methods
         function pch = patches(xdc, sub_div)
             % PATCHES - Compute a matrix of sub-elements
@@ -183,17 +182,12 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % and Ndiv is the number of sub-elements given by the
             % prod(sub_div).
             %
-            % See also POSITIONS ORIENTATIONS
+            % See also GETBARYCENTERS POSITIONS ORIENTATIONS
             arguments
-                xdc
-                sub_div (1,2) {mustBeInteger} = [1,1]
+                xdc Transducer
+                sub_div (1,2) {mustBeInteger, mustBePositive} = [1,1]
             end
             % get the matrix of sub element patches
-
-
-            % dx = [-1; +1; -1; +1] ./ 2; % width difference from the center 4 x E
-            % dy = [-1; -1; +1; +1] ./ 2; % elevation difference from the center 4 x E
-
             % get unweighted difference in width and height from element center
             [dx, dy] = ndgrid(...
                 ((0 : sub_div(1) - 1) / sub_div(1)) - 0.5, ...
@@ -221,38 +215,69 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             wel = xdc.width;
             hel = xdc.height;
 
-            pch = cell(xdc.numel, E); % pre-allocate
+            % get patch locations
             pc = pn + wel .* w .* dx + hel .* h .* dy; % 3 x N x E x 4
             pc(4,:) = 1; % x/y/z/c x N x E x 4 - set apodization to 1 
-            pc = permute(pc, [5,4,1,2,3]);  % 1 x 4 x x/y/z/c x N x E
-            pc = reshape(pc, [2,2,size(pc,3:5)]); % 2 x 2 x x/y/z/c x N x E
+            % TODO: for soft baffle, this should be some distribution
+            % instead
             
             % convert to patch structure {{2 x 2} x x/y/z/c} x 1 x N x E
+            pc = permute(pc, [5,4,1,2,3]);  % 1 x 4 x x/y/z/c x N x E
+            pc = reshape(pc, [2,2,size(pc,3:5)]); % 2 x 2 x x/y/z/c x N x E
             pch = cellfun(@(pc) shiftdim(num2cell(pc, [1:2]),1), num2cell(pc, 1:3), 'UniformOutput',false);
             pch = shiftdim(pch, 3);
                         
         end
     
-        function pb = bounds(self)
+        function pb = bounds(xdc)
             % BOUNDS - Compute the boundaries of the arrays
             %
             % pb = BOUNDS(xdc) returns a 3 x 2 array of the minimum and maximum
             % cartesian coordinate in x/y/z for the Transducer xdc.
             %
             % See also POSITIONS ORIENTATIONS PATCHES
-
-            % returns a 3 x 2 matrix of min / max values in x/y/z
+    
+            arguments, xdc Transducer, end
 
             % transducer patches of {x,y,z,c} bound tuples
-            pch = self.patches([1,1]);
+            pch = xdc.patches([1,1]);
 
             % get min/max bounds of the tx by iterating over each patch
             pb = [inf(3,1), -inf(3,1)];
-            for i = 1:self.numel
+            for i = 1:xdc.numel
                 pchi = pch{i}(1:3);
                 pb(:,1) = min(pb(:,1), cellfun(@(pch) min(pch, [], 'all'), pchi(:)));
                 pb(:,2) = max(pb(:,2), cellfun(@(pch) max(pch, [], 'all'), pchi(:)));
             end
+        end
+    
+        function p = getBaryCenters(xdc, el_sub_div)
+            % GETBARYCENTERS - computes barycenters of the sub-elements
+            % 
+            % p = GETBARYCENTERS(xdc) computes the positions of the 
+            % transducer sub-elements by computing the barycenters 
+            % (geometric mean) of the corners of the sub-elements computed 
+            % xdc.patches and returns them as a 3 x N matrix of positions
+            % p.
+            %
+            % p = GETBARYCENTERS(xdc, el_sub_div) uses the 2-element
+            % array el_sub_div to divide each element into el_sub_div(1) x
+            % el_sub_div(2) elements and returns the positions as a 
+            % 3 x N x E array of positions p, where E = prod(el_sub_div). 
+            % The default is [1,1].
+            %
+            % See also PATCHES POSITIONS ORIENTATIONS
+
+            arguments
+                xdc Transducer
+                el_sub_div (1,2) {mustBeInteger, mustBePositive} = [1,1]
+            end
+
+            el_patches = xdc.patches(el_sub_div);
+
+            p = cellfun(@(patch) cellfun(@(comp) mean(comp(:)),...
+                patch(1:3)'), el_patches, 'UniformOutput', false);
+            p = reshape(cat(1, p{:}), [3, size(p)]);
         end
     end
 
@@ -312,6 +337,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         p = getSIMUSParam(xdc)
     end
 
+    % UFF constructor
     methods (Abstract)
         % UFF - Construct a Transducer from a UFF probe
         %
@@ -615,6 +641,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
     end
 
+    % kWaveArray constructor
     methods
         function karray = kWaveArray(xdc, dim, og, karray_args)
             % KWAVEARRAY - Create a kWaveArray object from the Transducer
@@ -713,7 +740,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
     end
 
-
     % Field II calls - rely on being able to get a FieldII aperture
     methods
         function p = getFieldIIPositions(xdc)
@@ -778,33 +804,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
             % reshape by element (N x E), E is subelements
             el_patches = reshape(el_patches, prod(el_sub_div), [])';
-        end
-
-        function p = getFieldIIBaryCenters(xdc, el_sub_div)
-            % GETFIELDIIBARYCENTERS - computes barycenters of the fieldII
-            % elements.
-            % 
-            % p = GETFIELDIIBARYCENTERS(xdc) computes the positions of the 
-            % transducer elements by computing the barycenters (geometric 
-            % mean) of the corners of the mathematical elements computed by
-            % FieldII.
-            %
-            % p = GETFIELDIIBARYCENTERS(xdc, el_sub_div) uses the 2-element
-            % array el_sub_div to determine the number of mathematical
-            % elements.
-            %
-            % See also GETFIELDIIPATCHES
-
-            arguments
-                xdc Transducer
-                el_sub_div (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-            end
-            
-            el_patches = xdc.getFieldIIPatches(el_sub_div);
-
-            p = cellfun(@(patch) cellfun(@(comp) mean(comp(:)),...
-                patch(1:3)'), el_patches, 'UniformOutput', false);
-            p = reshape(cat(1, p{:}), [3, size(p)]);
         end
     end
 
