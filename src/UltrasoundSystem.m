@@ -2135,7 +2135,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             b = permute(b, [1:3,6:ndims(b),4:5]);
         end
         
-        function chd = focusTx(self, chd0, seq, kwargs)
+        function chd = focusTx(self, chd, seq, kwargs)
             % FOCUSTX - Synthesize transmits
             %
             % chd = FOCUSTX(self, chd0) focuses the FSA ChannelData chd0 by
@@ -2191,7 +2191,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                chd0 ChannelData
+                chd ChannelData
                 seq (1,1) Sequence = self.sequence;
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.length string {mustBeScalarOrEmpty} = [];
@@ -2199,7 +2199,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % Copy semantics
-            chd = copy(chd0);
+            chd = copy(chd);
 
             % nothing to do for FSA acquisitions
             switch seq.type, case 'FSA', return; end 
@@ -2336,8 +2336,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % should be options here
             switch kwargs.method
                 case "tikhonov"
-                    A = pagemtimes(H, 'ctranspose', H, 'none') + (kwargs.gamma * eye(chd.M));
-                    Hi = cast(pagetranspose(pagemrdivide(gather(H), gather(A))), 'like', H);
+                    A = pagemtimes(H, 'ctranspose', H, 'none') + (kwargs.gamma * eye(chd.M)); % A = (H'*H + gamma * I)
+                    Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
+                    Hi = cast(Hi, 'like', H);
             end
 
             % move to matching data dimensions
