@@ -1041,7 +1041,9 @@ classdef ChannelData < matlab.mixin.Copyable
             end
             t0_   = sub(chd.t0, tind(dim ~= chd.tdim), dim(dim ~= chd.tdim)); % extract start time
             data_ = sub(chd.data, ind, dim); % extract data
-            if has_tdim, t0_(:) = t0_ + (n(1) - 1) / chd.fs; end % get the new start time based on the starting index
+            % get the new start time based on the starting index
+            % should preserve type and size fo t0
+            if has_tdim && ~isempty(n), t0_(:) = t0_ + (n(1) - 1) / chd.fs; end 
             
             chd = copy(chd); % copy semantics
             chd.t0 = t0_; % assign
