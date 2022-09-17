@@ -91,7 +91,7 @@ iw = zeros(osz, 'like', dproto);
 d = zeros([osz(2:end)], 'like', dproto);
 
 % split up data into blocks
-js = num2cell(uint64((1:kwargs.bsize)' + (0:kwargs.bsize:J)), 1);
+js = num2cell(uint64((1:kwargs.bsize)' + (0:kwargs.bsize:J-1)), 1);
 js{end} = js{end}(js{end} <= J);
 
 % allocate output data
