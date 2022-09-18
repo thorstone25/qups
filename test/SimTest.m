@@ -182,7 +182,7 @@ classdef SimTest < matlab.unittest.TestCase
     % some of these options aren't fully supported yet.
     properties(TestParameter)
         terp = {'nearest', 'linear', 'cubic'};  % interpolation
-        sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'kWave', 'SIMUS'}% k-Wave just takes a while, SIMUS has seemingly random phase errors
+        sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'}% k-Wave just takes a while, SIMUS has seemingly random phase errors
     end
     methods(TestMethodSetup)
     end
@@ -223,8 +223,15 @@ classdef SimTest < matlab.unittest.TestCase
                 test.us, test.scat, test.med, test.tscan, test.clu ...
                 );
 
-            % k-Wave doesn't use interpolation: pass on all but one option
-            if sim_name == "kWave" && terp ~= "nearest", return; end
+            % check if we can even call the sim
+            switch sim_name
+                case {'FieldII', 'FieldII_multi'}, test.assumeTrue(exist('field_init', 'file'));
+                case {'SIMUS'}, test.assumeTrue(exist('pfield', 'file'));
+                case {'kWave'}, test.assumeTrue(exist('kWaveGrid', 'file'));
+            end
+
+            % k-Wave/calc_scat_multi don't use interpolation: pass on all but one option
+            if ismember(sim_name,["FieldII_multi", "kWave"]) && terp ~= "nearest", return; end
             
             % SIMUS restricts the fractional bandwidth to < 0.2 and 
             % requires sampling frequency be a multiple of 4 x the central
@@ -233,12 +240,12 @@ classdef SimTest < matlab.unittest.TestCase
 
             
             % simulate based on the simulation routine
-            opts = {'interp', terp, 'parenv', clu};
+            opts = {'parenv', clu, 'interp', terp, };
             switch sim_name
-                case 'FieldII',       chd = calc_scat_all   (us, scat, [1,1], opts{:}); % use FieldII,
-                case 'FieldII_multi', chd = calc_scat_multi (us, scat, [1,1], opts{:}); % use FieldII,
-                case 'SIMUS'  ,       chd = simus           (us, scat, 'periods', 1, 'dims', 3, opts{:}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-                case 'Greens' ,       chd = greens          (us, scat, [1,1], opts{1:2});
+                case 'FieldII',       chd = calc_scat_all   (us, scat, opts{:}); % use FieldII,
+                case 'FieldII_multi', chd = calc_scat_multi (us, scat, opts{[1:2]}); % use FieldII,
+                case 'SIMUS'  ,       chd = simus           (us, scat, 'periods', 1, 'dims', 3, opts{[1:2]}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
+                case 'Greens' ,       chd = greens          (us, scat, opts{[3:4]});
                 case 'kWave',         if(gpuDeviceCount) && (clu == 0 || isa(clu, 'parallel.Cluster')), dtype = 'gpuArray-double'; else, dtype = 'double'; end % data type for k-Wave
                                       chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype); % run locally, and use an FFT friendly PML size
                 otherwise, warning('Simulator not recognized'); return;
