@@ -1,4 +1,4 @@
-function [C, lags] = convd(A, B, dim, shape, varargin)
+function [C, lags] = convd(A, B, dim, shape, kwargs)
 % CONVD - GPU-enabled Convolution in one dimension
 %
 % C = CONVD(A, B) computes the convolution of A with B in dimension 1. A 
@@ -27,18 +27,14 @@ function [C, lags] = convd(A, B, dim, shape, varargin)
 % See also CONV CONV2 CONVN
 
 % TODO: update this for tall variables?
-% TODO: extend for half type
-
-% parse the inputs and set defaults
-if nargin < 3 || isempty(dim), dim = 1; end
-if nargin < 4 || isempty(shape), shape = 'full'; end
-
-% defaults
-kwargs.device = 0; 
-kwargs.parcluster = gcp('nocreate'); 
-
-% get optional inputs
-for i = 1:2:numel(varargin), kwargs.(varargin{i}) = varargin{i+1}; end
+arguments
+    A {mustBeNumeric}
+    B {mustBeNumeric}
+    dim (1,1) {mustBePositive, mustBeInteger} = findSingletonDim(A, B)
+    shape (1,1) string {mustBeMember(shape, ["full", "same", "valid"])} = 'full'
+    kwargs.device (1,1) {mustBeInteger} = 0;
+    kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment
+end
 
 % permute so that dim becomes the first dimension
 % flip 2nd arg on CPU so that stride is positive
@@ -75,7 +71,7 @@ switch shape
     case 'full'
         lags = colon(-(N - 1), M - 1).';
     case 'same'
-        lags = colon(0,        M - 1).' - floor(N/2);
+        lags = colon(0,        M - 1).' - floor((N-1)/2);
     case 'valid'
         lags = colon(0,        M - N).';
 end
@@ -130,8 +126,9 @@ if ~isempty(kwargs.device) && kwargs.device && exist([src.name '.ptx'], 'file')
         case 'valid', z = sub(x, 1:L, 1); % implicit pre-allocation - z will be smaller than x
     end
         
-    % run the kernel
-    z = kern.feval(x, flip(y,1), z); % y is flipped for the kernel
+    % run the kernel - the kernel is actually complex conjugate correlation
+    % so we need to flip and conjugate to match MATLAB's definition
+    z = kern.feval(x, flip(conj(y),1), z);
     
 else
     % vectorized MATLAB on CPU - perform convolution manually for vectors
@@ -140,11 +137,11 @@ else
     % move to GPU if requested
     if kwargs.device, [x, y] = deal(gpuArray(x), gpuArray(y)); end
 
-    % Use the current pool if not on a GPU
-    clu = kwargs.parcluster;
+    % Use the given parallel environment if not on a GPU
+    clu = kwargs.parenv;
     if isempty(clu) || isa(x, 'gpuArray') || isa(y, 'gpuArray'), clu = 0; end
     
-    % for-loop it in, parallel if a pool exists
+    % for-loop it, in parallel if we can
     parfor (s = 1:S, clu), z(:,s) = conv(x(:,s), y(:,s), shape); end
 end
 
@@ -154,3 +151,8 @@ z = cast(z, 'like', To);
 C = z; % shared-copy
 lags = ipermute(lags, ord); % put lags in same dimensions as operation
 
+function d = findSingletonDim(A, B)
+dA = find(size(A) ~= 1,1,'first');
+dB = find(size(B) ~= 1,1,'first');
+d = min([dA, dB]);
+if isempty(d), d = 1; end
