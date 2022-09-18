@@ -1,3 +1,8 @@
+#if (__CUDA_ARCH__ >= 530)
+#define __CUDA_NO_HALF2_OPERATORS__ // block half2 vector math operators
+#include <cuda_fp16.h> // define half/half2 types, without half2 operators
+#endif
+
 // real/complex conjugation
 inline __host__ __device__ float conj(const float a) {
     return a; 
@@ -5,12 +10,24 @@ inline __host__ __device__ float conj(const float a) {
 inline __host__ __device__ double conj(const double a) {
     return a;
 }
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half conj(const half a) {
+    return a;
+}
+#endif
+
 inline __host__ __device__ float2 conj(const float2 a) {
     return make_float2(a.x, -a.y); 
 }
 inline __host__ __device__ double2 conj(const double2 a) {
     return make_double2(a.x, -a.y); 
 }
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half2 conj(const half2 a) {
+    return make_half2(a.x, -a.y); 
+}
+#endif
+
 
 // complex multiplication
 inline __host__ __device__ float2 operator*(const float2 a, const float2 b) {
@@ -19,12 +36,23 @@ inline __host__ __device__ float2 operator*(const float2 a, const float2 b) {
 inline __host__ __device__ double2 operator*(const double2 a, const double2 b) {
     return make_double2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
 }
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half2 operator*(const half2 a, const half2 b) {
+    return make_half2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
+}
+#endif
+
 inline __host__ __device__ float2 operator*(const float2 a, const float b){
     return make_float2(b*a.x, b*a.y);
 }
 inline __host__ __device__ double2 operator*(const double2 a, const double b){
     return make_double2(b*a.x, b*a.y);
 }
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half2 operator*(const half2 a, const half b){
+    return make_half2(b*a.x, b*a.y);
+}
+#endif
 
 // real/complex addition/assignment
 inline __host__ __device__ void operator+=(float2 &a, const float2 b){
@@ -35,6 +63,12 @@ inline __host__ __device__ void operator+=(double2 &a, const double2 b){
     a.x += b.x;
     a.y += b.y;
 }
+#if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ void operator+=(half2 &a, const half2 b){
+    a.x += b.x;
+    a.y += b.y;
+}
+#endif
 
 
 /*
@@ -97,7 +131,11 @@ __global__ void convf(const float* x, const float* y, float* z){
 __global__ void conv(const double* x, const double* y, double* z){
     conv_temp<double>(x, y, z, 0.0);
 }
-
+#if (__CUDA_ARCH__ >= 530)
+__global__ void convh(const ushort* x, const ushort* y, ushort* z){
+    conv_temp<half>((half*)x, (half*)y, (half*)z, 0.0f);
+}
+#endif
 __global__ void convcf(const float2* x, const float2* y, float2* z){
     conv_temp<float2>(x, y, z, make_float2(0.0f,0.0f));
 }
@@ -105,5 +143,10 @@ __global__ void convcf(const float2* x, const float2* y, float2* z){
 __global__ void convc(const double2* x, const double2* y, double2* z){
     conv_temp<double2>(x, y, z, make_double2(0.0,0.0));
 }
+#if (__CUDA_ARCH__ >= 530)
+__global__ void convch(const ushort2* x, const ushort2* y, ushort2* z){
+    conv_temp<half2>((half2*)x, (half2*)y, (half2*)z, make_half2(0.0f, 0.0f));
+}
+#endif
 
 

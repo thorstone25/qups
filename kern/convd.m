@@ -52,13 +52,12 @@ assert(numel(sz_x) == numel(sz_y) && all(sz_x(2:end) == sz_y(2:end)),...
 % get computation/output data type and precision
 complex_type = ~isreal(A) || ~isreal(B);
 gpu_type    = isa(A, 'gpuArray') || isa(B, 'gpuArray');
-single_type = isa(A, 'single'  ) || isa(B, 'single'   ) ...
-    || isa(A, 'gpuArray') && strcmp(classUnderlying(A), 'single') ...
-    || isa(B, 'gpuArray') && strcmp(classUnderlying(B), 'single');
+dtype = getDtype(A, B); % get the data type using casting rules
 
 % get function output prototype
 To = zeros(0);
-if single_type, To = single(To); end
+dfun = str2func(dtype); % casting function / constructor
+To = dfun(To);
 if gpu_type, To = gpuArray(To); end
 if complex_type, To = complex(To); end
 
@@ -98,7 +97,10 @@ if ~isempty(kwargs.device) && kwargs.device && exist([src.name '.ptx'], 'file')
     % get the kernel suffix
     suffix = '';
     if complex_type, suffix = [suffix 'c']; end
-    if single_type,  suffix = [suffix 'f']; end
+    switch dtype
+        case 'single', suffix = [suffix 'f'];
+        case 'halfT',  suffix = [suffix 'h'];
+    end
     
     % specify the kernel
     kern = parallel.gpu.CUDAKernel(...
@@ -156,3 +158,13 @@ dA = find(size(A) ~= 1,1,'first');
 dB = find(size(B) ~= 1,1,'first');
 d = min([dA, dB]);
 if isempty(d), d = 1; end
+
+function dtype = getDtype(A, B)
+
+single_type = isa(gather(A(1:0)), 'single') || isa(gather(B(1:0)), 'single');
+half_type = isa(A, 'halfT') || isa(B, 'halfT');
+
+if half_type,       dtype = 'halfT';
+elseif single_type, dtype = 'single'; 
+else,               dtype = 'double';
+end
