@@ -547,6 +547,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 tvec = reshape(t,1,[]); % 1 x T full time vector
                 kern_ = reshape(kern,1,[]); % 1 x T' signal kernel
 
+                % switch scat positions to S x 3
+                pos = pos.';
+
                 % TODO: set data types | cast to GPU/tall? | reset GPU?
                 if kwargs.device > 0, gpuDevice(kwargs.device); end
                 if kwargs.device && ~kwargs.tall,
@@ -572,8 +575,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             % TODO: do this via ray-path propagation through a
                             % medium
                             % S x 1 x N x M x 1 x 1
-                            r_rx = vecnorm(sub(pos.',s,1) - sub(ptc_rx, en, 5),2,2);
-                            r_tx = vecnorm(sub(pos.',s,1) - sub(ptc_tx, em, 6),2,2);
+                            r_rx = vecnorm(sub(pos,s,1) - sub(ptc_rx, en, 5),2,2);
+                            r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
                             tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
                             tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
 
@@ -592,9 +595,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                                 % compute as a tall array  % S | T x N x M x 1 x 1
                                 tau = tvec - (tau_tx + tau_rx + t0)*self.fs; % create tall ND-array
                                 s_ = matlab.tall.transform( ...
-                                    @(tau, att) wsinterpd(kern_, fsr * tau, 2, att, 1, kwargs.interp, 0), ...
+                                    @(tau, att) wsinterpd(kern_, fsr * tau, 2, att ./ fsr, 1, kwargs.interp, 0), ...
                                     ... @(x) sum(x, 1, 'omitnan'), ... reduce
-                                    tau, att ./ fsr ...
+                                    tau, att...
                                     );
                                 
                                 % add contribution (1 x T x N X M)
@@ -1264,7 +1267,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
             end
             
@@ -1384,7 +1387,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
             end
             
             % helper function
