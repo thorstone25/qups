@@ -10,6 +10,8 @@ classdef BFTest < matlab.unittest.TestCase
         scat % Scatterers
         scanc % Image Scan (Cartesian)
         tscan % Sound-speed Scan
+        apod % image apodization
+        fmod % modulation of the Channel Data
     end
 
     properties(ClassSetupParameter)
@@ -23,6 +25,7 @@ classdef BFTest < matlab.unittest.TestCase
             'crvvs', string({"C5-2V",'sector'}) ...
             );
         target_offset = struct('offset', 5e-3, 'centered', 0);
+        baseband = struct('false', false, 'true', true);
     end
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
@@ -44,7 +47,7 @@ classdef BFTest < matlab.unittest.TestCase
             if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
         end
 
-        function setupQUPSdata(test, xdc_seq_name, target_offset)
+        function setupQUPSdata(test, xdc_seq_name, target_offset, baseband)
             %% create point target data with the configuration
 
             % simple point target 30 mm depth
@@ -148,12 +151,29 @@ classdef BFTest < matlab.unittest.TestCase
             scanc = scale(scanc, 'dist', 1e3);
             tscan = scale(tscan, 'dist', 1e3);
 
+            % apply acceptance angle apodization
+            apod = us.scan.acceptanceAngleApodization(us.sequence, us.rx, 45);
+
+            % baseband the data
+            if baseband
+                fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency
+                ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
+                chd = downmix(hilbert(chd), us.xdc.fc); % downmix
+                chd = downsample(chd, ratio); % downsample
+                fmod = us.xdc.fc;
+            else
+                fmod = 0;
+            end
+
+
             %% save QUPS objects for this test case
             test.chd    = chd; 
             test.us     = us; 
             test.scat   = scat;
             test.scanc  = scanc;
             test.tscan  = tscan;
+            test.apod   = apod;
+            test.fmod   = fmod;
 
         end
     end
@@ -206,8 +226,8 @@ classdef BFTest < matlab.unittest.TestCase
             % types and compute device.
 
             % unpack
-            [us, scat, scan, scanc, tscan] = deal(...
-                test.us, test.scat, test.us.scan, test.scanc, test.tscan...
+            [us, scat, scan, scanc, tscan, apod, fmod] = deal(...
+                test.us, test.scat, test.us.scan, test.scanc, test.tscan, test.apod, test.fmod ...
                 );
 
             % make an equivalent medium - assume density scatterers
@@ -215,33 +235,43 @@ classdef BFTest < matlab.unittest.TestCase
 
             % exceptions
             % for the Eikonal beamformer, pass if not given FSA delays
-            if bf_name == "Eikonal" && us.sequence.type ~= "FSA", return; end
-            % if using the adjoint method, skip half precision - the phase errors are too large
-            if bf_name == "Adjoint" && prec == "halfT", return; end
-            % weird phase error, but it's not importnat right now
-            if bf_name == "Adjoint" && us.sequence.type == "VS" && isa(us.xdc, 'TransducerConvex'), return; end
+            test.assumeFalse(bf_name == "Eikonal" && us.sequence.type ~= "FSA");
+            % if using a frequency domain method, skip half precision - the phase errors are too large
+            test.assumeFalse(ismember(bf_name, ["Adjoint"]) && prec == "halfT");
+            % weird phase error, but it's not important right now - skip it
+            test.assumeFalse(ismember(bf_name, ["Adjoint"]) && us.sequence.type == "VS"); % && isa(us.xdc, 'TransducerConvex'));
             % is using the adjoint method, pagemtimes,pagetranspose must be supported
-            if bf_name == "Adjoint", 
-                test.assumeTrue( ...
-                       logical(exist('pagemtimes'   , 'builtin')) ...
-                    && logical(exist('pagetranspose', 'file')) ...
-                    ); 
-            end
+            test.assumeTrue( bf_name ~= "Adjoint" || (...
+                   logical(exist('pagemtimes'   , 'builtin')) ...
+                && logical(exist('pagetranspose', 'file')) ...
+                ));
 
             % set ChannelData type
-            if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
+            test.assumeTrue(prec ~= "halfT" || logical(exist('halfT', 'class')));
             tfun = str2func(prec);
             chd = tfun(test.chd); % cast to specified precision
             
-            if gdev, chd = gpuArray(chd); else, chd = gather(chd); end % move data to GPU if requested
+            % for frequency domain methods, the time-axis must be extended
+            % so that the replications of the miage are outside of the
+            % imaging range
+            if ismember(bf_name, ["Adjoint"])
+                dr = hypot(range(scanc.xb), range(scanc.zb)) / 2; % half the largest range across the image
+                dT = round(2 * dr / scat.c0 * chd.fs); % temporal buffer in indices
+                chd = zeropad(chd, dT, dT); % add buffer on both sides
+            end
+
+            % move data to GPU if requested
+            if gdev, chd = gpuArray(chd); else, chd = gather(chd); end 
 
             % Beamform 
             % TODO: test that we can keep dimensions and sum later
+            % get common args that should work for all
+            args = {'apod', apod, 'fmod', fmod};
             switch bf_name
-                case "DAS",         b = bfDAS(us, chd, scat.c0,    'interp', terp);
-                case "DAS-direct",  b =   DAS(us, chd, scat.c0,    'interp', terp, 'device', gdev); % use a delay-and-sum beamformer
-                case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp, 'verbose', false); % use the eikonal equation
-                case "Adjoint", b = bfAdjoint(us, chd, scat.c0                   , 'verbose', false); % use an adjoint matrix method
+                case "DAS",         b = bfDAS(us, chd, scat.c0,    'interp', terp, args{:});
+                case "DAS-direct",  b =   DAS(us, chd, scat.c0,    'interp', terp, 'device', gdev, args{:}); % use a delay-and-sum beamformer
+                case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp, 'verbose', false, args{:}); % use the eikonal equation
+                case "Adjoint", b = bfAdjoint(us, chd, scat.c0                   , 'verbose', false, args{:}); % use an adjoint matrix method
             end
 
             % show the image
