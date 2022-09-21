@@ -132,6 +132,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     );
             end
 
+            % if neither transmit nor receive provided, make them
+            % equivalent for convenience.
+            if ~isfield(kwargs, 'tx') && ~isfield(kwargs, 'rx'), self.tx = self.rx; end
+            
             % shadow with the (newly created) temp folder for binaries and 
             % const-compiled code
             addpath(self.tmp_folder);
@@ -2130,12 +2134,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % parse inputs
             [sumtx, sumrx] = deal(~kwargs.keep_tx, ~kwargs.keep_rx);
 
-            % if we want to keep tx, we must keep rx too because of
-            % available DAS functions
-            if ~sumtx && sumrx
-                error('Unable to keep transmit dimension but not receive dimension. Try bfDAS.'); 
-            end
-
             % make sure t0 is a scalar
             if ~isscalar(chd.t0), chd = rectifyt0(chd); end
             
@@ -2169,7 +2167,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % beamform and collapse the aperture
             if      sumtx &&  sumrx, fun = 'DAS'; 
-            elseif  sumtx && ~sumrx, fun = 'SYN'; 
+            elseif  sumtx && ~sumrx, fun = 'SYN';
+            elseif ~sumtx &&  sumrx, fun = 'MUL';
             elseif ~sumtx && ~sumrx, fun = 'BF';
             end
 

@@ -162,6 +162,11 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
                 + ": must be one of {'nearest', 'linear', 'cubic', 'lanczos3'}.");
     end
 
+    % modify flag to choose whether to store rx / tx
+    keep_rx = ismember(fun, {'SYN', 'BF'});
+    keep_tx = ismember(fun, {'MUL', 'BF'});
+    flagnum = flagnum + 8 * keep_rx + 16 * keep_tx;
+
     % load the kernel
     src_folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
     
@@ -192,7 +197,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     k = parallel.gpu.CUDAKernel(...
         'bf.ptx',...
         fullfile(src_folder, 'bf.cu'),...
-        [fun, postfix]);
+        ['DAS', postfix]); % use the same kernel, just modify the flag here.
     
     % send constant data to GPU
     typefun = str2func(idataType); % function to cast types
@@ -221,17 +226,16 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     
     % get kernel and frame sizing
     switch fun
-        case 'DAS'
-            osize = {1}; % delay and sum (tx/rx)
-        case 'SYN'
-            osize = {N}; % beamform and sum the transmit aperture only
-        case {'BF', 'delays'}
-            osize = {N, M}; % beamform only | times only
+        case 'DAS', osize = {1,1}; % delay and sum over tx/rx
+        case 'SYN', osize = {N,1}; % beamform and sum the transmit aperture only
+        case 'MUL', osize = {1,M}; % beamform and sum the receive aperture only
+        case 'BF',  osize = {N,M}; % beamform only 
+        case 'delays', osize = {N,M}; % delays only
     end
     
     % get output data type
     switch fun
-        case {'DAS', 'SYN', 'BF'}
+        case {'DAS', 'SYN', 'BF', 'MUL'}
             obuftypefun = dtypefun;
         case {'delays'}
             obuftypefun = @(x)real(dtypefun(x));
@@ -283,7 +287,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
 
     % for each data frame, run the kernel
     switch fun
-        case {'DAS','SYN','BF'}
+        case {'DAS','SYN','BF','MUL'}
             for f = F:-1:1 % beamform each data frame
                 yf = cellfun(@(pi) ...
                     k.feval(yg, pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [t0, fs, fmod]), ...
@@ -389,6 +393,30 @@ else
                 end
                 y = y + yn;
             end
+        case 'MUL'
+            y = dtypefun(zeros([Isz, 1, M]));
+            drn = num2cell(dr, [1:3]); % ({I} x  N  x 1)
+            xn  = num2cell(swapdim(x,3,5),  [1,5,6:ndims(x)]); % ({T} x N {x M x F x ...)
+            an = num2cell(apod, [1:3, 5]);
+            cinvn = num2cell(cinv, [1:4]); % ({I x N} x M)
+            an = repmat(an, double([ones(1,3),N]) ./ [ones(1,3), size(an,4)]); % broadcast to ({I} x N x {M})
+            parfor n = 1:N
+                % time delay (I x 1 x M)
+                if isscalar(cinvn), cinv_ = cinvn{1}; else, cinv_ = cinvn{n}; end % ([1|I] x 1 x [1|M])
+                tau = cinv_ .* (dv + drn{n}); 
+
+                % extract apodization
+                am = repmat(an{n}, double([ones(1,4), M]) ./ [ones(1,4), size(an{n},5)]);
+                
+                % sample and output (I x 1 x M)
+                ym = (cellfun(...
+                    @(x, tau, a) ...
+                    a .* interp1(x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                    num2cell(xn{n},1), pck(tau), pck(am), per_cell{:})) ...
+                    ; %#ok<PFBNS>
+                ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym))]);
+                y = y + ym;
+            end
             
         case 'SYN'
             y = dtypefun(zeros([Isz, N, 1]));
@@ -402,7 +430,7 @@ else
                 if isscalar(cinvm), cinv_ = cinvm{1}; else, cinv_ = cinvm{m}; end % ([1|I] x [1|N] x 1)
                 tau = cinv_ .* (dvm{m} + dr); 
 
-                % extract apodizzation
+                % extract apodization
                 an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
                 
                 % sample and output (I x N x 1)
@@ -448,7 +476,7 @@ end
         
         % check the function call is valid
         switch fun
-            case {'DAS', 'SYN', 'BF', 'delays'}
+            case {'DAS', 'SYN', 'BF', 'MUL', 'delays'}
             otherwise, error('Invalid beamformer.');
         end
         
