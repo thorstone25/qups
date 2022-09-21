@@ -351,8 +351,8 @@ else
     
     % apply modulation frequency
     if fmod       
-        t = t0 + ((0:T-1).') ./ fs; % time vector
-        x = x .* exp(2i*pi*fmod.*t); apply
+        t = t0 + double((0:T-1).') ./ fs; % time vector
+        x = x .* exp(2i*pi*fmod.*t);
     end
     
     % temporal packaging function
