@@ -1133,6 +1133,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % load options
             if isempty(kwargs.parenv), kwargs.parenv = 0; end % select 0 workers if empty
 
+            % data typing
+            proto = self.fs; % data prototype
+
             % TODO: check the transmit/receive/sequence impulse: they 
             % cannot be satisfied if not a Delta or empty
             %if ~ismember("periods", varargin(cellfun(@ischar,varargin) | cellfun(@isstring, varargin))) % was this an input?
@@ -1143,6 +1146,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [X, Y, Z, A] = arrayfun(@(scat) ...
                 deal(sub(scat.pos,1,1), sub(scat.pos,2,1), sub(scat.pos,3,1), scat.amp), ...
                 scat, 'UniformOutput',false);
+            [X,Y,Z,A] = dealfun(@(x) cellfun(@(x){cast(x, 'like', proto)},x), X,Y,Z,A);
             if isempty(simus_kwargs.dims) 
                 if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
                 else, simus_kwargs.dims = 3; end
@@ -1160,10 +1164,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % set transmit sequence ... the only way we can
             % TODO: forward arguments to transmit parameters
-            p.fs    = self.fs;
+            p.fs    = cast(self.fs, 'like', proto);
             p.TXnow = simus_kwargs.periods; % number of wavelengths
-            p.TXapodization = zeros([self.xdc.numel,1]); % set tx apodization
-            p.RXdelay = zeros([self.xdc.numel,1]); % receive delays (none)
+            p.TXapodization = zeros([self.xdc.numel,1], 'like', proto); % set tx apodization
+            p.RXdelay = zeros([self.xdc.numel,1], 'like', proto); % receive delays (none)
             
             % set options per Scatterers
             p = repmat(p, [1,1,1,numel(scat)]); % (1 x 1 x 1 x F)
