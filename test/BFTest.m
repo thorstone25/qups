@@ -194,6 +194,7 @@ classdef BFTest < matlab.unittest.TestCase
         bf_name = {'DAS','DAS-direct','Eikonal','Adjoint'}
         prec = struct('single','singleT','double', 'doubleT','halfT','halfT');
         terp = {'nearest', 'linear', 'cubic'};
+        apodization = struct('false', false, 'true', true);
     end
     methods(TestMethodSetup)
         function resetGPU(test), if gpuDeviceCount, gpuDevice([]); end, end
@@ -204,21 +205,21 @@ classdef BFTest < matlab.unittest.TestCase
         function github_psf(test, bf_name)%, prec, terp)
             switch bf_name, case {'Eikonal'}, return; end % Eikonal is too large?
             
-            % only test 1 precision/interpolation
-            psf(test, 0, bf_name, 'singleT', 'nearest'); 
+            % only test 1 precision/interpolation/apodization combo
+            psf(test, 0, bf_name, 'singleT', 'nearest', false); 
         end
     end
 
     % Full test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
-        function full_psf(test, gdev, bf_name, prec, terp)
-            psf(test, gdev, bf_name, prec, terp); % forward all
+        function full_psf(test, gdev, bf_name, prec, terp, apodization)
+            psf(test, gdev, bf_name, prec, terp, apodization); % forward all
         end 
     end
 
     % method implementations
     methods
-        function psf(test, gdev, bf_name, prec, terp)
+        function psf(test, gdev, bf_name, prec, terp, apodization)
             % PSF - Test the PSF
             % 
             % Test that the PSF for a point at a reasonable distance 
@@ -229,6 +230,7 @@ classdef BFTest < matlab.unittest.TestCase
             [us, scat, scan, scanc, tscan, apod, fmod] = deal(...
                 test.us, test.scat, test.us.scan, test.scanc, test.tscan, test.apod, test.fmod ...
                 );
+            if ~apodization, apod = 1; end % apodization not applied
 
             % make an equivalent medium - assume density scatterers
             med = Medium('c0', scat.c0);
@@ -271,7 +273,7 @@ classdef BFTest < matlab.unittest.TestCase
                 case "DAS",         b = bfDAS(us, chd, scat.c0,    'interp', terp, args{:});
                 case "DAS-direct",  b =   DAS(us, chd, scat.c0,    'interp', terp, 'device', gdev, args{:}); % use a delay-and-sum beamformer
                 case "Eikonal", b = bfEikonal(us, chd, med, tscan, 'interp', terp, 'verbose', false, args{:}); % use the eikonal equation
-                case "Adjoint", b = bfAdjoint(us, chd, scat.c0                   , 'verbose', false, args{:}); % use an adjoint matrix method
+                case "Adjoint", b = bfAdjoint(us, chd, scat.c0,    'bsize' ,    1, 'verbose', false, args{:}); % use an adjoint matrix method
             end
 
             % show the image
@@ -291,6 +293,9 @@ classdef BFTest < matlab.unittest.TestCase
             % test
             import matlab.unittest.constraints.IsEqualTo;
             import matlab.unittest.constraints.AbsoluteTolerance;
+
+            % the image must be non-zero
+            test.assertTrue(logical(nnz(b)), 'The image has no non-zero values.');
 
             % no lateral (x) offset allowed
             test.assertThat(x, IsEqualTo(xo, 'Within', AbsoluteTolerance(1.1)), sprintf(...

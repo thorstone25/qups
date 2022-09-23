@@ -92,8 +92,8 @@ classdef SimTest < matlab.unittest.TestCase
                     case 'FSA', seq = Sequence('type', 'FSA', 'c0', scat.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
                     case 'Plane-wave'
                         [amin, amax, Na] = deal( -25 ,  25 , 3 );
-                        seq = SequenceRadial('type', 'PW', ...
-                            'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', scat.c0); % Plane Wave (PW) sequence
+                        seq = SequenceRadial('type', 'PW', 'c0', scat.c0, ...
+                            'ranges', 1, 'angles',  linspace(amin, amax, Na)); % Plane Wave (PW) sequence
                     case 'Focused'
                         [xmin, xmax, Nx] = deal( -10 ,  10 , 3 );
                         seq = Sequence('type', 'VS', 'c0', scat.c0, ...
