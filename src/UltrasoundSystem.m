@@ -43,8 +43,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         %
         % Example:
         %
-        % us = UltrasoundSystem('xdc', TransducerArray());
-        % 
+        % us = UltrasoundSystem('fs', 50e6); % 50MHz
         % 
         % See also GREENS SIMUS CALC_SCAT_MULTI KSPACEFIRSTORDER
         fs (1,1) {mustBeNumeric} = 40e6   % simulation sampling frequency
@@ -1579,6 +1578,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % kWave's kspaceFirstOrderND `PMLSize` and `PMLInside`
             % arguments are invalid as they are overwritten by the method.
             %
+            % References:
+            % [1] B. E. Treeby and B. T. Cox, 
+            % "k-Wave: MATLAB toolbox for the simulation and reconstruction of photoacoustic wave-fields,"
+            % J. Biomed. Opt., vol. 15, no. 2, p. 021314, 2010.
+            % <a href="matlab:web('https://doi.org/10.1117/1.3360308')">DOI: 10.1117/1.3360308</a>
+            % 
+            % [2] B. E. Treeby, J. Budisky, E. S. Wise, J. Jaros, and B. T. Cox, 
+            % "Rapid calculation of acoustic fields from arbitrary continuous-wave sources," 
+            % J. Acoust. Soc. Am., vol. 143, no. 1, pp. 529-537, 2018.
+            % <a href="matlab:web('https://doi.org/10.1121/1.5021245')">DOI: 10.1121/1.5021245</a>
+            % 
             % Example:
             % 
             % % Setup a system
@@ -2269,6 +2279,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % is not 'tikhonov', the argument is ignored. The default is
             % (chd.N / 10) ^ 2.
             %
+            % References:
+            % [1] Hyun, D; Dahl, JJ; Bottenus, N. 
+            % "Real-Time Universal Synthetic Transmit Aperture Beamforming with 
+            % Retrospective Encoding for Conventional Ultrasound Sequences (REFoCUS)".
+            % 2021 IEEE International Ultrasonics Symposium (IUS), pp. 1-4.
+            % <a href="matlab:web('https://doi.org/10.1109/IUS52206.2021.9593648')">DOI: 10.1109/IUS52206.2021.9593648</a>
+            % 
+            % [2] Bottenus, N. "Recovery of the complete data set from focused transmit beams".
+            % IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
+            % vol. 65, no. 1, pp. 30-38, Jan. 2018.
+            % <a href="matlab:web('https://doi.org/10.1109/TUFFC.2017.2773495')">DOI 10.1109/TUFFC.2017.2773495</a>
+            % 
+            % [3] Ali, R.; Herickhoff C.D.; Hyun D.; Dahl, J.J.; Bottenus, N. 
+            % "Extending Retrospective Encoding For Robust Recovery of the Multistatic Dataset". 
+            % IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
+            % vol. 67, no. 5, pp. 943-956, Dec. 2019.
+            % <a href="matlab:web('https://doi.org/10.1109/TUFFC.2019.2961875')">DOI 10.1109/TUFFC.2019.2961875</a>
+            % 
+            % 
             % Example:
             % % Define the setup - make plane waves
             % seqpw = SequenceRadial('type', 'PW', 'angles', -45:0.5:45);
@@ -2482,9 +2511,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             f = chd.fftaxis; % frequency axis
             df = chd.fs / double(K); % frequency step size
             x = chd.data; % reference the data perm(K x N x M) x ...
-            x = x .* exp( 2i*pi*fmod .* chd.time); % remodulate data
+            x = x .* exp(+2i*pi*fmod .* chd.time); % remodulate data
             x = fft(x,K,chd.tdim); % get the fft
             x = x .* exp(-2i*pi*f    .* chd.t0  ); % phase shift to re-align time axis
+            x = x .* exp(+2i*pi*f .* shiftdim(self.sequence.t0Offset(),2-chd.mdim)); % offset to transducer origin
 
             % choose frequencies to evaluate
             xmax = max(x, [], chd.tdim); % maximum value per trace
@@ -2524,7 +2554,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the transmit steering vector weights and delays
             del_tx  = self.sequence.delays(self.tx);      % M x V
             apod_tx = self.sequence.apodization(self.tx); % M x V
-            del_tx = del_tx - self.sequence.t0Offset(); % offset to transducer origin
+            del_tx = del_tx + self.sequence.t0Offset(); % offset to transducer origin
 
             % transform to frequency step kernels
             w_rx    = exp(-2i*pi*df.*tau_rx); %  receive greens function
@@ -2647,6 +2677,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % method for interpolation. Support is provided by the 
             % ChannelData/sample method. The default is 'cubic'.
             %
+            % References: 
+            % [1] Hassouna MS, Farag AA. 
+            % Multi-stencils fast marching methods: a highly accurate solution to the eikonal equation on cartesian domains.
+            % IEEE Trans Pattern Anal Mach Intell. 2007 Sep;29(9):1563-74. 
+            % <a href="matlab:web('https://doi.org/10.1109/tpami.2007.1154')">DOI: 10.1109/TPAMI.2007.1154</a>. PMID: 17627044.
+            % 
             % Example:
             % 
             % % This example requires kWave
