@@ -1266,8 +1266,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+            end
+            
+            % set default parenv
+            if ~isfield(kwargs, 'parenv')
+                hcp = gcp('nocreate');
+                if isa(hcp, 'parallel.ThreadPool')
+                    kwargs.parenv = 0; % don't default to a thread pool
+                else
+                    kwargs.parenv = hcp;
+                end
             end
             
             % helper function
@@ -1291,7 +1301,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % choose the cluster to operate on: avoid running on ThreadPools
             parenv = kwargs.parenv;
-            if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
+            if isempty(parenv), parenv = 0; end
+            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), 
+                warning('QUPS:InvalidParenv','calc_scat_all cannot be run on a thread-based pool'); % Mex-files ...
+                parenv = 0; 
+            end
 
             % splice
             [M, F] = deal(self.sequence.numPulse, numel(scat)); % number of transmits/frames
@@ -1386,7 +1400,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
-                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
+            end
+
+            % set default parenv
+            if ~isfield(kwargs, 'parenv')
+                hcp = gcp('nocreate');
+                if isa(hcp, 'parallel.ThreadPool')
+                    kwargs.parenv = 0; % don't default to a thread pool
+                else
+                    kwargs.parenv = hcp;
+                end
             end
             
             % helper function
@@ -1425,7 +1449,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % choose the parallel environment to operate on: avoid running on ThreadPools
             parenv = kwargs.parenv;
-            if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
+            if isempty(parenv), parenv = 0; end
+            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), 
+                warning('QUPS:InvalidParenv','calc_scat_multi cannot be run on a thread-based pool'); % Mex-files ...
+                parenv = 0; 
+            end
 
             [M, F] = deal(self.sequence.numPulse, numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
