@@ -1145,7 +1145,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 scat, 'UniformOutput',false);
             if isempty(simus_kwargs.dims) 
                 if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
-                else, kwargs.dims = 3; end
+                else, simus_kwargs.dims = 3; end
             end
             if simus_kwargs.dims == 2 && cellfun(@(Y)any(Y ~= 0, 'all'),Y)
                 warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
