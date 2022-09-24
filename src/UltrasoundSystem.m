@@ -2070,8 +2070,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % dimension in the output image b.
             %
             % b = DAS(..., 'fmod', fc) upmixes the data at a modulation
-            % frequency fc. This undoes the effect of demodulation at the
-            % same freuqency.
+            % frequency fc. This undoes the effect of
+            % demodulation/downmixing at the same freuqency.
             %
             % b = DAS(..., 'interp', method) specifies the method for
             % interpolation. Support is provided by interp1 on the CPU or
@@ -2464,7 +2464,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % b = BFADJOINT(..., 'fmod', fc) upmixes the data at a
             % modulation frequency fc. This undoes the effect of
-            % demodulation at the same frequency.
+            % demodulation/downmixing at the same frequency.
             %
             % b = BFADJOINT(..., 'bsize', B) uses an block size of B when
             % vectorizing computations. A larger block size will run
@@ -2681,7 +2681,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % b = BFEIKONAL(..., 'fmod', fc) upmixes the data at a
             % modulation frequency fc. This undoes the effect of
-            % demodulation at the same frequency.
+            % demodulation/downmixing at the same frequency.
             %
             % b = BFEIKONAL(..., 'apod',A) uses an apodization defined by
             % the ND-array A. A must be broadcastable to size
@@ -2955,8 +2955,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % heuristically.
             %   
             % b = BFDAS(..., 'fmod', fc) upmixes the data at a modulation
-            % frequency fc. This undoes the effect of demodulation at the
-            % same frequency.
+            % frequency fc. This undoes the effect of
+            % demodulation/downmixing at the same frequency.
             %
             % b = BFDAS(..., 'interp', method) specifies the method for
             % interpolation. Support is provided by the ChannelData/sample
@@ -3439,7 +3439,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 UltrasoundSystem.genMexdef_msfm(), ... % both msfm files
                 ];
         end
-
     end
     
     % source file recompilation definitions
