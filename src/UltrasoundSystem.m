@@ -3104,6 +3104,171 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % if isvalid(hw), close(hw); end % close if not closed
             if ~sumtx, b = cat(D+3, bm{:}); end % combine all transmits
         end
+    
+        function [b, bscan] = bfMigration(self, chd, c0, kwargs)
+            % BFMIGRATION - Plane-Wave Stolt's f-k migration beamformer
+            %
+            % b = BFMIGRATION(self, chd) creates a b-mode image b from
+            % the plane-wave ChannelData chd created from a TransducerArray
+            % defined by self.xdc.
+            % 
+            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a Scan
+            % bscan on which the bmode image is defined.
+            % 
+            % [...] = BFMIGRATION(..., Name, Value, ...) passes additional Name/Value
+            % pair arguments
+            % 
+            % [...] = BFMIGRATION(..., 'keep_tx', true) preserves the
+            % transmit dimension in the output image b.
+            %
+            % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
+            % compute at most B transmits at a time. A larger block size 
+            % will run faster, but use more memory. The default is chosen
+            % heuristically.
+            %   
+            % [...] = BFMIGRATION(..., 'fmod', fc) upmixes the data at a
+            % modulation frequency fc. This undoes the effect of
+            % demodulation/downmixing at the same frequency.
+            %
+            % [...] = BFMIGRATION(..., 'interp', method) specifies the method for
+            % interpolation. Support is provided by the ChannelData/sample
+            % method. The default is 'cubic'.
+            % 
+            % References: 
+            % [1] Garcia D, Le Tarnec L, Muth S, Montagnon E, Porée J, Cloutier G. 
+            % Stolt's f-k migration for plane wave ultrasound imaging.
+            % IEEE Trans Ultrason Ferroelectr Freq Control. 2013 Sep;60(9):1853-67. 
+            % doi: <a href="matlab:web('https://doi.org/10.1109%2FTUFFC.2013.2771')">10.1109/TUFFC.2013.2771</a>. PMID: 24626107; PMCID: PMC3970982.
+            % 
+            % Example:
+            % % Define the setup
+            % us = UltrasoundSystem(); % get a default system
+            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', us.sequence.c0); % define a point target
+            % 
+            % % A plane-wave transmission is required - migration works 
+            % % best for small angles
+            % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10);
+            % us.sequence = seq;
+            % 
+            % % Compute the response
+            % chd = greens(us, scat);
+            %
+            % % beamform the data, with implicit zero-padding
+            % [b, bscan] = bfMigration(us, chd, 'Nfft', [chd.T, 4*chd.N]);
+            % 
+            % % Display the image
+            % bim = mod2db(b); % log-compression
+            % figure;
+            % imagesc(bscan, bim, [-80 0] + max(bim(:)));
+            % colormap gray; colorbar;
+            % 
+            % See also BFDAS BFADJOINT BFEIKONAL
+
+            arguments
+                self (1,1) UltrasoundSystem
+                chd ChannelData
+                c0 (1,1) {mustBeNumeric} = self.sequence.c0
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+                kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
+                kwargs.Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
+                kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
+                % kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*8)))); % vector computation block size
+                % kwargs.verbose (1,1) logical = true
+                kwargs.jacobian (1,1) logical = true
+            end
+
+            % This is intended for plane waves and linear arrays
+            if self.sequence.type ~= "PW"
+                warning('Expected a Sequence of type "PW", but instead it was type "' ...
+                    + string(self.sequence.type) ...
+                    + '". Unexpected results may occur.');
+            end
+            if ~isa(self.xdc, 'TransducerArray')
+                warning('Expected a TransducerArray but the Transducer is a ' ...
+                    + string(class(self.xdc)) ...
+                    + '". Unexpected results may occur.');
+            end
+
+            % Choose the FFT size in time/frequency and laterally
+            [F, K] = deal(kwargs.Nfft(1), kwargs.Nfft(end));
+            
+            % Exploding Reflector Model velocity
+            cs = c0/sqrt(2);
+            
+            % get the frequency domains' axes with negative frequencies
+            f  = ((0 : F - 1)' - floor(F/2)) / F * chd.fs        ; % T x 1 - temporal frequencies
+            kx = ((0 : K - 1)' - floor(K/2)) / K / self.xdc.pitch; % K x 1 - lateral spatial frequencies
+
+            % move to dimensions aligned to the data
+            f  = shiftdim(f , 1-chd.tdim);
+            kx = shiftdim(kx, 1-chd.ndim);
+
+            % get transmit mapping in compatiable dimensions
+            seq = copy(self.sequence);
+            seq.c0 = c0;
+            tau = seq.delays(self.xdc); % N x M
+            ord = [chd.ndim, chd.mdim]; % send to these dimensions
+            ord = [ord, setdiff(1:max(ord), ord)]; % account for all dimensions
+            tau = ipermute(tau, ord); % permute to compatible dimensions
+            gamma = swapdim(sind(seq.angles) ./ (2 - cosd(seq.angles)), 2, chd.mdim); % lateral scaling
+
+            % Move data to the temporal frequency domain
+            x = chd.data;
+            x = x .* exp(2j*pi*kwargs.fmod .* chd.time); % remodulate data
+            x = fftshift(fft(x, F, chd.tdim), chd.tdim); % temporal fft
+
+            % re-align time axis to the frequency domain
+            x = x .* exp(-2j*pi*f .* chd.t0);
+            
+            % align transmits
+            x = x .* exp(-2j*pi*f .* tau);
+
+            % move to lateral frequency domain
+            x = fftshift(fft(x, K, chd.ndim), chd.ndim); % lateral fft
+
+            % get the Stolt's mapping from temporal frequency to spatial
+            % (depth) frequency
+            fkz = cs*sign(f).*sqrt(kx.^2 + f.^2 / cs^2); 
+            kkz = (fkz - f(1)) .* F ./ chd.fs; % convert to 0-based frequency index
+            
+            % resample using the spatio-temporal mapping
+            y = wsinterpd(x, kkz, chd.tdim, 1, [], kwargs.interp, 0);
+
+            % Jacobian (optional)
+            if kwargs.jacobian
+                kz = f / cs;
+                y = (y .* kz) ./ (fkz + eps);
+            end
+            
+            % re-align time axis to the time/space domain
+            y = y .* exp(+2j*pi*f .* chd.t0);
+
+            % move to the temporal domain
+            b = ifft(ifftshift(y, chd.tdim), F, chd.tdim);
+            tb = chd.t0 + (0 : F - 1)' ./ chd.fs;
+            % tb = chd.time;
+
+            % get teh spatial axes
+            zb = seq.c0 / 2 * tb;
+            xb = self.xdc.pitch .* (-(K-1)/2 : (K-1)/2) + mean(sub(self.xdc.positions,1,1));
+
+            % align data laterally using Garcia's PWI mapping
+            b = b .* exp(2j*pi*kx.*gamma.*zb);
+
+            % move data back to spatial domain
+            b = ifft(ifftshift(b, chd.ndim), K, chd.ndim);
+            b = sub(b, {1:chd.T,1:chd.N}, [chd.tdim, chd.ndim]);
+
+            % create the corresponding scan - it aligns with our data
+            bscan = ScanCartesian('z', zb(1:chd.T), 'x', xb(1:chd.N));
+
+            % sum the transmits
+            if ~kwargs.keep_tx, b = sum(b, chd.mdim); end
+
+            % TODO: resample the data onto the original imaging grid if no
+            % output scan was requested
+            
+        end
     end
     
     % dependent methods
