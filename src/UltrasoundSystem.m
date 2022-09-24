@@ -447,8 +447,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
             wv = conv(self.rx.impulse, ...
-                conv(self.tx.impulse, self.sequence.pulse, kwargs.fsk), ...
-                kwargs.fsk); % transmit waveform, convolved at US frequency
+                conv(self.tx.impulse, self.sequence.pulse, gather(kwargs.fsk)), ...
+                gather(kwargs.fsk)); % transmit waveform, convolved at US frequency
             wv.fs = kwargs.fsk;
             kern = wv.samples;
 
@@ -1123,7 +1123,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             arguments
                 self (1,1) UltrasoundSystem
-                scat (1,1) Scatterers
+                scat Scatterers
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
                 simus_kwargs.periods (1,1) {mustBePositive} = 1
@@ -1151,7 +1151,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
                 else, simus_kwargs.dims = 3; end
             end
-            if simus_kwargs.dims == 2 && cellfun(@(Y)any(Y ~= 0, 'all'),Y)
+            if simus_kwargs.dims == 2 && any(cellfun(@(Y)any(Y ~= 0, 'all'),Y))
                 warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
             end
 
@@ -2716,7 +2716,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % <a href="matlab:web('https://doi.org/10.1109/tpami.2007.1154')">DOI: 10.1109/TPAMI.2007.1154</a>. PMID: 17627044.
             % 
             % Example:
-            % 
             % % This example requires kWave
             % if ~exist('kWaveGrid', 'class')
             %     warning('kWave must be on the path to run this example.');
@@ -2765,7 +2764,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Display the ChannelData
             % figure;
             % imagesc(real(chd));
-	    % title('Channel Data')
+            % title('Channel Data')
             % 
             % % Display the images
             % bim_naive = mod2db(b_naive);
