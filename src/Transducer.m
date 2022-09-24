@@ -959,6 +959,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             end
             arguments
                 plot_args.?matlab.graphics.chart.primitive.Line
+                plot_args.DisplayName = 'Elements'
             end
             
             % extract axis and other non-Name/Value pair arguments
