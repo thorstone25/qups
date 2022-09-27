@@ -386,13 +386,13 @@ classdef TransducerConvex < Transducer
             end
 
             % set relevant properties
-            xdc = TransducerArray(...
+            xdc = TransducerConvex(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
                 'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
                 'width', scale*Trans.elementWidth, ... % linear kerf
                 'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
                 'numel', Trans.numelements, ... % number of elements
-                'radius', Trans.radiusMm, ... % radius [m]
+                'radius', 1e-3*Trans.radiusMm, ... % radius [m]
                 'pitch', 1e-3*Trans.spacingMm, ... % probe pitch [m]
                 'el_focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
                 );
