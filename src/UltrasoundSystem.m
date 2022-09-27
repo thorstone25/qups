@@ -50,9 +50,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
     
     properties(Dependent)
-        fc  {mustBeNumeric} % central operating frequency (from the Transducer)
+        fc  {mustBeNumeric} % central operating frequency(ies) (from the Transducer(s))
         xdc Transducer      % Transducer object (if receive and transmit are identical)
         pulse Waveform      % Waveform object (from the Sequence)
+        lambda {mustBeNumeric} % wavelength at the central frequency(ies)
     end
     
     properties(Hidden,SetAccess=protected)
@@ -3130,6 +3131,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self.rx.setCentralFrequency(f(end));
             end
         end
+        function l = get.lambda(self), l = self.sequence.c0 ./ self.fc; end
         function x = get.xdc(self)
             if self.tx == self.rx
                 x = self.rx;
