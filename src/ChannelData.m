@@ -823,29 +823,6 @@ classdef ChannelData < matlab.mixin.Copyable
             h = imagesc(ax, d, varargin{:}, im_args{:});
         end
 
-        function h = animate(self, varargin)
-            % ANIMATE Show the data across transmits
-            %
-            % h = ANIMATE(self, ...) iteratively calls imagesc to quickly
-            % display the data. All trailing arguments are passed to
-            % ChannelData/imagesc.
-            %
-            % See also CHANNELDATA/IMAGESC IMAGESC
-
-            if nargin >= 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
-                ax = varargin{1}; varargin(1) = [];
-            else
-                ax = gca;
-            end
-
-            % now use the handle only
-            for f = 1:gather(prod(size(self.data,3:max(3,gather(ndims(self.data))))))
-                if ~isvalid(ax), break; end % quit if handle destroyed
-                h = imagesc(self, f, ax, varargin{:});
-                drawnow limitrate; pause(1/20);
-            end
-        end
-
         function gif(chd, filename, h, varargin)
             % GIF - Write the ChannelData to a GIF file
             %
