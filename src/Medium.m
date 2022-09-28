@@ -449,7 +449,7 @@ classdef Medium < matlab.mixin.Copyable
             % See also MEDIUM/MEDIUM
 
             arguments
-                scan ScanCartesian
+                scan (1,1) ScanCartesian
                 c {mustBeNumeric}       = double.empty()
                 rho {mustBeNumeric}     = double.empty()
                 BoA {mustBeNumeric}     = double.empty()
@@ -458,6 +458,17 @@ classdef Medium < matlab.mixin.Copyable
                 med_args.?Medium % forward settable properties for the Medium class
             end
 
+            % check that the input data is either empty, or has the correct
+            % size
+            for arg = {c,rho,BoA,alpha}
+                assert(isempty(arg{1}) || isequal(size(arg{1},1:3), scan.size),...
+                    "The size of all arguments must match the scan size (" ... 
+                    + strjoin(scan.size + ",") + "). Given argument of size ("  ...
+                    + strjoin(size(arg{1},1:max(3,ndims(arg{1}))) + ",") + ").")
+            end
+
+            % get the grid axes for the gridded interpolant - must be in
+            % X/Y/Z order for the 3D points
             grid = {scan.x, scan.y, scan.z};
 
             % we'll need to expand the grid if a dimension is singular
