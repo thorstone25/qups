@@ -197,13 +197,15 @@ classdef BFTest < matlab.unittest.TestCase
         apodization = struct('false', false, 'true', true);
     end
     methods(TestMethodSetup)
-        function resetGPU(test), if gpuDeviceCount, gpuDevice([]); end, end
+        function resetGPU(test), if gpuDeviceCount('available'), gpuDevice([]); end, end
     end
     
     % Github test routine
     methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
         function github_psf(test, bf_name)%, prec, terp)
-            switch bf_name, case {'Eikonal'}, return; end % Eikonal is too large?
+            test.assumeTrue(bf_name ~= "Eikonal"); % Eikonal is too large?
+            test.assumeTrue(test.fmod ~= 0); % only test non-centered data
+            test.assumeTrue(test.scat.pos(1) ~= 0); % only test non-centered data
             
             % only test 1 precision/interpolation/apodization combo
             psf(test, 0, bf_name, 'singleT', 'nearest', false); 
