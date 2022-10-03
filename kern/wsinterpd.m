@@ -1,5 +1,5 @@
 function y = wsinterpd(x, t, dim, w, sdim, interp, extrapval, varargin)
-% WSINTERPD GPU-enabled interpolation in one dimension
+% WSINTERPD GPU-enabled weight-and-sum interpolation in one dimension
 %
 % y = WSINTERPD(x, t) interpolates the data x at the indices t. It uses the
 % matching and non-matching dimensions of the data to implicitly broadcast
