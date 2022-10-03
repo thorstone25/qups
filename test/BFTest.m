@@ -197,7 +197,15 @@ classdef BFTest < matlab.unittest.TestCase
         apodization = struct('false', false, 'true', true);
     end
     methods(TestMethodSetup)
-        function resetGPU(test), if gpuDeviceCount('available'), gpuDevice([]); end, end
+        function resetGPU(test), 
+            if gpuDeviceCount('available'), 
+                gpuDevice([]);
+                if isa(gcp('nocreate'), 'parallel.ProcessPool'),
+                    hcp = gcp('nocreate');
+                    parfor i = hcp.NumWorkers, gpuDevice([]); end
+                end
+            end
+        end
     end
     
     % Github test routine
