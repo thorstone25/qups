@@ -1,4 +1,4 @@
-function animate(h, x, kwargs)
+function [mvf, mvh] = animate(h, x, kwargs)
 % ANIMATE - Animate imagesc data
 %
 % ANIMATE(h, x) animates the multi-dimensional data x by looping through
@@ -12,6 +12,13 @@ function animate(h, x, kwargs)
 % looping until the figure is closed.
 %
 % ANIMATE(..., 'fs', fs) updates the image at a rate fs.
+% 
+% mvf = ANIMATE(...) returns a cell matrix of movie frames mvf for each
+% unique figure. This can be used to construct a movie or gif of each
+% figure.
+% 
+% [mvf, mvh] = ANIMATE(...) returns a cell matrix of movie frames for each
+% axes. This can be used to construct a movie or gif of each axes.
 % 
 % Note: MATLAB execution will be paused while the animation is playing.
 % Close the figure or press 'ctrl + c' in the command window to stop the
@@ -52,6 +59,13 @@ function animate(h, x, kwargs)
 % % Animate both images across transmits
 % animate(h, {chd_im.data, bim}, 'loop', false); % show once
 % 
+% % Create a movie
+% vobj = VideoWriter('tmp', 'Motion JPEG AVI');
+% vobj.FrameRate = 20; % set frame rate to 20 Hz
+% vobj.open();
+% vobj.writeVideo([mvh{:,1}]);
+% vobj.close();
+% 
 % See also IMAGESC
 arguments
     h (1,:) matlab.graphics.primitive.Image
@@ -78,13 +92,21 @@ assert(numel(h) == numel(x), "The number of image handles (" ...
     ") must match the number of images (" ...
     + numel(x) + ")." ...
     );
+hf = unique([h.Parent]); % parent of the image is an axes
+hf = unique([hf.Parent]); % parent of the axes: figure or layout
+F = numel(hf); % number of figures
+if nargout >= 2, mvh = cell([M,I]); else, mvh = cell.empty; end
+if nargout >= 1, mvf = cell([M,F]); else, mvf = cell.empty; end
 
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
         for i = 1:I, h(i).CData(:) = x{i}(:,:,m); end % update image
-        drawnow limitrate;
-        pause(1/kwargs.fs);
+        drawnow limitrate; 
+        tic;
+        if ~isempty(mvh), for i = 1:I, mvh{m,i} = getframe(h (i).Parent); end, end %  get the frames 
+        if ~isempty(mvf), for f = 1:F, mvf{m,f} = getframe(hf(f).Parent); end, end %  get the frames 
+        pause(max(0, (1/kwargs.fs) - toc)); % pause for at least 0 sec, at most the framerate interval 
     end
     if ~kwargs.loop, break; end
 end
