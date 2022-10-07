@@ -198,7 +198,7 @@ classdef BFTest < matlab.unittest.TestCase
     end
     methods(TestMethodSetup)
         function resetGPU(test), 
-            if gpuDeviceCount('available'), 
+            if gpuDeviceCount(), 
                 gpuDevice([]);
                 if isa(gcp('nocreate'), 'parallel.ProcessPool'),
                     hcp = gcp('nocreate');
