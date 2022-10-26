@@ -2,45 +2,161 @@ classdef Sequence < matlab.mixin.Copyable
     % SEQUENCE - Class defining transmit sequences
     %
     % A SEQUENCE object defines the parameters for common transmit
-    % sequences and is used to define beamforming delays. 
+    % sequences and is used to define beamforming delays and apodizations
+    % per element per pulse. The same waveform must be sent for all
+    % elements and pulses. Delays and apodization matrices are generated
+    % when given a Transducer.
     %
-    % The following properties must be set by the caller/construtor:
-    %
-    % properties
-    %     type = 'FSA'            % one of {'FSA', 'PW', 'VS'}
-    %     focus = [0;0;0]         % (3 x S) array specifying the focal points or plane-wave vectors
-    %     c0 = 1540               % beamforming sound speed for the transmit delays
-    %     pulse = Waveform.Delta()% transmit Waveform object
-    % end
-    %
-    % S -> number of transmitted pulses
-    %
-    % FSA -> Full synthetic aperture
-    % PW  -> plane wave
-    % VS  -> virtual source
+    % The interpretation of the time-axis of the generated delays and the 
+    % foci depend on the Sequence type property. For type 'PW', the foci
+    % are normal vectors and time 0 is when the wavefront passes through
+    % the spatial origin (i.e. x=y=z=0). For type 'VS', the foci are
+    % spatial positions and time 0 is when the wavefront passes through the
+    % foci. For type 'FSA', the foci are ignored and time 0 is when the
+    % wavefront passes through each element of the given Transducer.
     % 
-    % The 'numPulse' property yields the value of S. However, for
-    % full-synthetic-aperture sequences, this value is not known without
-    % knowing the transducer, so it must be set manually with
-    %
-    % seq.numPulse = xdc.numel;
-    %
+    % 
+    % 
     % See also: SEQUENCERADIAL WAVEFORM
     
     properties
-        type (1,1) string {mustBeMember(type, ["FSA", "PW", "VS"])} = 'FSA' % {'FSA', 'PW', 'VS'}
-        focus (3,:) {mustBeNumeric} = zeros([3,1]);   % (3 x S) array specifying the focal point or plane-wave direction
-        c0 (1,1) {mustBeNumeric} = 1540               % sound speed for the transmit delays
+        % TYPE - Type of pulse sequence definition
+        %
+        % SEQUENCE.TYPE determines the type of pulse sequence. It must be
+        % one of {'FSA', 'PW', 'VS'}.
+        %
+        % When the type is 'FSA', the pulse sequence represents a full 
+        % synthetic aperture acquisition where each pulse has one element 
+        % transmitting at a time with no delays applied. When using this
+        % type, the numpulse property must be set.
+        %
+        % When the type is 'PW', the pulse sequence represents a plane-wave
+        % acquisition where the time delays are applied such that a planar
+        % wavefront forms that travels in the direction of the focal
+        % vectors and passes through the origin at time 0.
+        %
+        % When the type is 'VS', the pulse sequence represents a virtual
+        % source acquisition where the time delays are applied such that a
+        % wavefront forms that travels radially towards and/or away from
+        % each foci and passes through the foci at time 0.
+        %
+        % See also SEQUENCE.FOCUS SEQUENCE.C0 SAEQUENCE.NUMPULSE
+        type (1,1) string {mustBeMember(type, ["FSA", "PW", "VS"])} = 'FSA' 
+        % FOCUS - Pulse sequence foci or focal vectors
+        %
+        % SEQUENCE.FOCUS specifies the foci of pulse sequence.
+        %
+        % When the Sequence type is 'FSA', the focus has no effect.
+        %
+        % When the Sequence type is 'PW', the foci are unit normal vectors
+        % specifying the propagation direction for each plane wave.
+        %
+        % When the Sequence type is 'VS', the foci are the positions in
+        % space where all wavefronts must converge.
+        %
+        % See also SEQUENCE.TYPE SEQUENCE.C0
+        focus (3,:) {mustBeNumeric} = zeros([3,1]);
+        % C0 - Reference sound speed
+        %
+        % SEQUENCE.C0 specifies the sound speed used for creating the
+        % delays.
+        %
+        % See also DELAYS SEQUENCE.FOCUS SEQUENCE.TYPE
+        c0 (1,1) {mustBeNumeric} = 1540         
+        % PULSE - Transmit pulse waveform
+        %
+        % SEQUENCE.PULSE specifies the transmit pulse waveform. The default
+        % is a Waveform.Delta().
+        %
+        % See also SEQUENCE.FOCUS SEQUENCE.TYPE SEQUENCE.C0
         pulse (1,1) Waveform = Waveform.Delta() % transmit Waveform
     end
     
     properties(Dependent)
-        numPulse (1,1) double {mustBeInteger} % number of pulses: set manually if sequence.type == 'FSA'
+        % NUMPULSE - Number of pulses
+        %
+        % SEQUENCE.NUMPULSE is the number of transmit pulses used in the
+        % sequence. If the Sequence type is 'FSA', this property must be
+        % set directly before being used by any function that queries this 
+        % property. Otherwise, the number of pulses is inferred from the
+        % number of foci.
+        %
+        % See also SEQUENCE.TYPE
+        numPulse (1,1) double {mustBeInteger}
     end
     
-    properties(Hidden)
+    properties(Dependent,Hidden)
+        % APODIZATION_ - Manual apodization matrix definition
+        %
+        % SEQUENCE.APODIZATION_ overrides the default apodization and 
+        % specifies the apodization as either a (N x S) matrix, or a
+        % function that takes a Transducer and a Sequence and returns a 
+        % (N x S) matrix of weights where N is the number of elements and 
+        % S is the number of pulses.
+        %
+        % Example:
+        % % Create a hadamard encoding sequence
+        % seq = Sequence('type', 'FSA');
+        % seq.apodization_ = @(tx, seq) hadamard(tx.numel);
+        %
+        % % Get a default system and scatterers
+        % us = UltrasoundSystem('sequence', copy(seq));
+        % scat = Scatterers('pos', [0;0;30e-3]);
+        % 
+        % % get the ChannelData
+        % chdh = greens(us, scat);
+        %
+        % % decode the data via refocus
+        % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
+        % us.sequence.apodization_ = []; % clear the encoding
+        % 
+        % % beamform and display the image
+        % figure; 
+        % imagesc(mod2db(DAS(us, chd)));
+        % caxis(max(caxis) + [-60 0]);
+        % 
+        % See also APODIZATION SEQUENCE.DELAYS_
+        apodization_ 
+        
+        % DELAYS_ - Manual delay matrix definition
+        %
+        % SEQUENCE.DELAYS_ overrides the default delays and 
+        % specifies the delays as either a (N x S) matrix, or a
+        % function that takes a Transducer and a Sequence and returns a 
+        % (N x S) matrix of delays where N is the number of elements and S 
+        % is the number of pulses.
+        %
+        % Example:
+        % % Create a random phase sequence
+        % seq = Sequence('type', 'FSA');
+        % seq.delays_ = @(tx, seq) (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
+        %
+        % % Get a default system and scatterers
+        % us = UltrasoundSystem('sequence', copy(seq));
+        % scat = Scatterers('pos', [0;0;30e-3]);
+        % 
+        % % get the ChannelData
+        % chdh = greens(us, scat);
+        %
+        % % decode the data via refocus
+        % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
+        % us.sequence.delays_ = []; % clear the encoding
+        % 
+        % % beamform and display the image
+        % figure; 
+        % imagesc(mod2db(DAS(us, chd)));
+        % caxis(max(caxis) + [-60 0]);
+        % 
+        % See also DELAYS SEQUENCE.APODIZATION_
+        delays_
+    end
+    
+    properties(Hidden,SetAccess=protected)
         FSA_n_tx (1,1) double = nan % hidden storage of the number of pulse for an FSA sequence
-        apodization_ (:,:) {mustBeNumericOrLogical} = [] % hidden storage of user entered apodization values or function
+        apodizationv_ (:,:) {mustBeNumericOrLogical} = [] % hidden storage of user entered apodization values
+        delaysv_      (:,:) {mustBeNumericOrLogical} = [] % hidden storage of user entered delay       values
+        apodizationf_ function_handle {mustBeScalarOrEmpty} % hidden storage of user entered apodization values
+        delaysf_      function_handle {mustBeScalarOrEmpty} % hidden storage of user entered delay       values
     end
     
     methods
@@ -210,27 +326,40 @@ classdef Sequence < matlab.mixin.Copyable
             end
             
             % element positions (3 x 1 x N)
-            p = permute(tx.positions(),[1 3 2]); 
+            p = swapdim(tx.positions(),2,3); 
             
-            switch self.type
-                case 'VS'
-                    v = self.focus - p; % element to focus vector (3 x S x N)
-                    s = ~all(self.focus(3,:) > p(3,:,:), 3); % whether in behind of the transducer (1 x S)
-                    tau = hypot(hypot(v(1,:,:), v(2,:,:)),v(3,:,:)) ./ self.c0; % delay magnitude (1 x S x N)
-                    tau = (-1).^s .* tau; % swap sign for diverging transmit
-                    
-                case 'PW'
-                    % use inner product of plane-wave vector with the
-                    % positions to get plane-aligned distance
-                    tau = -sum(self.focus .* p, 1) ./ self.c0; % delay (1 x S x N)
-                case 'FSA'
-                    tau = zeros([1 size(p,3) size(p,3)]);
-                otherwise
-                    error('Reached an unexpected state :(');
+            if isempty(self.delays_)
+                switch self.type
+                    case 'VS'
+                        % TODO: use more robust logic for diverging wave test
+                        v = self.focus - p; % element to focus vector (3 x S x N)
+                        s = ~all(sub(self.focus,3,1) > sub(p,3,1), 3); % whether in behind of the transducer (1 x S)
+                        tau = hypot(hypot(sub(v,1,1), sub(v,2,1)),sub(v,3,1)) ./ self.c0; % delay magnitude (1 x S x N)
+                        tau = (-1).^s .* tau; % swap sign for diverging transmit
+
+                    case 'PW'
+                        % use inner product of plane-wave vector with the
+                        % positions to get plane-aligned distance
+                        tau = -sum(self.focus .* p, 1) ./ self.c0; % delay (1 x S x N)
+                    case 'FSA'
+                        tau = zeros([1 size(p,3) size(p,3)]);
+                    otherwise
+                        error('Reached an unexpected state :(');
+                end
+
+                % reshape for output (N x S)
+                tau = permute(tau, [3 2 1]);
+            else
+                if isa(self.delays_, 'function_handle')
+                    tau = self.delays_(tx, self); % call the function on tx
+                elseif isnumeric(self.delays_)
+                    tau = self.delays_; % return the user supplied values
+                else, warning("Unable to interpret delays; not a function handle or numeric type.");
+                    tau = self.delays_; % return the user supplied values anyway
+                end
             end
+
             
-            % reshape for output
-            tau = permute(tau, [3 2 1]);
         end
 
         function a = apodization(self, tx)
@@ -279,7 +408,6 @@ classdef Sequence < matlab.mixin.Copyable
             if isempty(self.apodization_) % apodization not set by user:
                 switch self.type
                     case 'FSA'
-                        % TODO: use apodization as a sequence property?
                         a = eye(size(tx.positions(),2)); % N x N identity
                     otherwise
                         a = ones([size(tx.positions(),2) self.numPulse]); % N x S
@@ -321,16 +449,42 @@ classdef Sequence < matlab.mixin.Copyable
         function set.numPulse(self, n)
             self.FSA_n_tx = n;
         end
-       
-        function setApodization(self, apod)
-            % no halp :(
-            
-            % should be fun or data
-            if ~(isa(apod, 'function_handle') || isnumeric(apod))
-                warning("Expected a function handle or numeric type; instead got a " + class(apod) + ".");
+
+        function set.apodization_(self, apod)
+            if isa(apod, 'function_handle')
+                self.apodizationf_ = apod;
+            elseif isnumeric(apod) || islogical(apod)
+                self.apodizationv_ = apod;
+            else
+                error("Expected a function handle or numeric type; instead got a " + class(apod) + ".");
             end
-            self.apodization_ = apod; 
-        end        
+        end
+       
+        function set.delays_(self, tau)
+            if isa(tau, 'function_handle')
+                self.delaysf_ = tau;
+            elseif isnumeric(tau) || islogical(tau)
+                self.delaysv_ = tau;
+            else
+                error("Expected a function handle or numeric type; instead got a " + class(tau) + ".");
+            end
+        end
+
+        function apod = get.apodization_(self)
+            if ~isempty(self.apodizationf_), 
+                apod = self.apodizationf_;
+            else, 
+                apod = self.apodizationv_;
+            end
+        end
+
+        function tau = get.delays_(self)
+            if ~isempty(self.delaysf_), 
+                tau = self.apodizationf_;
+            else, 
+                tau = self.delaysv_;
+            end
+        end
     end
 
     % plotting methods
