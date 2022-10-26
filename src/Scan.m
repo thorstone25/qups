@@ -481,13 +481,13 @@ classdef Scan < matlab.mixin.Copyable
  
             % plot
             if isa(self, 'ScanCartesian')
-                h = imagesc(ax, ax_args{:}, b, varargin{:},  im_args{:});
+                h = imagesc(ax, ax_args{:}, squeeze(b), varargin{:},  im_args{:});
                 xlabel(ax,'Lateral');
                 ylabel(ax,'Axial');
                 axis(ax, 'image');
 
             elseif isa (self, 'ScanPolar')
-                h = imagesc(ax, ax_args{:}, b, varargin{:}, im_args{:});
+                h = imagesc(ax, ax_args{:}, squeeze(b), varargin{:}, im_args{:});
                 xlabel(ax,'Angle (^o)');
                 ylabel(ax,'Range');
                 axis(ax, 'tight')
