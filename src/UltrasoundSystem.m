@@ -2246,12 +2246,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Copy semantics
             chd = copy(chd);
 
-            % nothing to do for FSA acquisitions
-            switch seq.type, case 'FSA', return; end 
-
             % dist/time to receiver
             tau_focal = - seq.delays(self.tx); % M x M'
             apod      =   seq.apodization(self.tx); % [1|M] x [1|M']
+
+            % nothing to do for (true) FSA acquisitions: all 0 delays
+            % identity matrix apodization
+            switch seq.type, case 'FSA', 
+                if ~nnz(tau_focal) && isequal(apod, eye(self.tx.numel)), return; end, 
+            end
 
             % resample only within the window where we currently have data.
             nmin = floor(min(tau_focal,[],'all') .* chd.fs); % minimum sample time
@@ -2402,7 +2405,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 case "tikhonov"
                     % TODO: option to use pinv, as it is (slightly)
                     % different than matrix division
-                    A = pagemtimes(H, 'ctranspose', H, 'none') + (kwargs.gamma * eye(chd.M)); % A = (H'*H + gamma * I)
+                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * eye(chd.M)); % A = (H'*H + gamma * I)
                     Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);
             end
@@ -2416,7 +2419,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % move data to the frequency domain
             x = chd.data;
             x = fft(x,chd.T,chd.tdim); % get the fft in time
-            x = x .* exp(-2i*pi*f .* chd.t0); % phase shift to re-align time axis
+            omega0 = exp(-2i*pi*f .* chd.t0); % time-alignment phase
+            x = x .* omega0; % phase shift to re-align time axis
             
             % apply to the data - this is really a tensor-times-matrix
             % operation, but it's not natively supported yet. 
@@ -2426,7 +2430,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             y = cat(chd.mdim, y{:});
 
             % move back to the time domain
-            y = y .* exp(+2i*pi*f .* chd.t0); % re-align time axis
+            y = y .* conj(omega0); % re-align time axis
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
