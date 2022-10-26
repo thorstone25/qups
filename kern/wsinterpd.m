@@ -196,8 +196,8 @@ end
 y = ipermute(y, ord);
 
 
-function d = esize(varargin), if isempty(varargin{2}), d = []; else, d = size(varargin{:}); end
+function d = esize(varargin), if nargin >= 2 && isempty(varargin{2}), d = []; else, d = size(varargin{:}); end
 % ESIZE - Empty-forwarding size
 %
-% d = ESIZE(x) or d = ESIZE(x,dim) returns [] if x is empty or returns
+% d = ESIZE(x) or d = ESIZE(x,dim) returns [] if dim is empty or returns
 % size(x,dim) otherwise.
