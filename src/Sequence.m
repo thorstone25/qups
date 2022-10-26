@@ -100,7 +100,8 @@ classdef Sequence < matlab.mixin.Copyable
         % seq.apodization_ = @(tx, seq) hadamard(tx.numel);
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('sequence', copy(seq));
+        % us = UltrasoundSystem('sequence', seq);
+        % us.sequence.numPulse = us.tx.numel; % set the number of pulses
         % scat = Scatterers('pos', [0;0;30e-3]);
         % 
         % % get the ChannelData
@@ -129,10 +130,11 @@ classdef Sequence < matlab.mixin.Copyable
         % Example:
         % % Create a random phase sequence
         % seq = Sequence('type', 'FSA');
-        % seq.delays_ = @(tx, seq) (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
+        % seq.delays_ = (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('sequence', copy(seq));
+        % us = UltrasoundSystem('sequence', seq);
+        % us.sequence.numPulse = us.tx.numel; % set the number of pulses
         % scat = Scatterers('pos', [0;0;30e-3]);
         % 
         % % get the ChannelData
@@ -441,6 +443,7 @@ classdef Sequence < matlab.mixin.Copyable
             switch self.type
                 case 'FSA'
                     v = self.FSA_n_tx;
+                    if isnan(v), warning("Number of pulses is unset."); end
                 otherwise
                     v = size(self.focus, 2);
             end
