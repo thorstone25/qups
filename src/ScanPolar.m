@@ -213,8 +213,10 @@ classdef ScanPolar < Scan
             % TODO: handle different data orders / dimensionality via 
             % permution / page functions
             assert(self.order == "RAY", "Data must be in order 'RAY'.");
-            [RG, AG] = ndgrid(self.r, deg2rad(self.a)); % use interp2 for compatibility
-            b_cart = interp2(AG, RG, b_pol, A, R, 'linear', nan);
+            [RG, AG, YG] = ndgrid(self.r, deg2rad(self.a), self.y); % use interp2 for compatibility
+            b_cart = cellfun(@(b) {interp2(AG, RG, b, A, R, 'linear', nan)}, num2cell(b_pol, [1,2]));
+            b_cart = reshape(cat(3, b_cart{:}), [size(A,1:2), size(b_pol, 3:max(3,ndims(b_pol)))]); %#ok<CPROPLC> 
+            % b_cart = interp3(RG, AG, YG, b_pol, R, A, Y, 'linear', nan); % use interp3 for compatibility
 
             % let nans be nans? or make zero?
             % b_cart(isnan(b_cart)) = 0;
