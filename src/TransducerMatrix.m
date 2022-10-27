@@ -57,6 +57,10 @@ classdef TransducerMatrix < Transducer
                 array_args.numd = [prod(f(1:2:end)), prod(f(2:2:end))];
             end
 
+            % ensure width/height <= pitch
+            self.width  = min(self.width , self.pitch(1));
+            self.height = min(self.height, self.pitch(1));
+
             % initialize the TransducerMatrix
             for f = string(fieldnames(array_args))'
                 self.(f) = array_args.(f);
@@ -146,8 +150,8 @@ classdef TransducerMatrix < Transducer
                 self.numd(end), ...
                 self.width, ...
                 self.height,...
-                0, ... kerf in x
-                0, ... kerf in y
+                self.pitch(1)   - self.width, ... kerf in x
+                self.pitch(end) - self.height, ... kerf in y
                 ones(self.numd), ...
                 element_sub_divisions(1), ...
                 element_sub_divisions(end), ...
@@ -176,7 +180,7 @@ classdef TransducerMatrix < Transducer
             data = xdc_get(ap, 'rect');
             p = data([24 25 26], :) + xdc.offset;
             xdc_free(ap);
-            p = p(:,1:3:end); % data repeated 3 times for some reason?
+            % p = p(:,1:3:end); % data repeated 3 times for some reason?
         end
     end
     
