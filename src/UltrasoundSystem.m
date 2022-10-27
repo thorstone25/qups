@@ -3112,16 +3112,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % the plane-wave ChannelData chd created from a TransducerArray
             % defined by self.xdc.
             % 
-            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a Scan
-            % bscan on which the bmode image is defined.
+            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a 
+	    % ScanCartesian bscan on which the bmode image is naturally defined.
             % 
             % [...] = BFMIGRATION(..., Name, Value, ...) passes additional Name/Value
-            % pair arguments
+            % pair arguments.
             % 
             % [...] = BFMIGRATION(..., 'keep_tx', true) preserves the
             % transmit dimension in the output image b.
             %
-            % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
+            % [...] = BFMIGRATION(..., 'NFFT', [F, K]) uses a F-point FFT in time and 
+	    % a K-point FFT laterally. If F < chd.T, the data is truncated temporally 
+	    % and if K < chd.N, the data is truncated laterally. The default is 
+	    % [chd.T, chd.N].
+	    %
+	    % [...] = BFMIGRATION(..., 'interp', method) specifies the method for       
+	    % interpolation. The default is 'cubic'.
+	    %                                                                 
+	    % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
             % compute at most B transmits at a time. A larger block size 
             % will run faster, but use more memory. The default is chosen
             % heuristically.
@@ -3129,11 +3137,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % [...] = BFMIGRATION(..., 'fmod', fc) upmixes the data at a
             % modulation frequency fc. This undoes the effect of
             % demodulation/downmixing at the same frequency.
+	    %
+            % [...] = BFMIGRATION(..., 'jacobian', false) does not apply a 
+	    % jacobian update when mapping the frequncies.
             %
-            % [...] = BFMIGRATION(..., 'interp', method) specifies the method for
-            % interpolation. Support is provided by the ChannelData/sample
-            % method. The default is 'cubic'.
-            % 
             % References: 
             % [1] Garcia D, Le Tarnec L, Muth S, Montagnon E, Porée J, Cloutier G. 
             % Stolt's f-k migration for plane wave ultrasound imaging.
@@ -3154,7 +3161,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chd = greens(us, scat);
             %
             % % beamform the data, with implicit zero-padding
-            % [b, bscan] = bfMigration(us, chd, 'Nfft', [chd.T, 4*chd.N]);
+            % [b, bscan] = bfMigration(us, chd, 'Nfft', [2*chd.T, 4*chd.N]);
             % 
             % % Display the image
             % bim = mod2db(b); % log-compression
@@ -3168,12 +3175,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 chd ChannelData
                 c0 (1,1) {mustBeNumeric} = self.sequence.c0
-                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
                 kwargs.Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
-                % kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*8)))); % vector computation block size
-                % kwargs.verbose (1,1) logical = true
+                kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.T*chd.N*size(chd.data,4:max(4,ndims(chd.data))))))); % vector computation block size
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+		% kwargs.verbose (1,1) logical = true
                 kwargs.jacobian (1,1) logical = true
             end
 
@@ -3212,6 +3219,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau = ipermute(tau, ord); % permute to compatible dimensions
             gamma = swapdim(sind(seq.angles) ./ (2 - cosd(seq.angles)), 2, chd.mdim); % lateral scaling
 
+	    % splice the data to operate per block of transmits
+	    [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
+	    tau   = arrayfun(@(i) {sub(tau  , i, chd.mdim)}, ix);
+	    gamma = arrayfun(@(i) {sub(gamma, i, chd.mdim)}, ix);    
+	    
+	    chd0 = chd; % save og ChannelData, time delays
+	    if kwargs.keep_tx, bm = cell(1,numel(chds)); else, bm = 0; end % init
+	    for j = 1:numel(chds)
+
+		    chd = chds(j); % reference the ChannelData
+
             % Move data to the temporal frequency domain
             x = chd.data;
             x = x .* exp(2j*pi*kwargs.fmod .* chd.time); % remodulate data
@@ -3221,7 +3239,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             x = x .* exp(-2j*pi*f .* chd.t0);
             
             % align transmits
-            x = x .* exp(-2j*pi*f .* tau);
+            x = x .* exp(-2j*pi*f .* tau{j});
 
             % move to lateral frequency domain
             x = fftshift(fft(x, K, chd.ndim), chd.ndim); % lateral fft
@@ -3248,26 +3266,43 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tb = chd.t0 + (0 : F - 1)' ./ chd.fs;
             % tb = chd.time;
 
-            % get teh spatial axes
-            zb = seq.c0 / 2 * tb;
-            xb = self.xdc.pitch .* (-(K-1)/2 : (K-1)/2) + mean(sub(self.xdc.positions,1,1));
+            % get the spatial axes
+            zax = seq.c0 / 2 * tb;
+            xax = self.xdc.pitch .* (0 : K-1) + sub(self.xdc.positions,{1,1},[1,2]);
 
             % align data laterally using Garcia's PWI mapping
-            b = b .* exp(2j*pi*kx.*gamma.*zb);
+            b = b .* exp(2j*pi*kx.*gamma{j}.*zax);
 
             % move data back to spatial domain
             b = ifft(ifftshift(b, chd.ndim), K, chd.ndim);
             b = sub(b, {1:chd.T,1:chd.N}, [chd.tdim, chd.ndim]);
 
+            % sum or store the transmits
+            if kwargs.keep_tx, bm{j} = b; else, bm = bm + sum(b, chd.mdim); end
+
+	    end % for j
+
+	    % get full image cube
+	    if kwargs.keep_tx, b = cat(chd0.mdim, bm{:}); else, b = bm; end
+
             % create the corresponding scan - it aligns with our data
-            bscan = ScanCartesian('z', zb(1:chd.T), 'x', xb(1:chd.N));
+            bscan = ScanCartesian('z', zax(1:chd0.T), 'x', xax(1:chd0.N));
 
-            % sum the transmits
-            if ~kwargs.keep_tx, b = sum(b, chd.mdim); end
-
-            % TODO: resample the data onto the original imaging grid if no
-            % output scan was requested
-            
+            % resample the data onto the original imaging grid if no
+            % output scan was requested (risky)
+	    if nargout < 2
+		    warning("QUPS:bfMigration:artefacts", "Resampling a complex image can produce artefacts: request the output Scan to avoid resampling.");
+		    % resample data onto the given scan (risky)
+		    scan = self.scan; % og scan
+		    [z, x] = ndgrid(bscan.z, bscan.x); % vectors -> matrix
+		    bint = num2cell(b, [1,2]); % place all transmits/frames in cells
+		    parfor(j = 1:numel(bint), 0) % interp for each transmit/frame
+		        bint{j} = interp2(bscan.x, bscan.z, bint{j}, scan.x(:)', scan.z(:), kwargs.interp, 0);
+		    end
+		    bint = cat(1, bint{:});
+		    bint = reshape(bint, [scan.size([1,2]), size(bint, 3 : max(3, ndims(bint)))]);
+		    b = bint;
+	    end          
         end
     end
     
