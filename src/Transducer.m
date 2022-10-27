@@ -980,6 +980,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
 
         function varargout = surf(self, varargin)
+            % SURF - Alias for patch
+            % 
             % See also TRANSDUCER/PATCH
             varargout = cell([1, nargout]);
             [varargout{:}] = patch(self, varargin{:});
