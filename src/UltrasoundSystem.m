@@ -114,21 +114,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % create a default Sequence if none provided
             if ~isfield(kwargs, 'sequence')
-                % set the default pulse
-                fc = self.tx.fc; % extract - otherwise, we reference the changing value of the object
-                excitation = @(t)exp(-2j*pi*fc*t); % functional form
-                P = 2; % 2 periods
-
-                % set the default pulse sequence
-                wv = Waveform( ...
-                    't0', - P / 2 / self.tx.fc, ...
-                    'tend', P / 2 / self.tx.fc, ...
-                    'fun', excitation);
-
                 self.sequence = Sequence(...
                     'type','FSA',...
                     'focus', [0;0;0], ...
-                    'pulse', wv, ...
                     'numPulse', self.tx.numel ...
                     );
             end
@@ -1464,7 +1452,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 parenv = 0; 
             end
 
-            [M, F] = deal(self.sequence.numPulse, numel(scat)); % number of transmits/frames
+            [M, F] = deal(size(tau_tx,2), numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
             
