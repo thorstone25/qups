@@ -16,7 +16,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         width (1,1) double = 1.5e-4 % width of an element
         height (1,1) double = 6e-3   % height of an element
         numel (1,1) double = 128     % number of elements
-        offset (3,1) double = [0;0;0]% the offset from the origin compared to fieldII's definitions
+        offset (3,1) double = [0;0;0]% the offset from the origin
         impulse Waveform {mustBeScalarOrEmpty} = Waveform.empty() % the impulse response function of the element
     end
 

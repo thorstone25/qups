@@ -133,6 +133,7 @@ classdef TransducerArray < Transducer
                 'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in % 
                 'focus', self.el_focus ... elevation focus
                 );
+            % TODO: error if origin not at 0.
         end
     end
 
@@ -141,6 +142,7 @@ classdef TransducerArray < Transducer
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
             if nargin < 2 || isempty(focus), focus = [0 0 realmax('single')]; end % ~ 0-deg plane wave
             if nargin < 3, element_sub_divisions = [1,3]; end % no sub divisions
+            % TODO: error if origin not at 0.
                         
             % Field II parameters
             xdc_lin_array_params = { ...
@@ -328,7 +330,7 @@ classdef TransducerArray < Transducer
     end
     
     methods(Static)
-        function xdc = L12_3V()
+        function xdc = L12_3v()
             xdc = TransducerArray(...
                 'fc', mean([4e6 11e6]), ...
                 'bw', ([4e6 11e6]), ...
@@ -339,7 +341,7 @@ classdef TransducerArray < Transducer
                 'el_focus', 20e-3 ...
                 );
         end
-        function xdc = L11_5V()
+        function xdc = L11_5v()
             xdc = TransducerArray(...
                 'fc', mean([4.5e6 10e6]), ...
                 'bw', ([4.5e6 10e6]), ...
@@ -350,7 +352,7 @@ classdef TransducerArray < Transducer
                 'el_focus', 18e-3 ...
                 );
         end
-        function xdc = L11_2V()
+        function xdc = L11_2v()
             xdc = TransducerArray(...
                 'fc', 5.1333e+06, ... % Transducer center frequency [Hz]
                 'bw', 5.1333e6 + 3e6*[-1 1]/2, ... % bandwidth [Hz]
@@ -362,7 +364,7 @@ classdef TransducerArray < Transducer
                 );
 
         end
-        function xdc = L12_5V()
+        function xdc = L12_5v()
             % Transducer parameters pulled from verasonics L12-5 50mm probe
             xdc = TransducerArray(...
                 'fc', 7.5e6, ... % Transducer center frequency [Hz]

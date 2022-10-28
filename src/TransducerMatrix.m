@@ -143,7 +143,8 @@ classdef TransducerMatrix < Transducer
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
             if nargin < 2 || isempty(focus), focus = [0 0 realmax('single')]; end % ~ 0-deg plane wave
             if nargin < 3, element_sub_divisions = [1,1]; end % no sub divisions
-                        
+            % TODO: error if origin not at 0.
+
             % Field II parameters
             xdc_2d_array_params = { ...
                 self.numd(1), ...

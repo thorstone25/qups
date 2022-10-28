@@ -136,6 +136,7 @@ classdef TransducerConvex < Transducer
                 'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in %
                 'focus', self.el_focus ... elevation focus
                 );
+            % TODO: error if origin not at 0.
         end
     end
 
@@ -148,7 +149,8 @@ classdef TransducerConvex < Transducer
                 focus (3,1) double = [0 0 1e-3]'
                 element_sub_divisions (1,2) double = [1,1];
             end
-                       
+            % TODO: error if origin not at 0.
+
             % Field II parameters
             xdc_convex_params = { ...
                 self.numel,     ... no of elements in x direciton
@@ -360,7 +362,7 @@ classdef TransducerConvex < Transducer
     end
     
     methods(Static)
-        function xdc = C5_2V()
+        function xdc = C5_2v()
             xdc = TransducerConvex(...
             'fc', 1e6*mean([2.4 5]), ... % in verasonics doc, this is 4
             'bw', 1e6*([2.4 5]), ...
