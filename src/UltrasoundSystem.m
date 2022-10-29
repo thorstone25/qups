@@ -429,13 +429,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % cast dimensions to compute in parallel
             ptc_rx = permute(ptc_rx, [6,1,2,4,3,5]); % 1 x 3 x N x 1 x En x 1
             ptc_tx = permute(ptc_tx, [6,1,4,2,5,3]); % 1 x 3 x 1 x M x  1 x Em
+
+            % get the boundaries of the transducer
+            txb = self.tx.bounds();
+            rxb = self.rx.bounds();
+
+            % select each corner
+            j = 1+logical([bitand(uint16([1; 2; 4]), uint16(0:7))]);
+            txb = sel(txb, j, 2); % 3 x 8
+            rxb = sel(rxb, j, 2); % 3 x 8
             
             % get maximum necessary time sample (use manhattan distance and
             % sound speed to give an upper bound)
             maxdist = @(p) max(vecnorm(p,2,1), [], 'all');
             mindist = @(p) min(vecnorm(p,2,1), [], 'all');
-            taumax = arrayfun(@(scat)(2 * maxdist(scat.pos) + maxdist(ptc_tx) + maxdist(ptc_rx)) ./ min(scat.c0), shiftdim(scat(:),-3));
-            taumin = arrayfun(@(scat)(2 * mindist(scat.pos) + mindist(ptc_tx) + mindist(ptc_rx)) ./ max(scat.c0), shiftdim(scat(:),-3));
+            taumax = arrayfun(@(scat)(maxdist(scat.pos - txb) + maxdist(scat.pos - rxb) + vecnorm(range(txb,2)) + vecnorm(range(rxb,2))) ./ min(scat.c0), shiftdim(scat(:),-3));
+            taumin = arrayfun(@(scat)(mindist(scat.pos - txb) + mindist(scat.pos - rxb) - vecnorm(range(txb,2)) - vecnorm(range(rxb,2))) ./ max(scat.c0), shiftdim(scat(:),-3));
             
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
@@ -1695,7 +1704,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tt_kwave = tic;
 
             % get the kWaveGrid
-            % TODO: check that the stpe sizes are all equal - this is
+            % TODO: check that the step sizes are all equal - this is
             % required by kWaveArray
             [kgrid, Npml] = getkWaveGrid(sscan, 'PML', kwargs.PML);
 
@@ -1737,7 +1746,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % define the sensor on the grid 
             % get the direction weights
-            [~,~,wnorm] = self.xdc.orientations;
+            [~,~,wnorm] = self.rx.orientations;
             wnorm(1:3,:) = wnorm([3 1 2],:); % k-Wave coordinate mapping
             wnorm = swapdim(wnorm,1,5); % 1 x M x 1 x 1 x 3
 
