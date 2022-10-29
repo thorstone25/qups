@@ -372,11 +372,12 @@ classdef Scan < matlab.mixin.Copyable
 
 
     methods
-        function gif(self, b_im, filename, h, varargin)
+        function gif(self, b_im, filename, h, varargin, kwargs)
             % GIF - Write the series of images to a GIF file
             %
-            % GIF(self, b_im, filename) writes the series of imagesc b_im
-            % to the file filename.
+            % GIF(self, b_im, filename) writes the series of images b_im
+            % to the file filename. b_im must be a numeric array with
+            % images in the first two dimensions.
             %
             % GIF(self, b_im, filename, h) updates the image handle h 
             % rather than creating a new image. Use imagesc to create an 
@@ -399,39 +400,50 @@ classdef Scan < matlab.mixin.Copyable
             % 
             % % display with imagesc
             % figure;
-            % h = imagesc(scan, b_im);
+            % h = imagesc(scan, b_im(:,:,1));
             % colormap hsv;
             % colorbar;
             % title('Random phase');
             % 
             % % make a gif
-            % gif(scan, bim, 'noise.gif', h, 'LoopCount', Inf);
+            % gif(scan, b_im, 'noise.gif', h, 'LoopCount', Inf);
             %
-            % See also IMAGESC
+            % See also IMAGESC PLOT
 
-            % defaults
-            kwargs = struct('LoopCount', Inf, 'DelayTime', 1/15);
+            arguments
+                self (1,1) Scan
+                b_im {mustBeNumeric, mustBeReal}
+                filename (1,1) string
+                h (1,1) matlab.graphics.primitive.Image = imagesc(self, b_im, 1)
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
+                kwargs.map (:,:) double = 2^8
+                kwargs.LoopCount (1,1) double {mustBePositive} = Inf
+                kwargs.DelayTime (1,1) double {mustBePositive} = 1/15
+            end
 
             % parse inputs
             for i = 1:2:numel(varargin), kwargs.(varargin{1}) = varargin{i+1}; end
 
-            % if no image handle, create a new image
-            if nargin < 4 || isempty(h), h = imagesc(self, b_im, 1); end
-
-            M_ = prod(size(b_im, 3:max(3,ndims(b_im)))); %#ok<CPROPLC> % all slices
+            % number of slices
+            M = prod(size(b_im, 3:max(3,ndims(b_im)))); %#ok<CPROPLC> 
 
             % get image frames
-            for m = M_:-1:1, h.CData(:) = b_im(:,:,m); fr{m} = getframe(h.Parent.Parent); end
+            for m = M:-1:1, h.CData(:) = b_im(:,:,m); fr{m} = getframe(h.Parent.Parent); end
 
             % get color space for the image
-            [~, map] = rgb2ind(fr{1}.cdata, 256, 'nodither');
+            [~, map] = rgb2ind(fr{1}.cdata, kwargs.map, 'nodither');
 
             % get all image data
             im = cellfun(@(fr) {rgb2ind(fr.cdata,map,'nodither')}, fr);
             im = cat(4, im{:});
 
-            % forward options to imwrite
-            nvkwargs = struct2nvpair(kwargs);
+            % forward options to imwrite (except 'map' option)
+            badkwargs = {'map'};
+            nvkwargs = struct2nvpair(rmfield(kwargs, badkwargs));
             imwrite(im, map, filename, nvkwargs{:});
         end
 
@@ -446,7 +458,7 @@ classdef Scan < matlab.mixin.Copyable
             % h = IMAGESC(..., Name, Value) forwards arguments to MATLAB's 
             % built-in IMAGESC function.
             %
-            % See also IMAGESC
+            % See also IMAGESC GIF PLOT
 
             arguments
                 self (1,1) Scan
@@ -505,7 +517,7 @@ classdef Scan < matlab.mixin.Copyable
             % h = PLOT(..., Name, Value, ...) passes the following
             % name/value pairs to the built-in plot function
             %
-            % See also PLOT
+            % See also PLOT IMAGESC GIF
 
             arguments
                 self (1,1) Scan
