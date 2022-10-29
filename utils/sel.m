@@ -37,9 +37,9 @@ ind = repmat(ind, rsz); % make full
 % select data at ind in dimension dim
 lind = sub2ind(size(x), i{1:dim-1}, ind, i{dim+1:end}); % linear index
 val = ~isnan(lind); % invalid indices 
-y = zeros(size(lind), 'like', x);
 y(val) = x(lind(val)); % index good indices
-y(~val) = nan; % propagate nans
+y(~val) = missing; % propagate missing
+y = reshape(y, size(lind));
 
 
 function mustBeIndex(ind)
