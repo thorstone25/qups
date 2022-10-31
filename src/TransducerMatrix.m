@@ -338,11 +338,23 @@ classdef TransducerMatrix < Transducer
     methods
         function set.numd(xdc, numd)
             arguments
-                xdc TransducerMatrix
+                xdc(1,1) TransducerMatrix
                 numd (1,2) {mustBeInteger, mustBePositive}
             end
             xdc.numd = numd;
-            xdc.numel = prod(xdc.numd);
+            xdc.numel = prod(numd);
+        end
+        function n = get.numd(xdc)
+            arguments
+                xdc (1,1) TransducerMatrix
+            end
+            assert(isequal(xdc.numel, prod(xdc.numd)), ...
+                "The number of elements (" ...
+            + xdc.numel ...
+            + ") is inconsistent with the number of elements per dimension (" ...
+            + xdc.numd(1) + " x " + xdc.numd(end) + " = " + prod(xdc.numd) ...
+            + ").");
+            n = xdc.numd;
         end
     end
 
