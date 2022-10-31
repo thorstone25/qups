@@ -57,9 +57,9 @@ classdef BFTest < matlab.unittest.TestCase
             % Choose a transducer
             xdc_name = xdc_seq_name(1);
             switch xdc_name
-                case 'L11-5V', xdc = TransducerArray.L11_5V(); % linear array
-                case 'L12-3V', xdc = TransducerArray.L12_3V(); % another linear array
-                case 'C5-2V' , xdc = TransducerConvex.C5_2V(); % convex array
+                case 'L11-5V', xdc = TransducerArray.L11_5v(); % linear array
+                case 'L12-3V', xdc = TransducerArray.L12_3v(); % another linear array
+                case 'C5-2V' , xdc = TransducerConvex.C5_2v(); % convex array
             end
 
             % Choose a transmit sequence
