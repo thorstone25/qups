@@ -32,7 +32,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     const U3 * pv = reinterpret_cast<const U3*>(Pv); // 3 x M x E
 
     // rename for readability
-    const size_t N = QUPS_N, S = QUPS_S, M = QUPS_M;//, I = QUPS_I, T = QUPS_T;
+    const size_t N = QUPS_N, S = QUPS_S, M = QUPS_M, I = QUPS_I;//, T = QUPS_T;
     // rxs, num scat, output time size, txs, kernel time size, 
     // S is size of output, T is size of input kernel, I the number of scats
     
@@ -44,18 +44,18 @@ __device__ void greens_temp(T2 * __restrict__ y,
 
     // if valid scat, for each tx/rx
     if(s < S){
-        for(size_t i = iblock[2*blockIdx.x+0]; i <= iblock[2*blockIdx.x+1]; ++i){ // for each scatterer
+        for(size_t i = iblock[2*blockIdx.x+0]; i <= iblock[2*blockIdx.x+1] && i < I; ++i){ // for each scatterer
             if(s >= sb[2*i+0]){ // if within sampling window
                 # pragma unroll 
                 for(size_t me = 0; me < E[1]; ++me){ // for each tx sub-aperture
                     # pragma unroll 
                     for(size_t ne = 0; ne < E[0]; ++ne){ // for each rx sub-aperture
     
-                        // 2-way path time
-                        r = cinv * (length(pi[i] - pr[n + ne*N]) + length(pi[i] - pv[m + me*M])); // (virtual) transmit to pixel vector
+                        // 2-way path distance
+                        r = (length(pi[i] - pr[n + ne*N]) + length(pi[i] - pv[m + me*M])); // (virtual) transmit to pixel vector
                         
                         // get kernel delay for the scatterer
-                        tau = (U)s - (r + t0 - s0)*fs;
+                        tau = (U)s - (cinv * r + t0 - s0)*fs;
                         
                         // sample the kernel and add to the signal at this time
                         // fsr applies a 'stretch' operation to the sample time, because the 
