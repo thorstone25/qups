@@ -6,7 +6,7 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
 
 - Flexible:
     - 2D and 3D implementation
-    - Arbitrary transducer geometry
+    - Arbitrary transducer positions and orientations
     - Arbitrary transmit waveform, delays, and apodization
     - Arbitrary pixel locations and beamforming apodization
     
@@ -31,7 +31,7 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
 1. Start MATLAB R2020b or later and run the setup script
 ```
 >> cd qups; % enter the project folder
->> setup parallel CUDA; % setup the environment with acceleration if available
+>> setup parallel CUDA; % setup the environment with any available acceleration
 ```
 
 2. Create an ultrasound system and point scatterer to simulate
@@ -54,18 +54,27 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
 
 ![](fig/README/geometry.png)
 
-3. Simulate and beamform the channel data
+4. Simulate and beamform the channel data
 ```
 >> chd = greens(us, scat); % create channel data
 >> b = DAS(us, chd); % beamform the data
 >> bim = mod2db(b); % envelope detection and log-compression
 ```
 
-4. Display the image
+5. Display the channel data 
+```
+>> figure;
+>> h = imagesc(chd);
+>> colormap jet; colorbar;
+>> animate(h, mod2db(chd.data), 'loop', false);
+```
+![](fig/README/channel_data.gif)
+
+6. Display the B-mode image
 ```
 >> figure;
 >> imagesc(us.scan, bim, max(bim(:)) + [-60 0]); % plot the image with 60dB dynamic range
->> colormap gray;
+>> colormap gray; colorbar;
 >> title('B-mode image');
 ```
 
@@ -81,7 +90,7 @@ QUPS targets MATLAB R2020b and later. While it may work for older versions of MA
 
 If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
-### Extensions
+## Extensions
 All extensions to QUPS are optional, but must be installed separately from their respective sources.
 
 | Extension | Description | Installation |
@@ -91,11 +100,11 @@ All extensions to QUPS are optional, but must be installed separately from their
 | [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST` (see issues[#2](https://github.com/thorstone25/qups/issues/2))|
 | CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration| see [CUDA Extension](####CUDA-Extension) |
 
-#### CUDA Extension
+### CUDA Extension
 For CUDA to work, `nvcc` must succesfully run from the MATLAB environment. If a Nvidia GPU is available and `setup CUDA cache` completes with no warnings, you're all set! If you have difficulty getting nvcc to work in MATLAB, you may need to figure out which environment paths are required for _your_ CUDA installation. Running `setup CUDA` will attempt to do this for you, but may fail if you have an unexpected installation.
 
-##### Linux
-If you can run `nvcc` from a terminal or command-line interface per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), then set the `CUDA_PATH` environmental variable within MATLAB by running `setenv('CUDA_PATH', YOUR_CUDA_PATH);` prior to running `setup CUDA cache`. You can run `which nvcc` within a terminal to locate the CUDA_PATH installation directory. For example, if `which nvcc` returns `/opt/cuda/bin/nvcc`, then run `setenv('CUDA_PATH', 'opt/cuda');`. If this procedure does not work for you, please submit an [issue](https://github.com/thorstone25/qups/issues).
+#### Linux
+If you can run `nvcc` from a terminal or command-line interface per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), then set the `CUDA_PATH` environmental variable within MATLAB by running `setenv('CUDA_PATH', YOUR_CUDA_PATH);` prior to running `setup CUDA`. You can run `which nvcc` within a terminal to locate the CUDA_PATH installation directory. For example, if `which nvcc` returns `/opt/cuda/bin/nvcc`, then run `setenv('CUDA_PATH', 'opt/cuda');`. If this procedure does not work for you, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
-##### Windows
+#### Windows
 On Windows you must set the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. Then, in MATLAB, set these paths with `setenv('CUDA_PATH', YOUR_CUDA_PATH); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`. Finally, run `setup CUDA`. From here the proper paths should be added. If this procedure does not work for you, please submit an [issue](https://github.com/thorstone25/qups/issues).
