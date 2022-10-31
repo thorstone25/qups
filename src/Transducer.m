@@ -7,7 +7,7 @@
 % transducers and conversion functions between real transducers (mainly
 % from Verasonics) and simulation programs (k-Wave, Fullwave, FieldII).
 %
-% See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERPISTON
+% See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERMATRIX
 
 classdef (Abstract) Transducer < matlab.mixin.Copyable
     properties

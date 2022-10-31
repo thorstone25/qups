@@ -3,7 +3,7 @@
 % A TransducerArray defines a linear transducer where all elements lie on a
 % line.
 % 
-% See also TRANSDUCER TRANSDUCERCONVEX TRANSDUCERPISTON
+% See also TRANSDUCER TRANSDUCERCONVEX TRANSDUCERMATRIX
 
 classdef TransducerArray < Transducer
 

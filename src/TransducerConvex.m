@@ -3,7 +3,7 @@
 % A TransducerConvex defines a convex transducer where all elements lie on
 % a circle.
 % 
-% See also TRANSDUCER TRANSDUCERARRAY
+% See also TRANSDUCER TRANSDUCERARRAY TRANSDUCERMATRIX
 
 classdef TransducerConvex < Transducer
     

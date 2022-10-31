@@ -3,7 +3,7 @@
 % A TransducerMatrix defines a matrix array transducer where all elements 
 % lie on a plane.
 % 
-% See also TRANSDUCER TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERPISTON
+% See also TRANSDUCER TRANSDUCERARRAY TRANSDUCERCONVEX
 
 classdef TransducerMatrix < Transducer
 
