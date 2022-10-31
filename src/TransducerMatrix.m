@@ -133,8 +133,7 @@ classdef TransducerMatrix < Transducer
     
     % SIMUS conversion functions
     methods
-        % MUST does not support arrays that aren't linear arrays or
-        % curvilinear arrays
+        % MUST only supports linear arrays or curvilinear arrays
         function p = getSIMUSParam(self), error('MUST does not support matrix arrays.'), end
     end
 
@@ -202,137 +201,7 @@ classdef TransducerMatrix < Transducer
 
     % Fullwave functions (unsupported)
     methods
-        function xdc = getFullwaveTransducer(self, sscan)
-            return;
-
-            [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size
-            [X0, Y0]= deal(sscan.x(1), sscan.z(1)); % first value
-            nX = sscan.size('X' == sscan.order); % grid size
-            nY = sscan.size('Z' == sscan.order);
-            % map (X, Z) -> (X, Y)
-            
-            % define variables
-            xdc_.npx     = self.numel; % number of elements
-            % xdc.thetas  = self.orientations(); % xdc.dTheta*((-(xdc.npx-1)/2):((xdc.npx-1)/2)); % the thetas defining the transmit elements
-
-            % legacy
-            % zero_offset = 12.4e-3;      % (deprecated) offset of transducer face, how much it comes into the grid (m)
-            % xdc.ptch    = self.pitch; % sind(self.angular_pitch) * self.radius; % angular pitch of the transducer (pixels)
-            % xdc.cen     = [(self.offset(1) - X0)/dX, (self.offset(3) - self.radius - Y0)/dY]; % center of the transducer in grid indices
-
-            %% Make incoords and outcoords curves
-
-            % define the thetas at the center of each element
-            % evenly space, centered at 0deg
-            % for n=1:xdc.npx, xdc.thetas(n)=n*xdc.dTheta; end
-            % xdc.thetas = xdc.thetas-mean(xdc.thetas);
-
-            % get x-axis and y-axis
-            x = X0 + (0:nX-1) * dX; % 1 x X
-            y = Y0 + (0:nY-1) * dY; % 1 x Y
-
-            % Make a rectangle that defines the transducer surface
-            pb = self.bounds;
-            inmap  = pb(1,1) < x' & x' < pb(1,2) & y < pb(3,2);
-            outmap = zeros(nX,nY);
-
-            % Grab the coords on edge of the rectangle - deeper rect for outcoords
-            for i=1:nX
-                % find inmap coords
-                j = find(inmap(i,:)==0);
-                j = j(1);
-                inmap(i,1:max([j-8 0]))=0; % make a depth of 8-1=7 pixels in y
-
-                % find outmap coords
-                j = find(inmap(i,:)==1);
-                if(~isempty(j))
-                    j = j(end)+2; % offset by 2 indices in y - this is important!
-                    outmap(i,j)= 1; % make a depth of 1 pixel in y
-                end
-            end
-
-            % convert incoords binary map to a vector of coordinates
-            xdc_.inmap     = inmap;
-            xdc_.incoords  = mapToCoords(double(inmap));
-            [~, idcr]     = sort(xdc_.incoords(:,1)); % sort by x instead of y
-            xdc_.incoords  = xdc_.incoords(idcr,:);
-
-            % convert outcoords binary map to a vector of coordinates
-            xdc_.outcoords = mapToCoords(outmap);
-            [~, idcr]     = sort(xdc_.outcoords(:,1)); % sort by x instead of y
-            xdc_.outcoords = xdc_.outcoords(idcr,:);
-
-            %% assign which transducer number each incoord is assigned to
-            xn = self.positions();
-            xn = xn(1,:); % x-positions of the transmit elements
-
-            % get location of the center of each element (in pixels)
-            xdc_.outcoords2 = zeros(0,2);
-            xdc_.incoords2  = zeros(0,2);
-
-            xdc_.outcoords(:,3) = 1; % this helps with reading genout
-            xdc_.outcoords(:,4) = 0; % This labels which tranducer element each subelement is assigned to
-            xdc_.incoords (:,4) = 0; % This labels which tranducer element each subelement is assigned to
-
-            for tt=1:xdc_.npx
-
-                % find which incoords are assigned to tt
-                % less_than_max    = xdc.thetas_in < (xdc.thetas(tt) + xdc.dTheta/2);
-                % greater_than_min = xdc.thetas_in > (xdc.thetas(tt) - xdc.dTheta/2);
-                % idtheta = find( less_than_max & greater_than_min);
-                idxn = abs(x(xdc_.incoords(:,1)) - xn(tt)) < self.pitch/2; % x is in-bounds
-                xdc_.incoords(idxn,4) = tt; % assign
-
-                % find center of tt tx element - do each dim separate cause sometimes idtheta is just one value
-                % xdc.incoords2(tt,1) = mean(xdc.incoords(idtheta,1));
-                % xdc.incoords2(tt,2) = mean(xdc.incoords(idtheta,2));
-                xdc_.incoords2(tt,1:2) = mean(xdc_.incoords(idxn,1:2),1);
-
-                % find which outcoords are assigned to tt
-                % less_than_max    = xdc.thetas_out < (xdc.thetas(tt) + xdc.dTheta/2);
-                % greater_than_min = xdc.thetas_out > (xdc.thetas(tt) - xdc.dTheta/2);
-                % idtheta = find( less_than_max & greater_than_min);
-                idxn = abs(x(xdc_.outcoords(:,1)) - xn(tt)) < self.pitch/2; % x is in-bounds
-                xdc_.outcoords(idxn,4) = tt; % assign
-
-                % find center of tt rx element - do each dim separate cause sometimes
-                % xdc.outcoords2(tt,1) = mean(xdc.outcoords(idtheta,1));
-                % xdc.outcoords2(tt,2) = mean(xdc.outcoords(idtheta,2));
-                xdc_.outcoords2(tt,1:2) = mean(xdc_.outcoords(idxn,1:2),1);
-
-            end
-
-            xdc_.nOutPx = size(xdc_.outcoords,1);
-            xdc_.nInPx  = size(xdc_.incoords,1);
-
-            %     figure(2); clf;
-            %     plot(xdc.incoords(:,1),xdc.incoords(:,2),'.'), hold on
-            %     plot(xdc.incoords2(:,1),xdc.incoords2(:,2),'.')
-            %     plot(xdc.outcoords(:,1),xdc.outcoords(:,2),'.')
-            %     plot(xdc.outcoords2(:,1),xdc.outcoords2(:,2),'.'), hold off
-
-            % make vector which labels where the transducer surface is in pixels in
-            % y across x
-            xdc_.surf = zeros(1,nX);
-            for i = 1:nX
-
-                % find where the transducer surface is
-                j = find(xdc_.inmap(i,:)==1);
-                if(~isempty(j))
-                    j = j(end);
-                else
-                    j = 1;
-                end
-                xdc_.surf(i) = j + 6; % round(ppw/2); % buffer ?????????????????????????
-            end
-
-            % output a struct with only the required fields (for
-            % consistency)
-            args = cellstr(["npx", "inmap", "nInPx", "nOutPx", "incoords", "outcoords", "incoords2", "outcoords2", "surf"]);
-            for a = 1:numel(args), args{2,a} = xdc_.(args{1,a}); end
-            xdc = struct(args{:});
-
-        end
+        function xdc = getFullwaveTransducer(self, sscan), return; end
     end
 
     methods
@@ -393,6 +262,7 @@ classdef TransducerMatrix < Transducer
                 otherwise
                     error('Conversion from Verasonics trans to TransducerMatrix not implemented for units not in wavelengths.');
             end
+            warning("This code has not been tested.");
 
             % set relevant properties
             xdc = TransducerMatrix(...
