@@ -35,13 +35,17 @@ classdef TransducerMatrix < Transducer
                 xdc_args.height = array_args.pitch(end); 
             end
 
-            % if numd set and numel set, make sure the number of elements 
+            % if numd set, make sure the number of elements 
             % corresponds to the number in each dimension by definition
-            if isfield(xdc_args, 'numel') && isfield(array_args, 'numd') 
+            if isfield(array_args, 'numd') 
+                if isfield(xdc_args, 'numel')
                 assert(xdc_args.numel == prod(array_args.numd), ...
                     "The numd (" + (array_args.numd + ",") ...
                     + ") must be factors of the number of elements (" ...
                     + xdc_args.numel + ").");
+                else
+                    xdc_args.numel = prod(array_args.numd); % set numel to match dimension
+                end
             end
             
             % initialize the Transducer
