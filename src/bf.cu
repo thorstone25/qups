@@ -57,16 +57,13 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     const size_t * astride = acstride;
     const size_t * cstride = acstride + 5;
 
+    // rename for readability
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3;
+        
     // get starting index of this pixel
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-
-    // get image coordinates
-    const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3; // rename for readability
-    const size_t i1 = (tid             % I1); // index in I1
-    const size_t i2 = (tid /  I1     ) % I2 ; // index in I2
-    const size_t i3 = (tid / (I1 * I2) % I3); // index in I3
-    const size_t abase = i1 * astride[0] + i2 * astride[1] + i3 * astride[2]; // base index for this pixel
-    const size_t cbase = i1 * cstride[0] + i2 * cstride[1] + i3 * cstride[2]; // base index for this pixel
+    const size_t kI  = blockDim.x * gridDim.x; // number of pixels per call
 
     // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
     const U3 * pi = reinterpret_cast<const U3*>(Pi); // 3 x I
@@ -74,30 +71,37 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     const U3 * pv = reinterpret_cast<const U3*>(Pv); // 3 x M
     const U3 * nv = reinterpret_cast<const U3*>(Nv); // 3 x M
     
-    // rename for readability
-    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
-            
     // temp vars
     const U2 zero_v = {0, 0};
     U2 w = {1, 0};
     U dv, dr, tau;
-    U2 val, pix = zero_v;
+    U2 val, pix;
     U3 rv;
 
     // if valid pixel, for each tx/rx
-    if(tid < I){
+    for(size_t i = tid; i < I; i += kI){        
+        // get image coordinates
+        const size_t i1 = (i             % I1); // index in I1
+        const size_t i2 = (i /  I1     ) % I2 ; // index in I2
+        const size_t i3 = (i / (I1 * I2) % I3); // index in I3
+        const size_t abase = i1 * astride[0] + i2 * astride[1] + i3 * astride[2]; // base index for this pixel
+        const size_t cbase = i1 * cstride[0] + i2 * cstride[1] + i3 * cstride[2]; // base index for this pixel
+
+        // reset accumulator
+        pix = zero_v;
+
         # pragma unroll
         for(size_t m = 0; m < M; ++m){
             # pragma unroll
             for(size_t n = 0; n < N; ++n){
                 // 2-way virtual path distance
-                rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
-                
+                rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector
+
                 dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
-                
-                dr = length(pi[tid] - pr[n]); // rx path length
+
+                dr = length(pi[i] - pr[n]); // rx path length
 
                 // data/time index number
                 const U ci = cinv[cbase + n * cstride[3] + m * cstride[4]];
@@ -115,16 +119,16 @@ void __device__ DAS_temp(U2 * __restrict__ y,
                 // choose the accumulation
                 const int sflag = flag & 24; // extract bits 5,4
                 if(sflag == 8)
-                    y[tid + n*I] += val; // sum over tx, store over rx
+                    y[i + n*I] += val; // sum over tx, store over rx
                 else if (sflag == 16)
-                    y[tid + m*I] += val; // sum over rx, store over tx
+                    y[i + m*I] += val; // sum over rx, store over tx
                 else if (sflag == 24)
-                    y[tid + n*I + m*N*I] = val; // store over tx/rx 
+                    y[i + n*I + m*N*I] = val; // store over tx/rx
                 else
                     pix += val; // sum over all
             }
         }
-        if (!(flag & 24)) y[tid] = pix; // output value here if accumulating over all
+        if (!(flag & 24)) y[i] = pix; // output value here if accumulating over all
     }
 }
 
@@ -258,6 +262,7 @@ __global__ void delaysf(float * __restrict__ tau,
 
     // get starting index of this pixel
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t kI  = blockDim.x * gridDim.x; // number of pixels per call
 
     // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
     const float3 * pi = reinterpret_cast<const float3*>(Pi); // 3 x I
@@ -273,22 +278,22 @@ __global__ void delaysf(float * __restrict__ tau,
     float3 rv;
     
     // if valid pixel, for each tx/rx
-    if(tid < I){
+    for(size_t i = tid; i < I; i += kI){
         # pragma unroll
         for(size_t m = 0; m < M; ++m){
             # pragma unroll
             for(size_t n = 0; n < N; ++n){
                 // 2-way virtual path distance
-                rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
+                rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector 
                 
                 dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
-                dr = length(pi[tid] - pr[n]); // rx path length
+                dr = length(pi[i] - pr[n]); // rx path length
 
                 // output time
-                tau[tid + n * I + m * I * N] = cinv * (dv + dr);
+                tau[i + n * I + m * I * N] = cinv * (dv + dr);
             }            
         }
     }
@@ -302,6 +307,7 @@ __global__ void delays(double * __restrict__ tau,
 
     // get starting index of this pixel
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t kI  = blockDim.x * gridDim.x; // number of pixels per call
 
     // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
     const double3 * pi = reinterpret_cast<const double3*>(Pi); // 3 x I
@@ -317,22 +323,22 @@ __global__ void delays(double * __restrict__ tau,
     double3 rv;
     
     // if valid pixel, for each tx/rx
-    if(tid < I){
+    for(size_t i = tid; i < I; i += kI){
         # pragma unroll
         for(size_t m = 0; m < M; ++m){
             # pragma unroll
             for(size_t n = 0; n < N; ++n){
                 // 2-way virtual path distance
-                rv = pi[tid] - pv[m]; // (virtual) transmit to pixel vector 
+                rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector 
                 
                 dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
-                dr = length(pi[tid] - pr[n]); // rx path length
+                dr = length(pi[i] - pr[n]); // rx path length
 
                 // output time
-                tau[tid + n * I + m * I * N] = cinv * (dv + dr);
+                tau[i + n * I + m * I * N] = cinv * (dv + dr);
             }
         }
     }

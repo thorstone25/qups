@@ -248,15 +248,13 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         ceil(I / nThreads)... max cause number of pixels
         ceil(g.AvailableMemory / (2^8) / (prod(osize{:}) * nThreads)),... max cause GPU memory reqs (empirical)
         ]); % blocks per frame
-    kI = nThreads*nBlocks; % pixels per frame
-    nF = ceil(I ./ kI); % number of frames
     
     % constant arg type casting
-    tmp = cellfun(@uint64, {T,M,N,kI,nF,Isz}, per_cell{:});
-    [T, M, N, kI, nF, Isz] = deal(tmp{:});
+    tmp = cellfun(@uint64, {T,M,N,I,Isz}, per_cell{:});
+    [T, M, N, I, Isz] = deal(tmp{:});
     
     % set constant args
-    k.setConstantMemory('QUPS_I', kI); % gauranteed
+    k.setConstantMemory('QUPS_I', I); % gauranteed
     try k.setConstantMemory('QUPS_T', T); end % if not const compiled with ChannelData
     try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
     
@@ -265,7 +263,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     k.GridSize = nBlocks;
     
     % allocate output data buffer
-    osize = cat(2, {kI}, osize);
+    osize = cat(2, {I}, osize);
     osize = cellfun(@uint64, osize, per_cell{:});
     yg = repmat(obuftypefun(zeros(1)), [osize{:}]);
     
@@ -276,11 +274,6 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         [yg, apod, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod, x);
     end
     
-    % partition input pixels per frame
-    Pif = repmat(ptypefun(NaN(1)),[3, kI, nF]); % initialize value
-    Pif(1:3, 1:I) = Pi(:,:); % place valid pixel positions
-    Pif = num2cell(Pif, [1,2]); % pack in cells per frame
-
     % partition data per frame
     fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
     F = prod(fsz);
@@ -288,26 +281,17 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % for each data frame, run the kernel
     switch fun
         case {'DAS','SYN','BF','MUL'}
+            % I [x N [x M]] x 1 x 1 x {F x ...}
             for f = F:-1:1 % beamform each data frame
-                yf = cellfun(@(pi) ...
-                    k.feval(yg, pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [t0, fs, fmod]), ...
-                     Pif, per_cell{:});
-
-                % concatentate pixels
-                y{f} = cat(1, yf{:}); % I' [x N [x M]] x 1 x 1 x {F x ...}
+                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [t0, fs, fmod]);
             end
             % unpack frames
             y = cat(6, y{:});
         case {'delays'}
-            y = cellfun(@(pi)...
-                k.feval(yg, pi, Pr, Pv, Nv, cinv(1)), ... TODO: fix the bf.cu kernel
-                Pif, per_cell{:});
-            % concatentate pixels
-            y = cat(1, y{:}); % I' [x N [x M]]
+            y = k.feval(yg, Pi, Pr, Pv, Nv, cinv(1)); ... TODO: fix the bf.cu kernel
     end
     
     % reshape output and truncate garbage
-    y = sub(y,1:I,1); % trim the junk
     y = reshape(y, [Isz, size(y,2), size(y,3), fsz]); % I1 x I2 x I3 x [1|N] x [1|M] x F x ...
     
     % if it's a half type, make an aliased halfT
