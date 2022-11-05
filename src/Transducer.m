@@ -861,7 +861,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % plot functions
     methods
-        function varargout = patch(self, el_sub_div, varargin)
+        function hp = patch(self, varargin, patch_args, xdc_args)
             % PATCH - Overload of patch for a transducer
             %
             % PATCH(self) plots the aperture from its patch representation.
@@ -877,25 +877,31 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             %
             % hp = PATCH(self, ...) returns a patch object handle
             %
-            % [hp, hax] = patch(self, ...) additionally returns an axes
-            % handle
-            %
             % Inputs
             %   - el_sub_div:    2 x 1 vector of element subdivisions
             %
             % See also PATCH
 
-            if nargin < 2, el_sub_div = [1,1]; end
+            arguments
+                self (1,1) Transducer
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
+                patch_args.?matlab.graphics.primitive.Patch
+                patch_args.DisplayName = 'Elements'
+                xdc_args.el_sub_div (1,2) double {mustBeInteger, mustBePositive} = [1 1];
+            end
 
-            % parse inputs
-            if nargin > 2 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
+            % extract axes
+            if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes') %#ok<CPROPLC> use built-in numel
                 axs = varargin{1}; varargin(1) = [];
-            else
-                axs = gca;
+            else, axs = gca;
             end
 
             % get the aperture as a cell array of {x,y,z,c} pairs
-            el_patches = self.patches(el_sub_div);
+            el_patches = self.patches(xdc_args.el_sub_div);
 
             % map point ordering to generate a square with patch; the
             % corners must be specified in sequential order
@@ -913,25 +919,22 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             Xp = el_patches(:,:,1);
             Yp = el_patches(:,:,2);
             Zp = el_patches(:,:,3);
-            % Cp = patches(:,:,4); % apodization - not used
+            % Cp = el_patches(:,:,4); % apodization - not used
+            % TODO: add option for showing apodization weighting
 
             % plot a patch: use depth as the color
-            hp = patch(axs, 'XData', Xp, 'YData', Yp, 'ZData', Zp, 'CData', Zp, varargin{:});
-            shading(axs, 'flat');
+            args = struct2nvpair(patch_args);
+            hp = patch(axs, 'XData', Xp, 'YData', Yp, 'ZData', Zp, 'CData', Zp, varargin{:}, args{:});
 
             % set default axis arguments
-            xlabel(axs, 'x [m]');
-            ylabel(axs, 'y [m]');
-            zlabel(axs, 'z [m]');
+            xlabel(axs, 'x');
+            ylabel(axs, 'y');
+            zlabel(axs, 'z');
             grid  (axs, 'on');
-            zlim  (axs, [-1e-3, 1e-3] + [min(Zp(:)), max(Zp(:))])
+            % zlim  (axs, [-1e-3, 1e-3] + [min(Zp(:)), max(Zp(:))])
             axis  (axs, 'equal')
-            % axis  (axs, 'image');
             view  (axs, 3);
-
-            % return
-            if nargout >= 1, varargout{1} = hp; end
-            if nargout >= 2, varargout{2} = axs; end
+            
         end
 
         function varargout = plot(self, varargin, plot_args)
@@ -962,7 +965,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
                 plot_args.DisplayName = 'Elements'
             end
             
-            % extract axis and other non-Name/Value pair arguments
+            % extract axes
             if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes') %#ok<CPROPLC> use built-in numel 
                 axs = varargin{1}; varargin(1) = []; 
             else, axs = gca;
