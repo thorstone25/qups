@@ -2,37 +2,47 @@ function [C, lags] = convd(x, y, dim, shape, kwargs)
 % CONVD - GPU-enabled Convolution in one dimension
 %
 % C = CONVD(A, B) computes the convolution of A with B in dimension 1. A 
-%   and B may differ in size in dimension 1 only. All other dimensions must
-%   be of equal size.
+% and B may differ in size in dimension 1 only. All other dimensions must
+% be of equal size.
 % 
 % C = CONVD(A, B, dim) executes in dimension "dim" instead of dimension 1
 % 
 % C = CONVD(A, B, dim, shape) selects the shape of the output. Must be one 
-%   of {'full'*|'same'|'valid'}. The default is 'full'.
+% of {'full'*|'same'|'valid'}. The default is 'full'.
 % 
-% C = CONVD(..., 'device', dev) selects which gpu device to use. 
-%   dev = -1 specifies the current device (returned by gpuDevice())
-%   dev = n where 1 <= n <= gpuDeviceCount selects device n.
-%   dev = 0 specifies no device and operates in native MATLAB code (default) 
+% C = CONVD(..., 'gpu', false) selects whether to use a gpu. If true, 
+% a ptx-file will be used if compiled. If false or if no ptx-file is
+% available, native MATLAB code is used. The default is true if x or y is a
+% gpuArray.
 %
-% C = CONVD(..., 'parcluster', clu) performs the convolution in parallel on
-%   the parcluster clu. The default is the current parallel pool. If the
-%   data is on a GPU, the cluster object is not used.
+% C = CONVD(..., 'parenv', clu) or C = CONVD(..., 'parenv', pool) or 
+% performs the convolution in parallel on the parcluster clu or the parpool
+% pool when operating with native MATLAB code. If clu is 0, no parallel
+% environment is used. The default is the current parallel pool returned
+% by gcp.
 %
 % [C, lags] = CONVD(...) returns the lags of y in the same dimension as the
 % computation.
 % 
 % % Example:
-%     % Compute and plot the cross-correlation of two 16-sample
-%     % exponential sequences
-%  
-%     N = 16;
-%     n = 0:N-1;
-%     a = 0.84;
-%     b = 0.92;
-%     xa = a.^n;
-%     xb = b.^n;
-%     z = convd(xa,xb,2,'same');
+% % Compute and plot the cross-correlation of two 16-sample
+% % exponential sequences
+% 
+% N = 16;
+% M = 4;
+% n = (0:N-1);
+% m = (0:M-1)';
+% a = 0.84;
+% b = 0.92;
+% xa = a.^(n+m);
+% xb = b.^(n+m);
+% z0 = 0*xa; % initialize
+% for i = 1:M
+%    z0(i,:) = conv(xa(i,:), xb(i,:), 'same');
+% end
+% z0
+% z = convd(xa,xb,2,'same')
+% isequal(z, z0)
 % 
 % See also CONV CONV2 CONVN
 
@@ -42,8 +52,8 @@ arguments
     y {mustBeNumeric}
     dim (1,1) {mustBePositive, mustBeInteger} = findSingletonDim(x, y)
     shape (1,1) string {mustBeMember(shape, ["full", "same", "valid"])} = 'full'
-    kwargs.device (1,1) {mustBeInteger} = 0;
-    kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment
+    kwargs.gpu (1,1) logical = isa(x, 'gpuArray') || isa(y, 'gpuArray')
+    kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate') % parallel environment
 end
 
 % permute so that dim becomes the first dimension
@@ -100,15 +110,8 @@ sizes = [xstr, M, ystr, N, zstr, L, C];
 src.folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
 src.name = 'convd';
 
-% initialize the GPU if requested
-if kwargs.device > 0
-    g = gpuDevice(kwargs.device); % access a specific gpu device
-elseif kwargs.device < 0
-    g = gpuDevice; % access the current gpu device
-end
-
 % whether/how to operate on GPU
-if kwargs.device && exist([src.name '.ptx'], 'file')
+if kwargs.gpu && exist([src.name '.ptx'], 'file')
     % get the kernel suffix
     suffix = '';
     if complex_type, suffix = [suffix 'c']; end
@@ -125,10 +128,10 @@ if kwargs.device && exist([src.name '.ptx'], 'file')
     
     % setup the execution size
     if C == 1
-        blk = [1 min(L, g.MaxThreadsPerBlock) 1];
+        blk = [1 min(L, kern.MaxThreadsPerBlock) 1];
         grd = ceil([1 L S] ./ blk);
     else
-        blk = [min(C, g.MaxThreadsPerBlock), 1, 1];
+        blk = [min(C, kern.MaxThreadsPerBlock), 1, 1];
         grd = ceil([C L S] ./ blk);
     end
     kern.ThreadBlockSize = blk;
@@ -142,11 +145,15 @@ if kwargs.device && exist([src.name '.ptx'], 'file')
     if complex_type && isreal(x), x = complex(x); end
     if complex_type && isreal(y), y = complex(y); end
 
+    % ensure all have dtype type
+    x = dfun(x); 
+    y = dfun(y);
+
     % allocate the output implicitly
     switch shape
         case 'valid', z = sub(x, 1:L, dim); % implicit pre-allocation - z will be smaller than x (shared copy ?)
         case 'same',  z = x; % implicit pre-allocation - z will be the same size as x - (shared copy)
-        case 'full',
+        case 'full'
             z_ex_sz = size(x);
             z_ex_sz(dim) = L - size(x, dim); % expansion size
             x = cat(dim, x, zeros(z_ex_sz, 'like', x)); % implict pre-allocation - maintain valid region by zero-padding
@@ -161,14 +168,14 @@ else
     % parfor handles implicit allocation and avoids data copies
 
     % move to GPU if requested
-    if kwargs.device, [x, y] = deal(gpuArray(x), gpuArray(y)); end
+    if kwargs.gpu, [x, y] = deal(gpuArray(x), gpuArray(y)); end
 
     % Use the given parallel environment if not on a GPU
     clu = kwargs.parenv;
     if isempty(clu) || isa(x, 'gpuArray') || isa(y, 'gpuArray'), clu = 0; end
     
     % for-loop it, in parallel if we can
-    parfor(il = 1:L)
+    parfor(il = 1:L, clu)
         i = shiftdim((0:max(M,L)-1)', 1-dim);
         j = i - lags(il); % lagged indices
         val = (0 <= i & i < M & 0 <= j & j < N); % valid data
