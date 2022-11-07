@@ -106,12 +106,8 @@ C = prod(esize(x, 1:dim-1));
 [xstr, ystr, zstr] = deal(C);
 sizes = [xstr, M, ystr, N, zstr, L, C];
 
-% specify the kernel file
-src.folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
-src.name = 'convd';
-
 % whether/how to operate on GPU
-if kwargs.gpu && exist([src.name '.ptx'], 'file')
+if kwargs.gpu && exist('convd.ptx', 'file') && exist('convd.cu', 'file')
     % get the kernel suffix
     suffix = '';
     if complex_type, suffix = [suffix 'c']; end
@@ -121,10 +117,9 @@ if kwargs.gpu && exist([src.name '.ptx'], 'file')
     end
     
     % specify the kernel
-    kern = parallel.gpu.CUDAKernel(...
-        [src.name '.ptx'],... % must be on the path
-        fullfile(src.folder, [src.name '.cu']), ... % must be in source
-        ['conv' suffix]); % function name in the kernel
+    kern = parallel.gpu.CUDAKernel( ...
+        'convd.ptx', 'convd.cu', ['conv' suffix] ...
+        );
     
     % setup the execution size
     if C == 1
