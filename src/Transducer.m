@@ -625,10 +625,14 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             mask(unique(cat(1, mask_ind{:}))) = true;
 
             % get the translation map for grid mask index to receiver element
-            ind_el  = cellfun(@(m) gather(argn(2, @ismember, m, find(mask))), mask_ind, 'UniformOutput', false);
-
+            find_mask = find(mask);
+            parfor m = 1:numel(mask_ind) %#ok<CPROPLC> 
+                ind_el{m} = gather(argn(2, @ismember, mask_ind{m}, find_mask));
+            end
+            ind_el = reshape(ind_el, size(mask_ind));
+            
             % make all into arrays, defined by mask indices
-            for el = xdc.numel:-1:1
+            parfor el = 1:xdc.numel
                 el_weight{el} = cat(1, weights{:,el});
                 el_dist  {el} = cat(1, dists  {:,el});
                 el_ind   {el} = cat(1, ind_el {:,el});
