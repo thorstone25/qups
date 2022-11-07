@@ -1662,6 +1662,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.sequence.numPulse
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10, ...
@@ -1758,7 +1759,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing ( 1 if sliced )
                     mask = false(Nx, Ny, Nz); % grid size
                     assert(all(size(mask,1:3) == sscan.size), 'kWave mask and Scan size do not correspond.');
-                    for n = self.xdc.numel:-1:1, % get nearest pixel for each element
+                    for n = self.xdc.numel:-1:1 % get nearest pixel for each element
                         ind(n) = argmin(vecnorm(pn(:,n) - pg,2,1),[],'all', 'linear');
                     end
                     mask(ind) = true;
@@ -1772,16 +1773,27 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % get a mapping of delays and weights to all
                     % (sub-)elements (J' x M)
                     [mask, el_weight, el_dist, el_ind] = self.xdc.elem2grid(sscan, kwargs.el_sub_div);% perm(X x Y x Z), (J' x M)
-                    el_map_grd = ((1:nnz(mask))' == el_ind(:)'); % matrix mapping (J' x J'')
+                    el_map_grd = sparse((1:nnz(mask))' == el_ind(:)'); % matrix mapping (J' x J'')
 
                     % apply to transmit signal: for each element
                     [del, apod, t_tx] = dealfun(@(x)shiftdim(x, -1), del, apod, t_tx); % (1 x M x V), (1 x 1 x 1 x T')
-                    tau = t_tx - del - el_dist/c0map; % J''' x M x V x T'
-                    psig = permute(el_weight .* wnorm .* apod .* txsig.sample(tau), [1,2,4,3,5]); % per sub-element transmit waveform (J''' x M x T' x V x 3)
-                    psig = reshape(psig, [prod(size(psig,1:2)), size(psig,3:4), 1, size(psig,5)]); % per element transmit waveform (J'' x T' x V x 1 x 3)
-                    psig = pagemtimes(double(el_map_grd), psig); % per grid-point transmit waveform (J' x T' x V x 1 x 3)
-
-
+                    V = size(del,3); % number of transmits
+                    B = min(V,kwargs.bsize); % block size for processing
+                    for b = flip(0:B:V-1) % for each block (offset)
+                    parfor(v = 1:min(B,V-b)) % B-threaded computation - could be moved to process / remote server % 64-threads / 8 workers
+                        [delv, apodv] = deal(sub(del,v+b,3), sub(apod,v+b,3));
+                        psigv = swapdim(t_tx,3,4) - swapdim(delv,3,4) - el_dist/c0map; % J''' x M x T' x V (time delay)
+                        psigv = sample(txsig, psigv); % sample the time delays (J''' x M x T' x V)
+                        psigv = wnorm .* el_weight .* swapdim(apodv,3,4) .* psigv; % per sub-element transmit waveform (J''' x M x T' x V x 3)
+                        psigv = reshape(psigv, [prod(size(psigv,1:2)), size(psigv,3:4), 1, size(psigv,5)]); % per element transmit waveform (J'' x T' x V x 1 x 3)
+                        psigvproto = psigv(1);
+                        psigv = double(psigv); % in-place ?
+                        psigv = reshape(el_map_grd * psigv(:,:), [size(el_map_grd,1), size(psigv,2:5)]); % per grid-point transmit waveform (J' x T' x V x 1 x 3)
+                        psigv = cast(psigv, 'like', psigvproto); % in-place ?
+                        psig(:,:,v+b,:,:) = gather(psigv); % store
+                    end
+                    end
+                    psig = reshape(psig, [size(psig,1:3), 1 3]);
 
                 case {'karray-direct', 'karray-depend'}
                     karray_args.BLIType = char(karray_args.BLIType);
@@ -1839,7 +1851,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isempty(kwargs.T)
                 kwargs.T = 2 * (vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) ./ med.c0);
             end
-            Nt = 1 + floor((kwargs.T / kgrid.dt) + max(range(t_tx,1))); % number of steps in time
+            Nt = 1 + floor((kwargs.T / kgrid.dt) + max(range(t_tx))); % number of steps in time
             kgrid.setTime(Nt, kgrid.dt);
 
             % get the receive impulse response function
@@ -1908,7 +1920,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     vec = @(x)x(:);
                     N = self.rx.numel;
                     rx_sig = gather(real(rx_imp.sample(t_rx(:)' + el_dist(:)/c0map))); % J'' x T''
-                    el_map_el = ((1:N) == vec(ones(size(el_ind)) .* (1:N)))'; % map from convolved samples to elements
+                    el_map_el = sparse((1:N) == vec(ones(size(el_ind)) .* (1:N)))'; % map from convolved samples to elements
                     rx_args = {el_weight, el_map_grd, el_map_el};
                     % proc_fun = @(x) gather(...
                     %     (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
@@ -1970,32 +1982,59 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 case {'nearest', 'linear'}
                     f = f(ismember(f, {'ux', 'uy', 'uz'})); % velocity fields
                     u = arrayfun(@(f) {x.(f)}, f); % extract each velocity field
-                    u = pagetranspose(cat(3, u{:})); % T x J' x D, D = 2 or 3
+                    u = cat(3, u{:}); % J' x T x D, D = 2 or 3
                 case {'karray-depend', 'karray-direct'}
-                    u = x.p'; % pressure (T x J')
+                    u = x.p; % pressure (J' x T)
             end
 
             switch method
                 case 'karray-depend'
                     [kgrid, karray] = deal(varargin{:});
                     for d = size(u,3):-1:1
-                        y(:,:,d) = gather(convn( karray.combineSensorData(kgrid, u(:,:,d).').', rx_sig, 'full'));
+                        y(:,:,d) = gather(convn( karray.combineSensorData(kgrid, u(:,:,d)).', rx_sig, 'full'));
                     end
                 case {'karray-direct'}
                     elem_weights = deal(varargin{:});
-                    y = gather(convn(pagemtimes(u, full(elem_weights)), rx_sig, 'full')); % (J' x T | D)' x (J' x N) -> T x N x D
+                    for d = size(u,3):-1:1
+                        y(:,:,d) = gather(convn(transpose(elem_weights' * double(u(:,:,d))), rx_sig, 'full')); % (T x T' | N) X [(N x J') x (J' x T' | D)]' -> T x N | D
+                    end
                 case {'nearest'}
-                    y = gather(convn(u, rx_sig, 'full')); % -> (T x N)
+                    y = gather(convn(pagetranspose(u), rx_sig, 'full')); % -> (T x N | D)
                 case 'linear'
                     [el_weight, el_map_grd, el_map_el] = deal(varargin{:});
+                    
                     % create the advanced impulse response function with
                     % which to convolve the output
                     D = size(u,3);
-                    y = gather(... [(N x J'') x [[(J'' x J') x (J' x T' | D)] x (T' x T | J'')]]' -> (T x N)
-                        pagetranspose(pagemtimes(...
-                        double(el_map_el), (el_weight(:) .* convd(pagetranspose(pagemtimes(u, double(el_map_grd))), repmat(rx_sig,[1,1,D]), 2, 'full')) ...
-                        )) ... % 
-                        ); % [(N x J'') x (J'' x T)]' -> T x N
+                    el_map_el  = sparse(double(el_map_el ));
+                    el_map_grd = sparse(double(el_map_grd));
+                    
+                    % try up to 5 times (for OOM issues)
+                    usegpu = isa(u, 'gpuArray');
+                    % disp("Gathering data ... "), u = gather(u); disp("done!");
+                    u = gather(u);
+                    count = 1;
+                    while(count <= 5)
+                        try
+                            for d = D:-1:1 % [(N x J'') x [[(J'' x J') x (J' x T' | D)] x (T' x T | J'')]]' -> (T x N | D)
+                                y(:,:,d) = gather(cast(transpose( ...
+                                    el_map_el * double(el_weight(:) .* convd( ...
+                                    gather(cast(el_map_grd' * double(u(:,:,d)), 'like', u)), ...
+                                    rx_sig, 2, 'full', 'gpu', usegpu ...
+                                    )) ...
+                                    ), 'like', u(1)*rx_sig(1)));
+                            end
+                            disp("Post-processing succeeded on try " + count + "!");
+                            break;
+                        catch ME
+                            disp("Post-processing failed on try " + count + "!"); 
+                            disp(ME);
+                            count = count + 1;
+                            pause(10 + 30 * rand()); % wait for other data to clear off the GPU?
+                        end
+                    end
+
+                    if ~exist('y', 'var'), rethrow(ME); end
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
                    y = gather(convn(u, rx_sig, 'full'));
@@ -2016,6 +2055,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             Np = numel(ksource);
             parfor (puls = 1:Np, W)
+            % for puls = 1:Np
+                gpuDevice([]); % clear the GPU on this worker
+            
                 % TODO: make this part of some 'info' logger or something
                 fprintf('\nComputing pulse %i of %i\n', puls, Np);
                 tt_pulse = tic;
@@ -3742,7 +3784,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % filename
             d.Source = {...
-                'conv_cuda.cu', ...
+                ... 'conv_cuda.cu', ...
+                'convd.cu', ...
                 }';
 
             d.IncludePath = {}; % include folders
