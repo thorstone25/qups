@@ -54,14 +54,13 @@ arguments
     shape (1,1) string {mustBeMember(shape, ["full", "same", "valid"])} = 'full'
     kwargs.gpu (1,1) logical = isa(x, 'gpuArray') || isa(y, 'gpuArray')
     kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate') % parallel environment
+    kwargs.lowmem (1,1) logical = 16 * max(numel(x), numel(y)) > 16 * 2^30; % default true if complex double storage of either argument exceeds 16GB
 end
 
 % permute so that dim becomes the first dimension
 % flip 2nd arg on CPU so that stride is positive
 D = max(ndims(x),ndims(y)); % number of dimensions in the data
 idim = setdiff(1:max(D, dim), dim); % inverse (not) dim
-% x = permute(x, ord); % shared-copy?
-% y = permute(y, ord); % shared-copy?
 
 % check data sizes
 sz_x = size(x, 1:D);
@@ -168,19 +167,45 @@ else
     % Use the given parallel environment if not on a GPU
     clu = kwargs.parenv;
     if isempty(clu) || isa(x, 'gpuArray') || isa(y, 'gpuArray'), clu = 0; end
-    
-    % for-loop it, in parallel if we can
-    parfor(il = 1:L, clu)
-        i = shiftdim((0:max(M,L)-1)', 1-dim);
-        j = i - lags(il); % lagged indices
-        val = (0 <= i & i < M & 0 <= j & j < N); % valid data
-        zl{il}  = sum(sub(x,1+i(val),dim) .* sub(y,N-j(val),dim), dim);
+
+    % get vectorized sizing
+    sz = size(x);
+    idim = 1:dim-1;
+    jdim = dim+1:ndims(x);
+    I = prod(sz(idim));
+    J = prod(sz(jdim));
+
+    % vectorize
+    x = reshape(x, [I M J]);
+    y = reshape(y, [I N J]);
+    zproto = x(1)*y(1);
+    z = zeros([I L J], 'like', zproto);
+
+    if kwargs.lowmem || (J < I && J <= 64)  % J small - par over I
+        for (j = 1:J)
+            parfor(i = 1:I, clu)
+                zj(i,:) = convn(x(i,:,j), y(i,:,j), shape);
+            end
+            z(:,:,j) = zj;
+        end
+    else % J large - par over J
+        parfor (j = 1:J, clu)
+            zj = zeros([I L], 'like', zproto);
+            for(i = 1:I)
+                zj(i,:) = convn(x(i,:,j), y(i,:,j), shape);
+            end
+            z(:,:,j) = zj;
+        end
     end
-    z = cat(dim, zl{:});
+
+    % return to original sizing
+    sz(dim) = L;
+    z = reshape(z, sz);
+
 end
 
 % cast to output type / dimensions - try to use implicit in-place assignment
-z = cast(z, 'like', To); 
+% z = cast(z, 'like', To); 
 C = z; % shared-copy
 lags = shiftdim(lags, 1-dim); % put lags in same dimensions as operation
 
