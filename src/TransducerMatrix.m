@@ -262,9 +262,10 @@ classdef TransducerMatrix < Transducer
             end
             % determine the scaling of the properties
             switch Trans.units
-                case 'wavelengths', scale = c0 / Trans.frequency * 1e-6;
+                case 'wavelengths', scale = c0 / Trans.frequency * 1e-6; % lambda -> m
+                case 'mm', scale = 1e-3; % mm -> m
                 otherwise
-                    error('Conversion from Verasonics trans to TransducerMatrix not implemented for units not in wavelengths.');
+                    error('Conversion from Verasonics Trans to TransducerMatrix not implemented for these units.');
             end
             warning("This code has not been tested.");
 
@@ -273,10 +274,10 @@ classdef TransducerMatrix < Transducer
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
                 'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
                 'width', scale*Trans.elementWidth, ... % linear kerf
-                'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
+                'height', scale*Trans.elementWidth, ... % Height of element [m]
                 'numd', sqrt(Trans.numelements) * [1 1], ... % number of elements in each axes
                 'pitch', 1e-3*Trans.spacingMm * [1 1], ... % probe pitch in each axes [m]
-                'el_focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
+                'el_focus', inf ... % elevation focal depth (none)
                 );
         end
         function xdc = UFF(probe)
