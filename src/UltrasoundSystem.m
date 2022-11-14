@@ -2011,7 +2011,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     
                     % try up to 5 times (for OOM issues)
                     usegpu = isa(u, 'gpuArray');
-                    % disp("Gathering data ... "), u = gather(u); disp("done!");
                     u = gather(u);
                     count = 1;
                     while(count <= 5)
@@ -2030,7 +2029,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             disp("Post-processing failed on try " + count + "!"); 
                             disp(ME);
                             count = count + 1;
-                            pause(10 + 30 * rand()); % wait for other data to clear off the GPU?
+                            usegpu = logical(mod(count, 2));
+                            if usegpu, pause(10 + 30 * rand()); end % wait for other data to clear off the GPU?
                         end
                     end
 
