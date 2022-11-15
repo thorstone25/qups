@@ -11,6 +11,10 @@ classdef TransducerMatrix < Transducer
         pitch (1,2) {mustBeNumeric} = 0.3e-3  % lateral and elevational interelement distance
         numd (1,2) {mustBeNumeric, mustBeInteger}  % number of elements in lateral and elevation dimensions
     end
+
+    properties(Hidden)
+        mux_offset (3,:) double = [0;0;0];
+    end
         
     % constructor 
     methods(Access=public)
@@ -105,6 +109,7 @@ classdef TransducerMatrix < Transducer
             self = scale@Transducer(self, args{:}); % call superclass method
             if isfield(kwargs, 'dist') % scale distance (e.g. m -> mm)
                 self.pitch = self.pitch * kwargs.dist;
+                self.mux_offset = self.mux_offset * kwargs.dist;
             end
         end
     end
@@ -119,7 +124,7 @@ classdef TransducerMatrix < Transducer
             y = linspace(-array_height/2, array_height/2, self.numd(end));
             z = 0;
             [x,y,z] = ndgrid(x,y,z);
-            p = cat(2, x(:), y(:), z(:))' + self.offset;
+            p = cat(2, x(:), y(:), z(:))' + self.offset + self.mux_offset;
             % returns a 1 x N vector of the positions of the N elements with 0
             % at the center
         end
@@ -267,8 +272,7 @@ classdef TransducerMatrix < Transducer
                 otherwise
                     error('Conversion from Verasonics Trans to TransducerMatrix not implemented for these units.');
             end
-            warning("This code has not been tested.");
-
+            
             % set relevant properties
             xdc = TransducerMatrix(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
@@ -279,6 +283,13 @@ classdef TransducerMatrix < Transducer
                 'pitch', 1e-3*Trans.spacingMm * [1 1], ... % probe pitch in each axes [m]
                 'el_focus', inf ... % elevation focal depth (none)
                 );
+
+            % apply mux hardware offset
+            pv = scale .* Trans.ElementPos(:,1:2)'; % reported positions
+            pv(3,:) = 0; 
+            pq = xdc.positions(); % qups positions
+            xdc.mux_offset = pv - xdc.positions; % offset
+
         end
         function xdc = UFF(probe)
             arguments
