@@ -57,13 +57,13 @@ function [mvf, mvh] = animate(h, x, kwargs)
 % title('B-mode per Transmit');
 %  
 % % Animate both images across transmits
-% animate(h, {chd_im.data, bim}, 'loop', false); % show once
+% mvf = animate(h, {chd_im.data, bim}, 'loop', false); % show once
 % 
 % % Create a movie
 % vobj = VideoWriter('tmp', 'Motion JPEG AVI');
 % vobj.FrameRate = 20; % set frame rate to 20 Hz
 % vobj.open();
-% vobj.writeVideo([mvh{:,1}]);
+% vobj.writeVideo([mvf{:,1}]);
 % vobj.close();
 % 
 % See also IMAGESC
@@ -93,7 +93,14 @@ assert(numel(h) == numel(x), "The number of image handles (" ...
     + numel(x) + ")." ...
     );
 hf = unique([h.Parent]); % parent of the image is an axes
-hf = unique([hf.Parent]); % parent of the axes: figure or layout
+% we need to keept taking the parent until we reach the parent figure
+isfig = @(hf) arrayfun(@(hf) isa(hf, 'matlab.ui.Figure'), hf);
+i = ~isfig(hf);
+while any(i) % any handles are not figure handles ...
+    hf(i) = [hf(i).Parent]; % get parent of the axes: figure or layout
+    hf = unique(hf); % keep unique figures only
+    i = ~isfig(hf); % find which handles are still not figures
+end
 F = numel(hf); % number of figures
 if nargout >= 2, mvh = cell([M,I]); else, mvh = cell.empty; end
 if nargout >= 1, mvf = cell([M,F]); else, mvf = cell.empty; end
@@ -105,7 +112,7 @@ while(all(isvalid(h)))
         drawnow limitrate; 
         tic;
         if ~isempty(mvh), for i = 1:I, mvh{m,i} = getframe(h (i).Parent); end, end %  get the frames 
-        if ~isempty(mvf), for f = 1:F, mvf{m,f} = getframe(hf(f).Parent); end, end %  get the frames 
+        if ~isempty(mvf), for f = 1:F, mvf{m,f} = getframe(hf(f)       ); end, end %  get the frames 
         pause(max(0, (1/kwargs.fs) - toc)); % pause for at least 0 sec, at most the framerate interval 
     end
     if ~kwargs.loop, break; end
