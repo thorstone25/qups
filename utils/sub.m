@@ -30,11 +30,14 @@ if ~iscell(ind), ind = {ind}; end
 % check vecind/vecdim correspond
 assert(numel(ind) == numel(dim), "Must have as many dims as indices.") 
 
+% short-circuit: empty inds/dims -> identity
+if isempty(ind) && isempty(dim), dim = 0; end
+
 % place ':' in all dimensions
 subs = cellstr(repmat(":", [1, max(gather(ndims(x)), max(dim))])); 
 
 % replace ':' with index in selected dimensions
-for i = 1:numel(dim), subs{dim(i)} = ind{i}; end
+for i = 1:numel(ind), subs{dim(i)} = ind{i}; end
 
 % get object indexing expression
 iy = substruct('()', subs);
