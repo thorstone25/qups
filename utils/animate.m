@@ -109,6 +109,7 @@ while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
         for i = 1:I, h(i).CData(:) = x{i}(:,:,m); end % update image
+        if m == 1, drawnow; getframe(); end % toss a frame to avoid bug where the first frame has a different size
         drawnow limitrate; 
         tic;
         if ~isempty(mvh), for i = 1:I, mvh{m,i} = getframe(h (i).Parent); end, end %  get the frames 
