@@ -76,9 +76,11 @@ M = prod(esize(t, rdms));
 F = prod(esize(x, rdms));
 
 % move the input data to the proper dimensions for the GPU kernel
+if ~isequal(ord, 1:maxdims) % avoid copy if already ordered
 x = permute(x, ord);
 t = permute(t, ord);
 w = permute(w, ord);
+end
 
 S = maxdims; % number of (full) dimensions
 dsizes = [I, max(size(t,2:S), size(x,2:S))]; % data sizes in new dimensions
@@ -193,7 +195,9 @@ else
 end
 
 % place back in prior dimensions
-y = ipermute(y, ord);
+if ~isequal(ord, 1:maxdims) % avoid copy if already ordered
+    y = ipermute(y, ord);
+end
 
 
 function d = esize(varargin), if nargin >= 2 && isempty(varargin{2}), d = []; else, d = size(varargin{:}); end

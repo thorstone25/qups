@@ -1,4 +1,4 @@
-function y = interpd(x, t, dim, interp, extrapval)
+function [y, k] = interpd(x, t, dim, interp, extrapval)
 % INTERPD GPU-enabled interpolation in one dimension
 %
 % y = INTERPD(x, t) interpolates the data x at the indices t. It uses the
@@ -36,6 +36,8 @@ if nargin < 3 || isempty(dim),       dim = 1; end
 assert(isreal(t)); % sampling at a real data type
 assert(isscalar(extrapval), 'Only a scalar value accepted for extrapolation.');
 
+k = parallel.gpu.CUDAKernel.empty; % default CUDAKernel output argument
+
 maxdims = max(ndims(x), ndims(t)); % maximum dimension
 ddms = setdiff(1:maxdims, dim); % data dimensions
 xsz = size(x, ddms);
@@ -58,8 +60,10 @@ if isempty(rdms), M = 1; else, M = prod(size(t, rdms)); end
 if isempty(rdms), F = 1; else, F = prod(size(x, rdms)); end
 
 % move the input data to the proper dimensions for the GPU kernel
+if ~isequal(ord, 1:length(ord)) % avoid data copy if already ordered
 x = permute(x, ord);
 t = permute(t, ord);
+end
 
 % function to determine type
 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
@@ -146,7 +150,8 @@ else
 end
 
 % place back in prior dimensions
-y = ipermute(y, ord);
-
+if ~isequal(ord, 1:length(ord)) % avoid data copy if already ordered
+    y = ipermute(y, ord);
+end
 
 
