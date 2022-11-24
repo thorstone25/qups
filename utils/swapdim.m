@@ -13,6 +13,19 @@ function [x, ord] = swapdim(x, i, o)
 % make sure we swap the right dimensions
 assert(length(i) == length(o), 'Dimensions to swap must be the same length.');
 ord = 1:max([ndims(x), i, o]); % all dimensions we have to worry about
-ord(i) = o; % swap dimension 
+ord(i) = o; % swap dimensions
 ord(o) = i; 
-x = permute(x, ord); 
+
+% if the data is already ordered, do nothing
+if isequal(ord, 1:length(ord)), return, end
+
+% if at most 1 dim between i and o is non-scalar ...
+iosz = size(x, [(i:o), (o:i)]); % sizing from i<->o inclusive
+if sum(iosz ~= 1) <= 1
+    % we can reshape to save a data copy operation
+    sz = size(x, 1:length(ord));
+    [sz(i), sz(o)] = deal(sz(o), sz(i)); % swap sizing
+    x = reshape(x, sz); % set the new size
+else % implement a generalized transpose
+    x = permute(x, ord);
+end
