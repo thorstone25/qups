@@ -12,14 +12,17 @@
 % 
 % Currently you can:
 %% 
-% * Create linear and curvilinear (convex) transducers
+% * Create linear, curvilinear (convex), and matrix transducers
 % * Define full-synthetic-aperture, focused, diverging, or plane-wave transmits
-% * Simulate point targets (via MUST or FieldII) or distributed media (via k-Wave)
+% * Define arbitrary transmit delays and apodization
+% * Simulate point targets natively or via MUST or FieldII
+% * Simulate distributed media via k-Wave
 % * Filter, demodulate, and downsample channel data
-% * Define arbitrary apodization schemes over transmits, receives, and pixels, 
-% jointly
-% * Beamform using traditional delay-and-sum, the eikonal equation, or an adjoint 
-% matrix method to create a b-mode image
+% * Define arbitrary receive apodization schemes across transmits, receives, 
+% and pixels, jointly
+% * Beamform using traditional delay-and-sum, the eikonal equation (via the 
+% FMM toolbox), an adjoint matrix method, or Stolt's migrartion
+% * Retrospectively focus or refocus data
 %% 
 % Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -52,10 +55,10 @@ switch "single"
 end
 % Choose a transducer
 
-switch "L11-5V"
-    case 'L11-5V', xdc = TransducerArray.L11_5V(); % linear array
-    case 'L12-3V', xdc = TransducerArray.L12_3V(); % another linear array
-    case 'C5-2V' , xdc = TransducerConvex.C5_2V(); % convex array
+switch "L11-5v"
+    case 'L11-5v', xdc = TransducerArray.L11_5v(); % linear array
+    case 'L12-3v', xdc = TransducerArray.L12_3v(); % another linear array
+    case 'C5-2v' , xdc = TransducerConvex.C5_2v(); % convex array
 end
 % Choose the simulation region
 % Make sure it covers the target and the transducer!
@@ -75,7 +78,7 @@ if isa(xdc, 'TransducerArray')
     switch "FSA"
         case 'FSA', seq = Sequence('type', 'FSA', 'c0', scat.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
         case 'Plane-wave', 
-            [amin, amax, Na] = deal( -25 ,  25 , 11 );
+            [amin, amax, Na] = deal( -7 ,  7 , 11 );
             seq = SequenceRadial('type', 'PW', ...
                 'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', scat.c0); % Plane Wave (PW) sequence
         case 'Focused', 
@@ -110,7 +113,7 @@ if isa(xdc, 'TransducerArray')
     pn = xdc.positions(); % element positions
     xb = pn(1,[1,end]); % x-limits are the edge of the aperture
     zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
-    switch "low"
+    switch "high"
         case "high"
             scan = ScanCartesian(...
                 'x', linspace(xb(1), xb(end), 2^9), ...
@@ -149,10 +152,10 @@ end
 % 
 
 % Show the transducer's impulse response
-% figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
+figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
 
 % Show the transmit signal - a single point means it's a delta function
-% figure; plot(seq.pulse, '.-'); title('Transmit signal');
+figure; plot(seq.pulse, '.-'); title('Transmit signal');
 %  Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
@@ -198,9 +201,11 @@ chd0
 
 % display the channel data across the transmits
 chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in decibels
-figure; h = imagesc(chd, 1); colormap jet; colorbar; caxis(gather([-80 0] + (max(chd.data(chd.data < inf)))))
-xlabel('Channel'); ylabel('Time (s)'); ylim([min(chd.time(:)), max(chd.time(:))]);
-for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); h.YData(:) = chd.time(:,:,min(m,size(chd.time,3))); drawnow limitrate; title(h.Parent, "Tx " + m); pause(1/10); end, end
+figure; h = imagesc(chd); 
+dmax = max(chd.data(chd.data < inf)); % max finite value
+colormap jet; colorbar; caxis(gather([-80 0] + dmax)); % plot up to 80 dB down
+% animate(h, chd.data, 'fs', 10, 'loop', false); % show all transmits
+for i = 1:chd.M, h.CData(:) = chd.data(:,:,i); drawnow limitrate; pause(1/10); end % implement above manually for live editor
 %% Create a B-mode Image
 
  
@@ -211,16 +216,16 @@ for m = 1:size(chd.data,3), if isvalid(h), h.CData(:) = chd.data(:,:,m); h.YData
 chd = chd0;
 chd = singleT(chd); % use less data
 
-% apply a passband filter to retain only the badwidth of the transducer
+% optionally apply a passband filter to retain only the bandwidth of the transducer
 D = chd.getPassbandFilter(xdc.bw, 25); % get a passband filter for the transducer bandwidth
 chd = filter(chd, D); % apply passband filter for transducer bandwidth
 
 if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
 
 % optionally demodulate and downsample the data
-demod = true;
-demod_thresh_db = 80; % db threshold for demodulation
+demod = false;
 if demod
+    demod_thresh_db = 80; % db threshold for demodulation
     fpow = max(fft(chd).data, [], setdiff(1:ndims(chd.data), chd.tdim)); % max power per frequency
     if_max = gather(find(mod2db(fpow) > max(mod2db(fpow)) - demod_thresh_db, 1, 'last')); % dB threshold
     fmod = (if_max - 1) * chd.fs / chd.T; % maximum frequency past the threshold
@@ -230,11 +235,13 @@ if demod
 end % demodulate and downsample (by any whole number)
 if dev, chd = gpuArray(chd); end % move data to GPU
 
-% Run a simple DAS algorithm
+% Choose how to scale apodization: laterally or angularly
 switch class(xdc)
     case 'TransducerArray' , scale = xdc.pitch; % Definitions in elements
     case 'TransducerConvex', scale = xdc.angular_pitch; % Definitions in degrees
 end
+
+% Choose the apodization (beamforming weights)
 switch seq.type
     case "VS", 
 
@@ -242,11 +249,11 @@ switch seq.type
 % Choose an apodization method for Virtual Source (VS) transmit sequences
 
         switch "none"
-            case 'multiline', apod = multilineApodization(us.scan, us.sequence);
-            case 'scanline', apod = scanlineApodization(us.scan, us.sequence);
-            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 32*scale);
-            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.8);
-            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
+            case 'multiline', apod = apMultiline(us);
+            case 'scanline', apod = apScanline(us);
+            case 'translating', apod = apTranslatingAperture(us, 32*scale);
+            case 'aperture-growth', apod = apApertureGrowth(us, 1.8);
+            case 'accept', apod = apAcceptanceAngle(us, 55); 
             case 'none', apod = 1;
         end
 
@@ -256,9 +263,9 @@ switch seq.type
     case "FSA"
         us.sequence.focus = us.tx.positions(); % set the sequence foci to be the location of the transmitters for these profiles
         switch "none"
-            case 'translating', apod = translatingApertureApodization(us.scan, us.sequence, us.rx, 32*scale);
-            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 1.8);
-            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 55); 
+            case 'translating', apod = apTranslatingAperture(us, 32*scale);
+            case 'aperture-growth', apod = apApertureGrowth(us, 1.8);
+            case 'accept', apod = apAcceptanceAngle(us, 55); 
             case 'none', apod = 1;
         end
 
@@ -267,8 +274,8 @@ switch seq.type
 
     case "PW"
         switch "none"
-            case 'aperture-growth', apod = apertureGrowthApodization(us.scan, us.sequence, us.rx, 2);
-            case 'accept', apod = acceptanceAngleApodization(us.scan, us.sequence, us.rx, 20); 
+            case 'aperture-growth', apod = apApertureGrowth(us, 1.5);
+            case 'accept', apod = apAcceptanceAngle(us, 20); 
             case 'none', apod = 1;
         end
         
@@ -279,15 +286,19 @@ end
 % Choose a beamforming method
 
 bf_args = {'apod', apod, 'fmod', fmod}; % arguments for all beamformers
-switch "DAS"
+switch "DAS-direct"
+    case "DAS-direct"
+        b = DAS(us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
     case "DAS"
-        b = bfDAS(us, chd, scat.c0, bf_args{:}); % use a vanilla delay-and-sum beamformer
+        b = bfDAS(us, chd, bf_args{:}); % use a vanilla delay-and-sum beamformer
     case "Adjoint"
-        b = bfAdjoint(us, chd, scat.c0, 'fthresh', -20, bf_args{:}); % use an adjoint matrix method
+        b = bfAdjoint(us, chd, 'fthresh', -20, bf_args{:}); % use an adjoint matrix method
     case "Eikonal"
         b = bfEikonal(us, chd, med, tscan, bf_args{:}); % use the eikonal equation
-    case "DAS-direct"
-        b = DAS(us, chd, scat.c0, bf_args{:}); % use a specialized delay-and-sum beamformer
+    case "Stolts-f-k-Migration"
+        % Stolt's f-k Migrartion (no apodization accepted)
+        % NOTE: this function works best with small-angle (< 10 deg) plane waves
+        b = bfMigration(us, chd, 'fmod', fmod); 
 end
 
 % show the image
