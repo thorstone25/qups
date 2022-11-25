@@ -3235,9 +3235,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 	    
 	    chd0 = chd; % save og ChannelData, time delays
 	    if kwargs.keep_tx, bm = cell(1,numel(chds)); else, bm = 0; end % init
-	    for j = 1:numel(chds)
+        for j = 1:numel(chds)
 
-		    chd = chds(j); % reference the ChannelData
+            chd = chds(j); % reference the ChannelData
 
             % Move data to the temporal frequency domain
             x = chd.data;
@@ -3246,7 +3246,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % re-align time axis to the frequency domain
             x = x .* exp(-2j*pi*f .* chd.t0);
-            
+
             % align transmits
             x = x .* exp(-2j*pi*f .* tau{j});
 
@@ -3255,9 +3255,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get the Stolt's mapping from temporal frequency to spatial
             % (depth) frequency
-            fkz = cs*sign(f).*sqrt(kx.^2 + f.^2 / cs^2); 
+            fkz = cs*sign(f).*sqrt(kx.^2 + f.^2 / cs^2);
             kkz = (fkz - f(1)) .* F ./ chd.fs; % convert to 0-based frequency index
-            
+
             % resample using the spatio-temporal mapping
             y = wsinterpd(x, kkz, chd.tdim, 1, [], kwargs.interp, 0);
 
@@ -3266,7 +3266,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kz = f / cs;
                 y = (y .* kz) ./ (fkz + eps);
             end
-            
+
             % re-align time axis to the time/space domain
             y = y .* exp(+2j*pi*f .* chd.t0);
 
@@ -3276,7 +3276,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % tb = chd.time;
 
             % get the spatial axes
-            zax = seq.c0 / 2 * tb;
+            zax = seq.c0 ./ 2 .* tb;
             xax = self.xdc.pitch .* (0 : K-1) + sub(self.xdc.positions,{1,1},[1,2]);
 
             % align data laterally using Garcia's PWI mapping
@@ -3289,29 +3289,34 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % sum or store the transmits
             if kwargs.keep_tx, bm{j} = b; else, bm = bm + sum(b, chd.mdim); end
 
-	    end % for j
+        end % for j
 
-	    % get full image cube
-	    if kwargs.keep_tx, b = cat(chd0.mdim, bm{:}); else, b = bm; end
+        % get full image cube
+        if kwargs.keep_tx, b = cat(chd0.mdim, bm{:}); else, b = bm; end
 
-            % create the corresponding scan - it aligns with our data
-            bscan = ScanCartesian('z', zax(1:chd0.T), 'x', xax(1:chd0.N));
+        % create the corresponding scan - it aligns with our data
+        bscan = ScanCartesian('z', double(zax(1:chd0.T)), 'x', xax(1:chd0.N));
 
-            % resample the data onto the original imaging grid if no
-            % output scan was requested (risky)
-	    if nargout < 2
-		    warning("QUPS:bfMigration:artefacts", "Resampling a complex image can produce artefacts: request the output Scan to avoid resampling.");
-		    % resample data onto the given scan (risky)
-		    scan = self.scan; % og scan
-		    [z, x] = ndgrid(bscan.z, bscan.x); % vectors -> matrix
-		    bint = num2cell(b, [1,2]); % place all transmits/frames in cells
-		    parfor(j = 1:numel(bint), 0) % interp for each transmit/frame
-		        bint{j} = interp2(bscan.x, bscan.z, bint{j}, scan.x(:)', scan.z(:), kwargs.interp, 0);
-		    end
-		    bint = cat(1, bint{:});
-		    bint = reshape(bint, [scan.size([1,2]), size(bint, 3 : max(3, ndims(bint)))]);
-		    b = bint;
-	    end          
+        % work-around: sometimes the numerical precision is
+        % insufficient and interp2 is thrown off: ensure that the data
+        % is regularly sampled by recreating the axes
+        bscan.z = bscan.z(1) + mean(diff(bscan.z)) .* (0 : F - 1);
+
+        % resample the data onto the original imaging grid if no
+        % output scan was requested (risky)
+        if nargout < 2
+            warning("QUPS:bfMigration:artefacts", "Resampling a complex image can produce artefacts: request the output Scan to avoid resampling.");
+            % resample data onto the given scan (risky)
+            [sz, sx] = deal(self.scan.z, self.scan.x); % og scan
+            [bz, bx] = ndgrid(bscan.z, bscan.x); % vectors -> matrix
+            bint = num2cell(b, [1,2]); % place all transmits/frames in cells
+            parfor(j = 1:numel(bint), 0) % interp for each transmit/frame
+                bint{j} = interp2(bx, bz, bint{j}, sx(:)', sz(:), kwargs.interp, 0); %#ok<PFBNS>
+            end
+            bint = cat(1, bint{:});
+            bint = reshape(bint, [self.scan.size([1,2]), size(bint, 3 : max(3, ndims(bint)))]);
+            b = bint;
+        end
         end
     end
     
