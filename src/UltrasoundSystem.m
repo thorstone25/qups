@@ -3320,6 +3320,437 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
     
+    % apodization functions
+    methods
+        function apod = apScanline(us, tol)
+            % APSCANLINE Create scanline apodization array
+            %
+            % apod = APSCANLINE(us) creates an ND-array
+            % to mask delayed data using the UltrasoundSystem self in order
+            % to form an image using scanlines.
+            %
+            % Scanline apodization is determined by accepting only
+            % transmits and scanlines that are aligned across the transmit
+            % aperture, where a scan line is a series of points where only
+            % the range varies.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % apod = APSCANLINE(us, tol) uses a tolerance
+            % of tol to decided whether to accept the transmit.
+            %
+            % Example:
+            %
+            %   % Define the setup
+            %   dx = 0.5e-3; % spacing between foci
+            %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
+            %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
+            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   us = UltrasoundSystem('sequence', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %
+            %   % Compute the image
+            %   chd = greens(us, scat); % compute the response
+            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   apod = apScanline(us, dx);
+            %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
+            %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
+            %
+            %   % Display the images
+            %   figure;
+            %   bim0 = mod2db(b0); % log-compression
+            %   nexttile(); imagesc(us.scan, bim0, [-80 0] + max(bim0(:)));
+            %   colormap gray; colorbar; title("No apodization");
+            %
+            %   bima = mod2db(ba); % log-compression
+            %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
+            %   colormap gray; colorbar; title("Scanline apodization");
+            %
+            % See also: ULTRASOUNDSYSTEM/APMULTILINE ULTRASOUNDSYSTEM/APTRANSLATINGAPERTURE
+
+            arguments
+                us (1,1) UltrasoundSystem
+                tol {mustBePositive, mustBeScalarOrEmpty} = min(abs(diff(sub(us.sequence.focus,1,1)))); % numerical tolerance
+            end
+
+            % alias
+            seq = us.sequence;
+
+            % soft validate the transmit sequence type: it should be focused
+            if seq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + seq.type + ": This may produce unexpected results."...
+                    );
+            end
+
+            % create a mask such that the transmit and pixel lateral
+            % positions must 'match'
+            if isa(us.scan, 'ScanCartesian')
+                xdim = find(us.scan.order == 'X'); % dimension of change in lateral
+                xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
+                xv = swapdim(sub(seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
+            elseif isa(us.scan, 'ScanPolar')
+                xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
+                xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
+                xv = swapdim(seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            end
+            apod = abs(xi - xv) < tol; % create mask
+        end
+
+        function apod = apMultiline(us)
+            % APMULTILINE Create multi-line apodization array
+            %
+            % apod = APMULTILINE(us) creates an ND-array
+            % to mask delayed data using the UltrasoundSystem us in order
+            % to form an image using scanlines.
+            %
+            % Multilne apodization is determined by linearly weighing
+            % scan lines by the transmits that straddle each scan line.
+            % Scan lines outside of the minimum and maximum transmit are
+            % weighted by zero.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % Example:
+            %
+            %   % Define the setup
+            %   dx = 0.5e-3; % spacing between foci
+            %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
+            %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
+            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   us = UltrasoundSystem('sequence', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %
+            %   % Compute the image
+            %   chd = greens(us, scat); % compute the response
+            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   apod = apMultiline(us);
+            %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
+            %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
+            %
+            %   % Display the images
+            %   figure;
+            %   bim0 = mod2db(b0); % log-compression
+            %   nexttile(); imagesc(us.scan, bim0, [-80 0] + max(bim0(:)));
+            %   colormap gray; colorbar; title("No apodization");
+            %
+            %   bima = mod2db(ba); % log-compression
+            %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
+            %   colormap gray; colorbar; title("Multiline apodization");
+            %
+            % See also ULTRASOUNDSYSTEM/APSCANLINE ULTRASOUNDSYSTEM/APTRANSLATINGAPERTURE
+
+            arguments
+                us (1,1) UltrasoundSystem
+            end
+
+            % alias
+            seq = us.sequence;
+
+            % soft validate the transmit sequence type: it should be focused
+            if seq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + seq.type + ": This may produce unexpected results."...
+                    );
+            end
+
+            % extract lateral or angle of transmit in order to compare
+            if isa(us.scan, 'ScanCartesian')
+                xdim = find(us.scan.order == 'X'); % dimension of change in lateral
+                xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
+                xv = swapdim(sub(seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
+            elseif isa(us.scan, 'ScanPolar')
+                xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
+                xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
+                xv = swapdim(seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            end
+            X = us.scan.size(xdim);
+
+            % TODO: switch this to accept multiple transmits instead of
+            % just left/right transmit
+
+            % get the apodization based on interpolation weights
+            % between each transmit angle
+            da = xi - xv; % difference in lateral % Rx x Tx
+            lind = da >= 0; % tx left  of xi
+            rind = da <= 0; % tx right of xi
+
+            % choose right-most left tx and left-most right tx
+            lind = cellfun(@(i) find(i,1,'last' ), num2cell(lind,5), 'UniformOutput', false); % X x 1
+            rind = cellfun(@(i) find(i,1,'first'), num2cell(rind,5), 'UniformOutput', false); % X x 1
+            val = ~cellfun(@isempty, lind) & ~cellfun(@isempty, rind); % X x 1
+            [lind, rind] = deal(cell2mat(lind(val)), cell2mat(rind(val))); % X' x 1
+
+            % set the apodization values for these transmits
+            da_lr = swapdim(abs(xv(lind) - xv(rind)), xdim,5); % difference in transmit angle (0 for identical left/right)
+            a_l = 1 - (abs(swapdim(xv(lind),xdim,5) - xi(val)) ./ da_lr); % left side apodization
+            a_r = 1 - (abs(swapdim(xv(rind),xdim,5) - xi(val)) ./ da_lr); % right side apodization
+            ind0 = da_lr == 0; % if no difference between left/right transmits ...
+            [a_l(ind0), a_r(ind0)] = deal(1, 0); %  set left to 1, right to 0
+
+            % build Tx x Rx apodization matrix
+            apod  = zeros([X, seq.numPulse]); % build in reduced dimensions
+            alind = sub2ind(size(apod), find(val), lind); % left matrix indices
+            arind = sub2ind(size(apod), find(val), rind); % right matrix indices
+            apod(alind) = apod(alind) + a_l; % add left apod
+            apod(arind) = apod(arind) + a_r; % add right apod
+            apod = ipermute(apod, [xdim, 5, setdiff(1:5, [xdim,5])]); % send X, M to dimensions xdim, 5
+        end
+
+        function apod = apTranslatingAperture(us, tol)
+            % APTRANSLATINGAPERTURE Create translating aperture apodization array
+            %
+            % apod = APTRANSLATINGAPERTURE(us, tol)
+            % creates an ND-array to mask delayed data from the
+            % UltrasoundSystem us with a translating aperture of size tol.
+            % The default is 1/4 the length of the aperture.
+            %
+            % If us.scan is a ScanCartesian, us.rx must be a
+            % TransducerArray and the aperture is limited to receive
+            % elements that are within tol of the focus laterally.
+            %
+            % If us.scan is a ScanPolar, us.rx must be a TransducerConvex
+            % and us.sequence must be a SequenceRadial. The aperture is
+            % limited to receive elements that are within tol of the focus
+            % in azimuth.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % Example:
+            %
+            %   % Define the setup
+            %   dx = 0.5e-3; % spacing between foci
+            %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
+            %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
+            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   us = UltrasoundSystem('sequence', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %
+            %   % Compute the image
+            %   chd = greens(us, scat); % compute the response
+            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   apod = apTranslatingAperture(us, 64*us.xdc.pitch); % 64-element window
+            %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
+            %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
+            %
+            %   % Display the images
+            %   figure;
+            %   bim0 = mod2db(b0); % log-compression
+            %   nexttile(); imagesc(us.scan, bim0, [-80 0] + max(bim0(:)));
+            %   colormap gray; colorbar; title("No apodization");
+            %
+            %   bima = mod2db(ba); % log-compression
+            %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
+            %   colormap gray; colorbar; title("Translating aperture apodization");
+            %
+            % See also ULTRASOUNDSYSTEM/APSCANLINE ULTRASOUNDSYSTEM/APMULTILINE
+
+            arguments
+                us (1,1) UltrasoundSystem
+                tol (1,1) {mustBePositive} = max(range(us.rx.bounds,2)) / 4; % defaults to 1/4 aperture
+            end
+
+            % extract lateral or angle of transmit in order to compare
+            if isa(us.scan, 'ScanCartesian')
+                xdim = find(us.scan.order == 'X'); % dimension of change in lateral
+                xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
+                xv = swapdim(sub(us.sequence.focus,1,1), 2, 5); % lateral per transmit 1 x 1 x 1 x 1 x M
+                % soft error on transducer type
+                if isa(us.rx, 'TransducerArray'), else, warning( ...
+                        "Expected a TransducerArray but instead got " + class(us.rx) + ": This may produce unexpected results."...
+                        ); end %#ok<ALIGN>
+                xn = swapdim(sub(us.rx.positions,1,1), 2,4); % lateral per receiver
+            elseif isa(us.scan, 'ScanPolar')
+                xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
+                xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
+                xv = swapdim(us.sequence.angles, 2, 5); % angle per transmit 1 x 1 x 1 x 1 x M
+                % soft error on transducer type
+                if isa(us.rx, 'TransducerConvex'), else, warning( ...
+                        "Expected a TransducerArray but instead got " + class(us.rx) + ": This may produce unexpected results."...
+                        ); end %#ok<ALIGN>
+                xn = swapdim(us.rx.orientations,2,4); % lateral per receiver
+            end
+            apod = abs(xi - xv) <= tol(1) & abs(xi - xn) <= tol(end); % create mask
+
+        end
+
+        function apod = apApertureGrowth(us, f, Dmax)
+            % APAPERTUREGROWTH Create an aperture growth aperture apodization array
+            %
+            % apod = APAPERTUREGROWTH(us) creates an
+            % ND-array to mask delayed data using the transmit Sequence seq
+            % and the receive Transducer rx in order to form the
+            % corresponding image that shrinks the receive aperture at
+            % shallower depths in order to maintain a minimum f-number.
+            %
+            % apod = APAPERTUREGROWTH(us, f) uses an
+            % f-number of f to limit the aperture. The default is 1.5.
+            %
+            % apod = APAPERTUREGROWTH(us, f, Dmax) restricts the
+            % maximum size of the aperture to Dmax. The default is Inf.
+            %
+            % The Transducer us.rx must be a TransducerArray.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            %
+            % Example:
+            %
+            %   % Define the setup
+            %   dx = 0.5e-3; % spacing between foci
+            %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
+            %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
+            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   us = UltrasoundSystem('sequence', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %
+            %   % Compute the image
+            %   chd = greens(us, scat); % compute the response
+            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   apod = apApertureGrowth(us, 2); % use a f# of 2
+            %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
+            %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
+            %
+            %   % Display the images
+            %   figure;
+            %   bim0 = mod2db(b0); % log-compression
+            %   nexttile(); imagesc(us.scan, bim0, [-80 0] + max(bim0(:)));
+            %   colormap gray; colorbar; title("No apodization");
+            %
+            %   bima = mod2db(ba); % log-compression
+            %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
+            %   colormap gray; colorbar; title("Aperture growth apodization");
+            %
+            %
+            % See also ULTRASOUNDSYSTEM/APACCEPTANCEANGLE
+
+            % defaults
+            arguments
+                us (1,1) UltrasoundSystem
+                f (1,1) {mustBePositive} = 1.5
+                Dmax (1,1) {mustBePositive} = Inf
+            end
+
+            % soft validate the transmit sequence and transducer types.
+            if ~isa(us.rx, 'TransducerArray'), warning(...
+                    "Expected Transducer to be a TransducerArray but instead got a " + class(us.rx) + ". This may produce unexpected results."...
+                    )
+            end
+
+            % TODO: generalize to polar
+            % get the transmit foci lateral position, M in dim 6
+            % Pv = swapdim(sub(seq.focus,1:3,1), 2, 6);
+
+            % get the receiver lateral positions, N in dim 5
+            Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
+
+            % get the pixel positions in the proper dimensions
+            xdim = find(us.scan.order == 'X');
+            zdim = find(us.scan.order == 'Z');
+            Xi = shiftdim(us.scan.x(:), 1-xdim-1); % (1 x I1 x I2 x I3)
+            Zi = shiftdim(us.scan.z(:), 1-zdim-1); % (1 x I1 x I2 x I3)
+
+            % get the equivalent aperture width (one-sided) and pixel depth
+            % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
+            d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
+            z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            apod = z > f * abs(2*d) ; % restrict the f-number
+            apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
+
+            % shift to (I1 x I2 x I3 x N x M)
+            apod = shiftdim(apod, 1);
+        end
+
+        function apod = apAcceptanceAngle(us, theta)
+            % APACCEPTANCEANGLE Create an acceptance angle apodization array
+            %
+            % apod = APACCEPTANCEANGLE(us) creates an ND-array to
+            % mask delayed data from the UltrasoundSystem us which includes
+            % receive elements where the pixel to element angle is within
+            % an acceptance angle.
+            %
+            % apod = APACCEPTANCEANGLE(us, theta) uses an acceptance angle
+            % of theta in degrees. The default is 45.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements, and M is the number of transmits.
+            %
+            % Example:
+            %
+            %   % Define the setup
+            %   dx = 0.5e-3; % spacing between foci
+            %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
+            %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
+            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   us = UltrasoundSystem('sequence', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %
+            %   % Compute the image
+            %   chd = greens(us, scat); % compute the response
+            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   apod = apApertureGrowth(us, 2); % use a f# of 2
+            %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
+            %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
+            %
+            %   % Display the images
+            %   figure;
+            %   bim0 = mod2db(b0); % log-compression
+            %   nexttile(); imagesc(us.scan, bim0, [-80 0] + max(bim0(:)));
+            %   colormap gray; colorbar; title("No apodization");
+            %
+            %   bima = mod2db(ba); % log-compression
+            %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
+            %   colormap gray; colorbar; title("Aperture growth apodization");
+            %
+            % See also ULTRASOUNDSYSTEM/APAPERTUREGROWTH
+
+            % defaults
+            arguments
+                us (1,1) UltrasoundSystem
+                theta (1,1) {mustBePositive} = 45
+            end
+
+            % get the receiver positions and orientations, N in dim 5
+            Pn      = swapdim(us.rx.positions   , 2, 5); % (3 x 1 x 1 x 1 x N) % positions
+            [~,~,n] = us.rx.orientations;
+            n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % normals
+
+            % get the image pixels
+            Pi = getImagingGrid(us.scan, "vector",true); % (3 x I1 x I2 x I3)
+
+            % get the normalized difference vector (3 x I1 x I2 x I3 x N)
+            r = Pi - Pn;
+
+            % get the cosine of the angle via the inner product of the
+            % normalized direction vectors
+            r = sum(r ./ vecnorm(r,2,1) .* n, 1,"omitnan");
+            r = reshape(r, size(r,2:6)); % (I1 x I2 x I3 x N x 1)
+
+            % accept if greater than the cutoff
+            apod = r >= cosd(theta);
+
+            % ----------------------- LEGACY --------------------- %
+            % get the receiver positions and orientations, N in dim 5
+            % Pn2 = swapdim(us.rx.positions   , 2, 4); % (3 x 1 x 1 x N)
+            % thn = swapdim(us.rx.orientations, 2, 4); % (3 x 1 x 1 x N)
+
+            % get the points as a variance in depth and lateral
+            % [Xi, ~, Zi] = us.scan.getImagingGrid(); % (I1 x I2 x I3)
+
+            % restrict to points where the angle is less than theta at the
+            % receiver
+            % thi = atan2d(Xi - sub(Pn2,1,1), Zi - sub(Pn2,3,1)); % angle at which the ray hits the element
+            % apod = abs(thi - thn) <= theta; % (I1 x I2 x I3 x N x M)
+        end
+    end
+
     % dependent methods
     methods
         function f = get.fc(self)
