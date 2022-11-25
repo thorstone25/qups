@@ -222,7 +222,21 @@ classdef ChannelData < matlab.mixin.Copyable
                 c = copy(b); c.data = times(a, b.data);
             else % if both are ChannelData, we check that the time axis is identical
                 if all(a.ord == b.ord) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
-                    c = copy(a); c.data = a.data * b.data;
+                    c = copy(a); c.data = times(a.data, b.data);
+                else
+                    error('ChannelData does not match - cannot perform arithmetic')
+                end                
+            end
+        end
+    
+        function c = plus(a, b)
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                c = copy(a); c.data = plus(a.data, b);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                c = copy(b); c.data = plus(a, b.data);
+            else % if both are ChannelData, we check that the time axis is identical
+                if all(a.ord == b.ord) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
+                    c = copy(a); c.data = plus(a.data, b.data);
                 else
                     error('ChannelData does not match - cannot perform arithmetic')
                 end                
