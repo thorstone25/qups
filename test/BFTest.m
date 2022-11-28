@@ -152,7 +152,7 @@ classdef BFTest < matlab.unittest.TestCase
             tscan = scale(tscan, 'dist', 1e3);
 
             % apply acceptance angle apodization
-            apod = us.scan.acceptanceAngleApodization(us.sequence, us.rx, 45);
+            apod = apAcceptanceAngle(us, 45);
 
             % baseband the data
             if baseband
