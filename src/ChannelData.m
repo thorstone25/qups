@@ -1079,6 +1079,14 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
             chd = copy(chd); % copy semantics
             chd.data = permute(chd.data, dord); % change data dimensions
+            chd.t0   = permute(chd.t0, dord); % change t0 dimensions
+            chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
+        end
+        function chd = ipermute(chd, dord)
+            chd = expandDims(chd, max(dord)); % expand to have enough dim labels
+            chd = copy(chd); % copy semantics
+            chd.data = ipermute(chd.data, dord); % change data dimensions
+            chd.t0   = ipermute(chd.t0, dord); % change t0 dimensions
             chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
         end
         function [chd, dord] = rectifyDims(chd)
