@@ -2174,21 +2174,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % parse inputs
             [sumtx, sumrx] = deal(~kwargs.keep_tx, ~kwargs.keep_rx);
 
-            % make sure t0 is a scalar
-            if ~isscalar(chd.t0), chd = rectifyt0(chd); end
-            
-            % get positions of the imaging plane 
-            [X, Y, Z, image_size] = self.scan.getImagingGrid();
+            % make sure t0 is a scalar in all dims except transmit
+            if ~all(size(chd.t0, setdiff(1:ndims(chd.t0), chd.mdim)) == 1), warning("Resampling data for a scalar t0."); chd = rectifyt0(chd); end
 
+            % data must be ordered T x N x M
+            ord = [chd.tdim, chd.ndim, chd.mdim];
+            if ~isequal(ord, 1:3), chd = permute(chd, [ord, 4:ndims(chd.data)]); end % reorder if necessary
+            
             % reshape into I x N x M
             apod_args = {'apod', kwargs.apod, 'modulation', kwargs.fmod};
             
-            % convert to x/y/z in 1st dimension
-            P_im = permute(cat(4, X, Y, Z),[4,1,2,3]); % 3 x I1 x I2 x I3 == 3 x [I]
+            % get positions of the imaging plane 
+            P_im = self.scan.getImagingGrid('vector',true); % 3 x I1 x I2 x I3 == 3 x [I]
             
-            % get positions of the aperture(s)
-            P_tx = self.tx.positions(); % cast(self.tx.positions(), 'like', time(end)); % 3 x M
-            P_rx = self.rx.positions(); % cast(self.rx.positions(), 'like', time(end)); % 3 x N
+            % get positions of the receive aperture
+            P_rx = self.rx.positions(); % 3 x N
             
             % get the beamformer arguments
             dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
@@ -2197,7 +2197,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             switch self.sequence.type
                 case 'FSA'
-                    pos_args = {P_im, P_rx, P_tx, [0;0;1]};
+                    pos_args = {P_im, P_rx, self.tx.positions(), [0;0;1]};
                 case 'PW'
                     pos_args = {P_im, P_rx, [0;0;0], self.sequence.focus}; % TODO: use origin property in tx sequence
                     ext_args{end+1} = 'plane-waves'; 

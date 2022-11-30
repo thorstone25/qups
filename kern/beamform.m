@@ -126,8 +126,8 @@ end
 if nargin < 9 || isempty(c), c = 1540; end
 if (nargin < 8 || isempty(fs))
     if isvector(t0)
-        fs = mean(diff(t0)); % find the sampling frequency
-        t0 = min(t0); % extract start time
+        fs = mean(diff(t0,1,1)); % find the sampling frequency
+        t0 = min(t0,[],1); % extract start time
     elseif strcmp(fun, 'delays')
         fs = [];
     else
@@ -273,6 +273,9 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         [Pi, Pr, Pv, Nv] = dealfun(@single, Pi, Pr, Pv, Nv);
         [yg, apod, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod, x);
     end
+
+    % combine timing infor with the transmit positions
+    Pv(4,:) = t0;
     
     % partition data per frame
     fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
@@ -283,7 +286,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         case {'DAS','SYN','BF','MUL'}
             % I [x N [x M]] x 1 x 1 x {F x ...}
             for f = F:-1:1 % beamform each data frame
-                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [t0, fs, fmod]);
+                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [fs, fmod]);
             end
             % unpack frames
             y = cat(6, y{:});
@@ -321,6 +324,8 @@ else
     Pr = swapdim(Pr, 2, 5); % 3 x 1 x 1 x 1 x N
     Pv = swapdim(Pv, 2, 6); % 3 x 1 x 1 x 1 x 1 x M
     Nv = swapdim(Nv, 2, 6); % 3 x 1 x 1 x 1 x 1 x M
+    t0 = swapdim(t0(:), 1, 5); % 1 x 1 x 1 x 1 x M
+    t0 = repmat(t0,[ones(1,4), M / size(t0,5)]); % implicit broadcast
     
     % transmit sensing vector
     rv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
@@ -365,14 +370,14 @@ else
                 for n = 1:N
                     if isscalar(cinvn), cinv_ = cinvn{1}; else, cinv_ = cinvn{n}; end % ({I} x 1 x 1)
                     % time delay (I x 1 x 1)
-                    tau = cinv_ .* (dvm{m} + drn{n});
+                    tau = cinv_ .* (dvm{m} + drn{n}) - t0(m);
 
                     % extract apodization
                     a = sub(amn(:,m), min(n,Na), 1); % amn(n,m) || amn(1,m)
                     
                     % sample and output (I x 1 x 1)
                     yn = yn + a{1} .* (...
-                        interp1(xmn{n,m}, 1 + (tau - t0) * fs, interp_type, 0) ...
+                        interp1(xmn{n,m}, 1 + tau * fs, interp_type, 0) ...
                        );
                 end
                 y = y + yn;
@@ -387,7 +392,7 @@ else
             parfor n = 1:N
                 % time delay (I x 1 x M)
                 if isscalar(cinvn), cinv_ = cinvn{1}; else, cinv_ = cinvn{n}; end % ([1|I] x 1 x [1|M])
-                tau = cinv_ .* (dv + drn{n}); 
+                tau = cinv_ .* (dv + drn{n}) - t0; 
 
                 % extract apodization
                 am = repmat(an{n}, double([ones(1,4), M]) ./ [ones(1,4), size(an{n},5)]);
@@ -395,7 +400,7 @@ else
                 % sample and output (I x 1 x M)
                 ym = (cellfun(...
                     @(x, tau, a) ...
-                    a .* interp1(x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                    a .* interp1(x,  1 + tau * fs, interp_type, 0), ...
                     num2cell(xn{n},1), pck(tau), pck(am), per_cell{:})) ...
                     ; %#ok<PFBNS>
                 ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym))]);
@@ -412,7 +417,7 @@ else
             parfor m = 1:M
                 % time delay (I x N x 1)
                 if isscalar(cinvm), cinv_ = cinvm{1}; else, cinv_ = cinvm{m}; end % ([1|I] x [1|N] x 1)
-                tau = cinv_ .* (dvm{m} + dr); 
+                tau = cinv_ .* (dvm{m} + dr) - t0(m); 
 
                 % extract apodization
                 an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
@@ -420,7 +425,7 @@ else
                 % sample and output (I x N x 1)
                 ym = (cellfun(...
                     @(x, tau, a) ...
-                    a .* interp1(x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                    a .* interp1(x,  1 + tau * fs, interp_type, 0), ...
                     num2cell(xm{m},1), pck(tau), pck(an), per_cell{:})) ...
                     ; %#ok<PFBNS>
                 ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym))]);
@@ -429,7 +434,7 @@ else
             
         case 'BF'
             % time delay ([I] x N x M)
-            tau = cinv .* (dv + dr);
+            tau = cinv .* (dv + dr) - t0;
 
             % set size of x
             xmn = permute(x, [1,4,5,2,3,6:ndims(x)]); % (T x 1 x 1 x N x M x {F x ...})
@@ -437,7 +442,7 @@ else
             % sample and output ([I] x N x M x F x ...)
             y = cellfun(... 
                 @(x, tau, a) ...
-                a .* interp1(x,  1 + (tau - t0) * fs, interp_type, 0), ...
+                a .* interp1(x,  1 + tau * fs, interp_type, 0), ...
                 pck(xmn), pck(tau), pck(apod), per_cell{:} ...
                 );
             y = reshape(y, [Isz, size(y,4:ndims(y))]);
