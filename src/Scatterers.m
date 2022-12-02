@@ -128,17 +128,20 @@ classdef Scatterers < matlab.mixin.Copyable
             % Name/Value initialization
             for f = string(fieldnames(kwargs))', self.(f) = kwargs.(f); end
 
-            % input data sizing
-            [Sa, Sp] = deal(size(self.amp,2), size(self.pos,2)); % == 0 if not set
+            % whether data was set
+            [Sa, Sp] = deal(isfield(kwargs, 'amp'), isfield(kwargs, 'pos'));
+
+            % data sizing
+            [Na, Np] = deal(size(self.amp,2), size(self.pos,2));
 
             % check/default amplitudes / positions
-            if      Sp &&  Sa % both non-zero
-                if Sp ~= Sa, error('Number of scatterers must match!'); end 
-            elseif  Sp && ~Sa % default amplitude
-                self.amp = ones([1,Sp]);
-            elseif ~Sp &&  Sa % default positions
-                self.pos = zeros([3,Sa]);
-            else % ~Sp && ~Sa % both empty - default positions
+            if      Sp &&  Sa % both set: validate
+                if Np ~= Na, error('Number of scatterers must match!'); end 
+            elseif  Sp && ~Sa % pos set: default amplitude
+                self.amp = ones([1,Np]);
+            elseif ~Sp &&  Sa % amp set: default positions
+                self.pos = zeros([3,Na]);
+            else % ~Sp && ~Sa % none set: default pos and amp
                 self.pos = [0;0;30e-3];
                 self.amp = 1;
             end
