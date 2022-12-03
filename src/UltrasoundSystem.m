@@ -2853,9 +2853,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
             % get worker transfer function
-            if(parenv == 0)
-                 constfun = @(x) struct('Value', x);
-            else,constfun = @parallel.pool.Constant;
+            % TODO: deprecate or re-enable this for a parallel.ProcessPool
+            if false % isscalar(gcp('nocreate')) && (parenv == gcp('nocreate')) 
+                constfun = @parallel.pool.Constant; % only use if parenv is the current process pool
+            else 
+                constfun = @(x) struct('Value', x);
             end
 
             % get the grid definition
@@ -2945,17 +2947,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             sdim = [];
             if sumtx, sdim = [sdim, chd.mdim]; end % tx dimensions
             if sumrx, sdim = [sdim, chd.ndim]; end % rx dimensions
+
+            % move time delays and apodization to permuted dimensions
+            % (I1 x I2 x I3 x N x M) ->
+            % perm(1 x N x M) [x 1 x ... ] x I1 x I2 x I3
+            tau_rx =              ipermute(tau_rx, ord);
+            tau_tx = cellfun(@(t) ipermute(t     , ord), tau_tx, 'UniformOutput',false);
+            apod   = cellfun(@(a) ipermute(a     , ord), apod  , 'UniformOutput',false);
             
             b = 0; % initialize
             kvb = kwargs.verbose; % splice
             if kvb, hw = waitbar(0,'Beamforming ...'); else, hw = []; end % create a wait bar
             parfor (m = 1:Mp, 0) % for each transmit (no cluster because parpool may cause memory issues here)
-                % make the eikonal delays and apodization align with the channel data
-                tau = tau_rx + tau_tx{m}; % I1 x I2 x I3 x N x M
-                if isscalar(apod), a = apod{1}; else, a = apod{m}; end % recieve apodization per transmit (I1 x I2 x I3 x N x M)
-                a = ipermute(a, ord); % move time delays / apodization into matching dimensions  
-                tau = ipermute(tau, ord); % both: perm(1 x N x M) [x 1 x ... ] x I1 x I2 x I3
-                    
+                % get the eikonal delays and apodization
+                tau = tau_rx + tau_tx{m}; 
+                if isscalar(apod), a = apod{1}; else, a = apod{m}; end % recieve apodization 
+                
                 % sample and unpack the data (perm(1 x N x M) [x F x ... ] x I1 x I2 x I3)
                 ym = sample(chds(m), tau, interp_method, a, sdim, fmod); % sample and sum over rx/tx maybe
                 
