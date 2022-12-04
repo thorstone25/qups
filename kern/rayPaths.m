@@ -217,6 +217,7 @@ end
 
 % concatenate all sparse arrays to make a final sparse array
 % ([I x J'] x M) -> % ([I x J] x M)
+[w{:}] = gather(w{:}); % enforce on CPU - sparse gpu doesn't support 'cat'
 w = cat(1, w{:}); 
 
 if kwargs.verbose, fprintf('done!\n'); end
