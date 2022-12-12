@@ -1528,7 +1528,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % k-Wave calls
     methods
-        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args)
+        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args, ksensor_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(self, med) simulates the Medium med 
@@ -1693,6 +1693,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwave_args.Smooth (1,:) logical % can be (1,3) to smooth {p0, c, rho} separately, or (1,1) for all
                 kwave_args.StreamToDisk (1,1) {mustBeNumericOrLogical}
             end
+            arguments
+                ksensor_args.directivity_pattern (1,1) string {mustBeMember(ksensor_args.directivity_pattern, ["pressure", "gradient", "total", "none"])} = "none"
+            end
 
             % only supported with tx == rx for now
             assert(self.tx == self.rx, 'Transmitter and receiver must be identical.')
@@ -1833,12 +1836,27 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % define the sensor
             ksensor.mask = mask; % pixels to record
 
-            % TODO: make these input options
             % set the directivity
-            % TODO: set the angle based on the element surface normals
-            ksensor.directivity_angle = zeros(size(mask)); % 0 is most sensitive in x
-            ksensor.directivity_size  = self.rx.width; % size of the element for producing the directivity
-            ksensor.directivity_pattern = 'total';
+            switch ksensor_args.directivity_pattern 
+                case {'none'}
+                otherwise
+                switch kwargs.ElemMapMethod
+                    case {'linear', 'nearest'}
+                        elem_dir = zeros(size(mask)); % receive element directivity
+                        theta = deg2rad(self.xdc.orientations());
+                        if kwargs.ElemMapMethod == "nearest"
+                            elem_dir(ind) = theta; % set element directions
+                        else
+                            for n = 1:self.xdc.numel, elem_dir(el_ind(:,n)) = theta(n); end % set element directions
+                        end
+
+                        ksensor.directivity_angle = elem_dir; % 0 is most sensitive in x
+                        ksensor.directivity_size  = self.rx.width; % size of the element for producing the directivity
+                        ksensor.directivity_pattern = char(ksensor_args.directivity_pattern); % type of pattern
+                    case {'karray-direct', 'karray-depend'}
+                        warning('Unable to set directivity for karray element mapping methods.');
+                end
+            end
 
             % define the source if it's not empty i.e. all zeros
             switch kwargs.ElemMapMethod
@@ -2067,10 +2085,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 )
 
             Np = numel(ksource);
-            parfor (puls = 1:Np, W)
-            % for puls = 1:Np
-                gpuDevice([]); % clear the GPU on this worker
-            
+            parfor (puls = 1:Np, W)            
                 % TODO: make this part of some 'info' logger or something
                 fprintf('\nComputing pulse %i of %i\n', puls, Np);
                 tt_pulse = tic;
