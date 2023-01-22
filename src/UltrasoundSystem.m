@@ -436,15 +436,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % select each corner
             j = 1+logical([bitand(uint16([1; 2; 4]), uint16(0:7))]);
-            txb = sel(txb, j, 2); % 3 x 8
-            rxb = sel(rxb, j, 2); % 3 x 8
+            txb = swapdim(sel(txb, j, 2),2,3); % 3 x 1 x 8
+            rxb = swapdim(sel(rxb, j, 2),2,3); % 3 x 1 x 8
             
             % get maximum necessary time sample (use manhattan distance and
             % sound speed to give an upper bound)
             maxdist = @(p) max(vecnorm(p,2,1), [], 'all');
             mindist = @(p) min(vecnorm(p,2,1), [], 'all');
-            taumax = arrayfun(@(scat)(maxdist(scat.pos - txb) + maxdist(scat.pos - rxb) + vecnorm(range(txb,2)) + vecnorm(range(rxb,2))) ./ min(scat.c0), shiftdim(scat(:),-3));
-            taumin = arrayfun(@(scat)(mindist(scat.pos - txb) + mindist(scat.pos - rxb) - vecnorm(range(txb,2)) - vecnorm(range(rxb,2))) ./ max(scat.c0), shiftdim(scat(:),-3));
+            taumax = arrayfun(@(scat)(maxdist(scat.pos - txb) + maxdist(scat.pos - rxb) + vecnorm(range(txb,3)) + vecnorm(range(rxb,3))) ./ min(scat.c0), shiftdim(scat(:),-3));
+            taumin = arrayfun(@(scat)(mindist(scat.pos - txb) + mindist(scat.pos - rxb) - vecnorm(range(txb,3)) - vecnorm(range(rxb,3))) ./ max(scat.c0), shiftdim(scat(:),-3));
             
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
