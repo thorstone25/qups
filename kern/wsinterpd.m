@@ -141,7 +141,7 @@ if exist('interpd.ptx', 'file') ...
 
         otherwise, 
             [w_,x_,t_] = deal(w,x,t); % copy data
-            y_ = cast(zeros(osz), 'like', x_);
+            y_ = zeros(osz, 'like', x_); % pre-allocate output
     end
      % zeros: uint16(0) == storedInteger(half(0)), so this is okay
     y_ = k.feval(y_, w_, x_, t_, dsizes, wstride, ystride, flagnum); % compute
