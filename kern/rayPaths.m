@@ -152,7 +152,8 @@ for j = numel(js):-1:1
             [ c1,  c2] = deal(zeros(josz, 'like', iw));
 
             % use no parpool on GPU, default parpool on CPU, 
-            if kwargs.gpu, pul = {0}; else, pul = {}; end
+            if kwargs.gpu, pul = {0}; x0 = gpuArray(x0); z0 = gpuArray(z0);
+            else, pul = {}; end
             
             % Get the interpolation weights for each part of the line
             parfor (k = 1 : Kmax, pul{:})
