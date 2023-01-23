@@ -51,23 +51,27 @@ function [c1, x1, y1, c2, x2, y2] = xiaolinwu_k_scaled(xa, ya, xb, yb, k, dx, dy
 % 
 % See also WBILERP SPARSE
 
-arguments
-    xa (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    ya (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    xb (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    yb (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
-    k  (1,1) {mustBeInteger}
-    dx (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat} = ones(1,'like', xa);
-    dy (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat} = dx;
-end
+% all argument validation and type checks disabled in order to run in
+% parallel on GPU
+%{
+% arguments
+%     xa (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
+%     ya (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
+%     xb (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
+%     yb (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat}
+%     k  (1,1) {mustBeInteger}
+%     dx (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat} = ones(1,'like', xa);
+%     dy (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat} = dx;
+% end
 
 % defaults
-if nargin < 6, dx = ones(1,'like', xa); end
-if nargin < 7, dy = ones(1,'like', dx); end
+% if nargin < 6, dx = ones('like', xa); end
+% if nargin < 7, dy = ones('like', dx); end
 
 % Type checks and casting
-assert(all(cellfun(@isscalar, {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be scalar.')
-assert(all(cellfun(@isfloat , {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be a floating point type.');
+% assert(all(cellfun(@isscalar, {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be scalar.')
+% assert(all(cellfun(@isfloat , {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be a floating point type.');
+%}
 
 % convert to 0-based indexing
 k = k - 1;
