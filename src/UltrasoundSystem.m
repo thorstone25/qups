@@ -1528,7 +1528,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % k-Wave calls
     methods
-        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args)
+        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args, ksensor_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(self, med) simulates the Medium med 
@@ -1693,6 +1693,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwave_args.Smooth (1,:) logical % can be (1,3) to smooth {p0, c, rho} separately, or (1,1) for all
                 kwave_args.StreamToDisk (1,1) {mustBeNumericOrLogical}
             end
+            arguments
+                ksensor_args.directivity_pattern (1,1) string {mustBeMember(ksensor_args.directivity_pattern, ["pressure", "gradient", "total", "none"])} = "none"
+            end
 
             % only supported with tx == rx for now
             assert(self.tx == self.rx, 'Transmitter and receiver must be identical.')
@@ -1833,16 +1836,36 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % define the sensor
             ksensor.mask = mask; % pixels to record
 
+            % set the directivity
+            switch ksensor_args.directivity_pattern 
+                case {'none'}
+                otherwise
+                switch kwargs.ElemMapMethod
+                    case {'linear', 'nearest'}
+                        elem_dir = zeros(size(mask)); % receive element directivity
+                        theta = deg2rad(self.xdc.orientations());
+                        if kwargs.ElemMapMethod == "nearest"
+                            elem_dir(ind) = theta; % set element directions
+                        else
+                            for n = 1:self.xdc.numel, elem_dir(el_ind(:,n)) = theta(n); end % set element directions
+                        end
+
+                        ksensor.directivity_angle = elem_dir; % 0 is most sensitive in x
+                        ksensor.directivity_size  = self.rx.width; % size of the element for producing the directivity
+                        ksensor.directivity_pattern = char(ksensor_args.directivity_pattern); % type of pattern
+                    case {'karray-direct', 'karray-depend'}
+                        warning('Unable to set directivity for karray element mapping methods.');
+                end
+            end
+
             % define the source if it's not empty i.e. all zeros
             switch kwargs.ElemMapMethod
                 case {'nearest', 'linear'} % use vector velocity source
-                    ksensor.record = {'u'}; % record the original particle velocity
                     if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
                     if any(sub(psig,2,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
                     if any(sub(psig,3,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
                     [ksource.u_mask] = deal(mask); % set transmit aperture mask
                 case {'karray-direct', 'karray-depend'} % use a pressure source
-                    ksensor.record = {'p'}; % record the original particle velocity
                     if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).p = real(sub(psig,v,3)); end, end % set transmit pulses (J' x T' x V x 1 x 1)
                     [ksource.p_mask] = deal(mask); % set transmit aperture mask
             end
@@ -1937,10 +1960,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elemmethod = kwargs.ElemMapMethod;
             
             % get the arguments to run the sim
-            if contains(ksensor.record, 'u')
-                wd = 1 : kgrid.dim; % record up to dim dimensions
+            if isfield(ksensor, 'record')
+                if contains(ksensor.record, 'u')
+                    wd = 1 : kgrid.dim; % record up to dim dimensions
+                else
+                    wd = ismember(["ux", "uy", "uz"], ksensor.record); % record corresponding fields
+                end
             else
-                wd = ismember(["ux", "uy", "uz"], ksensor.record); % record corresponding fields
+                wd = 1:kgrid.dim; % ???
             end
             args = {...
                 kspaceFirstOrderND_, ...
@@ -1977,14 +2004,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         function y = kspaceFirstOrderPostProc(x, rx_sig, method, wnorm, varargin)
             % processing step: get sensor data, enforce on CPU (T x N)
             
+            if isstruct(x)
             f = string(fieldnames(x)); % recorded fields
             switch method
-                case {'nearest', 'linear'}
+                case {} % {'linear', 'nearest'} % particle velocity
                     f = f(ismember(f, {'ux', 'uy', 'uz'})); % velocity fields
                     u = arrayfun(@(f) {x.(f)}, f); % extract each velocity field
                     u = cat(3, u{:}); % J' x T x D, D = 2 or 3
-                case {'karray-depend', 'karray-direct'}
+                case {'nearest', 'linear','karray-depend', 'karray-direct'}
                     u = x.p; % pressure (J' x T)
+            end
+            else % the data is given directly, not in a struct
+                u = x; % (J' x T)
             end
 
             switch method
@@ -2043,7 +2074,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % multiply by a normal vector in the direction of each element
             % to combine the velocities
             switch method
-                case {'linear', 'nearest'}
+                case {}% {'linear', 'nearest'}
                     y = sum(y .* wnorm, 3); % (T x N x D) * (1 x N x D) -> (T x N)
             end
         end
@@ -2054,10 +2085,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 )
 
             Np = numel(ksource);
-            parfor (puls = 1:Np, W)
-            % for puls = 1:Np
-                gpuDevice([]); % clear the GPU on this worker
-            
+            parfor (puls = 1:Np, W)            
                 % TODO: make this part of some 'info' logger or something
                 fprintf('\nComputing pulse %i of %i\n', puls, Np);
                 tt_pulse = tic;
