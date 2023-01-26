@@ -343,9 +343,12 @@ classdef Waveform < matlab.mixin.Copyable
            end
            
             % Get waveform samples for the times specified in the vector t.
-            s = zeros(size(t), 'like', t);
-            n = wv.t0 <= t & t <= wv.tend;
-            s(n) = wv.fun(wv.tscale .* t(n));
+            tu = unique(t); % unique values of t - we only need to sample these
+            [~, i] = ismember(t, tu); % indices where t matches tu 
+            n = wv.t0 <= tu & tu <= wv.tend; % non-OOB indices
+            f = zeros(size(tu), 'like', tu);
+            f(n) = wv.fun(wv.tscale .* tu(n)); % compute for unique, non-OOB
+            s = reshape(f(i),size(t)); % map output
         end
         
         function wv = conv(this, that, fs)
