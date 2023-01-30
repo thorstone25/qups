@@ -1,4 +1,4 @@
-function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
+function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
 % BEAMFORM Beamform data using a delay-and-sum approach
 % 
 % y = BEAMFORM(fun, Pi, Pr, Pv, Nv, x, t0, fs, c) beamforms the given data
@@ -62,6 +62,21 @@ function y = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
 % {"nearest","linear"*,"cubic","lanczos3"}. In MATLAB, support is
 % determined by the interp1 function. 
 % 
+% [y, k, PRE_ARGS, POST_ARGS] = BEAMFORM(...) when the CUDA ptx is used returns
+% the parallel.gpu.CUDAKernel k as well as the arguments for calling the
+% data PRE_ARGS and POST_ARGS. The kernel can then be called per frame f as 
+%
+%     y{f} = k.feval(PRE_ARGS{:}, x{f}, POST_ARGS{:}); 
+%
+% The data x{f} must be in dimensions T x N x M. If x{f} is a gpuArray, 
+% it must have the same type as was used to create the
+% parallel.gpu.CUDAKernel k. This is useful for processing many identical
+% frames with minimal overhead.
+%
+% NOTE: if the input data is smaller than was used to create the
+% parallel.gpu.CUDAKernel k, an illegal address error may occur, requiring
+% MATLAB to be restarted!
+%
 % See also ULTRASOUNDSYSTEM/DAS CHANNELDATA/SAMPLE INTERP1
 
 % TODO: switch to kwargs struct to support arguments block
@@ -299,6 +314,12 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     
     % if it's a half type, make an aliased halfT
     if idataType == "halfT", y_ = alias(halfT([])); y_.val = y; y = y_; end
+
+    % save the pre/post arguments if requested
+    if nargout > 1
+        pre_args = {yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride]};
+        post_args = {flagnum, [fs, fmod]};
+    end
 else
     
     % cast constant data on CPU

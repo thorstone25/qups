@@ -2111,7 +2111,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % Beamforming
     methods
-        function b = DAS(self, chd, c0, kwargs)
+        function [b, k, PRE_ARGS, POST_ARGS] = DAS(self, chd, c0, kwargs)
             % DAS - Delay and sum beamformer
             %
             % b = DAS(us, chd) performs delay-and-sum beamforming on 
@@ -2162,6 +2162,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % avoids using a gpuDevice. The default is -1 if a gpu is
             % available or 0 if no gpu is available.
             %
+            % [b, k, PRE_ARGS, POST_ARGS] = DAS(...) when the CUDA ptx is
+            % used returns the parallel.gpu.CUDAKernel k as well as the
+            % arguments for calling the data PRE_ARGS and POST_ARGS. The
+            % kernel can then be called per frame f of ChannelData chd as
+            %
+            %     b{f} = k.feval(PRE_ARGS{:}, chd.data(:,:,:,f), POST_ARGS{:});
+            %
+            % The ChannelData chd must have the ord == 'TNM'. If chd.data
+            % is a gpuArray, it must have the same type as was used to
+            % create the parallel.gpu.CUDAKernel k. This is useful for
+            % processing many identical frames with minimal overhead.
+            %
+            % NOTE: if the input data is smaller than was used to create
+            % the parallel.gpu.CUDAKernel k, an illegal address error may
+            % occur, requiring MATLAB to be restarted!
+            % 
             % DAS is similar to BFDAS, but is more computationally 
             % efficient at the cost of code readability and interpolation 
             % methods because it avoids calling the ChannelData/sample 
@@ -2240,11 +2256,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elseif ~sumtx && ~sumrx, fun = 'BF';
             end
 
+            % request the CUDA kernel?
+            if nargout > 1, ext_ret = cell(1,3); else, ext_ret = {}; end
+
             % beamform the data (I1 x I2 x I3 x N x M x F x ...)
-            b = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
+            [b, ext_ret{:}] = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
 
             % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
             b = permute(b, [1:3,6:ndims(b),4:5]);
+
+            % map outputs
+            if nargout > 1, [k, PRE_ARGS, POST_ARGS] = deal(ext_ret{:}); end
         end
         
         function chd = focusTx(self, chd, seq, kwargs)
