@@ -57,7 +57,7 @@ classdef TransducerMatrix < Transducer
             self@Transducer(xdc_args{:}) 
             
             % if numd not set, make it a resonably guessed breakdown
-            if ~isfield(xdc_args, 'numd')
+            if ~isfield(array_args, 'numd')
                 % use product of every other factor -
                 % this is a heuristic breakdown that is guaranteed to be
                 % the square root if N has a square
@@ -66,8 +66,8 @@ classdef TransducerMatrix < Transducer
             end
 
             % ensure width/height <= pitch
-            self.width  = min(self.width , self.pitch(1));
-            self.height = min(self.height, self.pitch(1));
+            % self.width  = min(self.width , self.pitch(1));
+            % self.height = min(self.height, self.pitch(1));
 
             % initialize the TransducerMatrix
             for f = string(fieldnames(array_args))'
@@ -159,8 +159,8 @@ classdef TransducerMatrix < Transducer
                 self.numd(end), ...
                 self.width, ...
                 self.height,...
-                self.pitch(1)   - self.width, ... kerf in x
-                self.pitch(end) - self.height, ... kerf in y
+                abs(self.pitch(1)  ) - self.width, ... kerf in x
+                abs(self.pitch(end)) - self.height, ... kerf in y
                 ones(self.numd), ...
                 element_sub_divisions(1), ...
                 element_sub_divisions(end), ...
@@ -269,26 +269,34 @@ classdef TransducerMatrix < Transducer
             switch Trans.units
                 case 'wavelengths', scale = c0 / Trans.frequency * 1e-6; % lambda -> m
                 case 'mm', scale = 1e-3; % mm -> m
-                otherwise
-                    error('Conversion from Verasonics Trans to TransducerMatrix not implemented for these units.');
             end
+
+            % infer the number of element in each dimension
+            numd = arrayfun(@(i)numel(unique(Trans.ElementPos(:,i))),1:2);
+            x = reshape(Trans.ElementPos(:,1), numd);
+            z = reshape(Trans.ElementPos(:,2), numd);
+            pitch = [mode(mode(diff(x,1,1))), mode(mode(diff(z,1,2)))];
+
+            % for true matrix arrays, create a length property matching the
+            % width 
+            if ~isfield(Trans, 'elementLength'), Trans.elementLength = Trans.elementWidth; end
             
             % set relevant properties
             xdc = TransducerMatrix(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
                 'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
-                'width', scale*Trans.elementWidth, ... % linear kerf
-                'height', scale*Trans.elementWidth, ... % Height of element [m]
-                'numd', sqrt(Trans.numelements) * [1 1], ... % number of elements in each axes
-                'pitch', 1e-3*Trans.spacingMm * [1 1], ... % probe pitch in each axes [m]
+                'width' , scale*Trans.elementWidth, ... % linear kerf
+                'height', scale*Trans.elementLength, ... % Height of element
+                'numd', numd, ... % number of elements in each axes
+                'pitch', 1e-3*pitch, ... % probe pitch in each axes
                 'el_focus', inf ... % elevation focal depth (none)
                 );
 
             % apply mux hardware offset
             pv = scale .* Trans.ElementPos(:,1:2)'; % reported positions
             pv(3,:) = 0; 
-            pq = xdc.positions(); % qups positions
-            xdc.mux_offset = pv - xdc.positions; % offset
+            pq = xdc.positions(); % current qups positions
+            xdc.mux_offset = pv - pq; % offset from Verasonics definition
 
         end
         function xdc = UFF(probe)
