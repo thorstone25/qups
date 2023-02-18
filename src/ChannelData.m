@@ -633,7 +633,7 @@ classdef ChannelData < matlab.mixin.Copyable
             toff = chd.t0 - t0_; % get offset across upper dimensions
             npad = ceil(max(toff,[],'all') * chd.fs); % furthest sample containing data
             chd = zeropad(chd,0,npad); % extend time-axes
-            tau = chd.time + toff; % get delays to resample all traces
+            tau = t0_ + swapdim(0:chd.T-1+npad,2,chd.tdim) ./ chd.fs; % get delays to resample all traces
             y = chd.sample(tau, interp); % resample
             chd.data = y; % make new object
             chd.t0 = t0_; % make new object
