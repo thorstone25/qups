@@ -417,7 +417,7 @@ classdef Sequence < matlab.mixin.Copyable
             else
                 if isa(self.apodization_, 'function_handle')
                     a = self.apodization_(tx, self); % call the function on tx
-                elseif isnumeric(self.apodization_)
+                elseif isnumeric(self.apodization_) || islogical(self.apodization_)
                     a = self.apodization_; % return the user supplied values
                 else, warning("Unable to interpret apodization; not a function handle or numeric type")
                     a = self.apodization_; % return the user supplied values anyway
