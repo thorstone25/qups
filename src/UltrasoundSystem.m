@@ -2519,12 +2519,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             y = cat(chd.mdim, y{:});
 
             % move back to the time domain
-            y = y .* conj(omega0); % re-align time axis
+            t0 = min(chd.t0,[],'all');
+            y = y .* exp(+2i*pi*f .* t0); % re-align time axes
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
             chd = copy(chd);
             chd.data = y;
+            chd.t0 = t0;
         end
 
         function b = bfAdjoint(self, chd, c0, kwargs)
