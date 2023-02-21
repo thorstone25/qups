@@ -150,6 +150,9 @@ if (nargin < 8 || isempty(fs))
     end
 end
 
+% init
+[k, pre_args, post_args] = deal({});
+
 % get speed of sound inverse
 cinv = 1./c;
 
