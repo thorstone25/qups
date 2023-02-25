@@ -177,6 +177,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 rmdir(self.tmp_folder);
             end
         end
+    
+        % convert to a structure to remove class info
+        function s = obj2struct(us)
+            arguments
+                us UltrasoundSystem
+            end
+            
+            s = struct(us); % convert self to a struct
+            if isfield(s,'xdc'), s = rmfield(s,{'tx','rx'}); end % remove duplicate information
+            s = rmfield(s, {'fc', 'pulse'});
+
+            % convert all sub-classes
+            for f = intersect(string(fieldnames(s))', ["tx","rx","xdc","sequence","scan"])
+                if isobject(s.(f))
+                    s.(f) = obj2struct(s.(f)); 
+                end
+            end
+        end    
     end
     
     % overloading methods

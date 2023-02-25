@@ -98,6 +98,12 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
                 xdc.impulse = xdc.ultrasoundTransducerImpulse();
             end
         end
+    
+        function s = obj2struct(xdc)
+            arguments, xdc Transducer {mustBeScalarOrEmpty}; end
+            s = struct(xdc); % convert self
+            if ~isempty(s), s.impulse = obj2struct(s.impulse); end % convert impulse
+        end
     end
 
     % manipulation

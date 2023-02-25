@@ -106,6 +106,15 @@ classdef Scan < matlab.mixin.Copyable
         scale(self, kwargs)
     end
 
+    % conversion
+    methods
+        function s = obj2struct(scan)
+            arguments, scan Scan {mustBeScalarOrEmpty}; end
+            s = struct(scan); % convert self
+        end
+    end
+
+    % plotting
     methods
         function gif(self, b_im, filename, h, varargin, kwargs)
             % GIF - Write the series of images to a GIF file

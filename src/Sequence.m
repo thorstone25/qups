@@ -203,6 +203,12 @@ classdef Sequence < matlab.mixin.Copyable
             for s = string(fieldnames(kwargs))', self.(s) = kwargs.(s); end
         end
 
+        function s = obj2struct(seq)
+            arguments, seq Sequence {mustBeScalarOrEmpty}; end
+            s = struct(seq); % convert self
+            if ~isempty(s), s.pulse = obj2struct(s.pulse); end % convert pulse
+        end
+        
         % scaling
         function self = scale(self, kwargs)
             % SCALE - Scale units

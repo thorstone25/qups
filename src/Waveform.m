@@ -179,6 +179,21 @@ classdef Waveform < matlab.mixin.Copyable
             end
         end
         
+        % convert to a structure to remove class info
+        function s = obj2struct(wv)
+            arguments
+                wv Waveform {mustBeScalarOrEmpty}
+            end
+
+            s = struct(wv); % convert self to a struct
+
+            % convert function
+            if ~isempty(s) && isa(s.fun, 'griddedInterpolant') && ~isempty(s.fun)
+                s.fun = struct(s.fun);
+            end
+        end
+
+        
         function varargout = plot(wv, varargin, kwargs, plot_args)
             % WAVEFORM/PLOT - plot the Waveform
             % 
