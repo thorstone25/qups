@@ -280,11 +280,17 @@ classdef TransducerMatrix < Transducer
             % for true matrix arrays, create a length property matching the
             % width 
             if ~isfield(Trans, 'elementLength'), Trans.elementLength = Trans.elementWidth; end
+
+            % parse the impulse response
+            h = Trans.IR1wy; % impulse response
+            t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
+            wv = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
             
             % set relevant properties
             xdc = TransducerMatrix(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
                 'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
+                'impulse', wv, ... % impulse response function
                 'width' , scale*Trans.elementWidth, ... % linear kerf
                 'height', scale*Trans.elementLength, ... % Height of element
                 'numd', numd, ... % number of elements in each axes

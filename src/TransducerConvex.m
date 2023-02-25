@@ -382,15 +382,20 @@ classdef TransducerConvex < Transducer
 
             % determine the scaling of the properties
             switch Trans.units
-                case 'wavelengths', scale = c0 / Trans.frequency * 1e-6;
-                otherwise
-                    warning('Conversion from Verasonics Trans to TransducerConvex not supported for units not in wavelengths.');
+                case 'wavelengths', scale = c0 / Trans.frequency * 1e-6; % lambda -> m
+                case 'mm', scale = 1e-3; % mm -> m
             end
 
+            % parse the impulse response
+            h = Trans.IR1wy; % impulse response
+            t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
+            wv = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
+            
             % set relevant properties
             xdc = TransducerConvex(...
                 'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
                 'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
+                'impulse', wv, ... % impulse response function
                 'width', scale*Trans.elementWidth, ... % linear kerf
                 'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
                 'numel', Trans.numelements, ... % number of elements
