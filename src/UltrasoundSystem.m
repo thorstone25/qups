@@ -1484,9 +1484,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
             
             % Make position/amplitude and transducers constants across the workers
-            if isa(parenv, 'parallel.Pool'), 
+            if isa(parenv, 'parallel.Pool')
                 cfun = @parallel.pool.Constant;
-            else, 
+            else 
                 cfun = @(x)struct('Value', x);
                 [pos, amp] = deal({pos},{amp}); % for struct to work on cell arrays
             end
@@ -1546,7 +1546,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % k-Wave calls
     methods
-        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, kwargs, karray_args, kwave_args, ksensor_args)
+        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, varargin, kwargs, karray_args, kwave_args, ksensor_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(self, med) simulates the Medium med 
@@ -1672,6 +1672,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self (1,1) UltrasoundSystem
                 med Medium
                 sscan (1,1) ScanCartesian = self.scan
+            end
+            arguments(Repeating)
+                varargin % unidentified arguments passed to k-Wave directly
             end
             arguments % keyword arguments for this function
                 kwargs.T double {mustBeScalarOrEmpty} = [], % simulation time (s)
@@ -1944,6 +1947,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 'UniformOutput', false ...
                 );
 
+            % add the unspecified arguments
+            if ~isempty(varargin), for v = 1:numel(kwave_args_), kwave_args_{v} = cat(1, kwave_args_{v}(:), varargin(:)); end, end
+
             % processing step: get sensor data, enforce on CPU (T x N)
             switch kwargs.ElemMapMethod
                 case 'karray-depend'
@@ -1960,7 +1966,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % which to convolve the output
                     vec = @(x)x(:);
                     N = self.rx.numel;
-                    rx_sig = gather(real(rx_imp.sample(t_rx(:)' + el_dist(:)/c0map))); % J'' x T''
+                    assert((rx_imp.tend - rx_imp.t0) > 1/fs_, "Cannot use 'linear' element mapping method when the receiver impulse response function is a Delta function.");
+                    rx_sig = gather(real(sample(rx_imp, t_rx(:)' + el_dist(:)/c0map))); % J'' x T''
                     el_map_el = sparse((1:N) == vec(ones(size(el_ind)) .* (1:N)))'; % map from convolved samples to elements
                     rx_args = {el_weight, el_map_grd, el_map_el};
                     % proc_fun = @(x) gather(...
@@ -2058,32 +2065,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     el_map_el  = sparse(double(el_map_el ));
                     el_map_grd = sparse(double(el_map_grd));
                     
-                    % try up to 5 times (for OOM issues)
+                    % gather here for OOM issues
+                    % TODO: only gather if actually running out of memory
                     usegpu = isa(u, 'gpuArray');
                     u = gather(u);
-                    count = 1;
-                    while(count <= 5)
-                        try
-                            for d = D:-1:1 % [(N x J'') x [[(J'' x J') x (J' x T' | D)] x (T' x T | J'')]]' -> (T x N | D)
-                                y(:,:,d) = gather(cast(transpose( ...
-                                    el_map_el * double(el_weight(:) .* convd( ...
-                                    gather(cast(el_map_grd' * double(u(:,:,d)), 'like', u)), ...
-                                    rx_sig, 2, 'full', 'gpu', usegpu ...
-                                    )) ...
-                                    ), 'like', u(1)*rx_sig(1)));
-                            end
-                            disp("Post-processing succeeded on try " + count + "!");
-                            break;
-                        catch ME
-                            disp("Post-processing failed on try " + count + "!"); 
-                            disp(ME);
-                            count = count + 1;
-                            usegpu = logical(mod(count, 2));
-                            if usegpu, pause(10 + 30 * rand()); end % wait for other data to clear off the GPU?
-                        end
+                    for d = D:-1:1 
+                        % [(N x J'') x [[(J'' x J') x (J' x T' | D)] x (T' x T | J'')]]' -> (T x N | D)
+                        y(:,:,d) = gather(cast(transpose( ...
+                            el_map_el * double(el_weight(:) .* convd( ...
+                            gather(cast(el_map_grd' * double(u(:,:,d)), 'like', u)), ...
+                            rx_sig, 2, 'full', 'gpu', usegpu ...
+                            )) ...
+                            ), 'like', u(1)*rx_sig(1)));
                     end
-
-                    if ~exist('y', 'var'), rethrow(ME); end
 
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
                    y = gather(convn(u, rx_sig, 'full'));
