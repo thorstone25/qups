@@ -2230,52 +2230,70 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % parse inputs
             [sumtx, sumrx] = deal(~kwargs.keep_tx, ~kwargs.keep_rx);
 
-            % make sure t0 is a scalar in all dims except transmit
-            if ~all(size(chd.t0, setdiff(1:ndims(chd.t0), chd.mdim)) == 1), warning("Resampling data for a scalar t0."); chd = rectifyt0(chd); end
+            % get concatenation dimension(s) for multiple ChannelData
+            chds = chd; % ND-array of ChannelData
+            chddim = find(size(chds) > 1);
+            assert(isempty(chddim) || isscalar(chddim), 'ChannelData array can only contain up to one non-scalar dimension.');
+            D = max(max(arrayfun(@(chd)ndims(chd.data), chds)), ndims(chds)); % max dimension of data
 
-            % data must be ordered T x N x M
-            ord = [chd.tdim, chd.ndim, chd.mdim];
-            if ~isequal(ord, 1:3), chd = permute(chd, [ord, 4:ndims(chd.data)]); end % reorder if necessary
-            
-            % reshape into I x N x M
+            % apodization and modulation
             apod_args = {'apod', kwargs.apod, 'modulation', kwargs.fmod};
-            
-            % get positions of the imaging plane 
+
+            % get positions of the imaging plane
             P_im = self.scan.getImagingGrid('vector',true); % 3 x I1 x I2 x I3 == 3 x [I]
-            
+
             % get positions of the receive aperture
             P_rx = self.rx.positions(); % 3 x N
-            
-            % get the beamformer arguments
-            dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
-            if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
-            ext_args = [interp_args, apod_args]; % extra args
-            
-            switch self.sequence.type
-                case 'FSA'
-                    pos_args = {P_im, P_rx, self.tx.positions(), [0;0;1]};
-                case 'PW'
-                    pos_args = {P_im, P_rx, [0;0;0], self.sequence.focus}; % TODO: use origin property in tx sequence
-                    ext_args{end+1} = 'plane-waves'; 
-                case 'VS'
-                    pos_args = {P_im, P_rx, self.sequence.focus, [0;0;1]};
-            end
 
-            % beamform and collapse the aperture
-            if      sumtx &&  sumrx, fun = 'DAS'; 
+            % choose beamforming flag
+            if      sumtx &&  sumrx, fun = 'DAS';
             elseif  sumtx && ~sumrx, fun = 'SYN';
             elseif ~sumtx &&  sumrx, fun = 'MUL';
             elseif ~sumtx && ~sumrx, fun = 'BF';
             end
 
-            % request the CUDA kernel?
-            if nargout > 1, ext_ret = cell(1,3); else, ext_ret = {}; end
+            % process for each ChannelData
+            for i = numel(chds):-1:1
+                % choose ChannelData
+                chd = chds(i);
 
-            % beamform the data (I1 x I2 x I3 x N x M x F x ...)
-            [b, ext_ret{:}] = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
+                % make sure t0 is a scalar in all dims except transmit
+                if ~all(size(chd.t0, setdiff(1:ndims(chd.t0), chd.mdim)) == 1), warning("Resampling data for a scalar t0."); chd = rectifyt0(chd); end
 
-            % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
-            b = permute(b, [1:3,6:ndims(b),4:5]);
+                % data must be ordered T x N x M
+                ord = [chd.tdim, chd.ndim, chd.mdim];
+                if ~isequal(ord, 1:3), chd = permute(chd, [ord, 4:ndims(chd.data)]); end % reorder if necessary
+
+                % get the beamformer arguments
+                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
+                if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
+                ext_args = [interp_args, apod_args]; % extra args
+
+                switch self.sequence.type
+                    case 'FSA'
+                        pos_args = {P_im, P_rx, self.tx.positions(), [0;0;1]};
+                    case 'PW'
+                        pos_args = {P_im, P_rx, [0;0;0], self.sequence.focus}; % TODO: use origin property in tx sequence
+                        ext_args{end+1} = 'plane-waves'; %#ok<AGROW> 
+                    case 'VS'
+                        pos_args = {P_im, P_rx, self.sequence.focus, [0;0;1]};
+                end
+
+                % request the CUDA kernel?
+                if nargout > 1, ext_ret = cell(1,3); else, ext_ret = {}; end
+
+                % beamform the data (I1 x I2 x I3 x N x M x F x ...)
+                [b, ext_ret{:}] = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
+
+                % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
+                b = permute(b, [1:3,6:(D+2),4:5]);
+
+                % store
+                bi{i} = b;
+            end
+
+            % unpack
+            if isempty(chddim), b = bi{1}; else, b = cat(chddim, bi{:}); end
 
             % map outputs
             if nargout > 1, [k, PRE_ARGS, POST_ARGS] = deal(ext_ret{:}); end
