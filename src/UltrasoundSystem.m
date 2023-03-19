@@ -1684,6 +1684,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.sequence.numPulse
+                kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
+                kwargs.isosub (1,1) logical = true; % whether to subtract the background using and isoimpedance sim
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10, ...
@@ -1691,6 +1693,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
             end
             arguments % kWave 1.1 arguments - these are passed to kWave
+                kwave_args.BinaryPath (1,1) string
                 kwave_args.CartInterp (1,1) string {mustBeMember(kwave_args.CartInterp, ["linear", "nearest"])}
                 kwave_args.CreateLog (1,1) logical
                 kwave_args.DataCast (1,1) string = 'gpuArray-single'
@@ -1736,9 +1739,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the kWave medium struct
             kmedium = getMediumKWave(med, sscan);
 
-            % make an iso-impedance medium
-            kmedium_iso = kmedium;
-            kmedium_iso.density = (med.c0 * med.rho0) ./ kmedium.sound_speed;
+            % make an iso-impedance medium maybe
+            if kwargs.isosub
+                kmedium_iso = kmedium;
+                kmedium_iso.density = (med.c0 * med.rho0) ./ kmedium.sound_speed;
+            else
+                kmedium_iso = repmat(kmedium, [1, 0]);
+            end
 
             % get the minimum necessary time step from the CFL
             dt_cfl_max = kwargs.CFL_max * min([sscan.dz, sscan.dx, sscan.dy]) / max(kmedium.sound_speed,[],'all');
@@ -1922,6 +1929,32 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 end
             end
             
+            % dispatch to the appropriate function
+            if kwargs.binary
+                if contains(kwave_args.DataCast, "gpuArray")
+                    switch kgrid.dim
+                        case 1, kspaceFirstOrderND_ = @kspaceFirstOrder1D;
+                        case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2DG;
+                        case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3DG;
+                        otherwise, error("Unsupported dimension size (" + kgrid.dim  +").");
+                    end
+                else
+                    switch kgrid.dim
+                        case 1, kspaceFirstOrderND_ = @kspaceFirstOrder1D;
+                        case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2DC;
+                        case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3DC;
+                        otherwise, error("Unsupported dimension size (" + kgrid.dim  +").");
+                    end
+                end
+            else
+                switch kgrid.dim
+                    case 1, kspaceFirstOrderND_ = @kspaceFirstOrder1D;
+                    case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2D;
+                    case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3D;
+                    otherwise, error("Unsupported dimension size (" + kgrid.dim  +").");
+                end
+            end
+
             if self.sequence.numPulse > 1
                 % make a unique movie name for each pulse
                 [fld, nm, ext] = fileparts(kwave_args.MovieName);        
@@ -1929,17 +1962,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             else
                 mv_nm = cellstr(kwave_args.MovieName);
             end
+            
             kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
             [kwave_args.MovieName] = deal(mv_nm{:});
-
-            % select function
-            switch kgrid.dim
-                case 1, kspaceFirstOrderND_ = @kspaceFirstOrder1D;
-                case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2D;
-                case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3D;
-                otherwise, error("Unsupported dimension size (" + kgrid.dim  +").");
-            end
-
+   
             % get all arguments
             kwave_args_ = arrayfun(...
                 @(pulse) struct2nvpair(kwave_args(pulse)), ...
@@ -2096,20 +2122,47 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 rx_sig, elemmethod, wnorm, rx_args, t0, fs_, W ...
                 )
 
-            Np = numel(ksource);
-            parfor (puls = 1:Np, W)            
+            % splice
+            setgpu = isa(W, 'parallel.Cluster'); % on implicit pools, gpu must be set explicitly
+            runiso = ~isempty(kmedium_iso); % if empty, no need to simulate
+            Np = numel(ksource); % number of sims
+            parfor (puls = 1:Np, W)
                 % TODO: make this part of some 'info' logger or something
                 fprintf('\nComputing pulse %i of %i\n', puls, Np);
                 tt_pulse = tic;
 
-                % simulate
-                % TODO: try to run these two in parallel on the same GPU?
-                sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); %#ok<PFBNS>
-                sensor_data_iso = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
+                % configure gpu selection
+                if gpuDeviceCount() % if gpus exist
+                    % get reference to the desired gpuDevice
+                    if setgpu % set the current gpuDevice on implicit pools
+                        % TODO: allow input to specify gpu dispatch
+                        tsk = getCurrentTask();
+                        g = gpuDevice(1+mod(tsk.ID-1, gpuDeviceCount())); % even split across tasks 
+                    else % get current device on expliciti pools or currrent session
+                        g = gpuDevice();
+                    end
 
-                % Process the simulation data
-                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data    , rx_sig, elemmethod, wnorm, rx_args{:}) ...
-                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data_iso, rx_sig, elemmethod, wnorm, rx_args{:}); %#ok<PFBNS> data is small
+                    % specify the device input explicitly if using a GPU binary
+                    if endsWith(func2str(kspaceFirstOrderND_), 'G')
+                        % explicitly set for kWave binary
+                        kwave_args_{puls}(end+(1:2)) = {'DeviceNum', (g.Index - 1)}; %#ok<PFOUS>
+                    end
+                end
+
+                % simulate
+                sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); % data is small
+
+                % Post-process the simulation data
+                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data, rx_sig, elemmethod, wnorm, rx_args{:}); %#ok<PFBNS> data is small
+
+                if runiso
+                % simulate
+                sensor_data = kspaceFirstOrderND_(kgrid, kmedium_iso, ksource(puls), ksensor, kwave_args_{puls}{:});
+
+                % Post-process the simulation data, and remove background
+                out{puls} = out{puls} ...
+                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data, rx_sig, elemmethod, wnorm, rx_args{:}); 
+                end
 
                 % report timing % TODO: make this part of some 'info' logger or something
                 fprintf('\nFinished pulse %i of %i\n', puls, Np);
