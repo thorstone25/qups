@@ -3451,8 +3451,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % I1 x I2 x I3 are the dimensions of the scan, N is the number
             % of receive elements, and M is the number of transmits.
             %
-            % apod = APSCANLINE(us, tol) uses a tolerance
-            % of tol to decided whether to accept the transmit.
+            % apod = APSCANLINE(us, tol) uses a tolerance of tol to decide 
+            % whether to accept the transmit. The default is the mean
+            % difference between foci.
             %
             % Example:
             %
@@ -3764,10 +3765,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
 
             % get the pixel positions in the proper dimensions
-            xdim = find(us.scan.order == 'X');
-            zdim = find(us.scan.order == 'Z');
-            Xi = shiftdim(us.scan.x(:), 1-xdim-1); % (1 x I1 x I2 x I3)
-            Zi = shiftdim(us.scan.z(:), 1-zdim-1); % (1 x I1 x I2 x I3)
+            Xi = swapdim(us.scan.x(:), 1, 1+us.scan.xdim); % (1 x I1 x I2 x I3)
+            Zi = swapdim(us.scan.z(:), 1, 1+us.scan.zdim); % (1 x I1 x I2 x I3)
 
             % get the equivalent aperture width (one-sided) and pixel depth
             % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
@@ -3777,7 +3776,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
 
             % shift to (I1 x I2 x I3 x N x M)
-            apod = shiftdim(apod, 1);
+            apod = reshape(apod, size(apod,2:6));
         end
 
         function apod = apAcceptanceAngle(us, theta)
@@ -3842,9 +3841,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             r = Pi - Pn;
 
             % get the cosine of the angle via the inner product of the
-            % normalized direction vectors
-            r = sum(r ./ vecnorm(r,2,1) .* n, 1,"omitnan");
-            r = reshape(r, size(r,2:6)); % (I1 x I2 x I3 x N x 1)
+            % normalized direction vectors 
+            % (1 x I1 x I2 x I3 x N)
+            r = r ./ vecnorm(r,2,1); % normalize
+            r = pagemtimes(n, 'transpose', r, 'none'); 
+            r = reshape(r, size(r,2:6)); % -> (I1 x I2 x I3 x N x 1)
 
             % accept if greater than the cutoff
             apod = r >= cosd(theta);
