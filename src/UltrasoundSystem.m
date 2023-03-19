@@ -1564,6 +1564,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % include a two-way propagation of a signal at the slowest
             % sound speed.
             % 
+            % chd = KSPACEFIRSTORDER(..., 'isosub', true) runs an 
+            % additional simulation per pulse of an analagous medium with 
+            % constant impdeance in order to subtract any background 
+            % artefacts from the data. The default is false.
+            % 
             % chd = KSPACEFIRSTORDER(..., 'PML', P) or 
             % chd = KSPACEFIRSTORDER(..., 'PML', [PL, PU]) uses a PML of 
             % size P or with a size between PL and PU with the smallest 
@@ -1583,7 +1588,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % The 'nearest' method uses the nearest pixel. The 'linear' 
             % method uses linear interpolation weights. The 'karray-direct'
-            % method uses the karray method but avoids recomputing 
+            % method uses kWaveArray methods but avoids recomputing 
             % intermediate results. The 'karray-depend' method always uses 
             % the kWaveArray methods, but can be slower.
             % 
@@ -1593,27 +1598,30 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % each pulse in parallel via parfor. 
             % 
             % When using a parallel.Cluster clu, the settings for clu must
-            % be setup for an independent parallel.Job as separate job is
-            % created for each pulse. For example, if using a SLURM cluster
-            % with multiple GPUs, clu.SubmitArguments should contain 
-            % ' --gpus=1' so that 1 GPU is requested per pulse.
+            % be setup for an independent parallel.Job where an indepedent
+            % task is created for each pulse. For example, if using a SLURM
+            % cluster with multiple GPUs, clu.SubmitArguments should
+            % contain ' --gpus=1' so that 1 GPU is requested per pulse.
             % 
             % [job, readfun] = KSPACEFIRSTORDER(..., 'parenv', clu) instead 
-            % returns a communicating parallel.Job job and a function to
-            % read the ChannelData object from the completed job. Use
-            % the submit function to begin running the job.
+            % returns a parallel.CommunicatingJob job and a function to
+            % read the ChannelData object from the completed job, readfun. 
             % 
-            % The settings for clu should must be setup for a communicating
-            % parallel.Job as a single MPI job is created for all pulses. 
-            % For example, if using a SLURM cluster with multiple GPUs,
-            % clu.SubmitArguments should contain the number of GPUs desired
-            % for execution e.g. ' --gpus=4' and clu.NumWorkers should
-            % equal the maximum number of simulataneous CPUs to use e.g. 4.
-            % If more CPUs than GPUs are requested, MATLAB will share GPUs
-            % between multiple CPUs. 
+            % The settings for clu should must be setup for a
+            % parallel.CommunicatingJob as a single MPI job is created for
+            % all pulses. For example, if using a SLURM cluster with
+            % multiple GPUs, clu.SubmitArguments should contain the number
+            % of GPUs desired for execution e.g. ' --gpus=4' and
+            % clu.NumWorkers should equal the maximum number of
+            % simulataneous pulses to use e.g. 8. If more CPUs than GPUs
+            % are requested, GPUs will be shared between multiple CPUs.
+            % Sharing GPUs between multiple CPUs can be faster, but
+            % requires sufficient GPU RAM.
             % 
-            % When the job has completed successfully, the ChannelData
-            % object can be extracted using 'chd = readfun(job)'.
+            % Use `submit(job)` to begin running the job. 
+            % Use `wait(job)` to wait for the job to complete. 
+            % When the job has completed successfully, use 
+            % `chd = readfun(job)` to extract the ChannelData object.
             %
             % A MATLAB parallel.Job is saved until it is deleted, so
             % simulations can be recalled later from the job reference.
@@ -1621,14 +1629,30 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chd = KSPACEFIRSTORDER(..., 'parenv', 0) avoids using a
             % parallel.Cluster or parallel.Pool. 
             %
-            % The default is the current pool returned by gcp.
+            % The default is the current pool returned by `gcp('nocreate')`.
+            % 
+            % [...] = KSPACEFIRSTORDER(..., 'binary', true) calls k-Wave's 
+            % accelerated binary functions, which are appended with 'C' for
+            % the CPU version and 'G' for the GPU version. The selection is
+            % determined by whether the 'DataCast' option represent a GPU 
+            % or CPU data type. The path to the binaries should be
+            % specified using the 'BinaryPath' option.
+            %
+            % Note: If using this option with a cluster, the binaries must 
+            % be accesible and executable from the worker session, not the 
+            % current MATLAB session.
+            %
+            % Note: The binary option is (currently) incompatible with a
+            % parallel.ThreadPool. If `gcp('nocreate')` returns a
+            % parallel.ThreadPool, you must set the 'parenv' option
+            % explicitly.
             % 
             % [...] = KSPACEFIRSTORDER(..., Name, Value, ...)
             % specifies other Name/Value pairs that are valid for 
             % kWaveArray's constructor or kWave's kspaceFirstOrderND. 
             % 
-            % kWave's kspaceFirstOrderND `PMLSize` and `PMLInside`
-            % arguments are invalid as they are overwritten by the method.
+            % kWave's kspaceFirstOrderND 'PMLSize' and 'PMLInside'
+            % arguments are invalid as they are overwritten by this method.
             %
             % References:
             % [1] B. E. Treeby and B. T. Cox, 
@@ -1659,9 +1683,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
-            % if gpuDeviceCount, dtype = 'gpuArray-single'; 
-            % else, dtype = 'single'; end
-            % chd = kspaceFirstOrder(us, med, sscan, 'DataCast', dtype);
+            % chd = kspaceFirstOrder(us, med, sscan);
             % 
             % % Display the ChannelData
             % figure;
@@ -1685,7 +1707,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.sequence.numPulse
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
-                kwargs.isosub (1,1) logical = true; % whether to subtract the background using and isoimpedance sim
+                kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10, ...
@@ -1696,7 +1718,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwave_args.BinaryPath (1,1) string
                 kwave_args.CartInterp (1,1) string {mustBeMember(kwave_args.CartInterp, ["linear", "nearest"])}
                 kwave_args.CreateLog (1,1) logical
-                kwave_args.DataCast (1,1) string = 'gpuArray-single'
+                kwave_args.DataCast (1,1) string = [repmat('gpuArray-',[1,logical(gpuDeviceCount())]), 'single']
                 kwave_args.DataRecast (1,1) logical = false
                 kwave_args.DisplayMask % must be 'off' or a mask the size of sensor.mask
                 kwave_args.LogScale (1,1) logical
