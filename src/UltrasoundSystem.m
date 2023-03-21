@@ -2167,7 +2167,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % specify the device input explicitly if using a GPU binary
                     if endsWith(func2str(kspaceFirstOrderND_), 'G')
                         % explicitly set for kWave binary
-                        kwave_args_{puls}(end+(1:2)) = {'DeviceNum', (g.Index - 1)}; %#ok<PFOUS>
+                        kwave_args_{puls} = [kwave_args_{puls}, {'DeviceNum'; (g.Index - 1)}]; %#ok<PFOUS>
                     end
                 end
 
