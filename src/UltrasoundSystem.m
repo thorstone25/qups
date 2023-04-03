@@ -2856,7 +2856,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             b = swapdim(ipermute(b,[chd_ord, 4:(D+3)]), 1:3, D+(1:3));
         end    
 
-        function b = bfEikonal(self, chd, medium, cscan, kwargs)
+        function [b, tau_rx, tau_tx] = bfEikonal(self, chd, medium, cscan, kwargs)
             % BFEIKONAL - Delay-and-sum beamformer with Eikonal delays
             %
             % b = BFEIKONAL(self, chd, medium) creates a b-mode
@@ -2868,8 +2868,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % step size in each dimension must be identical. The eikonal 
             % equation is solved via the fast marching method.
             %
-            % b = BFEIKONAL(self, chd, medium, cscan) uses the given 
-            % ScanCartesian cscan instead of self.scan.
+            % b = BFEIKONAL(self, chd, medium, cscan) uses the
+            % ScanCartesian cscan as the grid for computing time-delays.
+            % The grid spacing for each dimension must be (almost)
+            % identical e.g. assuming cscan.y = 0, 
+            % abs(cscan.dx - cscan.dz) < eps must hold.
+            % 
+            % A good heuristic is a grid spacing of < lambda / 10 to avoid
+            % accumulated phase errors.
             % 
             % b = BFEIKONAL(..., Name,Value, ...) defines additional
             % parameters via Name/Value pairs
@@ -2909,6 +2915,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % method for interpolation. Support is provided by the 
             % ChannelData/sample method. The default is 'cubic'.
             %
+            % [b, tau_rx, tau_tx] = BFEIKONAL(...) additionally returns the
+            % receive and transmit time delays tau_rx and tau_tx are size
+            % (I1 x I2 x I3 x N x 1) and (I1 x I2 x I3 x 1 x M), where 
+            % I1 x I2 x I3 is the size of the image, N is the number of
+            % receivers, and M is the number of transmits.
+            % 
+            % [...] = BFEIKONAL(..., 'delay_only',true) computes delays but
+            % avoids computing the image.
+            % 
             % References: 
             % [1] Hassouna MS, Farag AA. 
             % Multi-stencils fast marching methods: a highly accurate solution to the eikonal equation on cartesian domains.
@@ -2953,9 +2968,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
-            % if gpuDeviceCount, dtype = 'gpuArray-single'; 
-            % else, dtype = 'single'; end
-            % chd = kspaceFirstOrder(us, med, sscan, 'DataCast', dtype, 'CFL_max', 0.5);
+            % chd = kspaceFirstOrder(us, med, sscan, 'CFL_max', 0.5);
             % 
             % % Beamform
             % b_naive = DAS(us, chd);
@@ -2994,9 +3007,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.apod {mustBeNumericOrLogical} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8))));  % 1 Gibibyte limit on the size of the delays
                 kwargs.verbose (1,1) logical = true;
-                % 1 Gibibyte limit on the size of the delays
+                kwargs.delay_only (1,1) logical = false; % compute only delays
             end
 
             % get summation options
@@ -3081,16 +3094,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % splice args
             interp_method = kwargs.interp; 
-            apod = kwargs.apod;
+            apod = kwargs.apod; % (I1 x I2 x I3 x N x M)
 
-            % get sample times for each tx/rx
+            % get sample times for each tx/rx (I1 x I2 x I3 x N x M)
             tau_rx = cellfun(@(f) f(gi{:}), rx_samp, 'UniformOutput', false); % all receive delays
             tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all transmit delays
             tau_rx = cat(4, tau_rx{:}); % use all at a time
             tau_tx = cat(5, tau_tx{:}); % reconstruct matrix
-            D = max(5, ndims(chd.data)); % data dimensions
-            ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
-            ord = [ord, setdiff(1:max(ord), ord)]; % full order (all dimes)
+            % D = max(5, ndims(chd.data)); % data dimensions
+            % ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
+            % ord = [ord, setdiff(1:max(ord), ord)]; % full order (all dimes)
+            
+            % short-circuit
+            if kwargs.delay_only, b = []; return; end
+
+            % match temporal precision before beamforming
+            t_proto = chd.fs;
+            % if isa(chd.data, 'gpuArray'), t_proto = gpuArray(t_proto); end
+            [tau_tx, tau_rx] = dealfun(@(x)cast(x, 'like', real(t_proto)), tau_tx, tau_rx);
 
             % splice data, apod, delays per transmit
             [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
