@@ -3101,9 +3101,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all transmit delays
             tau_rx = cat(4, tau_rx{:}); % use all at a time
             tau_tx = cat(5, tau_tx{:}); % reconstruct matrix
-            % D = max(5, ndims(chd.data)); % data dimensions
-            % ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
-            % ord = [ord, setdiff(1:max(ord), ord)]; % full order (all dimes)
+            D = max(5, ndims(chd.data)); % data dimensions
+            ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
+            ord = [ord, setdiff(1:max(ord), ord)]; % full order (all dimes)
             
             % short-circuit
             if kwargs.delay_only, b = []; return; end
