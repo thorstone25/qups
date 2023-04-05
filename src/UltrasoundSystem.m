@@ -2475,8 +2475,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             % align dimensions
             D = 1+max(3,ndims(chd.data)); % get a free dimension for M'
-            tau_focal = swapdim(tau_focal, [1,2], [chd.mdim, D]); % move data
-            apod      = swapdim(apod     , [1,2], [chd.mdim, D]); % move data
+            tau_focal = swapdim(swapdim(tau_focal,2,D),1,chd.mdim); % move data
+            apod      = swapdim(swapdim(apod     ,2,D),1,chd.mdim); % move data
 
             % sample and store
             z = chd.sample(chd.time - tau_focal, kwargs.interp, apod, chd.mdim); % sample (perm(T' x N x 1) x F x ... x M')
