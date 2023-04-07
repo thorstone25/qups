@@ -554,8 +554,8 @@ classdef Medium < matlab.mixin.Copyable
             % 
             % See also SCAN/IMAGESC IMAGESC LINKAXES
             arguments
-                self Medium
-                scan Scan
+                self (1,1) Medium
+                scan (1,1) Scan
             end
             arguments(Repeating)
                 varargin
