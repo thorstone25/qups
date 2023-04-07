@@ -1,5 +1,5 @@
 function y = wsinterpd2(x, t1, t2, dim, w, sdim, interp, extrapval, omega)
-% WSINTERPD GPU-enabled weight-and-sum interpolation in one dimension with
+% WSINTERPD2 GPU-enabled weight-and-sum interpolation in one dimension with
 % 2 delay inputs
 %
 % y = WSINTERPD2(x, t1, t2) interpolates the data x at the indices 
@@ -19,32 +19,32 @@ function y = wsinterpd2(x, t1, t2, dim, w, sdim, interp, extrapval, omega)
 %
 % x is 0-base indexed implicitly i.e. x(1) in MATLAB <-> t == 0
 %
-% y = WSINTERPD(x, t1, t2, dim) samples the data in dimension dim instead of
+% y = WSINTERPD2(x, t1, t2, dim) samples the data in dimension dim instead of
 % dimension 1
 %
-% y = WSINTERPD(x, t1, t2, dim, w) applies the weighting array via point-wise 
+% y = WSINTERPD2(x, t1, t2, dim, w) applies the weighting array via point-wise 
 % multiplication after sampling the the data. The dimensions must be 
 % compatible with the sampling array t in the sampling dimension dim. 
 % The default is 1.
 %
-% y = WSINTERPD(x, t1, t2, dim, w, sdim) sums the data in the dimension(s) sdim
+% y = WSINTERPD2(x, t1, t2, dim, w, sdim) sums the data in the dimension(s) sdim
 % after the weighting matrix has been applied. The default is [].
 %
-% y = WSINTERPD(x, t1, t2, dim, w, sdim, interp) specifies the interpolation 
+% y = WSINTERPD2(x, t1, t2, dim, w, sdim, interp) specifies the interpolation 
 % method. It must be one of {"nearest", "linear"*,"cubic","lanczos3"} or 
 % any option supported by interp1.
 %
-% y = WSINTERPD(x, t1, t2, dim, w, sdim, interp, extrapval) uses extrapval as the
+% y = WSINTERPD2(x, t1, t2, dim, w, sdim, interp, extrapval) uses extrapval as the
 % extrapolation value when outside of the domain of t.
 %
-% y = WSINTERPD(x, t1, t2, dim, w, sdim, interp, extrapval, omega) applies
+% y = WSINTERPD2(x, t1, t2, dim, w, sdim, interp, extrapval, omega) applies
 % an exponential weighting `exp(omega .* (t1 + t2))` after sampling. The
 % default is 0.
 %
 % This can be useful when omega is a complex value representing a phasor
 % rotation.
 %
-% See also WSNTERPD INTERPN INTERP1 INTERPD
+% See also WSINTERPD INTERPN INTERP1 INTERPD
 %
 
 %% validate dimensions
