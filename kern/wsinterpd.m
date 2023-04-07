@@ -193,7 +193,7 @@ else
     pdims = setdiff(1:maxdims, mdms); % pack all except matching dims
     [xc, tc, wc] = deal(num2cell(xc, pdims), num2cell(tc, pdims), num2cell(w, pdims));
     wcscal = isscalar(wc);
-    if ~wcscal, wc = []; end 
+    if wcscal, wc = 1; end 
     wc = repmat(wc, size(tc,1:maxdims) ./ size(wc,1:maxdims));  % ensure full size for indexing
 
     % determine the parallel environment
