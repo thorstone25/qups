@@ -639,8 +639,8 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.t0 = t0_; % make new object
         end
     
-        function y = sample(chd, tau, interp, w, sdim, fmod)
-            % SAMPLE Sample the channel data in time
+        function y = sample(chd, tau, interp, w, sdim, fmod, apdim)
+            % SAMPLE - Sample the channel data in time
             %
             % y = SAMPLE(chd, tau) samples the ChannelData chd at the times
             % given by the delays tau. 
@@ -652,8 +652,8 @@ classdef ChannelData < matlab.mixin.Copyable
             %   2)  (size(tau,d) == 1 || size(chd.data,d) == 1)
             %
             % The underlying routines are optimized for compute
-            % performance. Consider using a for-loop if memory is a
-            % concern.
+            % performance. See ChannelData/sample2sep or consider using a 
+            % for-loop if memory is a concern.
             % 
             % y = SAMPLE(chd, tau, interp) specifies the interpolation
             % method. Interpolation is handled by the built-in interp1 
@@ -676,48 +676,62 @@ classdef ChannelData < matlab.mixin.Copyable
             %    ***  GPU support is enabled via interp1
             %    **** GPU support is native
             % 
-            % y = SAMPLE(x, t, interp, w) applies the weighting array w via 
-            % point-wise  multiplication after sampling the the data. The 
+            % y = SAMPLE(x, tau, interp, w) applies the weighting array w
+            % via point-wise  multiplication after sampling the data. The  
             % dimensions must be compatible with the sampling array t in 
             % the sampling dimension dim. The default is 1.
             % 
-            % y = SAMPLE(x, t, interp, w, sdim) sums the data in the 
+            % y = SAMPLE(x, tau, interp, w, sdim) sums the data in the 
             % dimension(s) sdim after the weighting matrix has been applied.
             % The default is [] (no dimensions).
             % 
-            % y = SAMPLE(x, t, interp, w, sdim, fmod) upmixes the data at a
-            % modulation frequency fmod. This undoes the effect of 
+            % y = SAMPLE(x, tau, interp, w, sdim, fmod) upmixes the data at
+            % a modulation frequency fmod. This undoes the effect of
             % downmixing at the same frequency.
             % 
-            % See also INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
+            % y = SAMPLE(x, tau, interp, w, sdim, fmod, apdim) specifies
+            % the receive and transmit aperture dimensions of the sampling
+            % array t and weight array w. 
+            % 
+            % When this argument is used, the dimension of the data are 
+            % lifted to (T x 1 x ... x 1 x N x M) where N and M are the 
+            % receive and transmit aperture dimensions. The default is
+            % [chd.ndim, chd.mdim]
+            % 
+            % See also CHANNELDATA/SAMPLE2SEP INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 
             % defaults
+            if nargin < 7, apdim = [chd.ndim, chd.mdim]; end
             if nargin < 6, fmod = 0; end
             if nargin < 5, sdim = [];           end
             if nargin < 4, w = 1;               end
             if nargin < 3, interp = 'linear';   end
+            
+            % move data up to match the sampling/apodization matrix
+            D = max(3,ndims(chd.data));
+            chd = swapdim(chd, [chd.ndim, chd.mdim, 4:D], [apdim, max(apdim) + (1 : (D - 3))]);            
 
             % check condition that we can implicitly broadcast
             for d = setdiff(1:gather(ndims(tau)), chd.tdim) % all dims except time must match
-                assert(any(size(tau,d) == size(chd.data,d)) || ...
-                      any([size(tau,d)  , size(chd.data,d)] == 1), ...
+                assert(any(gather(size(tau,d)) == gather(size(chd.data,d))) || ...
+                            (1 == size(tau,d)  ||   1 == size(chd.data,d)), ...
                     'Delay size must match the data size (%i) or be singleton in dimension %i.',...
                     size(chd.data, d), d ...
                     );
             end
 
             % compute the integer delays (I x [1|N] x [1|M] x [1|F] x ...) (default order)
-            ntau = (tau - chd.t0) * chd.fs;
+            ntau = (tau - chd.t0) .* chd.fs;
 
             % apply the modulation vector as weights
-            if fmod, w = w .* exp(2i*pi*fmod/chd.fs .* ntau); end
+            omega = 2i*pi*fmod / chd.fs; % modulation phasor
 
             % dispatch
             if interp ~= "freq" 
                 if istall(ntau) || istall(chd.data)
-                    y = matlab.tall.transform(@wsinterpd, chd.data, ntau, chd.tdim, w, sdim, interp, 0);
+                    y = matlab.tall.transform(@wsinterpd, chd.data, ntau, chd.tdim, w, sdim, interp, 0, omega);
                 else
-                    y = wsinterpd(chd.data, ntau, chd.tdim, w, sdim, interp, 0);
+                    y = wsinterpd(chd.data, ntau, chd.tdim, w, sdim, interp, 0, omega);
                 end
             elseif interp == "freq"
                 % extend data if necessary
@@ -725,6 +739,111 @@ classdef ChannelData < matlab.mixin.Copyable
                 next  = max(0, ceil(max(ntau,[],'all')) - chd.T-1); % amount the signal is extended in positive time
                 chd = zeropad(chd, -nwrap, next); % extend signal to ensure we sample zeros
                 y = interpf(chd.data, ntau, chd.tdim, w, sdim); % sample in the frequency domain
+            end
+        end
+                
+        function y = sample2sep(chd, tau1, tau2, interp, w, sdim, fmod, apdim)
+            % SAMPLE2SEP - Sample the channel data with separable time delays
+            %
+            % y = SAMPLE2SEP(chd, tau1, tau2) samples the ChannelData chd
+            % at the times given by separable delays tau = tau1 + tau2.
+            %
+            % tau must have broadcastable sizing in the non-temporal
+            % dimensions. In other words, in all dimensions d, either of
+            % the following must hold
+            %   1)   size(tau,d)    ==   size(chd.data,d) 
+            %   2)  (size(tau,d) == 1 || size(chd.data,d) == 1)
+            %
+            % The underlying routines are optimized for compute
+            % performance with less memory overhead than ChannelData/sample.
+            % If operating on a CPU, a parallel.ThreadPool will increase
+            % performance considerably with minimal memory overhead.
+            % 
+            % y = SAMPLE2SEP(chd, tau1, tau2, interp) specifies the
+            % interpolation method. Interpolation is handled by the
+            % built-in interp1 function. The available methods are:
+            %
+            %   'linear'   - (default) linear interpolation **
+            %   'nearest'  - nearest neighbor interpolation **
+            %   'next'     - next neighbor interpolation
+            %   'previous' - previous neighbor interpolation
+            %   'spline'   - piecewise cubic spline interpolation 
+            %   'pchip'    - shape-preserving piecewise cubic interpolation
+            %   'cubic'    - cubic convolution interpolation for ***
+            %                uniformly-spaced data **
+            %   'v5cubic'  - same as 'cubic' ***
+            %   'makima'   - modified Akima cubic interpolation
+            %   'lanczos3' - lanczos kernel with a = 3 **
+            % 
+            %    **   GPU support is enabled via interpd
+            %    ***  GPU support is enabled via interp1
+            % 
+            % y = SAMPLE2SEP(x, tau1, tau2, interp, w) applies the
+            % weighting array w via point-wise multiplication after
+            % sampling the data. The dimensions must be compatible with the
+            % sampling array tau in the sampling dimension dim. The default
+            % is 1.
+            % 
+            % y = SAMPLE2SEP(x, tau1, tau2, interp, w, sdim) sums the data
+            % in the dimension(s) sdim after the weighting matrix has been
+            % applied. The default is [] (no dimensions).
+            % 
+            % y = SAMPLE2SEP(x, tau1, tau2, interp, w, sdim, fmod) upmixes
+            % the data at a modulation frequency fmod. This undoes the
+            % effect of downmixing at the same frequency.
+            % 
+            % y = SAMPLE2SEP(x, tau1, tau2, interp, w, sdim, fmod, apdim)
+            % specifies the receive and transmit aperture dimensions of the
+            % sampling array t and weight array w.
+            % 
+            % When this argument is used, the dimension of the data are 
+            % lifted to (T x 1 x ... x 1 x N x M [x F x G x ...]) where 
+            % N and M are the receive and transmit aperture dimensions. 
+            % The default is [chd.ndim, chd.mdim]
+            % 
+            % See also CHANNELDATA/SAMPLE INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
+
+            % defaults
+            if nargin < 8, apdim = [chd.ndim, chd.mdim]; end
+            if nargin < 7, fmod = 0; end
+            if nargin < 6, sdim = [];           end
+            if nargin < 5, w = 1;               end
+            if nargin < 4, interp = 'linear';   end
+            
+            % move data up to match the sampling/apodization matrix
+            D = max(3,ndims(chd.data));
+            chd = swapdim(chd, [chd.ndim, chd.mdim, 4:D], [apdim, max(apdim) + (1 : (D - 3))]);            
+
+            % check condition that we can implicitly broadcast
+            for tau = {tau1, tau2}
+            for d = setdiff(1:gather(ndims(tau{1})), chd.tdim) % all dims except time must match
+                assert(any(size(tau{1},d) == size(chd.data,d)) || ...
+                     (1 == size(tau{1},d) || size(chd.data,d) == 1), ...
+                    'Delay size must match the data size (%i) or be singleton in dimension %i.',...
+                    size(chd.data, d), d ...
+                    );
+            end
+            end
+
+            % compute the integer delays, aiming for the smaller output
+            D = max([ndims(chd.t0), ndims(tau1), ndims(tau2)]);
+            if prod(max(size(tau1,1:D), size(chd.t0,1:D))) ...
+             < prod(max(size(tau2,1:D), size(chd.t0,1:D)))
+                ntau1 = (tau1 - chd.t0) .* chd.fs;
+                ntau2 = (tau2) .* chd.fs;
+            else
+                ntau2 = (tau2 - chd.t0) .* chd.fs;
+                ntau1 = (tau1) .* chd.fs;
+            end
+
+            % apply the modulation vector as weights
+            omega = 2i*pi*fmod / chd.fs; % modulation phasor
+
+            % dispatch
+            if istall(ntau1) || istall(chd.data)
+                y = matlab.tall.transform(@wsinterpd2, chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
+            else
+                y = wsinterpd2(chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
             end
         end
         
