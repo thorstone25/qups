@@ -591,8 +591,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     for em = 1:E
                         for en = 1:E
                             % compute time delays
-                            % TODO: do this via ray-path propagation through a
-                            % medium
+                            % TODO: do this via ray-path propagation through a medium
                             % S x 1 x N x M x 1 x 1
                             r_rx = vecnorm(sub(pos,s,1) - sub(ptc_rx, en, 5),2,2);
                             r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
@@ -3260,64 +3259,64 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % b = BFMIGRATION(self, chd) creates a b-mode image b from
             % the plane-wave ChannelData chd created from a TransducerArray
             % defined by self.xdc.
-            % 
-            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a 
-	    % ScanCartesian bscan on which the bmode image is naturally defined.
-            % 
+            %
+            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a
+    	    % ScanCartesian bscan on which the bmode image is naturally defined.
+            %
             % [...] = BFMIGRATION(..., Name, Value, ...) passes additional Name/Value
             % pair arguments.
-            % 
+            %
             % [...] = BFMIGRATION(..., 'keep_tx', true) preserves the
             % transmit dimension in the output image b.
             %
-            % [...] = BFMIGRATION(..., 'NFFT', [F, K]) uses a F-point FFT in time and 
-	    % a K-point FFT laterally. If F < chd.T, the data is truncated temporally 
-	    % and if K < chd.N, the data is truncated laterally. The default is 
-	    % [chd.T, chd.N].
-	    %
-	    % [...] = BFMIGRATION(..., 'interp', method) specifies the method for       
-	    % interpolation. The default is 'cubic'.
-	    %                                                                 
-	    % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
-            % compute at most B transmits at a time. A larger block size 
+            % [...] = BFMIGRATION(..., 'NFFT', [F, K]) uses a F-point FFT in time and
+    	    % a K-point FFT laterally. If F < chd.T, the data is truncated temporally
+    	    % and if K < chd.N, the data is truncated laterally. The default is
+    	    % [chd.T, chd.N].
+    	    %
+    	    % [...] = BFMIGRATION(..., 'interp', method) specifies the method for
+    	    % interpolation. The default is 'cubic'.
+    	    %
+    	    % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
+            % compute at most B transmits at a time. A larger block size
             % will run faster, but use more memory. The default is chosen
             % heuristically.
-            %   
+            %
             % [...] = BFMIGRATION(..., 'fmod', fc) upmixes the data at a
             % modulation frequency fc. This undoes the effect of
             % demodulation/downmixing at the same frequency.
-	    %
-            % [...] = BFMIGRATION(..., 'jacobian', false) does not apply a 
-	    % jacobian update when mapping the frequncies.
+    	    %
+            % [...] = BFMIGRATION(..., 'jacobian', false) does not apply a
+    	    % jacobian update when mapping the frequncies.
             %
-            % References: 
-            % [1] Garcia D, Le Tarnec L, Muth S, Montagnon E, Porée J, Cloutier G. 
+            % References:
+            % [1] Garcia D, Le Tarnec L, Muth S, Montagnon E, Porée J, Cloutier G.
             % Stolt's f-k migration for plane wave ultrasound imaging.
-            % IEEE Trans Ultrason Ferroelectr Freq Control. 2013 Sep;60(9):1853-67. 
+            % IEEE Trans Ultrason Ferroelectr Freq Control. 2013 Sep;60(9):1853-67.
             % doi: <a href="matlab:web('https://doi.org/10.1109%2FTUFFC.2013.2771')">10.1109/TUFFC.2013.2771</a>. PMID: 24626107; PMCID: PMC3970982.
-            % 
+            %
             % Example:
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
             % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', us.sequence.c0); % define a point target
-            % 
-            % % A plane-wave transmission is required - migration works 
+            %
+            % % A plane-wave transmission is required - migration works
             % % best for small angles
             % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10);
             % us.sequence = seq;
-            % 
+            %
             % % Compute the response
             % chd = greens(us, scat);
             %
             % % beamform the data, with implicit zero-padding
             % [b, bscan] = bfMigration(us, chd, 'Nfft', [2*chd.T, 4*chd.N]);
-            % 
+            %
             % % Display the image
             % bim = mod2db(b); % log-compression
             % figure;
             % imagesc(bscan, bim, [-80 0] + max(bim(:)));
             % colormap gray; colorbar;
-            % 
+            %
             % See also BFDAS BFADJOINT BFEIKONAL
 
             arguments
