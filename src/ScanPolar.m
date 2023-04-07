@@ -1,21 +1,20 @@
 % ScanPolar - Defines an imaging region with Polar coordinates
 %
-% The ScanCartesian class defines a Scan for Polar image coordinates.
+% The ScanPolar class defines a Scan for Polar image coordinates.
 %
 % The Scan class stores definitions for the imaging region. A Scan
 % provides a method to return the image pixel coordinates as an ND-array of
 % up to 3 dimensions as well as the row vectors for each individual
-% dimension. It also provides convenience methods for defining apodization
-% array defined for the Scan.
+% dimension. 
 %
 % See also SCAN SCANCARTESIAN
 classdef ScanPolar < Scan
     properties
-        r = 1e-3*linspace(0,40,128)   % image range values
-        a = linspace(-45,45,128)      % image angle values (deg)
-        y = 0                         % image elevation values
+        r (1,:) {mustBeVector} = 1e-3*linspace(0,40,128)   % image range values
+        a (1,:) {mustBeVector} = linspace(-45,45,128)      % image angle values (deg)
+        y (1,:) {mustBeVector} = 0                         % image elevation values
         order = 'RAY';                % order of the dimensions
-        origin = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
+        origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
     
     % dependent parameters
@@ -38,6 +37,13 @@ classdef ScanPolar < Scan
         adim                % angle dimension
         ydim                % elevation dimension
     end
+
+    properties
+        rlabel (1,1) string = "Range"
+        alabel (1,1) string = "Angle ^o"
+        ylabel (1,1) string = "Elevation"
+    end
+
     
     % get/set & constructor
     methods

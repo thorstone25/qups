@@ -11,10 +11,10 @@
 % See also SCAN SCANPOLAR
 classdef ScanCartesian < Scan
     properties
-        x = 1e-3*linspace(-20,20,128) % image x values
-        y = 0                         % image y values
-        z = 1e-3*linspace(0,40,128)   % image z values
-        order = 'ZXY';                % order of the dimensions for display
+        x (1,:) {mustBeVector} = 1e-3*linspace(-20,20,128) % image x values
+        y (1,:) {mustBeVector} = 0                         % image y values
+        z (1,:) {mustBeVector} = 1e-3*linspace(0,40,128)   % image z values
+        order = 'ZXY'; % order of the dimensions
     end
     
     % dependent parameters
@@ -37,7 +37,13 @@ classdef ScanCartesian < Scan
         ydim                % y-dimension
         zdim                % z-dimension
     end
-    
+
+    properties
+        xlabel (1,1) string = "Lateral"
+        ylabel (1,1) string = "Elevation"
+        zlabel (1,1) string = "Axial"
+    end
+
     % get/set & constructor
     methods
         % constructor

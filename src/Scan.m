@@ -20,7 +20,7 @@ classdef Scan < matlab.mixin.Copyable
         %
         % This is relevant for calls to scan.getImagingGrid() which returns
         % the cartesian coordinates each as a 3D-array.
-        order   % dimension of change for the pixels
+        order (1,3) char  % dimension of change for the pixels
     end
     
     % dependent parameters
@@ -69,24 +69,6 @@ classdef Scan < matlab.mixin.Copyable
         %   - sz:   size of the X, Y, and Z multidimensional arrays
         [X, Y, Z, sz] = getImagingGrid(self)
         
-        % SETIMAGEGRIDONTARGET - Set the image grid for a target
-        %
-        % SETIMAGEGRIDONTARGET(self, target) sets the image grid based on 
-        % the boundaries of target.
-        %
-        % SETIMAGEGRIDONTARGET(self, target, margin) additionally adds a
-        % margin around the boundaries of target.
-        % 
-        % This method leaves unchanged the number of points on the grid, so
-        % the resolution may change whenever this function is called.
-        %
-        % Inputs:
-        %   target:     Target object
-        %   margin:     a 3 x 2 matrix of x/y/z  min/max bounds for the
-        %               imaging grid
-        setImageGridOnTarget(self, target, margin)
-
-
         % SCALE - Scale units
         %
         % scan = SCALE(scan, 'dist', factor) scales the distance of the
@@ -191,12 +173,12 @@ classdef Scan < matlab.mixin.Copyable
             imwrite(im, map, filename, nvkwargs{:});
         end
 
-        function h = imagesc(self, b, varargin, im_args)
+        function h = imagesc(scan, b, varargin, im_args, kwargs)
             % IMAGESC - Overload of imagesc
             %
-            % h = IMAGESC(self, b) displays the data b on the Scan self.
+            % h = IMAGESC(scan, b) displays the data b on the Scan self.
             %
-            % h = IMAGESC(self, b, ax) uses the axes ax instead of the 
+            % h = IMAGESC(scan, b, ax) uses the axes ax instead of the 
             % current axes.
             %
             % h = IMAGESC(..., Name, Value) forwards arguments to MATLAB's 
@@ -205,7 +187,7 @@ classdef Scan < matlab.mixin.Copyable
             % See also IMAGESC GIF PLOT
 
             arguments
-                self (1,1) Scan
+                scan (1,1) Scan
                 b {mustBeNumeric}
             end
             arguments(Repeating)
@@ -213,6 +195,8 @@ classdef Scan < matlab.mixin.Copyable
             end
             arguments
                 im_args.?matlab.graphics.primitive.Image
+                kwargs.slice (1,1) char
+                kwargs.index (1,1) {mustBeInteger, mustBeNonnegative} = 1
             end
             
             % find axis varargs
@@ -226,27 +210,49 @@ classdef Scan < matlab.mixin.Copyable
             im_args = struct2nvpair(im_args);
 
             % make sure the data size and image size are the same
-            assert(all(size(b, 1:3) == self.size, "all"), ...
+            assert(all(size(b, 1:3) == scan.size, "all"), ...
                 "The image size does not match the scan.") %#ok<CPROPLC> 
 
-            % get the axis argumentts
-            ax_args = arrayfun(@(c) {self.(c)}, lower(self.order)); % get axis in order
-            ax_sing = find(self.size == 1, 1, 'last'); % find singleton dimension
-            ax_args = ax_args(~ismember(1:3, ax_sing)); % strip the singleton dimension
-            ax_args = ax_args([2 1]); % swap x,y axis arguments
- 
-            % plot
-            if isa(self, 'ScanCartesian')
-                h = imagesc(ax, ax_args{:}, squeeze(b), varargin{:},  im_args{:});
-                xlabel(ax,'Lateral');
-                ylabel(ax,'Axial');
-                axis(ax, 'image');
+            % identify the dimension to slice
+            ind     = 1:3;
+            if isfield(kwargs, 'slice')
+                sdim = find(lower(kwargs.slice) == lower(scan.order)); % slicing index
+            else
+                sdim = find(scan.size == 1, 1, 'last'); % slicing index
+            end
+            
+            % if no empty dim identified, take median of 3rd dim by default
+            if isempty(sdim), sdim = 3; kwargs.index = ceil(size(b,sdim)/2); end %#ok<CPROPLC> 
+            
+            % identify the axes
+            ind(sdim) = []; % delete this index
+            ax_sym  = lower(scan.order(ind)); % axis symbol
+            ax_args = arrayfun(@(c) {scan.(c)}, ax_sym); % get axis in order
+            ax_args = ax_args([2 1]); % swap x,y axis arguments ( for imagesc )
 
-            elseif isa (self, 'ScanPolar')
-                h = imagesc(ax, ax_args{:}, squeeze(b), varargin{:}, im_args{:});
-                xlabel(ax,'Angle (^o)');
-                ylabel(ax,'Range');
+            % plot
+            if ismatrix(b)
+                bpl = b;
+            else
+                bpl = squeeze(sub(b, kwargs.index, sdim)); % may have higher dimensions
+                bpl = bpl(:,:,1);
+            end
+            if ~isreal(b), bpl = mod2db(bpl); end % convert complex to modulus in dB implicitly
+            h = imagesc(ax, ax_args{:}, bpl, varargin{:},  im_args{:}); % plot
+
+            % axes labels
+            xlabel(ax,scan.(ax_sym(2) + "label")); % e.g. 'self.xlabel'
+            ylabel(ax,scan.(ax_sym(1) + "label")); % e.g. 'self.zlabel'
+
+            % default axis setting
+            if isa(scan, 'ScanCartesian')
+                axis(ax, 'image');
+            elseif isa (scan, 'ScanPolar')
                 axis(ax, 'tight')
+            elseif isa( scan, 'ScanGeneric')
+                axis(ax, 'tight')
+            else
+                error('QUPS:Scan:UndefinedScan', "Unrecognized Scan: must be a 'ScanCartesian', 'ScanPolar', or 'ScanGeneric' to display an image.");
             end
         end
 
