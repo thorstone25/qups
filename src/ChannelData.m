@@ -627,9 +627,10 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also CHANNELDATA/SAMPLE 
 
-            if isscalar(chd.t0), chd = copy(chd); end % short-circuit
             if nargin < 2, interp = 'cubic'; end % default interpolation
             if nargin < 3, t0_ = min(chd.t0, [], 'all'); end % get global start time
+            chd = copy(chd); % copy semantics
+            if isscalar(chd.t0), return; end % short-circuit
             toff = chd.t0 - t0_; % get offset across upper dimensions
             npad = ceil(max(toff,[],'all') * chd.fs); % furthest sample containing data
             chd = zeropad(chd,0,npad); % extend time-axes
@@ -1189,21 +1190,20 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.ord = chd.ord(kdims); % remove unnecesary dimensions 
         end
         function chd = swapdim(chd, i, o)
-            dord = 1:max([i,o,ndims(chd.data)]); % max possible dim
-            dord(i) = o; % swap
-            dord(o) = i; % swap
-            chd = permute(chd, dord); % move data dimensions
+            D = max([i,o,numel(chd.ord), ndims(chd.data)]); % max possible dim
+            chd = expandDims(chd, D); % expand to have enough dim labels
+            chd.data = swapdim(chd.data, i, o); % swap data
+            chd.t0   = swapdim(chd.t0  , i, o); % swap start time
+            chd.ord([i o])  = chd.ord([o i]); % swap labels
         end
         function chd = permute(chd, dord)
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
-            chd = copy(chd); % copy semantics
             chd.data = permute(chd.data, dord); % change data dimensions
             chd.t0   = permute(chd.t0, dord); % change t0 dimensions
             chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
         end
         function chd = ipermute(chd, dord)
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
-            chd = copy(chd); % copy semantics
             chd.data = ipermute(chd.data, dord); % change data dimensions
             chd.t0   = ipermute(chd.t0, dord); % change t0 dimensions
             chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
