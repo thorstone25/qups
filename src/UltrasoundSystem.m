@@ -2870,13 +2870,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % equation is solved via the fast marching method.
             %
             % b = BFEIKONAL(self, chd, medium, cscan) uses the
-            % ScanCartesian cscan as the grid for computing time-delays.
+            % ScanCartesian cscan as sound speed grid for computing 
+            % time-delays.
+            % 
             % The grid spacing for each dimension must be (almost)
             % identical e.g. assuming cscan.y = 0, 
             % abs(cscan.dx - cscan.dz) < eps must hold.
             % 
-            % A good heuristic is a grid spacing of < lambda / 10 to avoid
-            % accumulated phase errors.
+            % A good heuristic is a grid spacing of < lambda / 10 to 
+            % avoid accumulated phase errors.
             % 
             % b = BFEIKONAL(..., Name,Value, ...) defines additional
             % parameters via Name/Value pairs
@@ -2896,11 +2898,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % I1 x I2 x I3 x N x M where I1 x I2 x I3 is the size of the
             % image, N is the number of receivers, and M is the number of
             % transmits.
-            %
-            % b = BFEIKONAL(..., 'bsize',B) computes using a B 
-            % frequencies at a time in order to limit memory usage. A lower
-            % B uses less memory to prevent OOM errors but a higher B 
-            % yields better computer performance.
             %
             % b = BFEIKONAL(..., 'parenv', clu) or
             % b = BFEIKONAL(..., 'parenv', pool) uses the
@@ -3008,24 +3005,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.apod {mustBeNumericOrLogical} = 1;
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8))));  % 1 Gibibyte limit on the size of the delays
                 kwargs.verbose (1,1) logical = true;
-                kwargs.delay_only (1,1) logical = false; % compute only delays
+                kwargs.delay_only (1,1) logical = isempty(chd); % compute only delays
             end
 
-            % get summation options
-            sumtx = ~kwargs.keep_tx;
-            sumrx = ~kwargs.keep_rx;
-            fmod = kwargs.fmod;
+            % get dimensions of ChannelData
+            assert(sum(size(chd) > 1) <= 1, "ChannelData array may only have 1 non-singleton dimension (" + join(string([size(chd)])," x ") + ").");
+            chddim = find(size(chd) > 1, 1, 'first');
 
             % get cluster
             parenv = kwargs.parenv; % compute cluster/pool/threads
             % travel times cannot use threadPool because mex call
             if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
 
-            % get worker transfer function
-            % TODO: deprecate or re-enable this for a parallel.ProcessPool
-            if false % isscalar(gcp('nocreate')) && (parenv == gcp('nocreate')) 
+            % get worker transfer function - mark constant to save memory
+            if isa(parenv, 'parallel.ProcessPool') && isscalar(gcp('nocreate')) && (parenv == gcp('nocreate')) 
                 constfun = @parallel.pool.Constant; % only use if parenv is the current process pool
             else 
                 constfun = @(x) struct('Value', x);
@@ -3048,8 +3042,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % check the data is FSA and matches transmit / receive
             % transducers
-            assert(self.tx.numel == chd.M, 'Number of transmits must match number of transmitter elements.')
-            assert(self.rx.numel == chd.N, 'Number of receives must match number of receiver elements.')
+            assert(all(self.tx.numel == [chd.M]), 'Number of transmits must match number of transmitter elements.')
+            assert(all(self.rx.numel == [chd.N]), 'Number of receives must match number of receiver elements.')
 
             % get the transmit, receive
             Pv = self.tx.positions();
@@ -3071,7 +3065,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if kwargs.verbose 
                 tt = tic; fprintf('\nComputing Eikonal time delays ... \n');
             end
-            parfor (n = 1:chd.N, parenv)
+            parfor (n = 1:self.rx.numel, parenv)
                 % fprintf('rx %i\n', n);
                 [tau_map_rx] = msfm(squeeze(cnorm.Value), double(Prc(:,n))); %#ok<PFBNS> % travel time to each point
                 rx_samp{n} = griddedInterpolant(grd, tau_map_rx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
@@ -3079,7 +3073,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if self.tx == self.rx % if apertures are identical, copy
                 tx_samp = rx_samp;
             else % else compute for each tx
-            parfor (m = 1:chd.M, parenv)
+            parfor (m = 1:self.tx.numel, parenv)
                 % fprintf('tx %i\n', m);
                 [tau_map_tx] = msfm(squeeze(cnorm.Value), double(Pvc(:,m))); %#ok<PFBNS> % travel time to each point
                 tx_samp{m} = griddedInterpolant(grd, tau_map_tx,gi_opts{:}); %#ok<PFBNS> % make interpolator on cscan
@@ -3093,68 +3087,36 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             gi = self.scan.getImagingGrid(); % {I1 x I2 x I3} each
             gi = gi(sel); % select and trim dimensions 
 
-            % splice args
-            interp_method = kwargs.interp; 
-            apod = kwargs.apod; % (I1 x I2 x I3 x N x M)
-
             % get sample times for each tx/rx (I1 x I2 x I3 x N x M)
             tau_rx = cellfun(@(f) f(gi{:}), rx_samp, 'UniformOutput', false); % all receive delays
             tau_tx = cellfun(@(f) f(gi{:}), tx_samp, 'UniformOutput', false); % all transmit delays
             tau_rx = cat(4, tau_rx{:}); % use all at a time
             tau_tx = cat(5, tau_tx{:}); % reconstruct matrix
-            D = max(5, ndims(chd.data)); % data dimensions
-            ord = [D+(1:3), chd.ndim, chd.mdim]; % apodization permutation order
-            ord = [ord, setdiff(1:max(ord), ord)]; % full order (all dimes)
-            
-            % short-circuit
-            if kwargs.delay_only, b = []; return; end
 
-            % match temporal precision before beamforming
-            t_proto = chd.fs;
-            % if isa(chd.data, 'gpuArray'), t_proto = gpuArray(t_proto); end
-            [tau_tx, tau_rx] = dealfun(@(x)cast(x, 'like', real(t_proto)), tau_tx, tau_rx);
-
-            % splice data, apod, delays per transmit
-            [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
-            tau_tx = cellfun(@(ix){sub(tau_tx,ix,5)}, ix); % split per transmit block
-            if size(apod,5) == 1, apod = {apod}; % store as a single cell
-            else, apod = cellfun(@(ix){sub(apod,ix,5)}, ix); % split per transmit block
-            end
-            Mp = numel(chds); % number of transmit blocks
-            
-            % identify dimensiosn for summation
+            % identify dimensions to sum after apodization
             sdim = [];
-            if sumtx, sdim = [sdim, chd.mdim]; end % tx dimensions
-            if sumrx, sdim = [sdim, chd.ndim]; end % rx dimensions
+            if ~kwargs.keep_rx, sdim = [sdim, 4]; end
+            if ~kwargs.keep_tx, sdim = [sdim, 5]; end
 
-            % move time delays and apodization to permuted dimensions
-            % (I1 x I2 x I3 x N x M) ->
-            % perm(1 x N x M) [x 1 x ... ] x I1 x I2 x I3
-            tau_rx =              ipermute(tau_rx, ord);
-            tau_tx = cellfun(@(t) ipermute(t     , ord), tau_tx, 'UniformOutput',false);
-            apod   = cellfun(@(a) ipermute(a     , ord), apod  , 'UniformOutput',false);
-            
-            b = 0; % initialize
-            kvb = kwargs.verbose; % splice
-            if kvb, hw = waitbar(0,'Beamforming ...'); else, hw = []; end % create a wait bar
-            parfor (m = 1:Mp, 0) % for each transmit (no cluster because parpool may cause memory issues here)
-                % get the eikonal delays and apodization
-                tau = tau_rx + tau_tx{m}; 
-                if isscalar(apod), a = apod{1}; else, a = apod{m}; end % recieve apodization 
-                
-                % sample and unpack the data (perm(1 x N x M) [x F x ... ] x I1 x I2 x I3)
-                ym = sample(chds(m), tau, interp_method, a, sdim, fmod); % sample and sum over rx/tx maybe
-                
-                % sum or accumulate over transmit blocks
-                if sumtx, b = b + ym; else, bm{m} = ym; end 
-                if kvb && isvalid(hw), waitbar((Mp-m+1)/Mp, hw); end % update if not closed: parfor loops go backwards
+            % short-circuit - empty matrix with output image sizing
+            if kwargs.delay_only, b = zeros([self.scan.size, 1+kwargs.keep_rx*(self.rx.numel-1), 1+kwargs.keep_tx*(self.tx.numel-1), 0]); return; end
+     
+            % max dimension of data
+            D = max([3, ndims(chd), cellfun(@ndims, {chd.data})]);
+
+            % sample, apodize, and sum over tx/rx if requested
+            for i = numel(chd):-1:1
+                bi = sample2sep(chd(i), tau_tx, tau_rx, kwargs.interp, kwargs.apod, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
+
+                % move aperture dimension to end
+                bi = swapdim(bi, 4:5, D+(3:4)); % (I1 x I2 x I3 x 1 x 1 x [F x ... ] x [1|N] x [1|M])
+                bi = reshape(bi, size(bi, [1:3, 6:ndims(bi)])); % (I1 x I2 x I3 x [F x ... ] x [1|N] x [1|M])
+                b{i} = bi;
             end
-            if ~sumtx, b = cat(chd.mdim,bm{:}); end % combine if not summing tx
-            if kwargs.verbose && isvalid(hw), close(hw); end % close waitbar if not already closed
-
-            % move image output into lower dimension
-            if istall(b), b = gather(b); end % we have to gather tall arrays to place anything in dim 1
-            b = swapdim(b, 1:3, D+(1:3)); % move image dimensions down (I1 x I2 x I3 [x F x ... ] x perm(1 x N x M))
+            
+            % combine to form output data
+            if isempty(chddim), b = b{1}; % scalar
+            else, b = cat(chddim, b{:}); end % array
         end
     
         function b = bfDAS(self, chd, c0, kwargs)
@@ -3179,36 +3141,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % b = BFDAS(..., 'keep_rx', true) preserves the receive
             % dimension in the output image b.
             %
-            % b = BFDAS(..., 'bsize', B) uses an block size of B to
-            % compute at most B transmits at a time. A larger block size 
-            % will run faster, but use more memory. The default is chosen
-            % heuristically.
-            %   
             % b = BFDAS(..., 'fmod', fc) upmixes the data at a modulation
             % frequency fc. This undoes the effect of
             % demodulation/downmixing at the same frequency.
             %
             % b = BFDAS(..., 'interp', method) specifies the method for
-            % interpolation. Support is provided by the ChannelData/sample
-            % method. The default is 'cubic'.
+            % interpolation. Support is provided by the
+            % ChannelData/sample2sep method. The default is 'cubic'.
             % 
-            % b = BFDAS(..., 'device', index) uses the gpuDevice with ID
-            % index. If index == -1, the current device is used. Index == 0
-            % avoids using a gpuDevice. The default is -1 if a gpu is
-            % available.
-            %
-            % b = BFDAS(..., 'parenv', clu) or
-            % b = BFDAS(..., 'parenv', hcp) uses a parallel.Cluster clu 
-            % or a parallel.Pool hcp to parallelize computations. 
-            % b = BFDAS(..., 'parenv', 0) avoids using a 
-            % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
-            % GPU or if memory usage explodes on a parallel.ProcessPool.
+            % [b, tau_rx, tau_tx] = BFDAS(...) additionally returns the
+            % receive and transmit time delays tau_rx and tau_tx are size
+            % (I1 x I2 x I3 x N x 1) and (I1 x I2 x I3 x 1 x M), where 
+            % I1 x I2 x I3 is the size of the image, N is the number of
+            % receivers, and M is the number of transmits.
             % 
-            % The default is the current parallel pool returned by gcp.
-            % 
-            % A parallel.ThreadPool will tend to perform better than a 
-            % parallel.ProcessPool because threads are allowed to share 
-            % memory.
+            % [...] = BFDAS(..., 'delay_only',true) computes delays but
+            % avoids computing the image.
             %        
             % Example:
             % 
@@ -3233,19 +3181,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd ChannelData
                 c0 (:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
-                kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
                 kwargs.apod {mustBeNumericOrLogical} = 1
-                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
-                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Pool", "parallel.Cluster", "double"])} = gcp('nocreate');
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (chd.N*self.scan.nPix*8)))); 
-                % 1 Gibibyte limit on the size of the delays
+                kwargs.delay_only (1,1) logical = isempty(chd); % compute only delays
             end
 
-            % get cluster
-            parenv = kwargs.parenv;
-            if isempty(parenv) || isa(chd.data, 'gpuArray'), parenv = 0; end % run on CPU by default
+            % get dimensions of ChannelData
+            assert(sum(size(chd) > 1) <= 1, "ChannelData array may only have 1 non-singleton dimension (" + join(string([size(chd)])," x ") + ").");
+            chddim = find(size(chd) > 1, 1, 'first');
 
             % get image pixels, outside of range of data
             Pi = self.scan.getImagingGrid();
@@ -3257,12 +3202,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get virtual source or plane wave geometries
             switch self.sequence.type
-                case 'FSA'
-                    [Pv, Nv] = deal(self.tx.positions(), [0;0;1]);
-                case 'VS'
-                    [Pv, Nv] = deal(self.sequence.focus, [0;0;1]);
-                case 'PW'
-                    [Pv, Nv] = deal([0;0;0], self.sequence.focus); % TODO: use origin property in tx sequence
+                case 'FSA', [Pv, Nv] = deal(self.tx.positions(), [0;0;1]);
+                case 'VS',  [Pv, Nv] = deal(self.sequence.focus, [0;0;1]);
+                case 'PW',  [Pv, Nv] = deal([0;0;0], self.sequence.focus); % TODO: use origin property in tx sequence
             end
             Pr = swapdim(Pr,2,5); % move N to dim 5
             [Pv, Nv] = deal(swapdim(Pv,2,6), swapdim(Nv,2,6)); % move M to dim 6
@@ -3274,72 +3216,42 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             dv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
             switch self.sequence.type, 
                 case {'VS', 'FSA'}, dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
-                case {'PW'}, dv = sum(dv .* Nv, 1);
+                case {'PW'},        dv = sum(dv .* Nv, 1);
             end % 1 x I1 x I2 x I3 x 1 x M
 
             % bring to I1 x I2 x I3 x 1 x M
-            [dv, dr] = deal(shiftdim(dv,1), shiftdim(dr,1));
+            [dv, dr] = deal(reshape(dv,size(dv,2:6)), reshape(dr,size(dr,2:6)));
 
-            % make same type as the data
-            [dv, dr] = dealfun(@(x)cast(x, 'like', real(chd.data)), dv, dr);
+            % convert to time and alias
+            dv = dv ./ c0; 
+            dr = dr ./ c0;
+            tau_rx = dr;
+            tau_tx = dv;
 
-            % splice args
-            apod = kwargs.apod; % apodization (I1 x I2 x I3 x N x M)
-            interp_method = kwargs.interp; 
-            cinv = 1 ./ c0;
-            sumtx = ~kwargs.keep_tx;
-            sumrx = ~kwargs.keep_rx;
-            fmod = kwargs.fmod;
+            % identify dimensions to sum after apodization
+            sdim = []; 
+            if ~kwargs.keep_rx, sdim = [sdim, 4]; end 
+            if ~kwargs.keep_tx, sdim = [sdim, 5]; end
 
-            % move image dimensions beyond the data
-            D = max([ndims(chd.data), ndims(dv), ndims(dr), ndims(cinv), 5]); % highest dimension of data
-            [dv, dr, apod, cinv] = dealfun(@(x) swapdim(x, 1:3, D+(1:3)), dv, dr, apod, cinv);
-            sdim = []; % dimensions to sum after apodization
-            if sumrx, sdim = [sdim, chd.ndim]; end 
-            if sumtx, sdim = [sdim, chd.mdim]; end 
+            % short-circuit - empty matrix with output image sizing
+            if kwargs.delay_only, b = zeros([self.scan.size, 1+kwargs.keep_rx*(self.rx.numel-1), 1+kwargs.keep_tx*(self.tx.numel-1), 0]); return; end
+     
+            % max dimension of data
+            D = max([3, ndims(chd), cellfun(@ndims, {chd.data})]);
 
-            % TODO: fully support tall data by doing these permutations
-            % in a different order to avoid permuting the tall
-            % dimension perhaps by
-            % * splicing in the tall dimension?
-            % * moving the image dimensions beyond the data dimensions and
-            %   operating there
-            assert(ismember('T', chd.ord(1:3)), 'The time dimension must be in one of the first 3 dimensions.');
-            tord = [chd.tdim, chd.ndim, chd.mdim]; % order to move to ChannelData dims
+            % sample, apodize, and sum over tx/rx if requested
+            for i = numel(chd):-1:1
+                bi = sample2sep(chd(i), tau_tx, tau_rx, kwargs.interp, kwargs.apod, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
+
+                % move aperture dimension to end
+                bi = swapdim(bi, 4:5, D+(3:4)); % (I1 x I2 x I3 x 1 x 1 x [F x ... ] x [1|N] x [1|M])
+                bi = reshape(bi, size(bi, [1:3, 6:ndims(bi)])); % (I1 x I2 x I3 x [F x ... ] x [1|N] x [1|M])
+                b{i} = bi;
+            end
             
-            % splice per transmit according to the block size
-            [chds, is] = splice(chd, chd.mdim, kwargs.bsize); % splice transmit in chunks of size bsize
-            dvm = cellfun(@(i){sub(dv,i,5)}, is); % splice per transmit
-            if size(apod,5) ~= 1, 
-                am = cellfun(@(i){sub(apod,i,5)}, is); % cell per transmit
-            else
-                am = {apod}; % single cell 
-            end
-
-            b = 0; % initialize
-            % hw = waitbar(0,'Beamforming ...'); % create a wait bar
-            % for m = 1:numel(chds)
-            parfor (m = 1:numel(chds), parenv) % for each transmit
-                tau = cinv .* (dvm{m} + dr); % get sample times (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
-                if isscalar(am), a = am{1}; else, a = am{m}; end % (1 x 1 x 1 x N x 1 x ... x I1 x I2 x I3)
-
-                % move to permutation of (1 x N x M) - N/M aligned with ChannelData
-                tau = swapdim(tau, [4,5], [chds(m).ndim, chds(m).mdim]); 
-                a   = swapdim(a  , [4,5], [chds(m).ndim, chds(m).mdim]); 
-
-                % sample, apodize, and sum over rx if requested
-                z = sample(chds(m), tau, interp_method, a, sdim, fmod); % (perm(1 x N x M) x F x ... x I1 x I2 x I3)
-
-                % swap the imaging and time/aperture dimensions
-                z = ipermute(z, [tord, 4:gather(ndims(z))]); % 1 x N x M x F x ...
-                z = swapdim(z, 1:3, D+(1:3)); % (I1 x I2 x I3 x F x ... x N x M)
-
-                if sumtx, bm{m} = []; else; bm{m} = z; end % store tx to combine later (if requested)
-                if sumtx, b = b + z; end % sum tx here (if requested)
-                % if isvalid(hw), waitbar(m/M, hw); end % update if not closed
-            end
-            % if isvalid(hw), close(hw); end % close if not closed
-            if ~sumtx, b = cat(D+3, bm{:}); end % combine all transmits
+            % combine to form output data
+            if isempty(chddim), b = b{1}; % scalar
+            else, b = cat(chddim, b{:}); end % array
         end
     
         function [b, bscan] = bfMigration(self, chd, c0, kwargs)
