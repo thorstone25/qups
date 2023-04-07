@@ -203,35 +203,55 @@ inline __device__ void atomicAddStore(double2 * y, const double2 val){
     atomicAdd(&y[0].y, val.y);
 }
 
+
+__device__ size_t global_offset(size_t * dind, const size_t * sizes, const char * iflags){
+// global index
+    // init
+    size_t dsz[3] = {1,1,1}; // {I,N,F} index cumulative sizes
+    size_t sz = 1, j = 0; 
+
+    // find offset
+    for(size_t s = 0; s < QUPS_S; ++s){
+        const char iflg = iflags[s]; // which label
+        dsz[iflg] *= sizes[s]; // increase size for this label
+        j += sz * (dind[iflg] %  dsz[iflg]); // add offset
+                   dind[iflg] /= dsz[iflg]; // fold index
+        sz *= sizes[s]; // increase indexing stride
+    }
+
+    return j;
+}
+
 template<typename T2, typename U, typename V> // channel data type, time data type, time-sampling type
 __device__ void wsinterpd_temp(T2 * __restrict__ y, 
     const T2 * __restrict__ w, const T2 * __restrict__ x, 
     const U * __restrict__ tau, const size_t * sizes, 
-    const size_t * wstride, const size_t * ystride, const int flag, 
-    const T2 no_v) {
+    const char * iflags, const size_t * dstride, const int flag, 
+    const T2 no_v, const U omega) {
 
     // get sampling index
-    const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
+    const size_t i = threadIdx.x + blockIdx.x * blockDim.x; // tid
     const size_t n = threadIdx.y + blockIdx.y * blockDim.y + gridDim.y * (threadIdx.z + blockIdx.z * blockDim.z);
     // const size_t m = ;
     
     // rename for readability
-    const size_t I = QUPS_I, M = QUPS_M, N = QUPS_N, T = QUPS_T, F = QUPS_F, S = QUPS_S;
-    size_t k,l,sz; // weighting / output indexing
+    const size_t I = QUPS_I,N = QUPS_N, F = QUPS_F, S = QUPS_S, T = QUPS_T; // , M = QUPS_M
+    size_t u,v,k,l,sz; // weighting / output indexing
 
     // remap indices
-    const size_t i = tid % I;
-    const size_t m = tid / I;
+    // const size_t i = tid % I;
+    // const size_t m = tid / I;
 
     // if valid sample, per each i,n,f
-    if(i < I && n < N && m < M){
+    if(i < I && n < N){
         # pragma unroll
-        for(size_t f = 0; f < F; ++f){ // for m
+        for(size_t f = 0; f < F; ++f){ // for f
             // global index
-            const size_t j = (i + n*I + m*N*I + f*N*I*M);
+            size_t dind[3] = {i,n,f};
+            const size_t j = global_offset(dind, sizes, iflags);
 
             // get weight vector and output indices
-            k = 0, l = 0; 
+            k = 0, l = 0; u = 0; v = 0;
             # pragma unroll
             for(size_t s = 0; s < S; ++s){ // for each dimension s
                 // calculate the indexing stride for dimension s i.e. 
@@ -241,15 +261,72 @@ __device__ void wsinterpd_temp(T2 * __restrict__ y,
                     sz *= sizes[sp]; 
 
                 const size_t js = ((j / sz) % sizes[s]); // index for this dimension
-                k += js * wstride[s]; // add pitched index for this dim (weights)
-                l += js * ystride[s]; // add pitched index for this dim (outputs)
+                k += js * dstride[0 + 4*s]; // add pitched index for this dim (weights)
+                l += js * dstride[1 + 4*s]; // add pitched index for this dim (outputs)
+                u += js * dstride[2 + 4*s]; // add pitched index for this dim (time)
+                v += js * dstride[3 + 4*s]; // add pitched index for this dim (samples)
             }
-
-            const T2 val = w[k] * sample(&x[n*T + f*N*T], (V)tau[i + n*I + m*I*N], flag, no_v); // weighted sample
+            
+            const T2 a = {cosf(omega * tau[u]), sinf(omega * tau[u])}; // modulation phasor
+            const T2 val = a * w[k] * sample(&x[(v)*T], (V)tau[u], flag, no_v); // weighted sample
             atomicAddStore(&y[l], val); // store
         }
     }
 }
+
+template<typename T2, typename U, typename V> // channel data type, time data type, time-sampling type
+__device__ void wsinterpd2_temp(T2 * __restrict__ y, 
+    const T2 * __restrict__ w, const T2 * __restrict__ x, 
+    const U * __restrict__ tau1, const U * __restrict__ tau2, const size_t * sizes, 
+    const char * iflags, const size_t * dstride, const int flag, 
+    const T2 no_v, const U omega) {
+
+    // get sampling index
+    const size_t i = threadIdx.x + blockIdx.x * blockDim.x; // tid
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y + gridDim.y * (threadIdx.z + blockIdx.z * blockDim.z);
+    // const size_t m = ;
+    
+    // rename for readability
+    const size_t I = QUPS_I,N = QUPS_N, F = QUPS_F, S = QUPS_S, T = QUPS_T; // , M = QUPS_M
+    size_t r,u,v,k,l,sz; // weighting / output indexing
+
+    // remap indices
+    // const size_t i = tid % I;
+    // const size_t m = tid / I;
+
+    // if valid sample, per each i,n,f
+    if(i < I && n < N){
+        # pragma unroll
+        for(size_t f = 0; f < F; ++f){ // for f
+            // global index
+            size_t dind[3] = {i,n,f};
+            const size_t j = global_offset(dind, sizes, iflags);
+
+            // get weight vector and output indices
+            k = 0, l = 0; r = 0; u = 0; v = 0;
+            # pragma unroll
+            for(size_t s = 0; s < S; ++s){ // for each dimension s
+                // calculate the indexing stride for dimension s i.e. 
+                // size of all prior dimensions
+                sz = 1;
+                for(size_t sp = 0; sp < s; ++sp)
+                    sz *= sizes[sp]; 
+
+                const size_t js = ((j / sz) % sizes[s]); // index for this dimension
+                k += js * dstride[0 + 5*s]; // add pitched index for this dim (weights)
+                l += js * dstride[1 + 5*s]; // add pitched index for this dim (outputs)
+                r += js * dstride[2 + 5*s]; // add pitched index for this dim (time-1)
+                u += js * dstride[3 + 5*s]; // add pitched index for this dim (time-2)
+                v += js * dstride[4 + 5*s]; // add pitched index for this dim (samples)
+            }
+            const U  t = tau1[r] + tau2[u]; // time
+            const T2 a = {cosf(omega * t), sinf(omega * t)}; // modulation phasor
+            const T2 val = a * w[k] * sample(&x[(v)*T], (V)t, flag, no_v); // weighted sample
+            atomicAddStore(&y[l], val); // store
+        }
+    }
+}
+
 
 /* interd kernels */
 #if (__CUDA_ARCH__ >= 530)
@@ -276,27 +353,56 @@ __global__ void interpd(double2 * __restrict__ y, const double2 * __restrict__ x
 #if (__CUDA_ARCH__ >= 530)
 __global__ void wsinterpdh(ushort2 * __restrict__ y, 
     const ushort2 * __restrict__ w, const ushort2 * __restrict__ x, 
-    const unsigned short * __restrict__ tau, const size_t * sizes, 
-    const size_t * wstride, const size_t * ystride, const int flag) {
+    const unsigned short * __restrict__ tau, const size_t * sizes, const char * iflags, 
+    const size_t * wstride, const int flag, const unsigned short omega) {
     wsinterpd_temp<half2, half, float>((half2 *)y, (const half2 *)w, (const half2 *)x,
-             (half *)tau, sizes, wstride, ystride, flag, (const half2) make_half2(0,0));
+             (half *)tau, sizes, iflags, wstride, flag, (const half2) make_half2(0,0), u2h(omega));
 }
 #endif
 
 __global__ void wsinterpdf(float2 * __restrict__ y, 
     const float2 * __restrict__ w, const float2 * __restrict__ x, 
-    const float * __restrict__ tau, const size_t * sizes, 
-    const size_t * wstride, const size_t * ystride, const int flag
+    const float * __restrict__ tau, const size_t * sizes, const char * iflags, 
+    const size_t * wstride, const int flag, const float omega
     ) {
     wsinterpd_temp<float2, float, float>(y, w, x, tau, 
-    sizes, wstride, ystride, flag, (const float2) make_float2(0,0));
+    sizes, iflags, wstride, flag, (const float2) make_float2(0,0), omega);
 }
 
 __global__ void wsinterpd(double2 * __restrict__ y, 
     const double2 * __restrict__ w, const double2 * __restrict__ x, 
-    const double * __restrict__ tau, const size_t * sizes, 
-    const size_t * wstride, const size_t * ystride, const int flag
+    const double * __restrict__ tau, const size_t * sizes, const char * iflags, 
+    const size_t * wstride,  const int flag, const double omega
     ) {
     wsinterpd_temp<double2, double, double>(y, w, x, tau, 
-    sizes, wstride, ystride, flag, (const double2) make_double2(0,0));
+    sizes, iflags, wstride, flag, (const double2) make_double2(0,0), omega);
+}
+
+/* wsinterpd2 kernels */
+#if (__CUDA_ARCH__ >= 530)
+__global__ void wsinterpd2h(ushort2 * __restrict__ y, 
+    const ushort2 * __restrict__ w, const ushort2 * __restrict__ x, 
+    const unsigned short * __restrict__ tau1, const unsigned short * __restrict__ tau2, const size_t * sizes, const char * iflags, 
+    const size_t * wstride, const int flag, const unsigned short omega) {
+    wsinterpd2_temp<half2, half, float>((half2 *)y, (const half2 *)w, (const half2 *)x,
+             (half *)tau1, (half *)tau2, sizes, iflags, wstride, flag, (const half2) make_half2(0,0), u2h(omega));
+}
+#endif
+
+__global__ void wsinterpd2f(float2 * __restrict__ y, 
+    const float2 * __restrict__ w, const float2 * __restrict__ x, 
+    const float * __restrict__ tau1, const float * __restrict__ tau2, const size_t * sizes, const char * iflags, 
+    const size_t * wstride, const int flag, const float omega
+    ) {
+    wsinterpd2_temp<float2, float, float>(y, w, x, tau1, tau2, 
+    sizes, iflags, wstride, flag, (const float2) make_float2(0,0), omega);
+}
+
+__global__ void wsinterpd2(double2 * __restrict__ y, 
+    const double2 * __restrict__ w, const double2 * __restrict__ x, 
+    const double * __restrict__ tau1, const double * __restrict__ tau2, const size_t * sizes, const char * iflags, 
+    const size_t * wstride,  const int flag, const double omega
+    ) {
+    wsinterpd2_temp<double2, double, double>(y, w, x, tau1, tau2, 
+    sizes, iflags, wstride, flag, (const double2) make_double2(0,0), omega);
 }
