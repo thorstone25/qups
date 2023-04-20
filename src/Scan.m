@@ -13,18 +13,18 @@
 
 classdef Scan < matlab.mixin.Copyable
     properties(Abstract)
-        % dimension of change for the pixels
+        % ORDER - ordering of the dimension of the imaging grid
         %
-        % order = 'ABC' represents that scan.a varies in dimension 1,
-        % scan.b varies in dimension 2, etc. 
+        % scan.order = 'ABC' represents that scan.a is aligned with 
+        % dimension 1, scan.b with dimension 2, etc. 
         %
         % This is relevant for calls to scan.getImagingGrid() which returns
-        % the cartesian coordinates each as a 3D-array.
+        % the 3D Cartesian coordinates each as a 3 x A x B x C ND-array.
         order (1,3) char  % dimension of change for the pixels
     end
     
     % dependent parameters
-    properties(Abstract, Dependent)
+    properties(Dependent)
         size        % size of each dimension of the generated pixels
         nPix        % total number of pixels
     end
@@ -247,16 +247,15 @@ classdef Scan < matlab.mixin.Copyable
             % default axis setting
             if isa(scan, 'ScanCartesian')
                 axis(ax, 'image');
-            elseif isa (scan, 'ScanPolar')
-                axis(ax, 'tight')
-            elseif isa( scan, 'ScanGeneric')
+            elseif isa (scan, 'ScanPolar') || isa(scan, 'ScanGeneric')
                 axis(ax, 'tight')
             else
-                error('QUPS:Scan:UndefinedScan', "Unrecognized Scan: must be a 'ScanCartesian', 'ScanPolar', or 'ScanGeneric' to display an image.");
+                warning('QUPS:Scan:UnrecognizedScan', "Unrecognized Scan of class " + class(scan) + ".");
+                axis(ax, 'tight')
             end
         end
 
-        function h = plot(self, varargin, plot_args)
+        function h = plot(scan, varargin, plot_args, kwargs)
             % PLOT - Overload of plot
             %
             % h = PLOT(self) plots the pixels of the Scan onto the current 
@@ -270,13 +269,15 @@ classdef Scan < matlab.mixin.Copyable
             % See also PLOT IMAGESC GIF
 
             arguments
-                self (1,1) Scan
+                scan (1,1) Scan
             end
             arguments(Repeating)
                 varargin
             end
             arguments
                 plot_args.?matlab.graphics.chart.primitive.Line
+                kwargs.slice (1,1) char
+                kwargs.index (1,1) {mustBeInteger, mustBeNonnegative} = 1
             end
 
             % extract axis and other non-Name/Value pair arguments
@@ -285,13 +286,52 @@ classdef Scan < matlab.mixin.Copyable
             else, hax = gca;
             end
 
+            % identify the dimension to slice
+            if isfield(kwargs, 'slice')
+                sdim = find(lower(kwargs.slice) == lower(scan.order)); % slicing index
+            else
+                sdim = find(scan.size == 1, 1, 'last'); % slicing index
+            end
+
+            % if no empty dim identified, take median of 3rd dim by default
+            if isempty(sdim), sdim = 3; kwargs.index = ceil(scan.size(sdim)/2); end
+
             % get the imaging grid
-            [X, ~, Z] = getImagingGrid(self);
+            pts = cell(1,3);
+            [pts{:}] = getImagingGrid(scan);
+
+            % reduce to plotting plane
+            pts = cellfun(@(axs) {sub(axs, kwargs.index, sdim)}, pts); % slice at slice index
+            pts = cellfun(@(x) reshape(x,[],1), pts, 'UniformOutput', false); % vectorize
 
             % plot the positions with the options given in the inputs
             plot_args = struct2nvpair(plot_args);
-            h = plot(hax, X(:), Z(:), varargin{:}, plot_args{:});
+            h = plot3(hax, pts{[1 3 2]}, varargin{:}, plot_args{:});
+
+            % set a flat view if possible 
+            % TODO: check if default view already set instead
+            % TODO: complete for other dims
+            if all(diff(h.ZData,1) < 1e-12), view(2); end
+
+            % axes labels
+            ax_sym  = lower(scan.order); % axis symbol
+            ylabel(hax,scan.(ax_sym(1) + "label")); % e.g. 'self.zlabel'
+            xlabel(hax,scan.(ax_sym(2) + "label")); % e.g. 'self.xlabel'
+            zlabel(hax,scan.(ax_sym(3) + "label")); % e.g. 'self.ylabel'
+
         end
+    end
+
+    % Dependent properties
+    methods
+        function sz = get.size(self)
+            sz = arrayfun(@(c) self.("n"+c), lower(self.order));
+        end
+        function set.size(self, sz)
+            sz(numel(sz)+1:3) = 1; % send omitted dimensions to size 1
+            for i = 1:3, self.("n"+lower(self.order(i))) = sz(i); end
+        end
+        function n = get.nPix(scan), n = prod(scan.size); end
     end
 end
 

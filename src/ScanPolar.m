@@ -1,26 +1,19 @@
-% ScanPolar - Defines an imaging region with Polar coordinates
+% ScanPolar - Imaging region with polar coordinates
 %
-% The ScanPolar class defines a Scan for Polar image coordinates.
+% The ScanPolar class defines a Scan with polar image coordinates.
 %
-% The Scan class stores definitions for the imaging region. A Scan
-% provides a method to return the image pixel coordinates as an ND-array of
-% up to 3 dimensions as well as the row vectors for each individual
-% dimension. 
-%
-% See also SCAN SCANCARTESIAN
+% See also SCAN SCANCARTESIAN SCANGENERIC
 classdef ScanPolar < Scan
     properties
         r (1,:) {mustBeVector} = 1e-3*linspace(0,40,128)   % image range values
         a (1,:) {mustBeVector} = linspace(-45,45,128)      % image angle values (deg)
         y (1,:) {mustBeVector} = 0                         % image elevation values
-        order = 'RAY';                % order of the dimensions
+        order = 'RAY';                
         origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
     
     % dependent parameters
     properties(Dependent)
-        size                % size of the final image
-        nPix                % number of pixels in the imaging grid
         rb                  % image bounds in range
         ab                  % image bounds in angle (deg)
         yb                  % image bounds in elevation
@@ -39,9 +32,9 @@ classdef ScanPolar < Scan
     end
 
     properties
-        rlabel (1,1) string = "Range"
-        alabel (1,1) string = "Angle ^o"
-        ylabel (1,1) string = "Elevation"
+        rlabel (1,1) string = "Range"       % plot label for the r axis
+        alabel (1,1) string = "Angle ^o"    % plot label for the a axis
+        ylabel (1,1) string = "Elevation"   % plot label for the y axis
     end
 
     
@@ -63,18 +56,6 @@ classdef ScanPolar < Scan
         end
         
         % image defs
-        function setImagingGrid(self, r, a, y, origin)
-            % SETIMAGINGGRID - Set image axes directly
-            %
-            % SETIMAGINGGRID(self, r, a, y, og) sets the image grid row 
-            % vectors with respect to an origin for the ScanPolar self in 
-            % all coordinates.
-            %
-            % See also SETIMAGINGBOUNDS
-
-            if nargin >= 5, self.origin = origin; end % set the origin first if provided
-            [self.r, self.a, self.y] = deal(r, a, y);
-        end
         function scan = getUSTBScan(self)
             warning('Not tested! Please edit the code here.');
             scan = uff.sector_scan(...
@@ -136,15 +117,11 @@ classdef ScanPolar < Scan
             %
             % See also GETIMAGINGGRID
 
-            ord = self.getPermuteOrder(); % get order of variables
-            iord = arrayfun(@(o) find(o == ord), [1,2,3]); % inverse ordering of variables
-            grid = {self.r, self.a, self.y}; % get axis
-            grid = grid(ord); % reorder
+            grid = arrayfun(@(c) {self.(c)}, lower(self.order)); % get axes
             [grid{:}] = ndgrid(grid{:}); % expand in proper order
-            grid = grid(iord); % undo reorder
-            [R, A, Y] = deal(grid{:}); % send to variables
-            sz = self.size; % output image size
-            assert(all(size(R,1:3) == sz), 'Internal error: size mismatch.') %#ok<CPROP> 
+            [~, ord] = ismember('RAY', self.order);
+            [R, A, Y] = deal(grid{ord}); % send to variables
+            assert(all(size(R,1:3) == self.size), 'Internal error: size mismatch.') 
             if nargout == 1, R = {R, A, Y}; end % pack if 1 output requested
         end
                 
@@ -252,17 +229,6 @@ classdef ScanPolar < Scan
         function n = get.nr(self), n = numel(self.r); end
         function n = get.na(self), n = numel(self.a); end
         function n = get.ny(self), n = numel(self.y); end
-        function n = get.nPix(self), n = self.na * self.ny * self.nr; end
-        function sz = get.size(self),
-            sz = [self.nr, self.na, self.ny];
-            sz = sz(self.getPermuteOrder());            
-        end
-        function set.size(self, sz)
-            sz(numel(sz)+1:3) = 1; % send omitted dimensions to size 1
-            iord = arrayfun(@(c) find(c == self.order), 'RAY');
-            [self.nr, self.na, self.ny] = deal(sz(iord(1)), sz(iord(2)), sz(iord(3)));
-        end
-
         
         % change number of points -> resample linearly, preserve endpoints
         function set.nr(self, n), self.r = linspace(min(self.r), max(self.r), n); end
@@ -298,8 +264,11 @@ classdef ScanPolar < Scan
 
     % overloads
     methods(Access=protected)
-        function sc = copyElement(self)
-            sc = ScanPolar('a', self.a, 'y', self.y, 'r', self.r, 'order', self.order, 'origin', self.origin);
+        function sc = copyElement(scan)
+            sc = ScanPolar('a', scan.a, 'y', scan.y, 'r', scan.r ...
+                ,'alabel', scan.alabel, 'ylabel', scan.ylabel, 'rlabel', scan.rlabel ...
+                , 'order', scan.order, 'origin', scan.origin ...
+                );
         end
     end
     

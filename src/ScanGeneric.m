@@ -1,27 +1,104 @@
-% SCANGENERIC - Defines a generic imaging region by each pixel's Cartesian coordinates
+% SCANGENERIC - Imaging region with arbitrary coordinates
 %
-% The ScanGeneric class defines a Scan for any image coordinates.
+% The ScanGeneric class defines a Scan with arbitrary image coordinates.
 %
-% The Scan class stores definitions for the imaging region. A Scan
-% provides a method to return the image pixel coordinates as an ND-array of
-% up to 3 dimensions as well as the row vectors for each individual
-% dimension.
-%
+% The ScanGeneric class contains 3 arbitrary axes u, v, and w and
+% uses the ScanGeneric.trans property to define the coordinate transform
+% (u,v,w) -> (x,y,z).
+% 
 % See also SCAN SCANPOLAR SCANCARTESIAN
 classdef ScanGeneric < Scan
     properties
         u (1,:) {mustBeVector} = 1e-3*linspace(  0,50,160)   % image u values
         v (1,:) {mustBeVector} = 1e-3*linspace(-20,20,128)   % image v values
         w (1,:) {mustBeVector} = 0                           % image w values
-        trans function_handle = @(u,v,w) cat(1, u, v, w);    % (u,v,w) -> [x;y;z] transform
-        pos (3,:,:,:) = []; % image coordinates (3 x U x V x W)
-        order = 'UVW'; % order of the dimensions
+        % TRANS - Coordinate transform
+        % 
+        % SCANGENERIC.TRANS is a function handle that accepts 3 ND-arrays
+        % u, v, and w each with size 1 x [scan.size] and returns an 
+        % ND-array p of size 3 x [scan.size]. The first dimension of the 
+        % output p should contain the x/y/z coordinates.
+        %
+        % Example:
+        % % make a new ScanGeneric and figure
+        % scan = ScanGeneric('u',1e-3*(0:20),'v',1e-3*(-5:5));
+        % 
+        % % 1) the trivial transform: (x = v, y = w, z = u)
+        % scan.trans = @(u,v,w) [v; w; u];
+        % 
+        % figure;
+        % plot(scan, nexttile(), '.'); view(2); axis equal;
+        % 
+        % % 2) define a rotation matrix and translation vector 
+        % theta = -30;
+        % R = [-sind(theta) 0 cosd(theta); 0 1 0; cosd(theta), 0 sind(theta)];
+        % p0 = 1e-3*[-2; 0; 5]; % offset in x/y/z coordinates
+        % 
+        % % rotation _then_ translation transform
+        % scan.trans = @(u,v,w) p0 + pagemtimes(R, [v; w; u]);
+        % 
+        % plot(scan, nexttile(), '.'); view(2); axis equal;
+        %
+        % % 3) linearly scale the x/z components across the scaling dimension w.
+        % % (x = v * (c0 / c), y = c, z = u * (c0 / c))
+        % scan.w = 1500 ./ ([1450 : 10 : 1650]); % distance scaling
+        % scan.wlabel = "Scaling";
+        % scan.trans = @(u,v,w) [v; w; u];
+        %   
+        % plot(scan, nexttile(), '.'); view(2); axis equal;
+        % 
+        % See also SCANGENERIC.POS FUNCTION_HANDLE
+        trans function_handle {mustBeScalarOrEmpty} = @(u,v,w) cat(1, v, w, u);  % (u,v,w) -> [x;y;z] transform
+        order = 'UVW';
     end
     
     % dependent parameters
     properties(Dependent)
-        size                % size of the final image
-        nPix                % number of pixels in the imaging grid
+        % POS - Coordinate positions
+        % 
+        % SCANGENERIC.POS is a depedent property that returns the pixel
+        % positions in x/y/z. 
+        % 
+        % scan.pos = p, stores the pixel position ND-array p as a 
+        % 3 x [scan.size]) array. It sets the hidden property scan.pos_, 
+        % which can optionally be set directly.
+        %
+        % p = scan.pos, returns the result of applying the transform
+        % scan.trans to the u/v/w axes if scan.pos_ is empty. Otherwise it
+        % returns the positions stored at scan.pos_.
+        %
+        % Example:
+        % scan = ScanGeneric('u',1e-3*(0:20),'v',1e-3*(-5:5), 'w', 1e-3*(-2:2), 'order', 'UVW');
+        % [~, u, v, w] = ndgrid(0, scan.u, scan.v, scan.w); % 1 x U x V x W
+        % 
+        % % 1) the trivial transform: (x = v, y = w, z = u)
+        % scan.pos = [v; w; u]; % 3 x U x V x W
+        % 
+        % figure;
+        % plot(scan, nexttile(), '.'); view(2); axis equal;
+        % 
+        % % 2) define a rotation matrix and translation vector 
+        % theta = -30;
+        % R = [-sind(theta) 0 cosd(theta); 0 1 0; cosd(theta), 0 sind(theta)];
+        % p0 = 1e-3*[-2; 0; 5]; % offset in x/y/z coordinates
+        % 
+        % % rotation _then_ translation transform
+        % scan.pos = p0 + pagemtimes(R, [v; w; u]);
+        % 
+        % plot(scan, nexttile(), '.'); view(2); axis equal;
+        % 
+        % % 3) linearly scale the x/z components across the scaling dimension w.
+        % % (x = v * (c0 / c), y = c, z = u * (c0 / c))
+        % scan.w = 1500 ./ ([1450 : 10 : 1650]); % distance scaling
+        % scan.wlabel = "Scaling";
+        % 
+        % [~, u, v, w] = ndgrid(0, scan.u, scan.v, scan.w); % 1 x U x V x W
+        % scan.pos = [v; w; u];
+        % 
+        % plot(scan, nexttile(), '.'); view(2); axis equal;
+        % 
+        % See also SCANGENERIC.TRANS FUNCTION_HANDLE
+        pos (3,:,:,:)       % pixel positions (3 x [scan.size])
         ub                  % image bounds in u
         vb                  % image bounds in v
         wb                  % image bounds in w
@@ -39,33 +116,35 @@ classdef ScanGeneric < Scan
         wdim                % w-dimension
     end
 
+    properties(Hidden)
+        pos_  (3,:,:,:)     % pixel positions (3 x [scan.size])
+    end
+
     properties
-        ulabel (1,1) string = "U"
-        vlabel (1,1) string = "V"
-        wlabel (1,1) string = "W"
+        ulabel (1,1) string = "U" % plot label for the u axis
+        vlabel (1,1) string = "V" % plot label for the v axis
+        wlabel (1,1) string = "W" % plot label for the w axis
     end
     
     % get/set & constructor
     methods
         % constructor
-        function scan = ScanGeneric(varargin)
-            % SCANCARTESIAN - Construct a ScanCartesian
+        function scan = ScanGeneric(kwargs)
+            % SCANGENERIC - Construct a ScanGeneric
             %
-            % scan = SCANCARTESIAN(Name,Value,...) constructs a
+            % scan = SCANGENERIC(Name,Value,...) constructs a
             % ScanCartesian using name/value pairs.
             %
             % See also SCANCARTESIAN SCANPOLAR
+            arguments
+                kwargs = ?ScanGeneric
+            end
 
             % initialize with name-value pairs
-            for i = 1:2:nargin
-                scan.(varargin{i}) = varargin{i+1};
+            for f = string(fieldnames(kwargs))'
+                scan.(f) = kwargs.(f);
             end
-
-            % initialize positions if not given explicitly
-            if ~any(cellfun(@(c) (ischar(c) || isstring(c)) && (c == "pos"), varargin))
-                scan.pos = pixelCube(scan);
-            end
-        end
+       end
 
         function pos = pixelCube(scan)
             % PIXELCUBE - Create the tensor of pixel positions from the
@@ -82,37 +161,22 @@ classdef ScanGeneric < Scan
             iord([scan.udim, scan.vdim, scan.wdim]) = 1:3; % inverse ordering of variables
 
             % get data in order
-            axs = sub({scan.u, scan.v, scan.w}, iord, 2);
-
+            axs = arrayfun(@(c) {scan.(c)}, lower(scan.order)); % e.g. {scan.u, scan.v, scan.w}
+            
             % make a full grid
             [axs{:}] = ndgrid(axs{:});
 
             % undo order and shift dimension up 1
-            axs = cellfun(@(x){reshape(x, [1,size(x)])}, axs(iord)); %#ok<CPROP> 
+            axs = cellfun(@(x){reshape(x, [1,size(x)])}, axs(iord)); 
 
             % apply (u,v,w) -> [x,y,z]' transform
-            pos = scan.trans(axs{:});
+            if isempty(scan.trans)
+                pos = []; 
+            else 
+                pos = scan.trans(axs{:}); 
+            end
         end
         
-        % image defs
-        function setImagingGrid(scan, u, v, w)
-            % SETIMAGINGGRID - Set image axes directly
-            %
-            % SETIMAGINGGRID(scan, u, v, w) sets the image grid row vectors
-            % for the ScanCartesian scan in all coordinates.
-            %
-            % See also SETIMAGINGBOUNDS
-            [scan.u, scan.v, scan.w] = deal(u, v, w);
-        end
-        function setImagingBounds(scan, u, v, w)
-            % SETIMAGINGBOUNDS - Set image axes boundaries
-            %
-            % SETIMAGINGBOUNDS(scan, u, v, w) sets the image grid bounds 
-            % for the ScanCartesian scan in all coordinates.
-            %
-            % See also SETIMAGINGGRID
-            [scan.ub, scan.vb, scan.wb] = deal(u, v, w);
-        end
         % scaling
         function scan = scale(scan, kwargs)
             arguments
@@ -183,14 +247,19 @@ classdef ScanGeneric < Scan
                 kwargs.vector (1,1) logical = false; 
             end
 
+            if ~isconsistent(scan)
+                warning("The ScanGeneric is inconsistent: unexpected errors may occur.");
+            end
+
             sz = scan.size;
-            X = reshape(sub(scan.pos, 1, 1), sz);
-            Y = reshape(sub(scan.pos, 2, 1), sz);
-            Z = reshape(sub(scan.pos, 3, 1), sz);
+            P = scan.pos();
+            X = reshape(sub(P, 1, 1), sz);
+            Y = reshape(sub(P, 2, 1), sz);
+            Z = reshape(sub(P, 3, 1), sz);
             
             if nargout == 1
                 if kwargs.vector
-                    X = scan.pos; % return 3 x perm(U x V x W) NDarray
+                    X = P; % return 3 x perm(U x V x W) NDarray
                 else
                     X = {X, Y, Z}; % return (1 x 3) cell array
                 end
@@ -200,6 +269,12 @@ classdef ScanGeneric < Scan
 
    % dependent methods
     methods
+        % load/store or compute positions 
+        function p = get.pos(scan)
+            if isempty(scan.pos_), p = pixelCube(scan); else; p = scan.pos_; end
+        end
+        function set.pos(scan, p), scan.pos_ = p; end
+
         % self validation
         function tf = isconsistent(scan)
             % ISCONSISTENT - Check if a ScanGeneric's properties are consistent
@@ -234,17 +309,6 @@ classdef ScanGeneric < Scan
         function n = get.nu(scan), n = numel(scan.u); end
         function n = get.nv(scan), n = numel(scan.v); end
         function n = get.nw(scan), n = numel(scan.w); end
-        function n = get.nPix(scan), n = scan.nu * scan.nv * scan.nw; end
-        function sz = get.size(scan),
-            sz = [scan.nu, scan.nv, scan.nw];
-            ord([scan.udim, scan.vdim, scan.wdim]) = 1:3;
-            sz = sz(ord);
-        end
-        function set.size(scan, sz)
-            sz(numel(sz)+1:3) = 1; % send omitted dimensions to size 1
-            iord = arrayfun(@(c) find(c == scan.order), 'UVW');
-            [scan.nu, scan.nv, scan.nw] = deal(sz(iord(1)), sz(iord(2)), sz(iord(3)));
-        end
         
         % change number of points -> resample linearly, preserve endpoints
         function set.nu(scan, n), scan.u = linspace(min(scan.u), max(scan.u), n); end
@@ -281,7 +345,10 @@ classdef ScanGeneric < Scan
     % overloads
     methods(Access=protected)
         function sc = copyElement(scan)
-            sc = ScanGeneric('u', scan.u, 'v', scan.v, 'w', scan.w, 'order', scan.order, 'trans', scan.trans);
+            sc = ScanGeneric('u', scan.u, 'v', scan.v, 'w', scan.w ...
+                , 'order', scan.order, 'trans', scan.trans ...
+                ,'ulabel', scan.ulabel, 'vlabel', scan.vlabel, 'wlabel', scan.wlabel ...
+                );
         end
     end
     

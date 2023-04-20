@@ -1,26 +1,18 @@
-% SCANCARTESIAN - Defines an imaging region with Cartesian coordinates
+% SCANCARTESIAN - Imaging region with Cartesian coordinates
 %
-% The ScanCartesian class defines a Scan for Cartesian image coordinates.
+% The ScanCartesian class defines a Scan with Cartesian image coordinates.
 %
-% The Scan class stores definitions for the imaging region. A Scan
-% provides a method to return the image pixel coordinates as an ND-array of
-% up to 3 dimensions as well as the row vectors for each individual
-% dimension. It also provides convenience methods for defining apodization
-% array defined for the Scan.
-%
-% See also SCAN SCANPOLAR
+% See also SCAN SCANPOLAR SCANGENERIC
 classdef ScanCartesian < Scan
     properties
         x (1,:) {mustBeVector} = 1e-3*linspace(-20,20,128) % image x values
         y (1,:) {mustBeVector} = 0                         % image y values
         z (1,:) {mustBeVector} = 1e-3*linspace(0,40,128)   % image z values
-        order = 'ZXY'; % order of the dimensions
+        order = 'ZXY'; 
     end
     
     % dependent parameters
     properties(Dependent)
-        size                % size of the final image
-        nPix                % number of pixels in the imaging grid
         xb                  % image bounds in x
         yb                  % image bounds in y
         zb                  % image bounds in z
@@ -39,9 +31,9 @@ classdef ScanCartesian < Scan
     end
 
     properties
-        xlabel (1,1) string = "Lateral"
-        ylabel (1,1) string = "Elevation"
-        zlabel (1,1) string = "Axial"
+        xlabel (1,1) string = "Lateral"     % plot label for the x axis
+        ylabel (1,1) string = "Elevation"   % plot label for the y axis
+        zlabel (1,1) string = "Axial"       % plot label for the z axis
     end
 
     % get/set & constructor
@@ -61,25 +53,6 @@ classdef ScanCartesian < Scan
             end            
         end
         
-        % image defs
-        function setImagingGrid(self, x, y, z)
-            % SETIMAGINGGRID - Set image axes directly
-            %
-            % SETIMAGINGGRID(self, x, y, z) sets the image grid row vectors
-            % for the ScanCartesian self in all coordinates.
-            %
-            % See also SETIMAGINGBOUNDS
-            [self.x, self.y, self.z] = deal(x, y, z);
-        end
-        function setImagingBounds(self, x, y, z)
-            % SETIMAGINGBOUNDS - Set image axes boundaries
-            %
-            % SETIMAGINGBOUNDS(self, x, y, z) sets the image grid bounds 
-            % for the ScanCartesian self in all coordinates.
-            %
-            % See also SETIMAGINGGRID
-            [self.xb, self.yb, self.zb] = deal(x, y, z);
-        end
         % scaling
         function self = scale(self, kwargs)
             arguments
@@ -149,15 +122,11 @@ classdef ScanCartesian < Scan
                 self ScanCartesian
                 kwargs.vector (1,1) logical = false; 
             end
-            ord = self.getPermuteOrder(); % get order of variables
-            iord = arrayfun(@(o) find(o == ord), [1,2,3]); % inverse ordering of variables
-            grid = {self.x, self.y, self.z}; % get axis
-            grid = grid(ord); % reorder
+            grid = arrayfun(@(c) {self.(c)}, lower(self.order)); % get axes
             [grid{:}] = ndgrid(grid{:}); % expand in proper order
-            grid = grid(iord); % undo reorder
-            [X, Y, Z] = deal(grid{:}); % send to variables
-            sz = self.size; % output image size
-            assert(all(size(X,1:3) == sz), 'Internal error: size mismatch.') %#ok<CPROPLC,CPROP> 
+            [~, ord] = ismember('XYZ', self.order);
+            [X, Y, Z] = deal(grid{ord}); % send to variables
+            assert(all(size(X,1:3) == self.size), 'Internal error: size mismatch.')
             if nargout == 1
                 if kwargs.vector
                     X = cellfun(@(x) {shiftdim(x,-1)}, {X, Y, Z}); X = cat(1, X{:}); % return 3 x perm(X x Y x Z) NDarray
@@ -166,32 +135,7 @@ classdef ScanCartesian < Scan
                 end
             end % pack if 1 output requested
         end
-                
-        function setImageGridOnTarget(self, target, margin)
-            % SETIMAGEGRIDONTARGET - Set imaging grid to surround a Target
-            %
-            % sets the imaging grid around the boundary of target leaves
-            % unchanged the number of points on the grid, so the resolution
-            % may change whenever this function is called
-            % inputs:
-            %   target:     Target object
-            %   margin:     a 3 x 2 matrix of x/y/z  min/max bounds for the
-            %               imaging grid
-
-            if(nargin < 3 || isempty(margin))
-                % margin expansion (m)
-                margin = [-3e-3 3e-3; ...
-                    0    0;...
-                    -2e-3 2e-3;];
-            end
-
-            % copy the boundaries
-            self.xb = target.xb + margin(1,:);
-            self.yb = target.yb + margin(2,:);
-            self.zb = target.zb + margin(3,:);
-
-        end
-    
+                    
         function ord = getPermuteOrder(self)
             % GETPERMUTEORDER - Get the permutation of 'XYZ'
             %
@@ -209,7 +153,7 @@ classdef ScanCartesian < Scan
             % setImageGridOnSequence Align Scan to a Sequence
             %
             % setImageGridOnSequence(self, seq) modifies the Scan so that
-            % it aligns with the Sequence seq. 
+            % it aligns with the virtual source Sequence seq. 
             %
 
             % soft validate the transmit sequence type: it should be focused
@@ -228,16 +172,6 @@ classdef ScanCartesian < Scan
         function n = get.nx(self), n = numel(self.x); end
         function n = get.ny(self), n = numel(self.y); end
         function n = get.nz(self), n = numel(self.z); end
-        function n = get.nPix(self), n = self.nx * self.ny * self.nz; end
-        function sz = get.size(self),
-            sz = [self.nx, self.ny, self.nz];
-            sz = sz(self.getPermuteOrder());            
-        end
-        function set.size(self, sz)
-            sz(numel(sz)+1:3) = 1; % send omitted dimensions to size 1
-            iord = arrayfun(@(c) find(c == self.order), 'XYZ');
-            [self.nx, self.ny, self.nz] = deal(sz(iord(1)), sz(iord(2)), sz(iord(3)));
-        end
         
         % change number of points -> resample linearly, preserve endpoints
         function set.nx(self, n), self.x = linspace(min(self.x), max(self.x), n); end
@@ -273,8 +207,10 @@ classdef ScanCartesian < Scan
 
     % overloads
     methods(Access=protected)
-        function sc = copyElement(self)
-            sc = ScanCartesian('x', self.x, 'y', self.y, 'z', self.z, 'order', self.order);
+        function sc = copyElement(scan)
+            sc = ScanCartesian('x', scan.x, 'y', scan.y, 'z', scan.z, 'order', scan.order ...
+                ,'xlabel', scan.xlabel, 'ylabel', scan.ylabel, 'zlabel', scan.zlabel ...
+                );
         end
     end
     
