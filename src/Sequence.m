@@ -17,7 +17,7 @@ classdef Sequence < matlab.mixin.Copyable
     % 
     % 
     % 
-    % See also: SEQUENCERADIAL WAVEFORM
+    % See also: SEQUENCERADIAL SEQUENCEGENERIC WAVEFORM
     
     properties
         % TYPE - Type of pulse sequence definition

@@ -9,7 +9,7 @@ classdef SequenceRadial < Sequence
     % conveniently create plane wave focal sequences with a range of one
     % across all angles.
     %
-    % See also: SEQUENCE TRANSDUCERCONVEX
+    % See also: SEQUENCE SEQUENCEGENERIC TRANSDUCERCONVEX
     
     properties
         apex (3,1) {mustBeNumeric} = [0;0;0] % Center of polar coordinate system
