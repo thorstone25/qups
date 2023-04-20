@@ -124,7 +124,7 @@ classdef KernTest < matlab.unittest.TestCase
 
             for ord = ords'
                 [xp, tp] = dealfun(@(x)permute(x, ord), x, tau);
-                z1 = interpd(xp, tp, find(ord == 1), terp_, 0);
+                z1 = wsinterpd(xp, tp, find(ord == 1), 1, [], terp_, 0);
                 z1 = ipermute(z1, ord);
                 test.assertThat(...
                     double(gather(z1)), IsEqualTo(double(gather(z0)), 'Using', ...
