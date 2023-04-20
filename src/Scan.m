@@ -184,7 +184,7 @@ classdef Scan < matlab.mixin.Copyable
             % h = IMAGESC(..., Name, Value) forwards arguments to MATLAB's 
             % built-in IMAGESC function.
             %
-            % See also IMAGESC GIF PLOT
+            % See also IMAGESC GIF PLOT VOL3D
 
             arguments
                 scan (1,1) Scan
@@ -320,6 +320,76 @@ classdef Scan < matlab.mixin.Copyable
             zlabel(hax,scan.(ax_sym(3) + "label")); % e.g. 'self.ylabel'
 
         end
+
+        function h = vol3d(scan, b, varargin, im_args)
+            % VOL3D - Overload of vol3d
+            %
+            % h = VOL3D(scan, b) displays the data b on the Scan scan.
+            %
+            % h = VOL3D(scan, b, ax) uses the axes ax instead of the 
+            % current axes.
+            %
+            % h = VOL3D(..., Name, Value) forwards arguments to vol3d
+            %
+            % Note: vol3d.m is a MATLAB file exchange file. It can be
+            % downloaded <a href="matlab:web('https://www.mathworks.com/matlabcentral/fileexchange/22940-vol3d-v2')">here</a>.
+            % 
+            % See also VOL3D IMAGESC GIF PLOT
+
+            arguments
+                scan (1,1) Scan
+                b {mustBeNumeric}
+            end
+            arguments(Repeating)
+                varargin
+            end
+            arguments
+                im_args.texture string {mustBeScalarOrEmpty, mustBeMember(im_args.texture, ["2D", "3D"])}
+                im_args.Alpha {mustBeInRange(im_args.Alpha, 0, 1)}
+            end
+            
+            % find axis varargs
+            if numel(varargin) >= 1 && isa(varargin{1}, 'matlab.graphics.axis.Axes')
+                ax = varargin{1}; varargin(1) = [];
+            else
+                ax = gca;
+            end
+
+            % imagesc arguments
+            im_args = struct2nvpair(im_args);
+
+            % make sure the data size and image size are the same
+            assert(all(size(b, 1:3) == scan.size, "all"), ...
+                "The image size does not match the scan.") %#ok<CPROPLC> 
+
+            % identify the axes
+            ax_sym  = lower(scan.order); % axis symbol
+            ax_args = arrayfun(@(c) {scan.(c+"b")}, ax_sym); % get axis in order
+            ax_args = ax_args([2 1 3]); % swap x,y axis arguments ( for vol3d )
+            
+            % plot
+            bpl = b(:,:,:,1);
+            if ~isreal(b), bpl = mod2db(bpl); end % convert complex to modulus in dB implicitly
+            d_args = [cellstr(["C","X","Y","Z"]+"Data"); [{bpl}, ax_args]];
+            h = vol3d('Parent', ax, d_args{:}, varargin{:},  im_args{:}); % plot
+
+            % axes labels
+            xlabel(ax,scan.(ax_sym(2) + "label")); % e.g. 'scan.xlabel'
+            ylabel(ax,scan.(ax_sym(1) + "label")); % e.g. 'scan.zlabel'
+            zlabel(ax,scan.(ax_sym(3) + "label")); % e.g. 'scan.ylabel'
+
+            % default axis setting
+            if isa(scan, 'ScanCartesian')
+                axis(ax, 'image');
+            elseif isa (scan, 'ScanPolar') || isa(scan, 'ScanGeneric')
+                axis(ax, 'tight')
+            else
+                warning('QUPS:Scan:UnrecognizedScan', "Unrecognized Scan of class " + class(scan) + ".");
+                axis(ax, 'tight')
+            end
+        end
+
+    
     end
 
     % Dependent properties
