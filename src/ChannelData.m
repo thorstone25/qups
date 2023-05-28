@@ -341,9 +341,15 @@ classdef ChannelData < matlab.mixin.Copyable
             % filter: always applied in dim 1
             chd = applyFun2Dim(chd, @(x) filter(D, x), dim);
 
+            % get filter temporal correction
+            switch D.ImpulseResponse
+                case 'fir', L = filtord(D) / 2;
+                case 'iir', L = filtord(D);
+            end
+
             % adjust time axes
             if dim == chd.tdim
-                chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+                chd.t0 = chd.t0 - L/chd.fs;
             end
         end
         function chd = filtfilt(chd, D, dim)
@@ -388,7 +394,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % adjust time axes
             if dim == chd.tdim
-                chd.t0 = chd.t0 - (D.FilterOrder-1)/2/chd.fs;
+                chd.t0 = chd.t0 - filtord(D)/2/chd.fs;
             end
         end
         function chd = hilbert(chd, N, dim)
