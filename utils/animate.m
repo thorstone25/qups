@@ -78,7 +78,7 @@ end
 if isnumeric(x) || islogical(x), x = {x}; end
 
 % argument type checks - x must contain data that can be plotted
-cellfun(@mustBeReal, x);
+% cellfun(@mustBeReal, x);
 
 % Get sizing info
 I = numel(h);
@@ -108,7 +108,7 @@ if nargout >= 1, mvf = cell([M,F]); else, mvf = cell.empty; end
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
-        for i = 1:I, h(i).CData(:) = x{i}(:,:,m); end % update image
+        for i = 1:I, if isreal(x{i}), h(i).CData(:) = x{i}(:,:,m); else, h(i).CData(:) = mod2db(x{i}(:,:,m)); end, end% update image
         if m == 1, drawnow; getframe(); end % toss a frame to avoid bug where the first frame has a different size
         drawnow limitrate; 
         tic;
