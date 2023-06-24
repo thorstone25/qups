@@ -152,11 +152,7 @@ classdef Medium < matlab.mixin.Copyable
             end
 
             % get the grid points on the scan
-            pts = scan.getImagingGrid(); 
-
-            % stack points in the first dimension
-            pts = cellfun(@(x) {shiftdim(x, -1)}, pts);
-            pts = cat(1, pts{:});
+            pts = scan.positions(); 
 
             % get property map for all points (dimensions are shifted on
             % output)

@@ -1806,7 +1806,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % generate {psig, mask, elem_weights}
             switch kwargs.ElemMapMethod
                 case 'nearest'
-                    pg = sscan.getImagingGrid('vector', true); % -> 3 x Z x X x Y
+                    pg = sscan.positions(); % -> 3 x Z x X x Y
                     pn = self.xdc.positions; % element positions
                     [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing ( 1 if sliced )
                     mask = false(Nx, Ny, Nz); % grid size
@@ -2314,7 +2314,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             apod_args = {'apod', kwargs.apod, 'modulation', kwargs.fmod};
 
             % get positions of the imaging plane
-            P_im = self.scan.getImagingGrid('vector',true); % 3 x I1 x I2 x I3 == 3 x [I]
+            P_im = self.scan.positions(); % 3 x I1 x I2 x I3 == 3 x [I]
 
             % get positions of the receive aperture
             P_rx = self.rx.positions(); % 3 x N
@@ -2756,9 +2756,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get the pixel positions
             D = max(4, gather(ndims(chd.data))); % >= 4
-            Pi = self.scan.getImagingGrid();
-            Pi = cellfun(@(x) {shiftdim(x, -D)}, Pi); % place I past max data dims 5-7
-            Pi = cat(1,Pi{:});     % 3 x 1 x 1 x 1 x ... x [I]
+            Pi = self.scan.positions();
+            Pi = swapdim(Pi, [1:4], [1, D+(1:3)]); % place I after data dims (3 x 1 x 1 x 1 x ... x [I])
             c0 = shiftdim(c0, -D); % 1 x 1 x 1 x 1 x ... x [I]
 
             % get the receive apodization, spliced if it can be applied
@@ -3192,9 +3191,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chddim = find(size(chd) > 1, 1, 'first');
 
             % get image pixels, outside of range of data
-            Pi = self.scan.getImagingGrid();
-            Pi = cellfun(@(x) shiftdim(x, -1), Pi, 'UniformOutput',false);
-            Pi = cat(1, Pi{:}); % 3 x I1 x I2 x I3
+            Pi = self.scan.positions; % 3 x I1 x I2 x I3
 
             % get the transmit, receive
             Pr = self.rx.positions(); % receiver positions
@@ -3861,7 +3858,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % normals
 
             % get the image pixels
-            Pi = getImagingGrid(us.scan, "vector",true); % (3 x I1 x I2 x I3)
+            Pi = us.scan.positions(); % (3 x I1 x I2 x I3)
 
             % get the normalized difference vector (3 x I1 x I2 x I3 x N)
             r = Pi - Pn;

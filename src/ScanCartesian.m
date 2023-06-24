@@ -117,7 +117,7 @@ classdef ScanCartesian < Scan
 
     % imaging computations
     methods
-        function [X, Y, Z, sz] = getImagingGrid(self, kwargs)
+        function [X, Y, Z] = getImagingGrid(self, kwargs)
             arguments
                 self ScanCartesian
                 kwargs.vector (1,1) logical = false; 

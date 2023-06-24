@@ -528,8 +528,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             [gxv, gyv, gzv] = deal(single(scan.x), single(scan.y), single(scan.z)); % grid {dim} vector
             [gx0, gy0, gz0] = deal(scan.x(1), scan.y(1), scan.z(1)); % grid {dim} first point
             [gxd, gyd, gzd] = deal(single(scan.dx), single(scan.dy), single(scan.dz)); % grid {dim} delta
-            pg = scan.getImagingGrid();
-            pg = cell2mat(cellfun(@(x){shiftdim(x,-1)}, pg(:))); % 3 x Z x X x Y
+            pg = scan.positions(); % 3 x Z x X x Y
             pdims = arrayfun(@(c){find(c == scan.order)}, 'XYZ'); % dimensions mapping
             [xdim, ydim, zdim] = deal(pdims{:});
             iord = arrayfun(@(d)find([pdims{:}] == d), [1,2,3]); % inverse mapping

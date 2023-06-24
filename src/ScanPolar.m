@@ -81,7 +81,7 @@ classdef ScanPolar < Scan
 
     % imaging computations
     methods
-        function [X, Y, Z, sz] = getImagingGrid(self, kwargs)
+        function [X, Y, Z] = getImagingGrid(self, kwargs)
             arguments
                 self ScanPolar
                 kwargs.vector (1,1) logical = false;
@@ -97,9 +97,8 @@ classdef ScanPolar < Scan
                     X = {X, Y, Z}; % return (1 x 3) cell array 
                 end
             end % pack if 1 output requested
-            sz = self.size;
         end
-        function [R, A, Y, sz] = getImagingGridPolar(self)
+        function [R, A, Y] = getImagingGridPolar(self)
             % GETIMAGINGGRIDPOLAR - Return ND-arrays of cartesian coordinates
             %
             % [R, A, Y, sz] = GETIMAGINGGRIDPOLAR(self) returns 
@@ -107,7 +106,7 @@ classdef ScanPolar < Scan
             % polar pixel coordinates of the ScanPolar self and the size of
             % the Scan sz.
             %
-            % G = GETIMAGINGGRID(self) returns the R/A/Y arrays in a 1 x 3
+            % G = GETIMAGINGGRIDPOLAR(self) returns the R/A/Y arrays in a 1 x 3
             % cell (as in G = {R, A, Y}).
             %
             % Outputs:

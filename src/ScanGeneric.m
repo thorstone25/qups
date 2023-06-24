@@ -241,7 +241,7 @@ classdef ScanGeneric < Scan
 
     % imaging computations
     methods
-        function [X, Y, Z, sz] = getImagingGrid(scan, kwargs)
+        function [X, Y, Z] = getImagingGrid(scan, kwargs)
             arguments
                 scan ScanGeneric
                 kwargs.vector (1,1) logical = false; 
@@ -264,7 +264,8 @@ classdef ScanGeneric < Scan
                     X = {X, Y, Z}; % return (1 x 3) cell array
                 end
             end
-        end                
+        end
+        function p = positions(scan), p = scan.pos; end
     end
 
    % dependent methods

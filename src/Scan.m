@@ -18,8 +18,9 @@ classdef Scan < matlab.mixin.Copyable
         % scan.order = 'ABC' represents that scan.a is aligned with 
         % dimension 1, scan.b with dimension 2, etc. 
         %
-        % This is relevant for calls to scan.getImagingGrid() which returns
-        % the 3D Cartesian coordinates each as a 3 x A x B x C ND-array.
+        % This is relevant for calls to scan.getImagingGrid() or 
+        % scan.positions() which return the 3D Cartesian coordinates 
+        % each as a 3 x A x B x C ND-array.
         order (1,3) char  % dimension of change for the pixels
     end
     
@@ -66,8 +67,9 @@ classdef Scan < matlab.mixin.Copyable
         %   - X:    x coordinate (m)
         %   - Y:    y coordinate (m)
         %   - Z:    z coordinate (m)
-        %   - sz:   size of the X, Y, and Z multidimensional arrays
-        [X, Y, Z, sz] = getImagingGrid(self)
+        %
+        % See also: SCAN/POSITIONS
+        [X, Y, Z] = getImagingGrid(self)
         
         % SCALE - Scale units
         %
@@ -86,6 +88,23 @@ classdef Scan < matlab.mixin.Copyable
         %
         % 
         scale(self, kwargs)
+    end
+
+    methods
+        % POSITIONS - get the multi-dimensional grid positions
+        %
+        % P = POSITIONS(scan) returns an NDarray whos first dimension is a 
+        % vector in X,Y,Z order and with the image dimensions raised by one
+        % i.e. the following is true:
+        %
+        % * isequal(size(P)   , [3, self.size])
+        %
+        % The dimension of change for each variable is given by the
+        % 'order' property of the Scan.
+        %
+        % See also: GETIMAGINGGRID
+        function  p = positions(self), p = self.getImagingGrid("vector", true); end
+        
     end
 
     % conversion
