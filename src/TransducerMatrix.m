@@ -262,7 +262,7 @@ classdef TransducerMatrix < Transducer
         end
         function xdc = Verasonics(Trans, c0)
             arguments
-                Trans struct
+                Trans (1,1) struct
                 c0 (1,1) double = 1540
             end
             % determine the scaling of the properties
@@ -282,9 +282,13 @@ classdef TransducerMatrix < Transducer
             if ~isfield(Trans, 'elementLength'), Trans.elementLength = Trans.elementWidth; end
 
             % parse the impulse response
-            h = Trans.IR1wy; % impulse response
-            t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
-            wv = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
+            if isfield(Trans, 'IR1wy')
+                h = Trans.IR1wy; % impulse response
+                t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
+                wv = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
+            else
+                wv = Waveform.Delta();
+            end
             
             % set relevant properties
             xdc = TransducerMatrix(...
