@@ -1923,7 +1923,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isempty(kwargs.T)
                 kwargs.T = 2 * (vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) ./ med.c0);
             end
-            Nt = 1 + floor((kwargs.T / kgrid.dt) + max(range(t_tx))); % number of steps in time
+            Nt = 1 + floor((kwargs.T + max(range(t_tx))) / kgrid.dt); % number of steps in time
             kgrid.setTime(Nt, kgrid.dt);
 
             % get the receive impulse response function
