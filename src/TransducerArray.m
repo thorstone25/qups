@@ -335,7 +335,7 @@ classdef TransducerArray < Transducer
                 'fc', mean([4e6 11e6]), ...
                 'bw', ([4e6 11e6]), ...
                 'width', (0.18e-3), ... placeholder @ 90% pitch
-                'height', (2e-3), ... placeholder @ 10x picth
+                'height', (2e-3), ... placeholder @ 10x pitch
                 'numel', 192, ...
                 'pitch', 0.2e-3, ...
                 'el_focus', 20e-3 ...
@@ -346,7 +346,7 @@ classdef TransducerArray < Transducer
                 'fc', mean([4.5e6 10e6]), ...
                 'bw', ([4.5e6 10e6]), ...
                 'width', (0.27e-3), ... placeholder @ 90% pitch
-                'height', (3e-3), ... placehoder @ 10x picth
+                'height', (3e-3), ... placehoder @ 10x pitch
                 'numel', 128, ...
                 'pitch', 0.3e-3, ...
                 'el_focus', 18e-3 ...
@@ -360,7 +360,7 @@ classdef TransducerArray < Transducer
                 'height', 5e-3, ... % Height of element [m]
                 'numel', 128, ... % number of elements
                 'pitch', 0.300e-3, ... % probe pitch [m]
-                'el_focus', 20e-3 ... % elevation focal depth
+                'el_focus', 20e-3 ... % elevation focal depth [m]
                 );
 
         end
@@ -373,7 +373,7 @@ classdef TransducerArray < Transducer
                 'height', 7.5e-3, ... % Height of element [m]
                 'numel', 256, ... % number of elements
                 'pitch', hex2num('3f29992e39cf2ea7'), ... % probe pitch [m]
-                'el_focus', 20e-3 ... % elevation focal depth
+                'el_focus', 20e-3 ... % elevation focal depth [m]
                 );
         end
         function xdc = Verasonics(Trans, c0)
