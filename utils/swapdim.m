@@ -3,12 +3,15 @@ function [x, ord] = swapdim(x, i, o)
 %
 % y = SWAPDIM(x, i, o) swaps dimensions i and o in the array x. 
 %
+% SWAPDIM optimistically calls reshape when feasible to avoid an implicit
+% copy and falls back to permute when required.
+% 
 % Example:
 %   x = rand([1,2,3,4,5]);
 %   y = swapdim(x,[2 3],[5 4]); % swap 2<->5, 3<->4
 %   assert(isequal(size(y), [1,5,4,3,2]))
 %
-% See also PERMUTE SUB
+% See also SUB PERMUTE RESHAPE
 arguments
     x
     i (1,:) {mustBeInteger}
@@ -19,32 +22,28 @@ end
 assert(length(i) == length(o), 'Dimensions to swap must be the same length.');
 L = max([ndims(x), i, o]);
 ord = 1:L; % all dimensions we have to worry about
-ord(i) = o; % swap dimensions
-ord(o) = i; 
+ord0 = ord;
+
+% get permutation
+if isempty(intersect(i, o)) % can be handled separately
+    ord([i o]) = [o i]; % swap dimensions
+else % must fill in missing indices
+    l = min(min(i),min(o)) : max(max(i),max(o)); % all indices within swap
+    i = [i, setdiff(l, i)]; % expanded input indices
+    o = [o, setdiff(l, o)]; % expanded output indices
+    ord(o) = i; % full permutation ordering
+end
 
 % if the data is already ordered, do nothing
-if isequal(ord, 1:numel(ord)), return, end
+if isequal(ord, ord0), return, end
 
-% check the sizing to see if we can reshape
-e = [1 : min([i,o]) - 1, max([i,o]) + 1 : L]; % external indices - not involved
-m = setdiff(1:L, [i, o, e]); % middle indices - involved, not moving
-msz = prod(esize(x,m)); % middle indices total size
-isz = prod(esize(x,i)); % input  indices total size
-osz = prod(esize(x,o)); % output indices total size
+% get the non-singleton output dimensions, ordered
+ons = ord(size(x, ord) > 1); 
 
-% if at most 1 dim between i, m, and o is non-scalar 
-% and the order of dims in i matches the order in o
-if sum([isz msz osz] ~= 1) <= 1 && ...
-    isequal(argsort(i), argsort(o))
-    
-    % we can reshape to save a data copy operation
-    sz = size(x, 1:numel(ord));
-    [sz(i), sz(o)] = deal(sz(o), sz(i)); % swap sizing
-    x = reshape(x, sz); % set the new size
-else % implement a generalized transpose
+% if the output (and input) dimensions are ordered
+if issorted(ons, 'ascend')  % we can reshape to save a data copy operation
+    x = reshape(x, size(x, ord)); % set the new size
+else % otherwise implement a generalized transpose
     x = permute(x, ord);
 end
 
-function n = esize(x, i), if isempty(i), n = []; else; n = size(x, i); end
-
-function o = argsort(x), [~, o] = sort(x); 
