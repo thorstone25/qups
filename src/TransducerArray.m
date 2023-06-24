@@ -376,6 +376,18 @@ classdef TransducerArray < Transducer
                 'el_focus', 20e-3 ... % elevation focal depth [m]
                 );
         end
+        function xdc = P4_2v()
+            % Transducer parameters for a verasonics P4-2v probe
+            xdc = TransducerArray(...
+                'fc', 3e6, ... % Transducer center frequency [Hz]
+                'bw', ([1.5 4.5])*1e6, ... % bandwidth [Hz]
+                'width', (0.27e-3), ... placeholder @ 90% pitch
+                'height', (3e-3), ... placeholder @ 10x pitch
+                'numel', 64, ... % number of elements
+                'pitch', 0.3e-3, ... % probe pitch [m]
+                'el_focus', mean([50 70])*1e-3 ... % elevation focal depth  [m]
+                );
+        end
         function xdc = Verasonics(Trans, c0)
             arguments
                 Trans (1,1) struct
