@@ -91,7 +91,7 @@ classdef SequenceGeneric < Sequence
             % arguments to construct a SequenceGeneric
             %
             % seq = SEQUENCEGENERIC('numPulse', N) defines a generic
-            % sequence for a transducer with N elements.
+            % sequence for a transducer with N pulses.
             %
             % seq = SEQUENCEGENERIC(..., 'c0', c0) sets the beamforming
             % sound speed to c0.

@@ -1,7 +1,7 @@
 % TRANSDUCERGENERIC - Generic Transducer Array class
 % 
-% A TransducerGeneric defines a generic transducer by the position and
-% orientations of its elements
+% A TransducerGeneric defines a generic transducer by the positions and
+% orientations of its elements.
 % 
 % See also TRANSDUCER TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERMATRIX
 
