@@ -137,9 +137,9 @@ classdef ScanGeneric < Scan
             %
             % See also SCANCARTESIAN SCANPOLAR
             arguments
-                kwargs = ?ScanGeneric
+                kwargs.?ScanGeneric,
             end
-
+            
             % initialize with name-value pairs
             for f = string(fieldnames(kwargs))'
                 scan.(f) = kwargs.(f);
