@@ -17,7 +17,7 @@ classdef SimTest < matlab.unittest.TestCase
 
     properties(ClassSetupParameter)
         gpu   = getgpu()
-        clp = poolfilter({'none', 'threads', 'pool', 'background', 'local'}); % cluster: local has to create a temp cluster each time
+        clp = poolfilter({'none', 'threads', 'pool', 'background', 'default'}); % cluster: local has to create a temp cluster each time
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
             'linpw', string({"L11-5V",'Plane-wave'}), ...
@@ -38,8 +38,6 @@ classdef SimTest < matlab.unittest.TestCase
             switch clp
                 case "background", test.assumeTrue(logical(exist('backgroundPool','builtin')), ...
                         'No backgroundPool available on this platform.');
-                case {"local", "pool"}, test.assumeTrue(ismember('local', parallel.clusterProfiles()), ...
-                        'No local cluster profile available on this platform.');
             end
             
 
@@ -47,7 +45,7 @@ classdef SimTest < matlab.unittest.TestCase
             hcp = gcp('nocreate'); % find the active pool
             if ~isempty(hcp)
                 switch clp
-                    case {"none", "local"}, del = isvalid(hcp); % delete if anything valid/active
+                    case {"none", "default"}, del = isvalid(hcp); % delete if anything valid/active
                     case "threads", del = ~isa(hcp, 'parallel.ThreadPool'); % delete if not a threadpool
                     case "background", del = ~isa(hcp, 'parallel.BackgroundPool'); % delete if not a backgroundPool
                     case "pool", del = ~isa(hcp, 'parallel.ProcessPool'); % delete if not a parpool (process pool)
@@ -60,7 +58,7 @@ classdef SimTest < matlab.unittest.TestCase
             ecp = isempty(gcp('nocreate'));
             switch clp 
                 case "none",                test.clu = 0;
-                case "local",               test.clu = parcluster('local');
+                case "default",             test.clu = parcluster();
                 case "threads",     if ecp, test.clu = parpool('threads'); end
                 case "background",  if ecp, test.clu = backgroundPool(); end
                 case "pool",        if ecp, test.clu = parpool('local', 'SpmdEnabled',true); end % default
@@ -142,8 +140,8 @@ classdef SimTest < matlab.unittest.TestCase
             
             % Choose the simulation region (eikonal)
             switch xdc_name
-                case "C5-2V", tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 1+100*2^3), 'z', linspace(-30e-3, 60e-3, 1+90*2^3));
-                otherwise,    tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 1+40 *2^3), 'z', linspace(  -05e-3, 55e-3, 1+60*2^3));
+                case "C5-2V", tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20*2^3), 'z', linspace(-2e-3, 43e-3, 1+45*2^3));
+                otherwise,    tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20*2^3), 'z', linspace(-5e-3, 45e-3, 1+50*2^3));
             end
 
             % create a distributed medium based on the point scatterers
@@ -225,9 +223,10 @@ classdef SimTest < matlab.unittest.TestCase
 
             % check if we can even call the sim
             switch sim_name
-                case {'FieldII', 'FieldII_multi'}, test.assumeTrue(exist('field_init', 'file'));
-                case {'SIMUS'}, test.assumeTrue(exist('pfield', 'file'));
-                case {'kWave'}, test.assumeTrue(exist('kWaveGrid', 'file'));
+                case {'FieldII', 'FieldII_multi'} 
+                                test.assumeTrue(logical(exist('field_init', 'file')));
+                case {'SIMUS'}, test.assumeTrue(logical(exist('pfield'    , 'file')));
+                case {'kWave'}, test.assumeTrue(logical(exist('kWaveGrid' , 'file')));
             end
 
             % k-Wave/calc_scat_multi don't use interpolation: pass on all but one option
@@ -246,8 +245,9 @@ classdef SimTest < matlab.unittest.TestCase
                 case 'FieldII_multi', chd = calc_scat_multi (us, scat, opts{[1:2]}); % use FieldII,
                 case 'SIMUS'  ,       chd = simus           (us, scat, 'periods', 1, 'dims', 3, opts{[1:2]}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
                 case 'Greens' ,       chd = greens          (us, scat, opts{[3:4]});
-                case 'kWave',         if(gpuDeviceCount) && (clu == 0 || isa(clu, 'parallel.Cluster')), dtype = 'gpuArray-double'; else, dtype = 'double'; end % data type for k-Wave
-                                      chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype); % run locally, and use an FFT friendly PML size
+                case 'kWave',         if(gpuDeviceCount && (clu == 0 || isa(clu, 'parallel.Cluster'))), dtype = 'gpuArray-single'; else, dtype = 'single'; end % data type for k-Wave
+                                      T = 2.1 * max(vecnorm(scat.pos - us.xdc.positions,2,1)) / med.c0 + us.sequence.pulse.tend + 2 * us.xdc.impulse.tend; % signal end time
+                                      chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [8 64], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype, "T", T); % run locally, and use an FFT friendly PML size
                 otherwise, warning('Simulator not recognized'); return;
             end
 
@@ -270,7 +270,7 @@ classdef SimTest < matlab.unittest.TestCase
             
             % hilbert needed for more accuracy with spectral methods
             if ismember(sim_name, ["kWave", "SIMUS"])
-                chd = hilbert(zeropad(chd, 0,2^nextpow2(chd.T)-chd.T));
+                chd = hilbert(zeropad(chd, 0,2^(1+nextpow2(chd.T))-chd.T));
             end
             
             % get the peak of the center element / center transmit
@@ -286,9 +286,9 @@ classdef SimTest < matlab.unittest.TestCase
                 otherwise, error("Unrecognized sequence type " + us.sequence.type + ".");
             end
             switch sim_name
-                case "kWave", tol = 10*(tscan.dz / scat.c0); % within 10 samples of the true location
-                case "SIMUS", tol = 1/us.xdc.fc; % SIMUS does not have calibrated phase: be within 1 wavelength of the true location
-                otherwise,    tol = 1.1/chd.fs; % must be accurate down to the sample
+                case "kWave", tol = double(10*(tscan.dz / scat.c0)); % within 10 samples of the true location
+                case "SIMUS", tol = double(1/us.xdc.fc); % SIMUS does not have calibrated phase: be within 1 wavelength of the true location
+                otherwise,    tol = double(1.1/chd.fs); % must be accurate down to the sample
             end
             
             % test
@@ -321,14 +321,14 @@ classdef SimTest < matlab.unittest.TestCase
             % simulate based on the simulation routine
             opts = {'interp', terp, 'parenv', clu};
             switch sim_name
-                case 'Greens' ,
-                    us.sequence.pulse.fun = @(t) single(t==0); % implicit cast to single type
+                case 'Greens' 
+                    us.fs = single(us.fs); % implicit cast to single type
                     chd0 = gather(greens(us, scat, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
-                    [xo, to] = deal(chd0.data, chd0.t0);
+                    [xo, to] = deal(double(chd0.data), double(chd0.t0));
                     for usetall = [true, false]
                         for dev = [0 -1]
-                            chd = doubleT(gather(greens(us, scat, [1,1], opts{1:2}, 'device', dev , 'tall', usetall)));
-                            [x, t] = deal(gather(chd.data), gather(chd.t0));
+                            chd = gather(greens(us, scat, [1,1], opts{1:2}, 'device', dev , 'tall', usetall));
+                            [x, t] = deal(double(gather(chd.data)), gather(double(chd.t0)));
                             test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
                                 "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.sequence.type + " sequence."  ...
                                 ));
@@ -367,7 +367,7 @@ for i = numel(pnms):-1:1
     tf(i) = true;
     switch pnms{i}
         case "none",
-        case "local",       try test.clu = parcluster('local'); catch, tf(i) = false; end
+        case "default",     try test.clu = parcluster(); catch, tf(i) = false; end
         case "threads",     try test.clu = parpool('threads'); close(gcp()); catch,  tf(i) = false; end
         case "background",  try test.clu = backgroundPool(); close(gcp()); catch, tf(i) = false; end
         case "pool",        try test.clu = parpool('local', 'SpmdEnabled',true); close(gcp()); catch tf(i) = false; end
