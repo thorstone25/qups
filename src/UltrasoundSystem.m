@@ -3457,7 +3457,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % work-around: sometimes the numerical precision is
             % insufficient and interp2 is thrown off: ensure that the data
             % is regularly sampled by recreating the axes
-            bscan.z = bscan.z(1) + mean(diff(bscan.z)) .* (0 : F - 1);
+            bscan.z = bscan.z(1) + mean(diff(bscan.z)) .* (0 : chd0.T - 1);
 
             % resample the data onto the original imaging grid if no
             % output scan was requested (risky)
