@@ -183,7 +183,7 @@ classdef ScanPolar < Scan
             % See also SCANCARTESIAN
 
             % create an output scan if one not given
-            if nargin < 3, scanC = scanCartesian(self); end
+            if nargin < 3, scanC = ScanCartesian(self); end
 
             % get the cartesian points for the output scan
             [X, Y, Z] = scanC.getImagingGrid();
@@ -205,7 +205,7 @@ classdef ScanPolar < Scan
             % b_cart(isnan(b_cart)) = 0;
         end
 
-        function scan = scanCartesian(self)
+        function scan = ScanCartesian(self)
             % SCANCARTESIAN - Create a ScanCartesian object from a ScanPolar
             %
             % scan = SCANCARTESIAN(self) creates a ScanCartesian object
@@ -213,13 +213,22 @@ classdef ScanPolar < Scan
             %
             % See also SCANCARTESIAN/SCANCARTESIAN
 
-            grd = cell(1,3);
-            [grd{:}] = self.getImagingGrid(); % get x,y,z values
-            grd = cellfun(@(g) {[min(g(:)), max(g(:))]}, grd(:)); % 3 x 2 min/max
+            p = self.positions();
+            grd = num2cell([min(p,[],2:4), max(p,[],2:4)],2); % 3 x 2 min/max
 
-            % create a new scan with these boundaries (leave the rest as
-            % default)
+            % create a new scan with these boundaries
             scan = ScanCartesian('xb', grd{1}, 'yb', grd{2}, 'zb', grd{3});
+
+            % set the spatial resolution to the axial resolution
+            if isfinite(self.dr), [scan.dx, scan.dy, scan.dz] = deal(self.dr); end
+        end
+    end
+
+    % 
+    methods(Hidden)
+        function scan = scanCartesian(scan)
+            warning("QUPS:ScanPolar:deprecatedSyntax","'scanCartesian' is deprecated: please use 'ScanCartesian' instead.");
+            scan = ScanCartesian(scan); 
         end
     end
     
