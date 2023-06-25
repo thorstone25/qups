@@ -3325,7 +3325,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
                 kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.T*chd.N*size(chd.data,4:max(4,ndims(chd.data))))))); % vector computation block size
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-		% kwargs.verbose (1,1) logical = true
+                % kwargs.verbose (1,1) logical = true
                 kwargs.jacobian (1,1) logical = true
             end
 
@@ -3343,10 +3343,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % Choose the FFT size in time/frequency and laterally
             [F, K] = deal(kwargs.Nfft(1), kwargs.Nfft(end));
-            
+
             % Exploding Reflector Model velocity
             cs = c0/sqrt(2);
-            
+
             % get the frequency domains' axes with negative frequencies
             f  = ((0 : F - 1)' - floor(F/2)) / F * chd.fs        ; % T x 1 - temporal frequencies
             kx = ((0 : K - 1)' - floor(K/2)) / K / self.xdc.pitch; % K x 1 - lateral spatial frequencies
@@ -3364,98 +3364,98 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau = ipermute(tau, ord); % permute to compatible dimensions
             gamma = swapdim(sind(sq.angles) ./ (2 - cosd(sq.angles)), 2, chd.mdim); % lateral scaling
 
-	    % splice the data to operate per block of transmits
-	    [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
-	    tau   = arrayfun(@(i) {sub(tau  , i, chd.mdim)}, ix);
-	    gamma = arrayfun(@(i) {sub(gamma, i, chd.mdim)}, ix);    
-	    
-	    chd0 = chd; % save og ChannelData, time delays
-	    if kwargs.keep_tx, bm = cell(1,numel(chds)); else, bm = 0; end % init
-        for j = 1:numel(chds)
+    	    % splice the data to operate per block of transmits
+    	    [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
+    	    tau   = arrayfun(@(i) {sub(tau  , i, chd.mdim)}, ix);
+    	    gamma = arrayfun(@(i) {sub(gamma, i, chd.mdim)}, ix);
 
-            chd = chds(j); % reference the ChannelData
+    	    chd0 = chd; % save og ChannelData, time delays
+    	    if kwargs.keep_tx, bm = cell(1,numel(chds)); else, bm = 0; end % init
+            for j = 1:numel(chds)
 
-            % Move data to the temporal frequency domain
-            x = chd.data;
-            x = x .* exp(2j*pi*kwargs.fmod .* chd.time); % remodulate data
-            x = fftshift(fft(x, F, chd.tdim), chd.tdim); % temporal fft
+                chd = chds(j); % reference the ChannelData
 
-            % re-align time axis to the frequency domain
-            x = x .* exp(-2j*pi*f .* chd.t0);
+                % Move data to the temporal frequency domain
+                x = chd.data;
+                x = x .* exp(2j*pi*kwargs.fmod .* chd.time); % remodulate data
+                x = fftshift(fft(x, F, chd.tdim), chd.tdim); % temporal fft
 
-            % align transmits
-            x = x .* exp(-2j*pi*f .* tau{j});
+                % re-align time axis to the frequency domain
+                x = x .* exp(-2j*pi*f .* chd.t0);
 
-            % move to lateral frequency domain
-            x = fftshift(fft(x, K, chd.ndim), chd.ndim); % lateral fft
+                % align transmits
+                x = x .* exp(-2j*pi*f .* tau{j});
 
-            % get the Stolt's mapping from temporal frequency to spatial
-            % (depth) frequency
-            fkz = cs*sign(f).*sqrt(kx.^2 + f.^2 / cs^2);
-            kkz = (fkz - f(1)) .* F ./ chd.fs; % convert to 0-based frequency index
+                % move to lateral frequency domain
+                x = fftshift(fft(x, K, chd.ndim), chd.ndim); % lateral fft
 
-            % resample using the spatio-temporal mapping
-            y = wsinterpd(x, kkz, chd.tdim, 1, [], kwargs.interp, 0);
+                % get the Stolt's mapping from temporal frequency to spatial
+                % (depth) frequency
+                fkz = cs*sign(f).*sqrt(kx.^2 + f.^2 / cs^2);
+                kkz = (fkz - f(1)) .* F ./ chd.fs; % convert to 0-based frequency index
 
-            % Jacobian (optional)
-            if kwargs.jacobian
-                kz = f / cs;
-                y = (y .* kz) ./ (fkz + eps);
+                % resample using the spatio-temporal mapping
+                y = wsinterpd(x, kkz, chd.tdim, 1, [], kwargs.interp, 0);
+
+                % Jacobian (optional)
+                if kwargs.jacobian
+                    kz = f / cs;
+                    y = (y .* kz) ./ (fkz + eps);
+                end
+
+                % re-align time axis to the time/space domain
+                y = y .* exp(+2j*pi*f .* chd.t0);
+
+                % move to the temporal domain
+                b = ifft(ifftshift(y, chd.tdim), F, chd.tdim);
+                tb = chd.t0 + (0 : F - 1)' ./ chd.fs;
+                % tb = chd.time;
+
+                % get the spatial axes
+                zax = sq.c0 ./ 2 .* tb;
+                xax = self.xdc.pitch .* (0 : K-1) + sub(self.xdc.positions,{1,1},[1,2]);
+
+                % align data laterally using Garcia's PWI mapping
+                b = b .* exp(2j*pi*kx.*gamma{j}.*zax);
+
+                % move data back to spatial domain
+                b = ifft(ifftshift(b, chd.ndim), K, chd.ndim);
+                b = sub(b, {1:chd.T,1:chd.N}, [chd.tdim, chd.ndim]);
+
+                % sum or store the transmits
+                if kwargs.keep_tx, bm{j} = b; else, bm = bm + sum(b, chd.mdim); end
+
+            end % for j
+
+            % get full image cube
+            if kwargs.keep_tx, b = cat(chd0.mdim, bm{:}); else, b = bm; end
+
+            % create the corresponding scan - it aligns with our data
+            bscan = ScanCartesian('z', double(zax(1:chd0.T)), 'x', xax(1:chd0.N));
+
+            % work-around: sometimes the numerical precision is
+            % insufficient and interp2 is thrown off: ensure that the data
+            % is regularly sampled by recreating the axes
+            bscan.z = bscan.z(1) + mean(diff(bscan.z)) .* (0 : F - 1);
+
+            % resample the data onto the original imaging grid if no
+            % output scan was requested (risky)
+            if nargout < 2
+                warning("QUPS:bfMigration:artefacts", "Resampling a complex image can produce artefacts: request the output Scan to avoid resampling.");
+                % resample data onto the given scan (risky)
+                [sz, sx] = deal(self.scan.z, self.scan.x); % og scan
+                [bz, bx] = ndgrid(bscan.z, bscan.x); % vectors -> matrix
+                bint = num2cell(b, [1,2]); % place all transmits/frames in cells
+                parfor(j = 1:numel(bint), 0) % interp for each transmit/frame
+                    bint{j} = interp2(bx, bz, bint{j}, sx(:)', sz(:), kwargs.interp, 0); %#ok<PFBNS>
+                end
+                bint = cat(1, bint{:});
+                bint = reshape(bint, [self.scan.size([1,2]), size(bint, 3 : max(3, ndims(bint)))]);
+                b = bint;
             end
-
-            % re-align time axis to the time/space domain
-            y = y .* exp(+2j*pi*f .* chd.t0);
-
-            % move to the temporal domain
-            b = ifft(ifftshift(y, chd.tdim), F, chd.tdim);
-            tb = chd.t0 + (0 : F - 1)' ./ chd.fs;
-            % tb = chd.time;
-
-            % get the spatial axes
-            zax = sq.c0 ./ 2 .* tb;
-            xax = self.xdc.pitch .* (0 : K-1) + sub(self.xdc.positions,{1,1},[1,2]);
-
-            % align data laterally using Garcia's PWI mapping
-            b = b .* exp(2j*pi*kx.*gamma{j}.*zax);
-
-            % move data back to spatial domain
-            b = ifft(ifftshift(b, chd.ndim), K, chd.ndim);
-            b = sub(b, {1:chd.T,1:chd.N}, [chd.tdim, chd.ndim]);
-
-            % sum or store the transmits
-            if kwargs.keep_tx, bm{j} = b; else, bm = bm + sum(b, chd.mdim); end
-
-        end % for j
-
-        % get full image cube
-        if kwargs.keep_tx, b = cat(chd0.mdim, bm{:}); else, b = bm; end
-
-        % create the corresponding scan - it aligns with our data
-        bscan = ScanCartesian('z', double(zax(1:chd0.T)), 'x', xax(1:chd0.N));
-
-        % work-around: sometimes the numerical precision is
-        % insufficient and interp2 is thrown off: ensure that the data
-        % is regularly sampled by recreating the axes
-        bscan.z = bscan.z(1) + mean(diff(bscan.z)) .* (0 : F - 1);
-
-        % resample the data onto the original imaging grid if no
-        % output scan was requested (risky)
-        if nargout < 2
-            warning("QUPS:bfMigration:artefacts", "Resampling a complex image can produce artefacts: request the output Scan to avoid resampling.");
-            % resample data onto the given scan (risky)
-            [sz, sx] = deal(self.scan.z, self.scan.x); % og scan
-            [bz, bx] = ndgrid(bscan.z, bscan.x); % vectors -> matrix
-            bint = num2cell(b, [1,2]); % place all transmits/frames in cells
-            parfor(j = 1:numel(bint), 0) % interp for each transmit/frame
-                bint{j} = interp2(bx, bz, bint{j}, sx(:)', sz(:), kwargs.interp, 0); %#ok<PFBNS>
-            end
-            bint = cat(1, bint{:});
-            bint = reshape(bint, [self.scan.size([1,2]), size(bint, 3 : max(3, ndims(bint)))]);
-            b = bint;
-        end
         end
     end
-    
+
     % apodization functions
     methods
         function apod = apScanline(us, tol)
