@@ -142,6 +142,7 @@ classdef SequenceRadial < Sequence
     % helper functions
     methods
         function v = vectors(self), v = SequenceRadial.vectors_(self.angles); end
+        % VECTORS - Cartesian normal vectors corresponding to each angle
     end
 
     % helper functions
@@ -180,9 +181,8 @@ classdef SequenceRadial < Sequence
                 quiver_args.?matlab.graphics.chart.primitive.Quiver
             end
             
-            % extract axis and other non-Name/Value pair arguments
             if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes')
-                hax = varargin{1}; varargin(1) = [];
+                hax = varargin{1}; varargin(1) = []; % extract axis
             else 
                 hax = gca;
             end

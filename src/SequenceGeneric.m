@@ -122,7 +122,6 @@ classdef SequenceGeneric < Sequence
             s = obj2struct@Sequence(seq); % call superclass conversion
         end
 
-        % scaling
         function seq = scale(seq, kwargs)
             % SCALE - Scale units
             %
