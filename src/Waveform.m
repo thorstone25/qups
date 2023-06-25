@@ -46,7 +46,7 @@ classdef Waveform < matlab.mixin.Copyable
     end
     
     properties(Dependent)
-        % WAVEFORM/DURATION - duration of the signal
+        % DURATION - duration of the signal
         %
         % The duration of the signal is portion of the signal that may be 
         % non-zero, defined as Waveform/tend - Waveform/t0.
@@ -54,7 +54,7 @@ classdef Waveform < matlab.mixin.Copyable
         % See also WAVEFORM/FS WAVEFORM/TIME WAVEFORM/TEND WAVEFORM/T0
 
         duration (1,1) % non-zero duration of the signal
-        % WAVEFORM/DT - sampling interval
+        % DT - sampling interval
         %
         % The sampling interval is the inverse of the sampling frequency 
         % i.e. DT = 1 / Waveform/fs
@@ -62,7 +62,7 @@ classdef Waveform < matlab.mixin.Copyable
         % See also WAVEFORM/FS WAVEFORM/TIME
 
         dt (1,1) {mustBePositive, mustBeNumeric, mustBeScalarOrEmpty} % sampling interval
-        % WAVEFORM/SAMPLES - Waveform samples
+        % SAMPLES - Waveform samples
         %
         % When the sampling frequency Waveform/fs is set, the 'samples' 
         % property is the set of samples of the Waveform at the times given
@@ -71,7 +71,7 @@ classdef Waveform < matlab.mixin.Copyable
 
         samples (:,1) {mustBeNumeric} % Waveform samples
 
-        % WAVEFORM/TIME - Waveform time axis
+        % TIME - Waveform time axis
         %
         % When the sampling frequency Waveform/fs is set, the 'time' 
         % property provides a time axis for the non-zero portion of the 
@@ -195,7 +195,7 @@ classdef Waveform < matlab.mixin.Copyable
 
         
         function varargout = plot(wv, varargin, kwargs, plot_args)
-            % WAVEFORM/PLOT - plot the Waveform
+            % PLOT - plot the Waveform
             % 
             % PLOT(wv) plots the Waveform
             %

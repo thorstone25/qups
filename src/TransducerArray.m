@@ -331,6 +331,7 @@ classdef TransducerArray < Transducer
     
     methods(Static)
         function xdc = L12_3v()
+            % Transducer parameters for a verasonics L12-3v probe
             xdc = TransducerArray(...
                 'fc', mean([4e6 11e6]), ...
                 'bw', ([4e6 11e6]), ...
@@ -342,6 +343,7 @@ classdef TransducerArray < Transducer
                 );
         end
         function xdc = L11_5v()
+            % Transducer parameters for a verasonics L11-5v probe
             xdc = TransducerArray(...
                 'fc', mean([4.5e6 10e6]), ...
                 'bw', ([4.5e6 10e6]), ...
@@ -353,6 +355,7 @@ classdef TransducerArray < Transducer
                 );
         end
         function xdc = L11_2v()
+            % Transducer parameters for a verasonics L12-2v probe
             xdc = TransducerArray(...
                 'fc', 5.1333e+06, ... % Transducer center frequency [Hz]
                 'bw', 5.1333e6 + 3e6*[-1 1]/2, ... % bandwidth [Hz]
@@ -365,7 +368,7 @@ classdef TransducerArray < Transducer
 
         end
         function xdc = L12_5v()
-            % Transducer parameters pulled from verasonics L12-5 50mm probe
+            % Transducer parameters for a verasonics L12-5 50mm probe
             xdc = TransducerArray(...
                 'fc', 7.5e6, ... % Transducer center frequency [Hz]
                 'bw', ([5 11])*1e6, ... % bandwidth [Hz]

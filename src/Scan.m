@@ -34,28 +34,28 @@ classdef Scan < matlab.mixin.Copyable
     methods(Abstract)
         % GETUSTBSCAN - Return a USTB/UFF compatible uff.scan object
         %
-        % scan = GETUSTBSCAN(self) returns a uff.scan object
+        % uscan = GETUSTBSCAN(scan) returns a uff.scan object
         %
         % See also UFF.SCAN
-        scan = getUSTBScan(self)
+        uscan = getUSTBScan(scan)
     end
         
     % imaging computations
     methods(Abstract)
-        % GETIMAGINGGRID - get the multidimensional grid for imaging
+        % GETIMAGINGGRID - get the multi-dimensional grid for imaging
         %
-        % [X, Y, Z, sz] = GETIMAGINGGRID(self) returns the
-        % multidimensional arrays corresponding to the positions of the
-        % imaging grid and the size of the arrays.
+        % [X, Y, Z] = GETIMAGINGGRID(scan) returns the 3D arrays 
+        % corresponding to the positions of the imaging grid and the size 
+        % of the arrays.
         %
-        % G = GETIMAGINGGRID(self) returns the X/Y/Z arrays in a 1 x 3
+        % G = GETIMAGINGGRID(scan) returns the 3D X/Y/Z arrays in a 1 x 3
         % cell (as in G = {X, Y, Z}).
         %
-        % P = GETIMAGINGGRID(self, 'vector', true) returns an NDarray whos
-        % first dimension is a vector in X,Y,Z order and with the image
-        % dimensions raised by one i.e. the following are true:
+        % P = GETIMAGINGGRID(scan, 'vector', true) returns a single 4D 
+        % array whos first dimension is a vector in X,Y,Z order and with 
+        % the image dimensions raised by one i.e. the following are true:
         %
-        % * isequal(size(P)   , [3, self.size])
+        % * isequal(size(P)   , [3, scan.size])
         % * isequal(P(1,:,:,:), shiftdim(X,-1))
         % * isequal(P(2,:,:,:), shiftdim(Y,-1))
         % * isequal(P(3,:,:,:), shiftdim(Z,-1))
@@ -69,7 +69,7 @@ classdef Scan < matlab.mixin.Copyable
         %   - Z:    z coordinate (m)
         %
         % See also: SCAN/POSITIONS
-        [X, Y, Z] = getImagingGrid(self)
+        [X, Y, Z] = getImagingGrid(scan)
         
         % SCALE - Scale units
         %
@@ -87,44 +87,59 @@ classdef Scan < matlab.mixin.Copyable
         % scan.xb
         %
         % 
-        scale(self, kwargs)
+        scale(scan, kwargs)
     end
 
     methods
+        function  p = positions(scan), p = scan.getImagingGrid("vector", true); end
         % POSITIONS - get the multi-dimensional grid positions
         %
         % P = POSITIONS(scan) returns an NDarray whos first dimension is a 
         % vector in X,Y,Z order and with the image dimensions raised by one
         % i.e. the following is true:
         %
-        % * isequal(size(P)   , [3, self.size])
+        % * isequal(size(P)   , [3, scan.size])
         %
         % The dimension of change for each variable is given by the
         % 'order' property of the Scan.
         %
         % See also: GETIMAGINGGRID
-        function  p = positions(self), p = self.getImagingGrid("vector", true); end
         
     end
 
     % conversion
     methods
         function s = obj2struct(scan)
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % scan = OBJ2STRUCT(scan) converts the Scan scan and all of 
+            % it's properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create a Scan
+            % scan = ScanCartesian()
+            %
+            % % convert to a MATLAB struct
+            % scan = obj2struct(scan)
+            %
             arguments, scan Scan {mustBeScalarOrEmpty}; end
-            s = struct(scan); % convert self
+            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            s = struct(scan); % convert scan
+            warning(W); % restore warnings
         end
     end
 
     % plotting
     methods
-        function gif(self, b_im, filename, h, varargin, kwargs)
+        function gif(scan, b_im, filename, h, varargin, kwargs)
             % GIF - Write the series of images to a GIF file
             %
-            % GIF(self, b_im, filename) writes the series of images b_im
+            % GIF(scan, b_im, filename) writes the series of images b_im
             % to the file filename. b_im must be a numeric array with
             % images in the first two dimensions.
             %
-            % GIF(self, b_im, filename, h) updates the image handle h 
+            % GIF(scan, b_im, filename, h) updates the image handle h 
             % rather than creating a new image. Use imagesc to create an 
             % image handle. You can then format the figure prior to 
             % calling this function.
@@ -156,10 +171,10 @@ classdef Scan < matlab.mixin.Copyable
             % See also IMAGESC PLOT
 
             arguments
-                self (1,1) Scan
+                scan (1,1) Scan
                 b_im {mustBeNumeric, mustBeReal}
                 filename (1,1) string
-                h (1,1) matlab.graphics.primitive.Image = imagesc(self, b_im, 1)
+                h (1,1) matlab.graphics.primitive.Image = imagesc(scan, b_im, 1)
             end
             arguments(Repeating)
                 varargin
@@ -195,7 +210,7 @@ classdef Scan < matlab.mixin.Copyable
         function h = imagesc(scan, b, varargin, im_args, kwargs)
             % IMAGESC - Overload of imagesc
             %
-            % h = IMAGESC(scan, b) displays the data b on the Scan self.
+            % h = IMAGESC(scan, b) displays the data b on the Scan scan.
             %
             % h = IMAGESC(scan, b, ax) uses the axes ax instead of the 
             % current axes.
@@ -260,8 +275,8 @@ classdef Scan < matlab.mixin.Copyable
             h = imagesc(ax, ax_args{:}, bpl, varargin{:},  im_args{:}); % plot
 
             % axes labels
-            xlabel(ax,scan.(ax_sym(2) + "label")); % e.g. 'self.xlabel'
-            ylabel(ax,scan.(ax_sym(1) + "label")); % e.g. 'self.zlabel'
+            xlabel(ax,scan.(ax_sym(2) + "label")); % e.g. 'scan.xlabel'
+            ylabel(ax,scan.(ax_sym(1) + "label")); % e.g. 'scan.zlabel'
 
             % default axis setting
             if isa(scan, 'ScanCartesian')
@@ -277,10 +292,10 @@ classdef Scan < matlab.mixin.Copyable
         function h = plot(scan, varargin, plot_args, kwargs)
             % PLOT - Overload of plot
             %
-            % h = PLOT(self) plots the pixels of the Scan onto the current 
+            % h = PLOT(scan) plots the pixels of the Scan onto the current 
             % axes and returns the plot handle(s) in h.
             %
-            % h = PLOT(self, ax) plot on the axes handle ax.
+            % h = PLOT(scan, ax) plot on the axes handle ax.
             %
             % h = PLOT(..., Name, Value, ...) passes the following
             % name/value pairs to the built-in plot function
@@ -334,9 +349,9 @@ classdef Scan < matlab.mixin.Copyable
 
             % axes labels
             ax_sym  = lower(scan.order); % axis symbol
-            ylabel(hax,scan.(ax_sym(1) + "label")); % e.g. 'self.zlabel'
-            xlabel(hax,scan.(ax_sym(2) + "label")); % e.g. 'self.xlabel'
-            zlabel(hax,scan.(ax_sym(3) + "label")); % e.g. 'self.ylabel'
+            ylabel(hax,scan.(ax_sym(1) + "label")); % e.g. 'scan.zlabel'
+            xlabel(hax,scan.(ax_sym(2) + "label")); % e.g. 'scan.xlabel'
+            zlabel(hax,scan.(ax_sym(3) + "label")); % e.g. 'scan.ylabel'
 
         end
 
@@ -413,12 +428,12 @@ classdef Scan < matlab.mixin.Copyable
 
     % Dependent properties
     methods
-        function sz = get.size(self)
-            sz = arrayfun(@(c) self.("n"+c), lower(self.order));
+        function sz = get.size(scan)
+            sz = arrayfun(@(c) scan.("n"+c), lower(scan.order));
         end
-        function set.size(self, sz)
+        function set.size(scan, sz)
             sz(numel(sz)+1:3) = 1; % send omitted dimensions to size 1
-            for i = 1:3, self.("n"+lower(self.order(i))) = sz(i); end
+            for i = 1:3, scan.("n"+lower(scan.order(i))) = sz(i); end
         end
         function n = get.nPix(scan), n = prod(scan.size); end
     end
