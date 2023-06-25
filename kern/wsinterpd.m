@@ -146,8 +146,8 @@ if exist('interpd.ptx', 'file') ...
     end
 
     % enforce complex type for gpu data
-    if isa(x, 'gpuArray'), x = complex(x); end
-    if isa(w, 'gpuArray'), w = complex(w); end
+    if isa(x, 'gpuArray') || isa(x,'halfT') && isa(x.val, 'gpuArray'), x = complex(x); end
+    if isa(w, 'gpuArray') || isa(w,'halfT') && isa(w.val, 'gpuArray'), w = complex(w); end
     switch suffix
         case "h", 
             y = complex(gpuArray(halfT(zeros(osz))));
@@ -157,7 +157,7 @@ if exist('interpd.ptx', 'file') ...
             [w_,x_,t_] = deal(w,x,t); % copy data
             y_ = zeros(osz, 'like', x_); % pre-allocate output
     end
-     % zeros: uint16(0) == storedInteger(half(0)), so this is okay
+    % zeros: uint16(0) == storedInteger(half(0)), so this is okay
     % index label flags
     iflags = zeros([1 maxdims], 'uint8');
     iflags(mdms) = 1;
