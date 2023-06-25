@@ -250,10 +250,10 @@ tau_rx = zeros([1024, chd.N,   1  ]); % delay matrix: pixels x receives x     1
 tau_tx = zeros([1024,   1  , chd.M]); % delay matrix: pixels x     1    x transmits
 tau = tau_tx + tau_rx;                % delay tensor: pixels x receives x transmits
 
-% sample the data applying transmit delays only, for all receives
+% sample the data applying transmit delays only, for all transmits
 y = sample(chd, tau_tx);
 
-% sample the data applying receive delays only, for all transmits
+% sample the data applying receive delays only, for all receives
 y = sample(chd, tau_rx);
 
 % sample the data using a full sized delay tensor
@@ -369,7 +369,7 @@ imagesc(med, scan, 'props', 'rho');
 % show the channel data with linear scaling (when data is real)
 imagesc(real(chd));
 
-% show the log-magnitude of the channel data (when data is complex)
+% show the channel data with log-magnitude scaling (when data is complex)
 imagesc(hilbert(chd));
 
 % loop through transmits of channel data
