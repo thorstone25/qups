@@ -181,11 +181,24 @@ classdef Waveform < matlab.mixin.Copyable
         
         % convert to a structure to remove class info
         function s = obj2struct(wv)
-            arguments
-                wv Waveform {mustBeScalarOrEmpty}
-            end
-
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % wv = OBJ2STRUCT(wv) converts the Waveform wv and all of it's
+            % properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create a Waveform
+            % wv = Waveform()
+            %
+            % % convert to a MATLAB struct
+            % wv = obj2struct(wv)
+            %
+            arguments, wv Waveform {mustBeScalarOrEmpty}, end
+            
+            W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(wv); % convert self to a struct
+            warning(W); % restore warnings
 
             % convert function
             if ~isempty(s) && isa(s.fun, 'griddedInterpolant') && ~isempty(s.fun)

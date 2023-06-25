@@ -180,13 +180,31 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
         % convert to a structure to remove class info
         function s = obj2struct(us)
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % us = OBJ2STRUCT(us) converts the UltrasoundSystem us and all 
+            % of it's properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create an UltrasoundSystem
+            % us = UltrasoundSystem() 
+            %
+            % % convert to a MATLAB struct
+            % us = obj2struct(us)
+            %
             arguments
                 us UltrasoundSystem
             end
+
+            % squash warnings
+            wmsg = ["MATLAB:structOnObject", "QUPS:UltrasoundSystem:syntaxDeprecated"];
+            S = warning(); % warning state
+            for w = wmsg, warning('off', w); end
             
             s = struct(us); % convert self to a struct
             if isfield(s,'xdc'), s = rmfield(s,{'tx','rx'}); end % remove duplicate information
-            s = rmfield(s, {'fc', 'pulse'});
+            s = rmfield(s, {'fc', 'pulse', 'sequence', 'tmp_folder'}); % inferred / duplicate / private
 
             % convert all sub-classes
             for f = intersect(string(fieldnames(s))', ["tx","rx","xdc","seq","scan"])
@@ -194,6 +212,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     s.(f) = obj2struct(s.(f)); 
                 end
             end
+
+            % restore warnings
+            warning(S);
         end    
     end
     

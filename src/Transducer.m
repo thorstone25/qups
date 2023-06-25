@@ -100,9 +100,25 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
     
         function s = obj2struct(xdc)
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % xdc = OBJ2STRUCT(xdc) converts the Transducer xdc and all of 
+            % it's properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create a Transducer
+            % xdc = TransducerArray()
+            %
+            % % convert to a MATLAB struct
+            % xdc = obj2struct(xdc)
+            %
             arguments, xdc Transducer {mustBeScalarOrEmpty}; end
+            
+            W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(xdc); % convert self
             if ~isempty(s), s.impulse = obj2struct(s.impulse); end % convert impulse
+            warning(W); % restore warnings
         end
     end
 

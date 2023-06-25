@@ -203,9 +203,24 @@ classdef Sequence < matlab.mixin.Copyable
         end
 
         function s = obj2struct(seq)
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % seq = OBJ2STRUCT(seq) converts the Sequence seq and all of 
+            % it's properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create a Sequence
+            % seq = Sequence()
+            %
+            % % convert to a MATLAB struct
+            % seq = obj2struct(seq)
+            %
             arguments, seq Sequence {mustBeScalarOrEmpty}; end
+            W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(seq); % convert self
             if ~isempty(s), s.pulse = obj2struct(s.pulse); end % convert pulse
+            warning(W); % restore warnings
         end
         
         % scaling
