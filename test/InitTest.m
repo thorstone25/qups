@@ -39,6 +39,8 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(TransducerArray() , IsInstanceOf('Transducer'));
             test.assertThat(TransducerConvex(), IsInstanceOf('Transducer'));
+            test.assertThat(TransducerMatrix(), IsInstanceOf('Transducer'));
+            test.assertThat(TransducerGeneric(), IsInstanceOf('Transducer'));
         end
         function initchd(test)
             % INITCHD - Assert that a ChannelData constructor initializes
@@ -52,6 +54,7 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(Sequence(), IsInstanceOf('Sequence'));
             test.assertThat(SequenceRadial(), IsInstanceOf('Sequence'));
+            test.assertThat(SequenceGeneric(), IsInstanceOf('Sequence'));
         end
         function initscan(test)
             % INITSCAN - Assert that Scan constructors initialize
@@ -59,6 +62,7 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(ScanCartesian(), IsInstanceOf('Scan'));
             test.assertThat(ScanPolar(), IsInstanceOf('Scan'));
+            test.assertThat(ScanGeneric(), IsInstanceOf('Scan'));
         end
         function initus(test)
             % INITUS - Assert that an UltrasoundSystem constructor
