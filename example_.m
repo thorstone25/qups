@@ -12,17 +12,19 @@
 % 
 % Currently you can:
 %% 
-% * Create linear, curvilinear (convex), and matrix transducers
-% * Define full-synthetic-aperture, focused, diverging, or plane-wave transmits
-% * Define arbitrary transmit delays and apodization
+% * Create linear, curvilinear (convex), and matrix transducers, as well as 
+% custom transducers
+% * Define full-synthetic-aperture (FSA), focused (VS), diverging, plane-wave 
+% (PW), or arbitrary pulse sequences
 % * Simulate point targets natively or via MUST or FieldII
 % * Simulate distributed media via k-Wave
-% * Filter, demodulate, and downsample channel data
-% * Define arbitrary receive apodization schemes across transmits, receives, 
-% and pixels, jointly
-% * Beamform using traditional delay-and-sum, the eikonal equation (via the 
-% FMM toolbox), an adjoint matrix method, or Stolt's migrartion
-% * Retrospectively focus or refocus data
+% * Filter, demodulate, downsample, and resample channel data
+% * Define arbitrary apodization schemes across transmits, receives, and pixels, 
+% jointly
+% * Beamform using traditional delay-and-sum, eikonal delays (via the FMM toolbox), 
+% an adjoint matrix method, or Stolt's migration
+% * Focus FSA data to some pulse sequence, or retrospectively refocus data back 
+% to FSA
 %% 
 % Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -31,119 +33,142 @@
 % 
 % 
 % Setup the workspace
-% (Run once)
 
  
 %#ok<*UNRCH> ignore unreachable code due to constant values
 %#ok<*BDLGI> ignore casting numbers to logical values
 dev = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
-% setup;  % add all the necessary paths
-% setup parallel; % start a parpool for faster CPU processing
-setup CUDA cache;  % setup CUDA paths & recompile and cache local mex/CUDA binaries
-%% Create a simple simulation
-% Choose a Target
+if ~exist('UltrasoundSystem.m','file')
+    % this setup function adds the proper paths to use QUPS: it only needs
+    % to be run once.
 
-target_depth = 1e-3 * 30;
-switch "single"
-    case 'single' , scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500); % simple point target
-    case 'array'  , 
-        ps_x =  [1e-3;0;0] * (-10:5:10);
-        ps = [ps_x + [0;0;30e-3], ps_x + [0;0;20e-3], ps_x + [0;0;40e-3]];
-        scat = Scatterers('pos', ps, 'c0', 1500); % targets every 5mm
-    case 'diffuse', N = 2500; % number of random scatterers
-                    scat = Scatterers('pos', 1e-3*[40;10;60].*([1;0;1].*rand(3,N)-[0.5;0;0]), 'amp', rand(1,N), 'c0', 1500); % diffuse scattering
+    % setup;  % add all the necessary paths
+    % setup parallel; % start a parpool for faster CPU processing
+    setup CUDA cache; % setup CUDA paths & recompile and cache local mex/CUDA binaries
 end
-% Choose a transducer
+%% Create a simple simulation
+% Create some Scatterers
+
+switch "array"
+    case 'single'  
+        target_depth = 1e-3 * 30;
+        scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500); % simple point target
+    case 'array'  
+        [~, px, py, pz] = ndgrid(0, -10:5:10, 0, 20:10:40); % grid in each axes
+        ps = [px; py; pz]; % form a grid of point targets
+        scat = Scatterers('pos', 1e-3 * ps(:,:), 'c0', 1500); % targets every 5mm
+    case 'diffuse', N = 1000; % number of random scatterers
+        sz = 1e-3*[40;10;60]; % rectangular region size
+        off = -[0.5;0.5;0]; % uniform distribution offset
+        scat = Scatterers('pos', sz.*(rand([3,N]) + off), 'amp', rand([1,N]), 'c0', 1500); % diffuse scattering
+end
+% Choose a Transducer
 
 switch "L11-5v"
     case 'L11-5v', xdc = TransducerArray.L11_5v(); % linear array
     case 'L12-3v', xdc = TransducerArray.L12_3v(); % another linear array
+    case 'P4-2v',  xdc = TransducerArray.P4_2v(); % a phased array 
     case 'C5-2v' , xdc = TransducerConvex.C5_2v(); % convex array
 end
-% Choose the simulation region
-% Make sure it covers the target and the transducer!
+xdc.impulse = xdc.ultrasoundTransducerImpulse(); % set the impulse response function
+% Define the Simulation Region
 
-switch "small"
-    case 'small', tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 40*2^4), 'z', linspace(  -4e-3, 36e-3, 40*2^4));
-    case 'large', tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 100*2^4), 'z', linspace(-30e-3, 70e-3, 100*2^4));
-end
+tscan = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60));
 
 % point per wavelength - aim for >2 for a simulation
-ppw = scat.c0/xdc.fc/min([tscan.dx, tscan.dz]); 
+ppw = scat.c0 / xdc.fc / min([tscan.dx, tscan.dz]); 
 
-% Choose a transmit sequence
-% For linear transducers only!
+% Define the Transmit  Pulse Sequence
 
-if isa(xdc, 'TransducerArray') 
-    switch "FSA"
-        case 'FSA', seq = Sequence('type', 'FSA', 'c0', scat.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
-        case 'Plane-wave', 
-            [amin, amax, Na] = deal( -7 ,  7 , 11 );
-            seq = SequenceRadial('type', 'PW', ...
-                'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', scat.c0); % Plane Wave (PW) sequence
-        case 'Focused', 
-            [xmin, xmax, Nx] = deal( -10 ,  10 , 11 );
-            seq = Sequence('type', 'VS', 'c0', scat.c0, ...
-        'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;50e-3] ... % translating aperture: depth of 30mm, lateral stride of 2mm
-        ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
-        ); 
-    end
+switch "FSA"
+    case 'FSA'
+        seq = Sequence('type', 'FSA', 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
+    case 'Plane-wave'
 
-    
 %% 
-% For convex transducers only!
+% Plane waves:
 
-elseif isa(xdc, 'TransducerConvex') 
-    switch "sector"
-        case 'sector'
-            [amin, amax, Na] = deal( -40 ,  40 , 41 );
-            seq = SequenceRadial('type', 'VS', 'c0', scat.c0, ...
-                'angles', linspace(amin, amax, Na), ...
-                'ranges', norm(xdc.center) + 60e-3, 'apex', xdc.center ...
-                ); % sector scan sequence
-        case 'FSA'
-            seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0); % FSA - convex sequence
-    end
+        th = linspace( -15 ,  15 , 31 );
+        seq = SequenceRadial('type', 'PW', 'angles', th); % Plane Wave (PW) sequence
+    case 'Focused'
+        
+%% 
+% Focused pulses:
+
+        zf = 60 ; xf = linspace( -10 ,  10 , 11 ); % Focused (VS) Sequence  
+        pf = 1e-3*([1,0,0]'.*xf + [0,0,zf]');
+        seq = Sequence('type', 'VS', 'focus', pf);
+    case 'Sector'
+        
+%% 
+% Sector scans:
+
+        r = 60 ; th = linspace( -40 ,  40 , 41 ); % Sector Scan
+        if isa(xdc, 'TransducerConvex'), cen = xdc.center;
+        else,                            cen = [0;0;0]; 
+        end
+        seq = SequenceRadial( ...
+            'type', 'VS', ...
+            'angles', th, ...
+            'ranges', norm(cen) + 1e-3*r, ...
+            'apex', cen ...
+            ); % sector scan sequence
 end
-% Choose an imaging region
+
+% set the sound speed to match the scatterers
+seq.c0 = scat.c0;
+
+% Define the imaging region
+
+% set the spatial resolution
+dr = deal(scat.c0 / xdc.fc / 4);
 
 % For linear transducers only!
 if isa(xdc, 'TransducerArray') 
-    % set the scan at the edge of the transducer
-    pn = xdc.positions(); % element positions
-    xb = pn(1,[1,end]); % x-limits are the edge of the aperture
-    zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
-    switch "high"
-        case "high"
-            scan = ScanCartesian(...
-                'x', linspace(xb(1), xb(end), 2^9), ...
-                'z', linspace(zb(1), zb(end), 2^9) ...
-                ); % X x Z scan
-        case "low"
-            scan = ScanCartesian(...
-                'x', linspace(xb(1), xb(end), 2^6), ...
-                'z', linspace(zb(1), zb(end), 2^6) ...
-                ); % X x Z scan
-    end
-% For convex transducers only!
-elseif isa(xdc, 'TransducerConvex') 
+    % set the scan boundaires at the edge of the transducer with a 5mm
+    % buffer
+    pb = xdc.bounds(); % element positions
+    xb = pb(1,[1,end]) + [-5e-3, 5e-3]; % x-limits are the edge of the aperture
+    zb = [-15e-3, 15e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
 
-    % use with a SequenceRadial!
-    scan = ScanPolar('origin', xdc.center, 'a', -40:0.5:40, ...
-        'r', norm(xdc.center) + linspace(0, 2*max(vecnorm(scat.pos,2,1)), 2^9)...
+    scan = ScanCartesian('x', xb, 'z', zb);
+    [scan.dx, scan.dz] = deal(dr);
+
+    % label the axes
+    scan.xlabel = "Lateral (m)";
+    scan.ylabel = "Elevation (m)";
+    scan.zlabel = "Axial (m)";
+
+    % For convex transducers only!
+elseif isa(xdc, 'TransducerConvex') 
+    % ranges
+    r = 0 : dr : max(vecnorm(scat.pos,2,1)) + 15e-3;
+
+    % use with a SequenceRadial for best results
+    scan = ScanPolar('origin', xdc.center, ... set the cartesian origin of the axes
+        'a', -40:0.5:40, ... angles
+        'r', norm(xdc.center) + r...
         ); % R x A scan
 
+    % label the axes
+    scan.rlabel = "Range (m)";
+    scan.alabel = "Angle (^o)";
+    scan.ylabel = "Elevation (m)";
 end
 %% 
 % 
 
 % create a distributed medium based on the point scatterers 
 % (this logic will later be implemented in a class)
-s_rad = max([tscan.dx, tscan.dz]); %, 260e-6); % scatterer radius
-nextdim = @(p) ndims(p) + 1;
-rho0 = 1000; % ambient density
+
+% ambient density
+rho0 = 1000; 
+
+% make a scatterer, if not diffuse
 if scat.numScat < 500
-    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p));
+    s_rad = max([tscan.dx, tscan.dz]); % scatterer radius
+    nextdim = @(p) ndims(p) + 1; % helper function
+    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p)); % finds all points within scatterer radius
     med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]}});
 else
     med = Medium('c0', scat.c0, 'rho0', rho0);
@@ -152,27 +177,37 @@ end
 % 
 
 % Show the transducer's impulse response
-figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); 
+if false, figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); end
 
 % Show the transmit signal - a single point means it's a delta function
-figure; plot(seq.pulse, '.-'); title('Transmit signal');
+if false, figure; plot(seq.pulse, '.-'); title('Transmit signal'); end
 %  Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
+
+% plot the medium
 switch "sound-speed"
     case 'sound-speed', imagesc(med, tscan, 'props', 'c'  ); colorbar; % show the background medium for the simulation/imaging region
     case 'density',     imagesc(med, tscan, 'props', 'rho'); colorbar; % show the background medium for the simulation/imaging region
 end
+
+% plot the transducer
 plot(xdc, 'r+', 'DisplayName', 'Elements'); % elements
+
+% plot the imaging region (Scan)
 hps = plot(scan, 'w.', 'MarkerSize', 0.5, 'DisplayName', 'Image'); % the imaging points
-switch seq.type % show the transmit sequence
+
+% plot the transmit pulse sequence
+switch seq.type 
     case 'PW', plot(seq, 3e-2, 'k.', 'DisplayName', 'Tx Sequence'); % scale the vectors for the plot
-    otherwise, plot(seq, 'k.', 'DisplayName', 'Tx Sequence'); % plot focal points, if they exist
+    otherwise, plot(seq,       'k.', 'DisplayName', 'Tx Sequence'); % plot focal points, if they exist
 end
+
+% plot the point scatterers
 if scat.numScat < 500
     plot(scat, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
 else
-    disp('Info: Too many scatterers to display.');
+    disp('INFO: Too many scatterers to display.');
 end
 hl = legend(gca, 'Location','bestoutside'); 
 set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
@@ -183,7 +218,7 @@ set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
 % 
 
 % Construct an UltrasoundSystem object, combining all of these properties
-us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', single(40e6), 'recompile', false);
+us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', single(40e6), 'recompile', false);
 
 % Simulate a point target
 tic;
@@ -197,15 +232,17 @@ switch "Greens"
 end
 toc; 
 chd0
-%%
+% Show the Channel Data
 
+ 
 % display the channel data across the transmits
-chd = mod2db(chd0); % == 20*log10(abs(x)) -> the power of the signl in decibels
-figure; h = imagesc(chd); 
-dmax = max(chd.data(chd.data < inf)); % max finite value
-colormap jet; colorbar; caxis(gather([-80 0] + dmax)); % plot up to 80 dB down
-% animate(h, chd.data, 'fs', 10, 'loop', false); % show all transmits
-for i = 1:chd.M, h.CData(:) = chd.data(:,:,i); drawnow limitrate; pause(1/10); end % implement above manually for live editor
+figure; 
+h = imagesc(mod2db(chd0)); 
+colormap jet; colorbar; 
+cmax = gather(mod2db(max(chd0.data(:)))); % maximum power
+caxis([-80 0] + cmax); % plot up to 80 dB down
+% animate(h, chd0.data, 'fs', 10, 'loop', false); % show all transmits
+for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; pause(1/10); end % implement above manually for live editor
 %% Create a B-mode Image
 
  
@@ -213,8 +250,7 @@ for i = 1:chd.M, h.CData(:) = chd.data(:,:,i); drawnow limitrate; pause(1/10); e
 % 
 
 % Precondition the data
-chd = chd0;
-chd = singleT(chd); % use less data
+chd = singleT(chd0); % use less data
 
 % optionally apply a passband filter to retain only the bandwidth of the transducer
 D = chd.getPassbandFilter(xdc.bw, 25); % get a passband filter for the transducer bandwidth
@@ -226,12 +262,16 @@ if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert 
 demod = false;
 if demod
     demod_thresh_db = 80; % db threshold for demodulation
-    fpow = max(fft(chd).data, [], setdiff(1:ndims(chd.data), chd.tdim)); % max power per frequency
-    if_max = gather(find(mod2db(fpow) > max(mod2db(fpow)) - demod_thresh_db, 1, 'last')); % dB threshold
-    fmod = (if_max - 1) * chd.fs / chd.T; % maximum frequency past the threshold
+    
+    % find the largest frequency more the 80dB down from the peak
+    f = chd.fftaxis();
+    fpow = mod2db(max(fft(hilbert(chd)).data, [], 2:3)); % max power per frequency
+    if_max = find(fpow > max(fpow) - demod_thresh_db, 1, 'last'); % dB threshold
+    fmod = f(if_max); % maximum frequency past the threshold
+    
     chd = downmix(chd, fmod); % downmix - this reduces the central frequency of the data    
     chd = downsample(chd, floor(chd.fs / fmod)); % now we can downsample without losing information
-
+else,fmod = 0;
 end % demodulate and downsample (by any whole number)
 if dev, chd = gpuArray(chd); end % move data to GPU
 
@@ -242,76 +282,51 @@ switch class(xdc)
 end
 
 % Choose the apodization (beamforming weights)
-switch seq.type
-    case "VS", 
 
 %% 
-% Choose an apodization method for Virtual Source (VS) transmit sequences
+% Choose (an) apodization scheme(s) suitable for the transmit sequence. Some 
+% of these can be combined. 
 
-        switch "none"
-            case 'multiline', apod = apMultiline(us);
-            case 'scanline', apod = apScanline(us);
-            case 'translating', apod = apTranslatingAperture(us, 32*scale);
-            case 'aperture-growth', apod = apApertureGrowth(us, 1.8);
-            case 'accept', apod = apAcceptanceAngle(us, 55); 
-            case 'none', apod = 1;
-        end
+apod = 1;
+if false, apod = apod .* apMultiline(us); end
+if false, apod = apod .* apScanline(us); end
+if false, apod = apod .* apTranslatingAperture(us, 32*scale); end
+if false, apod = apod .* apApertureGrowth(us, 2); end
+if false, apod = apod .* apAcceptanceAngle(us, 50); end
 
-%% 
-% Choose an apodization method for Full Synthetic Aperture (FSA) transmit sequences
-
-    case "FSA"
-        us.sequence.focus = us.tx.positions(); % set the sequence foci to be the location of the transmitters for these profiles
-        switch "none"
-            case 'translating', apod = apTranslatingAperture(us, 32*scale);
-            case 'aperture-growth', apod = apApertureGrowth(us, 1.8);
-            case 'accept', apod = apAcceptanceAngle(us, 55); 
-            case 'none', apod = 1;
-        end
-
-%% 
-% Choose an apodization method for Plane Wave (PW) transmit sequences
-
-    case "PW"
-        switch "none"
-            case 'aperture-growth', apod = apApertureGrowth(us, 1.5);
-            case 'accept', apod = apAcceptanceAngle(us, 20); 
-            case 'none', apod = 1;
-        end
-        
-        
-    otherwise, apod = 1; % apodization profiles for plane-wave not implemented :(
-end
 %% 
 % Choose a beamforming method
 
 bf_args = {'apod', apod, 'fmod', fmod}; % arguments for all beamformers
+bscan = us.scan;
 switch "DAS-direct"
     case "DAS-direct"
         b = DAS(us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
     case "DAS"
-        b = bfDAS(us, chd, bf_args{:}); % use a vanilla delay-and-sum beamformer
+        b = bfDAS(us, chd, bf_args{:}); % use a generic delay-and-sum beamformer
     case "Adjoint"
-        b = bfAdjoint(us, chd, 'fthresh', -20, bf_args{:}); % use an adjoint matrix method
+        b = bfAdjoint(us, chd, 'fthresh', -20, bf_args{:}); % use an adjoint matrix method, top 20dB frequencies only
     case "Eikonal"
         b = bfEikonal(us, chd, med, tscan, bf_args{:}); % use the eikonal equation
     case "Stolts-f-k-Migration"
         % Stolt's f-k Migrartion (no apodization accepted)
         % NOTE: this function works best with small-angle (< 10 deg) plane waves
-        b = bfMigration(us, chd, 'fmod', fmod); 
+        [b, bscan] = bfMigration(us, chd, 'Nfft', [2*chd.T, 4*chd.N], 'fmod', fmod); 
 end
 
 % show the image
-b_im = mod2db(b); % convert to power in dB
-figure; imagesc(scan, b_im(:,:,1), [-60, 0] + max(b_im(:))); % display with 80dB dynamic range
+dbR = 40;
+figure; imagesc(bscan, b); % display
 colormap gray; colorbar;
+caxis(max(caxis) + [-dbR 0]); % 60dB dynamic range
 %% Scan Convert for a Sector Scan
 
-if ~isa(scan, 'ScanCartesian')
-    scanc = scanCartesian(scan); % mind the caps! this gives us a ScanCartesian
-    [scanc.nx, scanc.nz] = deal(2^9); % don't change boundaries, but increase resolution
-    bc_im = (scanConvert(scan, mod2db(b), scanc)); % interpolate in dB - could also do abs, as long as it's not complex!
-
-    imagesc(scanc, bc_im, [-60, 0] + max(bc_im(bc_im < Inf)));
+if ~isa(bscan, 'ScanCartesian')
+    scanc = ScanCartesian(bscan); % make a ScanCartesian from the ScanPolar
+    [scanc.dx, scanc.dz] = deal(1/32e3); % (optional) increase resolution
+    bc_im = (scanConvert(bscan, mod2db(b), scanc)); % interpolate in dB - could also do abs, as long as it's not complex!
+    
+    imagesc(scanc, bc_im); 
+    caxis([-dbR, 0] + max(caxis)); % set 60dB dynamic range
     colormap gray; colorbar;
 end
