@@ -683,22 +683,22 @@ classdef ChannelData < matlab.mixin.Copyable
             %    ***  GPU support is enabled via interp1
             %    **** GPU support is native
             % 
-            % y = SAMPLE(x, tau, interp, w) applies the weighting array w
+            % y = SAMPLE(chd, tau, interp, w) applies the weighting array w
             % via point-wise  multiplication after sampling the data. The  
-            % dimensions must be compatible with the sampling array t in 
+            % dimensions must be compatible with the sampling array tau in 
             % the sampling dimension dim. The default is 1.
             % 
-            % y = SAMPLE(x, tau, interp, w, sdim) sums the data in the 
+            % y = SAMPLE(chd, tau, interp, w, sdim) sums the data in the 
             % dimension(s) sdim after the weighting matrix has been applied.
             % The default is [] (no dimensions).
             % 
-            % y = SAMPLE(x, tau, interp, w, sdim, fmod) upmixes the data at
-            % a modulation frequency fmod. This undoes the effect of
+            % y = SAMPLE(chd, tau, interp, w, sdim, fmod) upmixes the data 
+            % at a modulation frequency fmod. This undoes the effect of
             % downmixing at the same frequency.
             % 
-            % y = SAMPLE(x, tau, interp, w, sdim, fmod, apdim) specifies
+            % y = SAMPLE(chd, tau, interp, w, sdim, fmod, apdim) specifies
             % the receive and transmit aperture dimensions of the sampling
-            % array t and weight array w. 
+            % array tau and weight array w. 
             % 
             % When this argument is used, the dimension of the data are 
             % lifted to (T x 1 x ... x 1 x N x M) where N and M are the 
@@ -785,28 +785,28 @@ classdef ChannelData < matlab.mixin.Copyable
             %    **   GPU support is enabled via interpd
             %    ***  GPU support is enabled via interp1
             % 
-            % y = SAMPLE2SEP(x, tau1, tau2, interp, w) applies the
+            % y = SAMPLE2SEP(chd, tau1, tau2, interp, w) applies the
             % weighting array w via point-wise multiplication after
             % sampling the data. The dimensions must be compatible with the
             % sampling array tau in the sampling dimension dim. The default
             % is 1.
             % 
-            % y = SAMPLE2SEP(x, tau1, tau2, interp, w, sdim) sums the data
-            % in the dimension(s) sdim after the weighting matrix has been
-            % applied. The default is [] (no dimensions).
+            % y = SAMPLE2SEP(chd, tau1, tau2, interp, w, sdim) sums the
+            % data in the dimension(s) sdim after the weighting matrix has
+            % been applied. The default is [] (no dimensions).
             % 
-            % y = SAMPLE2SEP(x, tau1, tau2, interp, w, sdim, fmod) upmixes
-            % the data at a modulation frequency fmod. This undoes the
-            % effect of downmixing at the same frequency.
+            % y = SAMPLE2SEP(chd, tau1, tau2, interp, w, sdim, fmod) 
+            % upmixes the data at a modulation frequency fmod. This undoes
+            % the effect of downmixing at the same frequency.
             % 
-            % y = SAMPLE2SEP(x, tau1, tau2, interp, w, sdim, fmod, apdim)
+            % y = SAMPLE2SEP(chd, tau1, tau2, interp, w, sdim, fmod, apdim)
             % specifies the receive and transmit aperture dimensions of the
-            % sampling array t and weight array w.
+            % sampling array tau and weight array w. The default is 
+            % [chd.ndim, chd.mdim]
             % 
             % When this argument is used, the dimension of the data are 
             % lifted to (T x 1 x ... x 1 x N x M [x F x G x ...]) where 
             % N and M are the receive and transmit aperture dimensions. 
-            % The default is [chd.ndim, chd.mdim]
             % 
             % See also CHANNELDATA/SAMPLE INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 

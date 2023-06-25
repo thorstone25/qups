@@ -66,7 +66,7 @@ function [mvf, mvh] = animate(h, x, kwargs)
 % vobj.writeVideo([mvf{:,1}]);
 % vobj.close();
 % 
-% See also IMAGESC
+% See also IMAGESC FRAME2GIF
 arguments
     h (1,:) matlab.graphics.primitive.Image
     x {mustBeA(x, ["cell","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} = 1 % data

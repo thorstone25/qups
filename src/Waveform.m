@@ -13,7 +13,7 @@
 classdef Waveform < matlab.mixin.Copyable
     
     properties
-        % WAVEFORM/FUN - Function defining the waveform
+        % FUN - Function defining the waveform
         %
         % FUN is a function_handle to a function that accepts an ND-array 
         % of time samples and returns a corresponding ND-array of samples 
@@ -21,21 +21,21 @@ classdef Waveform < matlab.mixin.Copyable
         %
         % See also FUNCTION_HANDLE
         fun {mustBeA(fun, {'function_handle', 'griddedInterpolant'})} = @(t) sin(2*pi*5e6*t)  % functional form of the waveform
-        % WAVEFORM/T0 - Start time of the Waveform
+        % T0 - Start time of the Waveform
         %
         % T0 defines the start of the Waveform. All samples prior to this
         % point are 0.
         %
         % See also WAVEFORM.TEND WAVEFORM.DURATION
         t0 (1,1) {mustBeNumeric} = -1 / 5e6         % start time
-        % WAVEFORM/TEND - End time of the Waveform
+        % TEND - End time of the Waveform
         %
         % T0 defines the start of the Waveform. All samples after to this
         % point are 0.
         %
         % See also WAVEFORM.T0 WAVEFORM.DURATION
         tend (1,1) {mustBeNumeric} = 1 / 5e6        % end time
-        % WAVEFORM/FS - Sampling frequency for the Waveform
+        % FS - Sampling frequency for the Waveform
         %
         % FS defines a sampling frequency for sampling the Waveform. When
         % defined, the Waveform/dt, Waveform/time, and Waveform/samples
