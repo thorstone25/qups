@@ -262,7 +262,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % % Simulate some data
             % us = UltrasoundSystem('fs', 100e6); % get a default system
             % us.tx = us.rx; % use the same transducer
-            % targ = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % targ = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = greens(us, targ); % simulate the ChannelData
             % chd = zeropad(chd, 0, max(0, 2^10-chd.T)); % ensure at least 2^10 samples
             % 

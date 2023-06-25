@@ -30,7 +30,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     properties
         tx Transducer = TransducerArray() % Transducer object (transmit)
         rx Transducer = TransducerArray() % Transducer object (receive)
-        sequence Sequence = Sequence()    % Sequence object
+        seq Sequence = Sequence()    % Sequence object
         scan Scan = ScanCartesian() % Scan object
     end
     
@@ -59,6 +59,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     properties(Hidden,SetAccess=protected)
         tmp_folder (1,1) string = mktempdir() % temporary folder for compiled binaries
     end
+
+    % aliases
+    properties(Hidden, Dependent)
+        sequence
+    end
         
     % constructor/destructor
     methods
@@ -82,7 +87,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % receive Transducer us.tx and us.rx to be the Transducer xdc.
             % When set like this, the property us.xdc is available.
             %
-            % us = ULTRASOUNDSYSTEM(...,'sequence', seq) sets the Sequence
+            % us = ULTRASOUNDSYSTEM(...,'seq', seq) sets the Sequence
             % to be the Sequence seq.
             %
             % us = ULTRASOUNDSYSTEM(...,'scan', scan) sets the Scan to be
@@ -97,12 +102,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % See also TRANSDUCER SEQUENCE SCAN
             arguments
-                kwargs.tx Transducer
-                kwargs.rx Transducer
-                kwargs.xdc Transducer
-                kwargs.sequence Sequence
-                kwargs.scan Scan
-                kwargs.fs (1,1) {mustBeNumeric}
+                kwargs.?UltrasoundSystem
                 opts.recompile (1,1) logical = true
             end
             
@@ -113,8 +113,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             for s = f, self.(s) = kwargs.(s); end
             
             % create a default Sequence if none provided
-            if ~isfield(kwargs, 'sequence')
-                self.sequence = Sequence(...
+            if ~isfield(kwargs, 'seq')
+                self.seq = Sequence(...
                     'type','FSA',...
                     'focus', [0;0;0], ...
                     'numPulse', self.tx.numel ...
@@ -189,7 +189,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             s = rmfield(s, {'fc', 'pulse'});
 
             % convert all sub-classes
-            for f = intersect(string(fieldnames(s))', ["tx","rx","xdc","sequence","scan"])
+            for f = intersect(string(fieldnames(s))', ["tx","rx","xdc","seq","scan"])
                 if isobject(s.(f))
                     s.(f) = obj2struct(s.(f)); 
                 end
@@ -202,7 +202,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         % copy 
         function other = copyElement(self)
             arguments, self (1,1) UltrasoundSystem, end
-            n = cellstr(["tx", "rx", "sequence", "scan", "fs"]); % copy props
+            n = cellstr(["tx", "rx", "seq", "scan", "fs"]); % copy props
             v = cellfun(@(n){self.(n)}, n);
             nv = cat(1,n,v);
             other = UltrasoundSystem(nv{:}, 'recompile', false);            
@@ -253,15 +253,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % h = PLOT(..., Name, Value, ...) passes following arguments to
             % the call to plot for each of the objects i.e. to the plot
-            % function for self.scan, self.sequence, and self.tx (and
+            % function for self.scan, self.seq, and self.tx (and
             % self.rx if necessary).
             %
             % Example:
             % % Create a default system using a focused transmit
             % xdc = TransducerArray();
             % us = UltrasoundSystem('xdc', xdc);
-            % us.sequence.type = 'VS';
-            % us.sequence.focus = [0;0;30e-3] + ...
+            % us.seq.type = 'VS';
+            % us.seq.focus = [0;0;30e-3] + ...
             % linspace(-xdc.numel/4, xdc.numel/4, xdc.numel/2+1) .* [xdc.pitch;0;0];
             %
             % % plot it
@@ -290,9 +290,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 hrx = plot(self.rx, ax, 'r+', 'DisplayName', 'Receive Elements', plargs{:}); % rx elements
                 hxdc = [htx, hrx];
             end
-            switch self.sequence.type % show the transmit sequence
-                case 'PW', hseq = plot(self.sequence, ax, 3e-2, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % scale the vectors for the plot
-                otherwise, hseq = plot(self.sequence, ax, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % plot focal points, if they exist
+            switch self.seq.type % show the transmit sequence
+                case 'PW', hseq = plot(self.seq, ax, 3e-2, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % scale the vectors for the plot
+                otherwise, hseq = plot(self.seq, ax, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % plot focal points, if they exist
             end
             h = [hxdc, hps, hseq];
             legend(ax, h);
@@ -349,7 +349,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % Sequence
-            self.sequence = scale(self.sequence, args{:}); % convert in distance and time
+            self.seq = scale(self.seq, args{:}); % convert in distance and time
         end
     end
 
@@ -411,7 +411,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % us.fs = single(us.fs); % use single precision for speed
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = greens(us, scat); % simulate the ChannelData
             % 
             % % Display the data
@@ -467,7 +467,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Directly convolve the Waveform objects to get the final
             % convolved kernel
             wv = conv(self.rx.impulse, ...
-                conv(self.tx.impulse, self.sequence.pulse, gather(kwargs.fsk)), ...
+                conv(self.tx.impulse, self.seq.pulse, gather(kwargs.fsk)), ...
                 gather(kwargs.fsk)); % transmit waveform, convolved at US frequency
             wv.fs = kwargs.fsk;
             kern = wv.samples;
@@ -661,7 +661,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
 
             % synthesize linearly
-            [chd(f)] = self.focusTx(chd(f), self.sequence, 'interp', kwargs.interp);
+            [chd(f)] = self.focusTx(chd(f), self.seq, 'interp', kwargs.interp);
             end
 
             % close the waitbar if it (still) exists
@@ -718,7 +718,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % );
             % xdc = TransducerArray();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
             % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
@@ -777,10 +777,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %% Define the Transmit Delays
 
             % get transmit delays
-            tau_tx = -self.sequence.delays(self.tx); % M x V
+            tau_tx = -self.seq.delays(self.tx); % M x V
 
             % forward to all subelement delays, synchronized
-            tau_tx_pix = zeros([xdcfw.nInPx, self.sequence.numPulse]);
+            tau_tx_pix = zeros([xdcfw.nInPx, self.seq.numPulse]);
             i = logical(xdcfw.incoords(:,4)); % find non-zero indices - they map to an element
             tau_tx_pix(i,:) = tau_tx(xdcfw.incoords(i,4),:); % apply synchronized delays
 
@@ -788,7 +788,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %% Define the Transmit Apodization
 
             % get apodization per element
-            apod = self.sequence.apodization(self.tx);
+            apod = self.seq.apodization(self.tx);
 
             % map to sub-elements
             tx_apod = zeros(size(tau_tx_pix)); % pre-allocate
@@ -799,7 +799,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             t0_xdc = min(min(tau_tx_pix,[],1)); % reference true start time (1 x M)
             tau_tx_pix = (tau_tx_pix - t0_xdc); % 0-base the delays for the sim (I x M)
             tau_tx_max = ceil(max(tau_tx_pix, [],'all') / dT) .* dT; % maxmium additional delay
-            wv_tx = conv(self.xdc.impulse, self.sequence.pulse, 10/dT); % get the waveform transmitted into the medium
+            wv_tx = conv(self.xdc.impulse, self.seq.pulse, 10/dT); % get the waveform transmitted into the medium
             wv_tx.tend = wv_tx.tend + tau_tx_max; % extend waveform to cover maximum delay
             wv_tx.dt = dT; % set the sampling interval
             t = wv_tx.time; % get discrete sampling times
@@ -871,7 +871,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % );
             % xdc = TransducerArray();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
             % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
@@ -942,7 +942,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % );
             % xdc = TransducerArray();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
             % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
@@ -1012,7 +1012,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % );
             % xdc = TransducerArray();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
             % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
@@ -1130,7 +1130,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % us.rx = us.tx; % ensure the receiver and transmitter are identical
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = simus(us, scat); % simulate the ChannelData
             % 
             % % Display the data
@@ -1239,7 +1239,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd.t0 = 0; % already offset within call to simus
 
             % synthesize transmit pulses
-            chd = self.focusTx(chd, self.sequence, 'interp', kwargs.interp);
+            chd = self.focusTx(chd, self.seq, 'interp', kwargs.interp);
         end
     end
 
@@ -1275,7 +1275,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = calc_scat_all(us, scat); % simulate the ChannelData
             % 
             % % Display the data
@@ -1309,7 +1309,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the Tx/Rx impulse response function / excitation function
             wv_tx = copy(self.tx.impulse); % transmitter impulse
             wv_rx = copy(self.rx.impulse); % receiver impulse
-            wv_pl = copy(self.sequence.pulse);
+            wv_pl = copy(self.seq.pulse);
             
             % get the time axis (which passes through t == 0)
             [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(self.fs);
@@ -1331,7 +1331,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % splice
-            [M, F] = deal(self.sequence.numPulse, numel(scat)); % number of transmits/frames
+            [M, F] = deal(self.seq.numPulse, numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
 
@@ -1380,7 +1380,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd.fs = fs_;
 
             % synthesize linearly
-            chd = self.focusTx(chd, self.sequence, 'interp', kwargs.interp);
+            chd = self.focusTx(chd, self.seq, 'interp', kwargs.interp);
         end        
 
         function chd = calc_scat_multi(self, scat, element_subdivisions, kwargs)
@@ -1409,7 +1409,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = calc_scat_multi(us, scat); % simulate the ChannelData
             % 
             % % Display the data
@@ -1451,7 +1451,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the Tx/Rx impulse response function / excitation function
             wv_tx = copy(self.tx.impulse); % transmitter impulse
             wv_rx = copy(self.rx.impulse); % receiver impulse
-            wv_pl = copy(self.sequence.pulse);
+            wv_pl = copy(self.seq.pulse);
 
             % get the time axis (which passes through t == 0)
             [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(self.fs);
@@ -1465,8 +1465,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tx_pls = gather(double(real(vec(wv_pl.samples)')));
 
             % get the apodization and time delays across the aperture
-            apod_tx = self.sequence.apodization(self.tx); % N x M
-            tau_tx = -self.sequence.delays(self.tx); % N x M
+            apod_tx = self.seq.apodization(self.tx); % N x M
+            tau_tx = -self.seq.delays(self.tx); % N x M
             tau_offset = min(tau_tx, [], 1); % (1 x M)
             tau_tx = tau_tx - tau_offset; % 0-base the delays for FieldII
 
@@ -1673,7 +1673,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % );
             % xdc = TransducerArray();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
             % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
@@ -1704,7 +1704,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.sequence.numPulse
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.seq.numPulse
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
                 kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim
             end
@@ -1789,9 +1789,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             kgrid_origin = cellfun(@median, {sscan.z, sscan.x, sscan.y});
 
             % get the source signal
-            txsig = conv(self.tx.impulse, self.sequence.pulse, 4*fs_); % transmit waveform, 4x intermediate convolution sampling
-            apod =  self.sequence.apodization(self.tx); % transmit apodization (M x V)
-            del  = -self.sequence.delays(self.tx); % transmit delays (M x V)
+            txsig = conv(self.tx.impulse, self.seq.pulse, 4*fs_); % transmit waveform, 4x intermediate convolution sampling
+            apod =  self.seq.apodization(self.tx); % transmit apodization (M x V)
+            del  = -self.seq.delays(self.tx); % transmit delays (M x V)
             txn0 = floor((txsig.t0   + min(del(:))) * fs_); % minimum time sample - must pass through 0
             txne = ceil ((txsig.tend + max(del(:))) * fs_); % maximum time sample - must pass through 0
             t_tx = shiftdim((txn0 : txne)' / fs_, -2); % transmit signal time indices (1x1xT')
@@ -1910,12 +1910,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % define the source if it's not empty i.e. all zeros
             switch kwargs.ElemMapMethod
                 case {'nearest', 'linear'} % use vector velocity source
-                    if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
-                    if any(sub(psig,2,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
-                    if any(sub(psig,3,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    if any(sub(psig,1,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    if any(sub(psig,2,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    if any(sub(psig,3,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
                     [ksource.u_mask] = deal(mask); % set transmit aperture mask
                 case {'karray-direct', 'karray-depend'} % use a pressure source
-                    if any(sub(psig,1,5),'all'), for v = self.sequence.numPulse:-1:1, ksource(v).p = real(sub(psig,v,3)); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                    if any(sub(psig,1,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).p = real(sub(psig,v,3)); end, end % set transmit pulses (J' x T' x V x 1 x 1)
                     [ksource.p_mask] = deal(mask); % set transmit aperture mask
             end
 
@@ -1976,21 +1976,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 end
             end
 
-            if self.sequence.numPulse > 1
+            if self.seq.numPulse > 1
                 % make a unique movie name for each pulse
                 [fld, nm, ext] = fileparts(kwave_args.MovieName);        
-                mv_nm = cellstr(fullfile(fld, {nm} + "_pulse" + (1:self.sequence.numPulse) + ext));
+                mv_nm = cellstr(fullfile(fld, {nm} + "_pulse" + (1:self.seq.numPulse) + ext));
             else
                 mv_nm = cellstr(kwave_args.MovieName);
             end
             
-            kwave_args = repmat(kwave_args, [self.sequence.numPulse, 1]);
+            kwave_args = repmat(kwave_args, [self.seq.numPulse, 1]);
             [kwave_args.MovieName] = deal(mv_nm{:});
    
             % get all arguments
             kwave_args_ = arrayfun(...
                 @(pulse) struct2nvpair(kwave_args(pulse)), ...
-                1:self.sequence.numPulse, ... 
+                1:self.seq.numPulse, ... 
                 'UniformOutput', false ...
                 );
 
@@ -2054,7 +2054,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd = UltrasoundSystem.kspaceRunSim(args{:});
 
                 % TODO: make reports optional
-                fprintf(string(self.sequence.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
+                fprintf(string(self.seq.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
             else
                 % set the parfor options argument
                 args{end+1} = Inf; % parfor arg: max number of workers
@@ -2202,13 +2202,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % b = DAS(us, chd) performs delay-and-sum beamforming on 
             % the ChannelData chd. The ChannelData must conform to the 
-            % delays given by the Sequence us.sequence. The output is the
+            % delays given by the Sequence us.seq. The output is the
             % image defined on the Scan us.scan. 
             %
             % b = DAS(self, chd, c0) uses a beamforming sound speed of c0. 
             % c0 can be a scalar or an NDarray that is broadcastable to 
             % size (I1 x I2 x I3) where  [I1, I2, I3] == self.scan.size. 
-            % The default is self.sequence.c0.            
+            % The default is self.seq.c0.            
             % 
             % b = DAS(..., 'apod', apod) uses an apodization matrix
             % of apod. It must be singular in the receive dimension, the 
@@ -2273,7 +2273,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
@@ -2291,7 +2291,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0(:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
+                c0(:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
                 kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
@@ -2343,14 +2343,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
                 ext_args = [interp_args, apod_args]; % extra args
 
-                switch self.sequence.type
+                switch self.seq.type
                     case 'FSA'
                         pos_args = {P_im, P_rx, self.tx.positions(), [0;0;1]};
                     case 'PW'
-                        pos_args = {P_im, P_rx, [0;0;0], self.sequence.focus}; % TODO: use origin property in tx sequence
+                        pos_args = {P_im, P_rx, [0;0;0], self.seq.focus}; % TODO: use origin property in tx sequence
                         ext_args{end+1} = 'plane-waves'; %#ok<AGROW> 
                     case 'VS'
-                        pos_args = {P_im, P_rx, self.sequence.focus, [0;0;1]};
+                        pos_args = {P_im, P_rx, self.seq.focus, [0;0;1]};
                 end
 
                 % request the CUDA kernel?
@@ -2381,7 +2381,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % transmits).
             %
             % chd = FOCUSTX(self, chd0, seq) uses the Sequence seq to focus
-            % the data. The default is self.sequence.
+            % the data. The default is self.seq.
             %
             % chd = FOCUSTX(..., Name, Value, ...) uses name-value pairs to
             % specify 
@@ -2403,20 +2403,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % 
             % % Compute the data for an FSA acquistion
-            % us.sequence = Sequence('type', 'FSA', 'c0', us.sequence.c0, 'numPulse', us.xdc.numel);
+            % us.seq = Sequence('type', 'FSA', 'c0', us.seq.c0, 'numPulse', us.xdc.numel);
             % chd = greens(us, scat); % compute the response
             %
             % % Create plane-wave data by synthesizing the transmits with
             % plane-wave delays
-            % seq_pw = SequenceRadial('type', 'PW', 'c0', us.sequence.c0, ...
+            % seq_pw = SequenceRadial('type', 'PW', 'c0', us.seq.c0, ...
             %  'angles', -25:0.5:25, 'ranges', 1); % plane-wave sequence
             % chd_pw = focusTx(us, chd, seq_pw); % synthesize transmits
             %
             % % Beamform the plane-wave data
-            % us.sequence = seq_pw;
+            % us.seq = seq_pw;
             % b = DAS(us, chd_pw); % beamform the data
             % 
             % % Display the image
@@ -2430,7 +2430,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                seq (1,1) Sequence = self.sequence;
+                seq (1,1) Sequence = self.seq;
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.length string {mustBeScalarOrEmpty} = [];
                 kwargs.buffer (1,1) {mustBeNumeric, mustBeInteger} = 0
@@ -2498,7 +2498,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % chd = refocus(us, chd, seq) refocuses the ChannelData chd0
             % assuming that the ChannelData chd was captured using Sequence
-            % seq instead of the Sequence us.sequence.
+            % seq instead of the Sequence us.seq.
             %
             % [...] = refocus(..., 'method', 'tikhonov') uses a tikhonov
             % inversion scheme to compute the decoding matrix.
@@ -2540,7 +2540,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Focus into plane waves and beamform
             % chdpw = focusTx(us, chd, seqpw);
             % uspw = copy(us);
-            % uspw.sequence = seqpw;
+            % uspw.seq = seqpw;
             % bpw = DAS(uspw, chdpw);
             % 
             % % Refocus back to FSA, and beamform 
@@ -2577,7 +2577,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                seq (1,1) Sequence = self.sequence
+                seq (1,1) Sequence = self.seq
                 kwargs.gamma (1,1) {mustBeNumeric} = (chd.N / 10)^2 % heuristically chosen
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
@@ -2645,7 +2645,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % b = BFADJOINT(self, chd, c0) uses a beamforming sound speed 
             % of c0. c0 can be a scalar or an NDarray that is broadcastable
             % to size (I1 x I2 x I3) where  [I1, I2, I3] == self.scan.size. 
-            % The default is self.sequence.c0.
+            % The default is self.seq.c0.
             %             
             % b = BFADJOINT(..., 'apod', apod) uses an apodization matrix
             % of apod. It must be singular in the receive dimension, the 
@@ -2682,7 +2682,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
@@ -2702,7 +2702,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
+                c0 (:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
                 kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
                 kwargs.apod {mustBeNumericOrLogical} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
@@ -2726,7 +2726,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % validate sequence/transducer: doesn't work for
             % non-linear/focused - not sure why yet - seems like a
             % difficult to trace phase error bug.
-            if ~isa(self.tx, 'TransducerArray') && ~isa(self.rx, 'TransducerArray') && self.sequence.type == "VS"
+            if ~isa(self.tx, 'TransducerArray') && ~isa(self.rx, 'TransducerArray') && self.seq.type == "VS"
                 warning('QUPS:bfAdjoint:UnsupportedSequence', ...
                     'This function is unsupported for focused transmits with non-linear transducers.' ...
                     );
@@ -2746,7 +2746,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             x = x .* exp(+2i*pi*fmod .* chd.time); % remodulate data
             x = fft(x,K,chd.tdim); % get the fft
             x = x .* exp(-2i*pi*f    .* chd.t0  ); % phase shift to re-align time axis
-            x = x .* exp(+2i*pi*f .* shiftdim(self.sequence.t0Offset(),2-chd.mdim)); % offset to transducer origin
+            x = x .* exp(+2i*pi*f .* shiftdim(self.seq.t0Offset(),2-chd.mdim)); % offset to transducer origin
 
             % choose frequencies to evaluate
             xmax = max(x, [], chd.tdim); % maximum value per trace
@@ -2783,9 +2783,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_rx = vecnorm(self.rx.positions() - Pi,2,1) ./ c0; % 1 x N x 1 x 1 x ... x [I]
 
             % get the transmit steering vector weights and delays
-            del_tx  = self.sequence.delays(self.tx);      % M x V
-            apod_tx = self.sequence.apodization(self.tx); % M x V
-            del_tx = del_tx + self.sequence.t0Offset(); % offset to transducer origin
+            del_tx  = self.seq.delays(self.tx);      % M x V
+            apod_tx = self.seq.apodization(self.tx); % M x V
+            del_tx = del_tx + self.seq.t0Offset(); % offset to transducer origin
 
             % transform to frequency step kernels
             w_rx    = exp(-2i*pi*df.*tau_rx); %  receive greens function
@@ -2939,7 +2939,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % );
             % xdc = TransducerArray('numel', 16, 'fc', 3e6, 'bw', [1.5, 4.5]*1e6, 'pitch', 1.5e3/3e6);
             % seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', 1500);
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'sequence', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
             % [c0, rho0] = deal(1.5e3, 1e3); 
@@ -3160,7 +3160,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
@@ -3177,7 +3177,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (:,:,:,1,1) {mustBeNumeric} = self.sequence.c0
+                c0 (:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "lanczos3"])} = 'cubic'
@@ -3197,10 +3197,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             Pr = self.rx.positions(); % receiver positions
 
             % get virtual source or plane wave geometries
-            switch self.sequence.type
+            switch self.seq.type
                 case 'FSA', [Pv, Nv] = deal(self.tx.positions(), [0;0;1]);
-                case 'VS',  [Pv, Nv] = deal(self.sequence.focus, [0;0;1]);
-                case 'PW',  [Pv, Nv] = deal([0;0;0], self.sequence.focus); % TODO: use origin property in tx sequence
+                case 'VS',  [Pv, Nv] = deal(self.seq.focus, [0;0;1]);
+                case 'PW',  [Pv, Nv] = deal([0;0;0], self.seq.focus); % TODO: use origin property in tx sequence
             end
             Pr = swapdim(Pr,2,5); % move N to dim 5
             [Pv, Nv] = deal(swapdim(Pv,2,6), swapdim(Nv,2,6)); % move M to dim 6
@@ -3210,7 +3210,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 
             % transmit sensing vector
             dv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
-            switch self.sequence.type, 
+            switch self.seq.type, 
                 case {'VS', 'FSA'}, dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
                 case {'PW'},        dv = sum(dv .* Nv, 1);
             end % 1 x I1 x I2 x I3 x 1 x M
@@ -3295,12 +3295,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Example:
             % % Define the setup
             % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', us.sequence.c0); % define a point target
+            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', us.seq.c0); % define a point target
             %
             % % A plane-wave transmission is required - migration works
             % % best for small angles
             % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10);
-            % us.sequence = seq;
+            % us.seq = seq;
             %
             % % Compute the response
             % chd = greens(us, scat);
@@ -3319,7 +3319,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd ChannelData
-                c0 (1,1) {mustBeNumeric} = self.sequence.c0
+                c0 (1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
                 kwargs.Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
@@ -3330,9 +3330,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % This is intended for plane waves and linear arrays
-            if self.sequence.type ~= "PW"
+            if self.seq.type ~= "PW"
                 warning('Expected a Sequence of type "PW", but instead it was type "' ...
-                    + string(self.sequence.type) ...
+                    + string(self.seq.type) ...
                     + '". Unexpected results may occur.');
             end
             if ~isa(self.xdc, 'TransducerArray')
@@ -3356,13 +3356,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             kx = shiftdim(kx, 1-chd.ndim);
 
             % get transmit mapping in compatiable dimensions
-            seq = copy(self.sequence);
-            seq.c0 = c0;
-            tau = seq.delays(self.xdc); % N x M
+            sq = copy(self.seq);
+            sq.c0 = c0;
+            tau = sq.delays(self.xdc); % N x M
             ord = [chd.ndim, chd.mdim]; % send to these dimensions
             ord = [ord, setdiff(1:max(ord), ord)]; % account for all dimensions
             tau = ipermute(tau, ord); % permute to compatible dimensions
-            gamma = swapdim(sind(seq.angles) ./ (2 - cosd(seq.angles)), 2, chd.mdim); % lateral scaling
+            gamma = swapdim(sind(sq.angles) ./ (2 - cosd(sq.angles)), 2, chd.mdim); % lateral scaling
 
 	    % splice the data to operate per block of transmits
 	    [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
@@ -3412,7 +3412,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % tb = chd.time;
 
             % get the spatial axes
-            zax = seq.c0 ./ 2 .* tb;
+            zax = sq.c0 ./ 2 .* tb;
             xax = self.xdc.pitch .* (0 : K-1) + sub(self.xdc.positions,{1,1},[1,2]);
 
             % align data laterally using Garcia's PWI mapping
@@ -3485,8 +3485,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
             %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
-            %   us = UltrasoundSystem('sequence', seq); % get a default system
-            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %   us = UltrasoundSystem('seq', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
@@ -3509,15 +3509,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 us (1,1) UltrasoundSystem
-                tol {mustBePositive, mustBeScalarOrEmpty} = min(abs(diff(sub(us.sequence.focus,1,1)))); % numerical tolerance
+                tol {mustBePositive, mustBeScalarOrEmpty} = min(abs(diff(sub(us.seq.focus,1,1)))); % numerical tolerance
             end
 
             % alias
-            seq = us.sequence;
+            sq = us.seq;
 
             % soft validate the transmit sequence type: it should be focused
-            if seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + seq.type + ": This may produce unexpected results."...
+            if sq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + sq.type + ": This may produce unexpected results."...
                     );
             end
 
@@ -3526,11 +3526,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isa(us.scan, 'ScanCartesian')
                 xdim = find(us.scan.order == 'X'); % dimension of change in lateral
                 xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
-                xv = swapdim(sub(seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
+                xv = swapdim(sub(sq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
                 xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
                 xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
-                xv = swapdim(seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+                xv = swapdim(sq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
             end
             apod = abs(xi - xv) < tol; % create mask
         end
@@ -3558,8 +3558,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
             %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
-            %   us = UltrasoundSystem('sequence', seq); % get a default system
-            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %   us = UltrasoundSystem('seq', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
@@ -3585,11 +3585,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % alias
-            seq = us.sequence;
+            sq = us.seq;
 
             % soft validate the transmit sequence type: it should be focused
-            if seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + seq.type + ": This may produce unexpected results."...
+            if sq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + sq.type + ": This may produce unexpected results."...
                     );
             end
 
@@ -3597,11 +3597,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isa(us.scan, 'ScanCartesian')
                 xdim = find(us.scan.order == 'X'); % dimension of change in lateral
                 xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
-                xv = swapdim(sub(seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
+                xv = swapdim(sub(sq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
                 xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
                 xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
-                xv = swapdim(seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+                xv = swapdim(sq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
             end
             X = us.scan.size(xdim);
 
@@ -3628,7 +3628,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [a_l(ind0), a_r(ind0)] = deal(1, 0); %  set left to 1, right to 0
 
             % build Tx x Rx apodization matrix
-            apod  = zeros([X, seq.numPulse]); % build in reduced dimensions
+            apod  = zeros([X, sq.numPulse]); % build in reduced dimensions
             alind = sub2ind(size(apod), find(val), lind); % left matrix indices
             arind = sub2ind(size(apod), find(val), rind); % right matrix indices
             apod(alind) = apod(alind) + a_l; % add left apod
@@ -3649,7 +3649,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % elements that are within tol of the focus laterally.
             %
             % If us.scan is a ScanPolar, us.rx must be a TransducerConvex
-            % and us.sequence must be a SequenceRadial. The aperture is
+            % and us.seq must be a SequenceRadial. The aperture is
             % limited to receive elements that are within tol of the focus
             % in azimuth.
             %
@@ -3664,8 +3664,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
             %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
-            %   us = UltrasoundSystem('sequence', seq); % get a default system
-            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %   us = UltrasoundSystem('seq', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
@@ -3695,7 +3695,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if isa(us.scan, 'ScanCartesian')
                 xdim = find(us.scan.order == 'X'); % dimension of change in lateral
                 xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
-                xv = swapdim(sub(us.sequence.focus,1,1), 2, 5); % lateral per transmit 1 x 1 x 1 x 1 x M
+                xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % lateral per transmit 1 x 1 x 1 x 1 x M
                 % soft error on transducer type
                 if isa(us.rx, 'TransducerArray'), else, warning( ...
                         "Expected a TransducerArray but instead got " + class(us.rx) + ": This may produce unexpected results."...
@@ -3704,7 +3704,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elseif isa(us.scan, 'ScanPolar')
                 xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
                 xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
-                xv = swapdim(us.sequence.angles, 2, 5); % angle per transmit 1 x 1 x 1 x 1 x M
+                xv = swapdim(us.seq.angles, 2, 5); % angle per transmit 1 x 1 x 1 x 1 x M
                 % soft error on transducer type
                 if isa(us.rx, 'TransducerConvex'), else, warning( ...
                         "Expected a TransducerArray but instead got " + class(us.rx) + ": This may produce unexpected results."...
@@ -3744,8 +3744,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
             %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
-            %   us = UltrasoundSystem('sequence', seq); % get a default system
-            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %   us = UltrasoundSystem('seq', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
@@ -3824,8 +3824,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
             %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
-            %   us = UltrasoundSystem('sequence', seq); % get a default system
-            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.sequence.c0); % define a point target
+            %   us = UltrasoundSystem('seq', seq); % get a default system
+            %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
@@ -3905,7 +3905,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 self.rx.setCentralFrequency(f(end));
             end
         end
-        function l = get.lambda(self), l = self.sequence.c0 ./ self.fc; end
+        function l = get.lambda(self), l = self.seq.c0 ./ self.fc; end
         function x = get.xdc(self)
             if self.tx == self.rx
                 x = self.rx;
@@ -3914,8 +3914,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
         end
         function set.xdc(self, xdc), [self.tx, self.rx] = deal(xdc); end
-        function c = get.pulse(self), c = self.sequence.pulse; end
-        function set.pulse(self, c), self.sequence.pulse = c; end
+        function c = get.pulse(self), c = self.seq.pulse; end
+        function set.pulse(self, c), self.seq.pulse = c; end
+        function s = get.sequence(self), warning("QUPS:UltrasoundSystem:syntaxDeprecated","UltrasoundSystem.sequence is deprecated. Use the .seq property instead."); s = self.seq; end
+        function set.sequence(self, s), warning("QUPS:UltrasoundSystem:syntaxDeprecated","UltrasoundSystem.sequence is deprecated. Use the .seq property instead."); self.seq = s; end
     end
     
     % recompilation helper functions
@@ -4046,10 +4048,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             src_folder = UltrasoundSystem.getSrcFolder();
             
             % get the other sizes for beamform.m
-            VS = ~(self.sequence.type == "PW"); % whither virtual source
+            VS = ~(self.seq.type == "PW"); % whither virtual source
             Isz = self.scan.size; % size of the scan
             N = self.rx.numel; % number of receiver elements
-            M = self.sequence.numPulse; % number of transmits
+            M = self.seq.numPulse; % number of transmits
             assert(~isnan(M) && M > 0); % M must be defined
             
             % get all source code definitions
@@ -4127,7 +4129,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get the Waveform length
             wv = conv(self.rx.impulse, ...
-                conv(self.tx.impulse, self.sequence.pulse, self.fs), ...
+                conv(self.tx.impulse, self.seq.pulse, self.fs), ...
                 self.fs); % transmit waveform, convolved at US frequency
             wv.fs = self.fs;
             T = length(wv.samples);

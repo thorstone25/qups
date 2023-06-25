@@ -25,8 +25,8 @@ classdef SequenceGeneric < Sequence
         % seq.del  = @(tx, seq) zeros(tx.numel);
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('sequence', seq);
-        % us.sequence.numPulse = us.tx.numel; % set the number of pulses
+        % us = UltrasoundSystem('seq', seq);
+        % us.seq.numPulse = us.tx.numel; % set the number of pulses
         % scat = Scatterers('pos', [0;0;30e-3]);
         %
         % % get the ChannelData
@@ -34,7 +34,7 @@ classdef SequenceGeneric < Sequence
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.sequence.apod = @(tx, seq) eye(tx.numel); % specify FSA apodization
+        % us.seq.apod = @(tx, seq) eye(tx.numel); % specify FSA apodization
         %
         % % beamform and display the image
         % figure;
@@ -58,7 +58,7 @@ classdef SequenceGeneric < Sequence
         % seq = SequenceGeneric('del', del, 'apod', apod);
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('sequence', seq);
+        % us = UltrasoundSystem('seq', seq);
         % scat = Scatterers('pos', [0;0;30e-3]);
         %
         % % get the ChannelData
@@ -66,8 +66,8 @@ classdef SequenceGeneric < Sequence
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.sequence.del  = zeros(chd.N); % set as a FSA sequence
-        % us.sequence.apod =   eye(chd.N); % set as a FSA sequence
+        % us.seq.del  = zeros(chd.N); % set as a FSA sequence
+        % us.seq.apod =   eye(chd.N); % set as a FSA sequence
         %
         % % beamform and display the image
         % figure;

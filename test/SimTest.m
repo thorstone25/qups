@@ -152,14 +152,14 @@ classdef SimTest < matlab.unittest.TestCase
             med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0 * rho_scat]}});
 
             % Construct an UltrasoundSystem object, combining all of these properties
-            us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6);
+            us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 40e6);
 
             % Make the transducer impulse tighter
             us.xdc.fc = us.fs / 8; % 5e6, with numeric precision w.r.t. us.fs
             us.xdc.bw_frac = 0.2; % SIMUS errors above 0.2
             us.xdc.impulse = us.xdc.ultrasoundTransducerImpulse(); 
             % us.xdc.impulse = Waveform.Delta(); 
-            % us.sequence.pulse = Waveform.Delta(); % adding this may make the
+            % us.seq.pulse = Waveform.Delta(); % adding this may make the
             % length of the signal go to 0, causing problems for interpolators
 
             % point per wavelength - aim for >2 for a simulation
@@ -246,7 +246,7 @@ classdef SimTest < matlab.unittest.TestCase
                 case 'SIMUS'  ,       chd = simus           (us, scat, 'periods', 1, 'dims', 3, opts{[1:2]}); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
                 case 'Greens' ,       chd = greens          (us, scat, opts{[3:4]});
                 case 'kWave',         if(gpuDeviceCount && (clu == 0 || isa(clu, 'parallel.Cluster'))), dtype = 'gpuArray-single'; else, dtype = 'single'; end % data type for k-Wave
-                                      T = 2.1 * max(vecnorm(scat.pos - us.xdc.positions,2,1)) / med.c0 + us.sequence.pulse.tend + 2 * us.xdc.impulse.tend; % signal end time
+                                      T = 2.1 * max(vecnorm(scat.pos - us.xdc.positions,2,1)) / med.c0 + us.seq.pulse.tend + 2 * us.xdc.impulse.tend; % signal end time
                                       chd = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [8 64], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype, "T", T); % run locally, and use an FFT friendly PML size
                 otherwise, warning('Simulator not recognized'); return;
             end
@@ -258,7 +258,7 @@ classdef SimTest < matlab.unittest.TestCase
             if sim_name == "kWave",
                 wind = 2*vecnorm(scat.pos) / scat.c0; % 2-way propagation time - use as a search window size
                 buf = 2*us.xdc.impulse.duration ... 2-way impulse
-                    + range(us.sequence.delays(us.tx), 'all') ... delays
+                    + range(us.seq.delays(us.tx), 'all') ... delays
                     + vecnorm(range(us.xdc.positions,2),2,1) ./ scat.c0 ... cross-talk
                     ... + 10e-6 ... % heuristic for things to calm down
                     ;
@@ -280,10 +280,10 @@ classdef SimTest < matlab.unittest.TestCase
             tau = gather(double(chd.time(ip,median(1:size(chd.time,2)), median(1:size(chd.time,3)), 1)));
 
             % true peak time - exactly 20us travel time
-            switch us.sequence.type
+            switch us.seq.type
                 case {'PW', 'FSA'}, t0 = 40e-6;
                 case {'VS'},        t0 = 20e-6;
-                otherwise, error("Unrecognized sequence type " + us.sequence.type + ".");
+                otherwise, error("Unrecognized sequence type " + us.seq.type + ".");
             end
             switch sim_name
                 case "kWave", tol = double(10*(tscan.dz / scat.c0)); % within 10 samples of the true location
@@ -330,12 +330,12 @@ classdef SimTest < matlab.unittest.TestCase
                             chd = gather(greens(us, scat, [1,1], opts{1:2}, 'device', dev , 'tall', usetall));
                             [x, t] = deal(double(gather(chd.data)), gather(double(chd.t0)));
                             test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
-                                "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.sequence.type + " sequence."  ...
+                                "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.seq.type + " sequence."  ...
                                 ));
 
                             % accurate to 10 nanoseconds
                             test.assertEqual(t, to, 'AbsTol', 1e-9, 'RelTol', 1e-9, sprintf(...
-                                "The time axis is different on device " + dev + " and tall set to " + usetall + " for a " + us.sequence.type + " sequence."  ...
+                                "The time axis is different on device " + dev + " and tall set to " + usetall + " for a " + us.seq.type + " sequence."  ...
                                 ));
                         end
                     end

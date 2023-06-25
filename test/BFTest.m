@@ -123,7 +123,7 @@ classdef BFTest < matlab.unittest.TestCase
             end
 
             % Construct an UltrasoundSystem object, combining all of these properties
-            us = UltrasoundSystem('xdc', xdc, 'sequence', seq, 'scan', scan, 'fs', 40e6, 'recompile', false);
+            us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 40e6, 'recompile', false);
 
             % Make the transducer impulse tighter
             us.xdc.numel = 64; % reduce the number of elements
@@ -131,7 +131,7 @@ classdef BFTest < matlab.unittest.TestCase
             us.xdc.bw_frac = 1.5;
             us.xdc.impulse = us.xdc.ultrasoundTransducerImpulse(); 
             % us.xdc.impulse = Waveform.Delta(); 
-            % us.sequence.pulse = Waveform.Delta(); % adding this may make the
+            % us.seq.pulse = Waveform.Delta(); % adding this may make the
             % length of the signal go to 0, causing problems for interpolators
 
             % Simulate a point target
@@ -247,11 +247,11 @@ classdef BFTest < matlab.unittest.TestCase
 
             % exceptions
             % for the Eikonal beamformer, pass if not given FSA delays
-            test.assumeFalse(bf_name == "Eikonal" && us.sequence.type ~= "FSA");
+            test.assumeFalse(bf_name == "Eikonal" && us.seq.type ~= "FSA");
             % if using a frequency domain method, skip half precision - the phase errors are too large
             test.assumeFalse(ismember(bf_name, ["Adjoint"]) && prec == "halfT");
             % weird phase error, but it's not important right now - skip it
-            test.assumeFalse(ismember(bf_name, ["Adjoint"]) && us.sequence.type == "VS"); % && isa(us.xdc, 'TransducerConvex'));
+            test.assumeFalse(ismember(bf_name, ["Adjoint"]) && us.seq.type == "VS"); % && isa(us.xdc, 'TransducerConvex'));
             % is using the adjoint method, pagemtimes,pagetranspose must be supported
             test.assumeTrue( bf_name ~= "Adjoint" || (...
                    logical(exist('pagemtimes'   , 'builtin')) ...

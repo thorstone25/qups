@@ -99,8 +99,8 @@ classdef Sequence < matlab.mixin.Copyable
         % seq.apodization_ = @(tx, seq) hadamard(tx.numel);
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('sequence', seq);
-        % us.sequence.numPulse = us.tx.numel; % set the number of pulses
+        % us = UltrasoundSystem('seq', seq);
+        % us.seq.numPulse = us.tx.numel; % set the number of pulses
         % scat = Scatterers('pos', [0;0;30e-3]);
         % 
         % % get the ChannelData
@@ -108,7 +108,7 @@ classdef Sequence < matlab.mixin.Copyable
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.sequence.apodization_ = []; % clear the encoding
+        % us.seq.apodization_ = []; % clear the encoding
         % 
         % % beamform and display the image
         % figure; 
@@ -132,8 +132,8 @@ classdef Sequence < matlab.mixin.Copyable
         % seq.delays_ = (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('sequence', seq);
-        % us.sequence.numPulse = us.tx.numel; % set the number of pulses
+        % us = UltrasoundSystem('seq', seq);
+        % us.seq.numPulse = us.tx.numel; % set the number of pulses
         % scat = Scatterers('pos', [0;0;30e-3]);
         % 
         % % get the ChannelData
@@ -141,7 +141,7 @@ classdef Sequence < matlab.mixin.Copyable
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.sequence.delays_ = []; % clear the encoding
+        % us.seq.delays_ = []; % clear the encoding
         % 
         % % beamform and display the image
         % figure; 
