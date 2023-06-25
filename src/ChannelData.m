@@ -130,7 +130,7 @@ classdef ChannelData < matlab.mixin.Copyable
             chd = copy(chd);
             [chd.t0, chd.fs, chd.data] = deal(fun(chd.t0), fun(chd.fs), fun(chd.data));
         end
-        function chd = applyFun2Data(chd, fun), chd = copy(chd); chd.data = fun(chd.data); end
+        function chd = applyFun2Data(chd, fun), chd = copy(chd); [chd.data] = dealfun(fun, chd.data); end
         function chd = applyFun2Dim(chd, fun, dim, varargin),
             chd = copy(chd); % copy semantics
             chd.data = matlab.tall.transform(@dimfun, chd.data, varargin{:}); % apply function in dim 1; % set output data
