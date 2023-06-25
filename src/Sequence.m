@@ -445,11 +445,42 @@ classdef Sequence < matlab.mixin.Copyable
             end
         end
 
-        function t0 = t0Offset(self)
-            arguments, self Sequence, end
-            switch self.type
+        function t0 = t0Offset(seq)
+            % T0OFFSET - Compute the start time offset to the origin
+            %
+            % t0 = t0Offset(seq) computes the start time offset t0 for the
+            % Sequence seq. For FSA and PW sequences, t0 is always 0. For
+            % VS sequences, it can be used to shift the spatial location of
+            % t0 from the foci to the origin of the cooredinate system.           
+            % 
+            % Example: 
+            % % get a default system
+            % us = UltrasoundSystem();
+            % 
+            % % create a focused Sequence and a scatterer at the focus
+            % us.seq = Sequence('type', 'VS', 'focus', [0,0,30e-3]', 'c0', 1500);
+            % scat = Scatterers('pos', us.seq.focus,'c0',us.seq.c0);
+            %
+            % % get channel data for a scatterrer at the focus
+            % % t0 == 0 for this data starts at the focus, at [0,0,30e-3]
+            % chd = greens(us, scat);
+            %
+            % % shift t0 == 0 to start at the origin
+            % t0off = swapdim(us.seq.t0Offset(), 2, chd.mdim); % ensure transmits are across the matching dimension
+            % chd_og = copy(chd);
+            % chd_og.t0 = chd_og.t0 - t0off;
+            % 
+            % % show the data with each time scale
+            % figure;
+            % imagesc(chd   , 1, nexttile()); title('Default axis');
+            % imagesc(chd_og, 1, nexttile()); title('Shifted axis');
+            % 
+            % See also SEQUENCE/TYPE
+
+            arguments, seq Sequence, end
+            switch seq.type
                 case 'VS' % for virtual source, t0 is at the foci
-                    t0 = - vecnorm(self.focus, 2,1) ./ self.c0; % (1 x S)
+                    t0 = - vecnorm(seq.focus, 2,1) ./ seq.c0; % (1 x S)
                 otherwise % PW - t0 is at origin; FSA - t0 at the element
                     t0 = 0; % (1 x 1)
             end
