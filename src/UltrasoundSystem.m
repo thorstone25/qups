@@ -1146,6 +1146,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % The default is the current parpool returned by gcp. To use a
             % parallel.ThreadPool with SIMUS, see this <a href="matlab:web('https://github.com/thorstone25/qups/issues/2')">issue</a>.
             % 
+            % chd = SIMUS(...,Name, Value, ...) passes selected additional
+            % Name/Value pairs to simus.m
+            % 
             % Example:
             % 
             % % Simulate some data
@@ -1159,15 +1162,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % imagesc(real(chd));
             % colorbar;
             % 
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX SIMUS
             
             arguments
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate')
-                simus_kwargs.periods (1,1) {mustBePositive} = 1
-                simus_kwargs.dims {mustBeScalarOrEmpty, mustBeMember(simus_kwargs.dims, [2,3])} = []
+                kwargs.periods (1,1) {mustBePositive} = 1
+                kwargs.dims {mustBeScalarOrEmpty, mustBeMember(kwargs.dims, [2,3])} = []
+                simus_kwargs.FullFrequencyDirectivity (1,1) logical = false % use central freq as reference
+                simus_kwargs.ElementSplitting (1,1) {mustBeInteger, mustBePositive} = 1 % element subdivisions
+                simus_kwargs.dBThresh (1,1) {mustBeReal} % = -100 % threshold for computing each frequency
+                simus_kwargs.FrequencyStep (1,1) {mustBeReal} % = df frequency domain resolution                
+                simus_kwargs.WaitBar (1,1) logical = false % add wait bar
             end
 
             % load options
@@ -1187,11 +1195,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 deal(sub(scat.pos,1,1), sub(scat.pos,2,1), sub(scat.pos,3,1), scat.amp), ...
                 scat, 'UniformOutput',false);
             [X,Y,Z,A] = dealfun(@(x) cellfun(@(x){cast(x, 'like', proto)},x), X,Y,Z,A);
-            if isempty(simus_kwargs.dims) 
-                if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), simus_kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
-                else, simus_kwargs.dims = 3; end
+            if isempty(kwargs.dims) 
+                if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
+                else, kwargs.dims = 3; end
             end
-            if simus_kwargs.dims == 2 && any(cellfun(@(Y)any(Y ~= 0, 'all'),Y))
+            if kwargs.dims == 2 && any(cellfun(@(Y)any(Y ~= 0, 'all'),Y))
                 warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
             end
 
@@ -1205,7 +1213,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % set transmit sequence ... the only way we can
             % TODO: forward arguments to transmit parameters
             p.fs    = cast(self.fs, 'like', proto);
-            p.TXnow = simus_kwargs.periods; % number of wavelengths
+            p.TXnow = kwargs.periods; % number of wavelengths
             p.TXapodization = zeros([self.xdc.numel,1], 'like', proto); % set tx apodization
             p.RXdelay = zeros([self.xdc.numel,1], 'like', proto); % receive delays (none)
             
@@ -1218,17 +1226,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 end 
             end
 
+            % get transducer offset to offset positions
+            off = -self.xdc.offset;
+            if isa(self.xdc, 'TransducerConvex')
+                off(3) = off(3) + range(sub(self.xdc.positions,3,1)); % offset to the chord
+            end
+
             % set options 
-            % TODO: forward Name-Value pair arguments
-            opt = struct( ...
-                'ParPool', false, ... % parpool on pfield.m
-                'FullFrequencyDirectivity', false, ... % use central freq as reference
-                'ElementSplitting', 1, ... % element subdivisions
-                'WaitBar', false, ... % add wait bar
-                'dBThresh', -100 ... % threshold for computing each frequency
+            simus_kwargs.ParPool = false; % parpool within pfield.m
+            ... opt = struct( ...
+                ... 'ParPool', false, ... % parpool on pfield.m
+                ... 'FullFrequencyDirectivity', false, ... % use central freq as reference
+                ... 'ElementSplitting', 1, ... % element subdivisions
+                ... 'WaitBar', false, ... % add wait bar
+                ... 'dBThresh', -100 ... % threshold for computing each frequency
                 ... 'FrequencyStep', df, ... % freuqency domain resolution
                 ... 'CallFun', 'simus' ... % hack: use the simulation portion of the code
-                );
+                ... );
 
             % select the computing environment
             parenv = kwargs.parenv;
@@ -1239,7 +1253,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % call the sim: FSA approach
             [M, F] = deal(self.xdc.numel, numel(scat)); % splice
             for f = F:-1:1 % per scat
-                argf = {X{f},Y{f},Z{f},A{f},zeros([M,1]),p(f),opt}; % args per scat
+                argf = {X{f}+off(1),Y{f}+off(2),Z{f}+off(3),A{f},zeros([M,1]),p(f),simus_kwargs}; % args per scat
                 parfor (m = 1:M, pclu) % use parallel rules, but execute on main thread
                     args = argf; % copy settings for this frame
                     args{6}.TXapodization(m) = 1; % transmit only on element m
