@@ -1351,10 +1351,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 parenv = 0; 
             end
 
+            % get the transducer coordinate offset
+            if self.tx == self.rx || isequal(self.tx.offset, self.rx.offset)
+                off = - self.tx.offset; % offset to adjust scatterer positions instead
+            else
+                error("QUPS:CALC_SCAT_MULTI:TransducerOffsetMismatch", ...
+                    "Cannot simulate a transmitter with offset " + self.tx.offset ...
+                    + " with a receiver with offset " + self.rx.offset + "." ...
+                    );
+            end
+
             % splice
             [M, F] = deal(self.seq.numPulse, numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
+            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos + off}, {t.amp}), scat); % splice
 
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool'), 
@@ -1499,14 +1509,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 parenv = 0; 
             end
 
+            % get the transducer coordinate offset
+            if self.tx == self.rx || isequal(self.tx.offset, self.rx.offset)
+                off = - self.tx.offset; % offset to adjust scatterer positions instead
+            else
+                error("QUPS:CALC_SCAT_MULTI:TransducerOffsetMismatch", ...
+                    "Cannot simulate a transmitter with offset " + self.tx.offset ...
+                    + " with a receiver with offset " + self.rx.offset + "." ...
+                    );
+            end
+
+            % splice
             [M, F] = deal(size(tau_tx,2), numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
-            
+            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos + off}, {t.amp}), scat); % splice
+
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool')
                 cfun = @parallel.pool.Constant;
-            else 
+            else
                 cfun = @(x)struct('Value', x);
                 [pos, amp] = deal({pos},{amp}); % for struct to work on cell arrays
             end
