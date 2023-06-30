@@ -38,7 +38,7 @@ ind = repmat(ind, rsz); % make full
 lind = sub2ind(size(x), i{1:dim-1}, ind, i{dim+1:end}); % linear index
 val = ~isnan(lind); % invalid indices 
 y(val) = x(lind(val)); % index good indices
-y(~val) = missing; % propagate missing
+if any(~val,'all'), y(~val) = missing; end % propagate missing
 y = reshape(y, size(lind));
 
 
