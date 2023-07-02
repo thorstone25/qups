@@ -160,7 +160,6 @@ classdef SequenceRadial < Sequence
             end
             switch self.type
                 case 'FSA'
-                    % todo: use apodization
                     a = eye(size(tx.positions(),2)); % N x N identity
                 otherwise
                     a = ones([size(tx.positions(),2) self.numPulse]); % N x S

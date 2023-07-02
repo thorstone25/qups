@@ -2357,7 +2357,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             %     b{f} = k.feval(PRE_ARGS{:}, chd.data(:,:,:,f), POST_ARGS{:});
             %
-            % The ChannelData chd must have the ord == 'TNM'. If chd.data
+            % The ChannelData chd must have the order == 'TNM'. If chd.data
             % is a gpuArray, it must have the same type as was used to
             % create the parallel.gpu.CUDAKernel k. This is useful for
             % processing many identical frames with minimal overhead.
