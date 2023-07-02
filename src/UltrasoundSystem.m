@@ -2554,7 +2554,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % resample only within the window where we currently have data.
-            i = logical(apod) + false(size(tau)); % non-zero apodization indices (broadcasted)
+            i = logical(apod) | false(size(tau)); % non-zero apodization indices (broadcasted)
             nmin = floor(min(tau(i),[],'all','omitnan') .* chd.fs); % minimum sample time
             nmax =  ceil(max(tau(i),[],'all','omitnan') .* chd.fs); % maximum sample time
             chd.t0 = chd.t0 + nmin / chd.fs; % shift time axes forwards to meet minimum sample time
