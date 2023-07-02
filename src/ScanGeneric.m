@@ -194,12 +194,15 @@ classdef ScanGeneric < Scan
 
     % USTB interface methods
     methods
-        function scan = getUSTBScan(scan)
-            error('Not implemented.');
-            scan = uff.scan(...
-                'u_axis', scan.u, ...
-                'w_axis', scan.w ...
-                );
+        function uscan = QUPS2USTB(scan)
+            uscan = uff.scan('xyz', scan.pos(:,:)');
+        end
+    end
+
+    methods(Static)
+        function scan = UFF(uscan)
+            arguments, uscan uff.scan; end
+            scan = arrayfun(@(u) ScanGeneric("pos",u.xyz','u',[],'v',[],'w',[]), uscan);
         end
     end
 

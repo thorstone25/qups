@@ -325,7 +325,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % Transducer xdc. USTB must be on the path.
         %
         % See also UFF.PROBE
-        probe = getUSTBProbe(xdc); % get the USTB probe object
+        probe = QUPS2USTB(xdc); % get the USTB probe object
     end
 
     % Verasonics conversion functions
@@ -360,15 +360,23 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     % UFF constructor
-    methods (Abstract)
+    methods(Static)
         % UFF - Construct a Transducer from a UFF probe
         %
         % xdc = TRANSDUCER.UFF(probe) converts the uff.probe probe to a
-        % Transducer xdc. Use TRANSDUCERARRAY.UFF for a uff.linear_array or
-        % use TRANSDUCERCONVEX.UFF for a uff.curvilinear_array.
+        % Transducer xdc.
         %
-        % See also GETUSTBPROBE
-        xdc = UFF(probe)
+        % See also TRANSDUCER.QUPS2USTB
+        function xdc = UFF(probe)
+            arguments, probe uff.probe; end
+            switch class(probe)
+                case 'uff.linear_array',     xdc = TransducerArray.UFF(probe);
+                case 'uff.curvilinear_array',xdc = TransducerConvex.UFF(probe);
+                case 'uff.matrix_array',     xdc = TransducerMatrix.UFF(probe);
+                case 'uff.probe',            xdc = TransducerGeneric.UFF(probe);
+                otherwise,                   xdc = TransducerGeneric.UFF(probe);
+            end
+        end
     end
 
     % kWave functions (old)

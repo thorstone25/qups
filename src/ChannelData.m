@@ -70,28 +70,27 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % conversion functions
     methods
-        function channel_data = getUSTBChannelData(chd, seq, xdc, fmod)
-            % GETUSTBCHANNELDATA - Create a USTB channel data object
+        function uchannel_data = QUPS2USTB(chd, seq, xdc, fmod)
+            % QUPS2USTB - Create a USTB channel data object
             % 
-            % channel_data = getUSTBChannelData(chd, seq, xdc) 
-            % creates a USTB compatible uff.channel_data object from the 
-            % ChannelData chd, Sequence seq, and Tranducer xdc. USTB must 
-            % be on the path.
+            % channel_data = QUPS2USTB(chd, seq, xdc) creates a USTB 
+            % compatible uff.channel_data object from the ChannelData chd, 
+            % Sequence seq, and Tranducer xdc. USTB must be on the path.
             %
-            % channel_data = getUSTBChannelData(..., fmod) sets the
-            % modulation frequency to fmod. The default is 0.
+            % channel_data = QUPS2USTB(..., fmod) sets the modulation 
+            % frequency to fmod. The default is 0.
             % 
             % 
             if nargin < 4, fmod = 0; end
             chd = rectifyDims(chd); % make sure it's in order 'TNM' first
-            channel_data = uff.channel_data(...
+            uchannel_data = uff.channel_data(...
                 'sampling_frequency', chd.fs, ...
                 'sound_speed', seq.c0, ...
                 'initial_time', 0, ...
                 'modulation_frequency', fmod, ...
-                'sequence', seq.getUSTBSequence(xdc, chd.t0), ...
-                'probe', xdc.getUSTBProbe(), ...
-                'data', chd.data(:,:,:,:) ... limit to 4 dimensions
+                'sequence', seq.QUPS2USTB(xdc, chd.t0), ...
+                'probe', xdc.QUPS2USTB(), ...
+                'data', gather(chd.data(:,:,:,:)) ... limit to 4 dimensions
                 );
         end
     
@@ -126,7 +125,35 @@ classdef ChannelData < matlab.mixin.Copyable
                 [chd.fs, chd.t0] = deal(chd.fs/w, w*chd.t0);
             end
         end
+    end
 
+    methods(Static)
+        function chd = UFF(uchannel_data, seq, xdc)
+            arguments
+                uchannel_data (1,1) uff.channel_data
+                seq (1,1) Sequence = Sequence.UFF(uchannel_data.sequence, uchannel_data.sound_speed);
+                xdc Transducer {mustBeScalarOrEmpty} = Transducer.UFF(uchannel_data.probe); % only needed for FSA
+            end
+            
+            % get the start time in QUPS format
+            t0 = [uchannel_data.sequence.delay];
+            switch seq.type
+                case 'FSA', t0 = t0 - vecnorm(xdc.positions,2,1) ./ seq.c0; % delay transform from element to origin for FSA
+                case 'VS',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
+                case 'PW' % no action necessary
+            end
+
+            % collapse if unique
+            if isalmostn(t0, repmat(mean(t0), size(t0))), t0 = mean(t0); end
+
+            % Create the ChannelData
+            chd = ChannelData( ...
+                't0', swapdim(t0,2,3), ...
+                'fs', uchannel_data.sampling_frequency, ...
+                'data', uchannel_data.data, ...
+                'order', 'TNM' ... 
+                );
+        end
     end
 
     % helper functions

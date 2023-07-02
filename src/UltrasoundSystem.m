@@ -696,6 +696,34 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
 
+    % USTB interop
+    methods
+        function [uchannel_data, uscan] = QUPS2USTB(us, chd, fmod)
+            arguments
+                us (1,1) UltrasoundSystem
+                chd (1,1) ChannelData
+                fmod (1,1) {mustBeReal, mustBeFinite} = 0
+            end
+            uchannel_data = QUPS2USTB(chd, us.seq, us.xdc, fmod);
+            uscan         = QUPS2USTB(us.scan);
+        end
+    end
+
+    methods(Static)
+        function [us, chd] = UFF(uchannel_data, uscan)
+            arguments
+                uchannel_data (1,1) uff.channel_data
+                uscan (1,1) uff.scan
+            end
+            fs = uchannel_data.sampling_frequency; % sampling frequency
+            seq = Sequence.UFF(uchannel_data.sequence, uchannel_data.sound_speed); % Sequence
+            xdc = Transducer.UFF(uchannel_data.probe); % Transducer
+            us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'fs', fs);
+            if nargin >= 2, us.scan = Scan.UFF(uscan); end
+            if nargout >= 2, chd = ChannelData.UFF(uchannel_data, us.seq, us.xdc); end % data
+        end
+    end
+    
     % Fullwave calls
     methods
         function conf = fullwaveConf(self, medium, sscan, kwargs)

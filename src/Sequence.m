@@ -269,54 +269,120 @@ classdef Sequence < matlab.mixin.Copyable
     
     % conversion methods
     methods
-        function seq = getUSTBSequence(self, xdc, t0)
-            % GETUSTBSEQUENCE - Get a USTB/UFF uff.sequence object
+        function sequence = QUPS2USTB(seq, xdc, t0)
+            % QUPS2USTB - Get a USTB/UFF uff.sequence object
             %
-            % seq = GETUSTBSEQUENCE(self, xdc, t0) creates a USTB
-            % compatible sequence object from the QUPS Sequence object
+            % sequence = QUPS2USTB(seq, xdc, t0) creates a USTB
+            % compatible uff.wave array from the QUPS Sequence object seq
             % where xdc is a QUPS transducer and t0 is the start time in
             % the QUPS coordinate system.
             %
-            % See also TRANSDUCER/GETUSTBPROBE
+            % See also TRANSDUCER/QUPS2USTB CHANNELDATA/QUPS2USTB
             arguments
-                self (1,1) Sequence
+                seq (1,1) Sequence
                 xdc (1,1) Transducer
-                t0 (1,1) double % bulk offset of the data
+                t0 (1,:) double = 0 % bulk offset of the data
             end
 
             % initialize all wave objects
-            N = self.numPulse;
-            for n = N:-1:1, seq(n) = uff.wave(); end
-            
+            N = seq.numPulse;
+            for n = N:-1:1, sequence(n) = uff.wave(); end
+
             % set the common settings
-            [seq.probe] = deal(xdc.getUSTBProbe());
-            [seq.sound_speed] = deal(self.c0);
+            [sequence.probe] = deal(xdc.QUPS2USTB());
+            [sequence.sound_speed] = deal(seq.c0);
             
-            switch self.type
+            switch seq.type
                 case {'PW'}
-                    [seq.wavefront] = deal(uff.wavefront.plane);
-                    theta = atan2(self.focus(1,:),self.focus(3,:));
-                    phi   = atan2(self.focus(2,:),hypot(self.focus(1,:),self.focus(3,:)));
-                    for n=1:N, seq(n).source = uff.point(...
+                    [sequence.wavefront] = deal(uff.wavefront.plane);
+                    theta = atan2(seq.focus(1,:),seq.focus(3,:));
+                    phi   = atan2(seq.focus(2,:),hypot(seq.focus(1,:),seq.focus(3,:)));
+                    for n=1:N, sequence(n).source = uff.point(...
                             'azimuth', theta(n), ...
                             'elevation', phi(n), ...
                             'distance', inf ...
                             );
                     end
-                    [seq.delay] = deal(t0);
                     
                 case {'FSA'}
                     p = xdc.positions();
-                    [seq.wavefront] = deal(uff.wavefront.spherical);
-                    for n=1:N, seq(n).source.xyz = p(:,n).'; end
-                    for n=1:N, seq(n).delay = p(:,n)/self.c0 + t0; end
+                    [sequence.wavefront] = deal(uff.wavefront.spherical);
+                    for n=1:N, sequence(n).source.xyz = p(:,n).'; end
+                    t0 = t0 + vecnorm(p,2,1) ./ seq.c0; % delay transform from element to origin for FSA
                     
                 case {'VS'}
-                    [seq.wavefront] = deal(uff.wavefront.spherical);
-                    for n=1:N, seq(n).source.xyz = self.focus(:,n).'; end
-                    [seq.delay] = deal(t0);
-                    
+                    [sequence.wavefront] = deal(uff.wavefront.spherical);
+                    for n=1:N, sequence(n).source.xyz = seq.focus(:,n).'; end
+                    t0 = t0 + vecnorm(seq.focus,2,1) ./ seq.c0; % transform for focal point to origin
             end   
+
+            % set the start time
+            t0 = num2cell(t0);
+            [sequence.delay] = deal(t0{:});
+        end
+    end
+
+    methods(Static)
+        function seq = UFF(sequence, c0)
+            arguments
+                sequence (1,:) uff.wave
+                c0 (1,1) {mustBeReal}
+            end
+
+            wvt = unique([sequence.wavefront]);
+            if(~isscalar(wvt)), error( ...
+                    'QUPS:ChannelData:nonUniqueWavefront', ...
+                    'The uff.channel_data object must contain a unique wavefront type.'...
+                    );
+            end
+
+            prb = unique([sequence.probe]);
+            if(~isscalar(prb)), error( ...
+                    'QUPS:ChannelData:nonUniqueProbe', ...
+                    'The uff.channel_data must contain a unique probe.'...
+                    );
+            end
+            
+            % get the list of sources
+            p0 = [sequence.source];
+
+            % get the sequence type
+            switch wvt 
+                case uff.wavefront.plane
+                    type = 'PW'; 
+                
+                case uff.wavefront.spherical
+                    pn = gather(single(prb.geometry(:,1:3)));
+                    pm = gather(single(cat(1, p0.xyz)));
+                    pd = [p0.distance];
+                    if(~(all(isinf(pd)) || all(~isinf(pd)))), error( ...
+                        'QUPS:ChannelData:nonUniqueWavefront', ...
+                        'The uff.channel_data object contains heterogeneous wavefront types.'...
+                        );
+                    end
+                    if all(isinf(pd)), type = 'PW';
+                    elseif isalmostn(pn, pm), type = 'FSA';
+                    else, type = 'VS';
+                    end
+                otherwise
+                    error( ...
+                        'QUPS:ChannelData:unknownWavefront', ...
+                        "The uff.channel_data object uses unrecognized wavefront type '" + wvt + "'." ...
+                        );
+            end
+
+            switch type
+                case 'VS'
+                    seq = Sequence('type', type, 'c0', c0, 'focus', cat(1,p0.xyz)');
+                case 'FSA'
+                    seq = Sequence('type', type, 'c0', c0, 'numPulse', numel(sequence));
+                case 'PW'
+                    th  = [p0.azimuth];
+                    phi = [p0.elevation];
+                    nf = [sin(th).*cos(phi); cos(0).*sin(phi); cos(th).*cos(phi)];
+                    seq = SequenceRadial('type', type, 'c0', c0, 'focus', nf, 'apex', [0;0;0]);     
+            end
+
         end
     end
     

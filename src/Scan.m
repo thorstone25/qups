@@ -30,16 +30,36 @@ classdef Scan < matlab.mixin.Copyable
         nPix        % total number of pixels
     end
     
-    % get/set & constructor
+    % USTB interop
     methods(Abstract)
-        % GETUSTBSCAN - Return a USTB/UFF compatible uff.scan object
+        % QUPS2USTB - Return a USTB/UFF compatible uff.scan object
         %
-        % uscan = GETUSTBSCAN(scan) returns a uff.scan object
+        % uscan = QUPS2USTB(scan) returns a uff.scan object
         %
         % See also UFF.SCAN
-        uscan = getUSTBScan(scan)
+        uscan = QUPS2USTB(scan)
     end
         
+    % UFF constructor
+    methods(Static)
+        % UFF - Construct a Scan from a UFF scan
+        %
+        % scan = Scan.UFF(uscan) converts the uff.scan uscan to a Scan.
+        %
+        % See also SCAN.QUPS2USTB
+        function scan = UFF(uscan)
+            arguments, uscan uff.scan; end
+            switch class(uscan)
+                case 'uff.linear_scan',         scan = ScanCartesian.UFF(uscan);
+                case 'uff.sector_scan',         scan = ScanPolar.UFF(uscan);
+                case 'uff.linear_3D_scan',      scan = ScanGeneric.UFF(uscan);
+                case 'uff.linear_scan_rotated', scan = ScanGeneric.UFF(uscan);
+                case 'uff.scan',                scan = ScanGeneric.UFF(uscan);
+                otherwise,                      scan = ScanGeneric.UFF(uscan);
+            end
+        end
+    end
+
     % imaging computations
     methods(Abstract)
         % GETIMAGINGGRID - get the multi-dimensional grid for imaging

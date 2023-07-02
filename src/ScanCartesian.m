@@ -70,11 +70,17 @@ classdef ScanCartesian < Scan
 
     % USTB interface methods
     methods
-        function scan = getUSTBScan(self)
-            scan = uff.linear_scan(...
-                'x_axis', self.x, ...
-                'z_axis', self.z ...
+        function uscan = QUPS2USTB(scan)
+            uscan = uff.linear_scan(...
+                'x_axis', scan.x(:), ...
+                'z_axis', scan.z(:) ...
                 );
+        end
+    end
+    methods(Static)
+        function scan = UFF(uscan)
+            arguments, uscan uff.linear_scan; end
+            scan = arrayfun(@(u)ScanCartesian('x', u.x_axis, 'z', u.z_axis, 'y', 0), uscan);
         end
     end
 
