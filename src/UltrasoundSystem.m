@@ -317,6 +317,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 im_args.?matlab.graphics.primitive.Line
             end
 
+            hstate = ax.NextPlot;
             hold(ax, 'on');
             set(ax, 'ydir', 'reverse');
             title(ax, 'Geometry');
@@ -337,6 +338,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             legend(ax, h);
             grid(ax, 'on'); 
             grid(ax, 'minor')
+            ax.NextPlot = hstate;
         end
     end
 
