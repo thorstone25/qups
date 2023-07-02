@@ -179,34 +179,34 @@ classdef ChannelData < matlab.mixin.Copyable
     % data type overloads
     methods
         function chd = gather(chd)  , chd = applyFun2Data(chd, @gather); end
-        % gather the underlying data
-        function chd = gpuArray(chd), chd = applyFun2Data (chd, @gpuArray); end
+        % return the underlying data to it's native base type
+        function chd = gpuArray(chd), chd = applyFun2Data(chd, @gpuArray); end
         % cast underlying type to gpuArray
-        function chd = tall(chd)    , chd = applyFun2Data (chd, @tall); end
+        function chd = tall(chd)    , chd = applyFun2Data(chd, @tall); end
         % cast underlying type to tall
-        function chd = sparse(chd)  , chd = applyFun2Data (chd, @sparse); end
+        function chd = sparse(chd)  , chd = applyFun2Data(chd, @sparse); end
         % cast underlying type to sparse
-        function chd = doubleT(chd) , chd = applyFun2Data (chd, @double); end
+        function chd = doubleT(chd) , chd = applyFun2Data(chd, @double); end
         % cast underlying type to double
-        function chd = singleT(chd) , chd = applyFun2Data (chd, @single); end
+        function chd = singleT(chd) , chd = applyFun2Data(chd, @single); end
         % cast underlying type to single
-        function chd =   halfT(chd) , chd = applyFun2Data (chd, @halfT); end
+        function chd =   halfT(chd) , chd = applyFun2Data(chd, @halfT); end
         % cast underlying type to half
-        function chd =  int64T(chd) , chd = applyFun2Data (chd, @int64); end
+        function chd =  int64T(chd) , chd = applyFun2Data(chd, @int64); end
         % cast underlying type to int64
-        function chd = uint64T(chd) , chd = applyFun2Data (chd, @uint64); end
+        function chd = uint64T(chd) , chd = applyFun2Data(chd, @uint64); end
         % cast underlying type to uint64
-        function chd =  int32T(chd) , chd = applyFun2Data (chd, @int32); end
+        function chd =  int32T(chd) , chd = applyFun2Data(chd, @int32); end
         % cast underlying type to int32
-        function chd = uint32T(chd) , chd = applyFun2Data (chd, @uint32); end
+        function chd = uint32T(chd) , chd = applyFun2Data(chd, @uint32); end
         % cast underlying type to uint32
-        function chd =  int16T(chd) , chd = applyFun2Data (chd, @int16); end
+        function chd =  int16T(chd) , chd = applyFun2Data(chd, @int16); end
         % cast underlying type to int16
-        function chd = uint16T(chd) , chd = applyFun2Data (chd, @uint16); end
+        function chd = uint16T(chd) , chd = applyFun2Data(chd, @uint16); end
         % cast underlying type to uint16
-        function chd =   int8T(chd) , chd = applyFun2Data (chd, @int8); end
+        function chd =   int8T(chd) , chd = applyFun2Data(chd, @int8); end
         % cast underlying type to int8
-        function chd =  uint8T(chd) , chd = applyFun2Data (chd, @uint8); end
+        function chd =  uint8T(chd) , chd = applyFun2Data(chd, @uint8); end
         % cast underlying type to uint8
         function T = classUnderlying(chd), try T = classUnderlying(chd.data); catch, T = class(chd.data); end, end % revert to class if undefined
         % underlying class of the data or class of the data
@@ -593,14 +593,14 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs, chd.data] = tmp{:};
 
         end
-        function chd = real(chd)    , chd = applyFun2Data (chd, @real); end
-        function chd = imag(chd)    , chd = applyFun2Data (chd, @imag); end
-        function chd = abs(chd)     , chd = applyFun2Data (chd, @abs); end
-        function chd = angle(chd)   , chd = applyFun2Data (chd, @angle); end
-        function chd = rad2deg(chd) , chd = applyFun2Data (chd, @rad2deg); end
-        function chd = deg2rad(chd) , chd = applyFun2Data (chd, @deg2rad); end
-        function chd = mag2db(chd)  , chd = applyFun2Data (chd, @mag2db); end
-        function chd = mod2db(chd)  , chd = applyFun2Data (chd, @mod2db); end
+        function chd = real(chd)    , chd = applyFun2Data(chd, @real); end
+        function chd = imag(chd)    , chd = applyFun2Data(chd, @imag); end
+        function chd = abs(chd)     , chd = applyFun2Data(chd, @abs); end
+        function chd = angle(chd)   , chd = applyFun2Data(chd, @angle); end
+        function chd = rad2deg(chd) , chd = applyFun2Data(chd, @rad2deg); end
+        function chd = deg2rad(chd) , chd = applyFun2Data(chd, @deg2rad); end
+        function chd = mag2db(chd)  , chd = applyFun2Data(chd, @mag2db); end
+        function chd = mod2db(chd)  , chd = applyFun2Data(chd, @mod2db); end
     end
 
     % DSP helpers
@@ -1088,9 +1088,9 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % sizing functions (used to control tall behaviour and reshaping)
     properties(Hidden, Dependent)
-        tdim
-        ndim
-        mdim
+        tdim % time dimension
+        ndim % receiver dimension
+        mdim % transmitter dimension
     end
 
     % data indexing functions
