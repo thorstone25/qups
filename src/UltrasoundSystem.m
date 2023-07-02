@@ -2542,21 +2542,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd = copy(chd);
 
             % dist/time to receiver
-            tau_focal = - seq.delays(self.tx); % M x M'
-            apod      =   seq.apodization(self.tx); % [1|M] x [1|M']
+            tau  = - seq.delays(self.tx); % M x M'
+            apod =   seq.apodization(self.tx); % [1|M] x [1|M']
 
             % nothing to do for (true) FSA acquisitions: all 0 delays
             % identity matrix apodization
             switch seq.type, case 'FSA', 
-                if ~nnz(tau_focal) && isequal(apod, eye(self.tx.numel)), return; end, 
+                if ~nnz(tau) && isequal(apod, eye(self.tx.numel)), return; end, 
             end
 
             % resample only within the window where we currently have data.
-            nmin = floor(min(tau_focal,[],'all') .* chd.fs); % minimum sample time
-            nmax =  ceil(max(tau_focal,[],'all') .* chd.fs); % maximum sample time
-            chd.t0    =    chd.t0 + nmin / chd.fs; % shift time axes forwards to meet minimum sample time
-            tau_focal = tau_focal - nmin / chd.fs; % shift delays backwards to meet time axes
-            chd = zeropad(chd,0,(nmax - nmin) + kwargs.buffer); % expand time axes to capture all data
+            i = logical(apod) + false(size(tau)); % non-zero apodization indices (broadcasted)
+            nmin = floor(min(tau(i),[],'all','omitnan') .* chd.fs); % minimum sample time
+            nmax =  ceil(max(tau(i),[],'all','omitnan') .* chd.fs); % maximum sample time
+            chd.t0 = chd.t0 + nmin / chd.fs; % shift time axes forwards to meet minimum sample time
+            tau = tau - nmin / chd.fs; % shift delays backwards to meet time axes
+            chd = zeropad(chd, 0, (nmax - nmin) + kwargs.buffer); % expand time axes to capture all data
             
             % legacy: pick new signal length
             L = kwargs.length;
@@ -2577,11 +2578,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % align dimensions
             D = 1+max(3,ndims(chd.data)); % get a free dimension for M'
             assert(D > chd.mdim, "Transmit must be in the first 3 dimensions (" + chd.mdim + ").");
-            tau_focal = swapdim(swapdim(tau_focal,2,D),1,chd.mdim); % move data
-            apod      = swapdim(swapdim(apod     ,2,D),1,chd.mdim); % move data
+            tau  = swapdim(tau ,[1 2],[chd.mdim D]); % move data
+            apod = swapdim(apod,[1 2],[chd.mdim D]); % move data
 
             % sample and store
-            z = chd.sample(chd.time - tau_focal, kwargs.interp, apod, chd.mdim); % sample (perm(T' x N x 1) x F x ... x M')
+            z = chd.sample(chd.time - tau, kwargs.interp, apod, chd.mdim); % sample (perm(T' x N x 1) x F x ... x M')
             z = swapdim(z, chd.mdim, D); % replace transmit dimension (perm(T' x N x M') x F x ...)
             chd.data = z; % store output channel data % (perm(T' x N x M') x F x ...)
         end
