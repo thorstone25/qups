@@ -41,7 +41,7 @@ classdef ScanPolar < Scan
     % get/set & constructor
     methods
         % constructor
-        function self = ScanPolar(varargin)
+        function scan = ScanPolar(kwargs)
             % SCANPOLAR - Construct a ScanCartesian
             %
             % scan = SCANPOLAR(Name,Value,...) constructs a
@@ -50,19 +50,12 @@ classdef ScanPolar < Scan
             % See also SCANCARTESIAN
 
             % initialize with name-value pairs
-            for i = 1:2:nargin
-                self.(varargin{i}) = varargin{i+1};
-            end            
+            arguments, kwargs.?ScanPolar; end
+            for f = string(fieldnames(kwargs))'
+                scan.(f) = kwargs.(f);
+            end
         end
         
-        % image defs
-        function scan = getUSTBScan(self)
-            warning('Not tested! Please edit the code here.');
-            scan = uff.sector_scan(...
-                'azimuth_axis', deg2rad(self.a),...
-                'depth_axis'  , self.r ...
-                );
-        end
         % scaling
         function self = scale(self, kwargs)
             arguments
