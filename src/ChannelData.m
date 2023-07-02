@@ -30,7 +30,7 @@ classdef ChannelData < matlab.mixin.Copyable
     properties
         data    % channel data (T x N x M x F x ...)
         t0 = 0  % start time (1 x 1 x [1|M] x [1|F] x ...)
-        fs = 1  % sampling freuqency (scalar)
+        fs = 1  % sampling frequency (scalar)
     end
     properties(Access=public)
         ord = 'TNM'; % data order: T: time, N: receive, M: transmit
@@ -48,7 +48,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % constructor/destructor
     methods
-        function self = ChannelData(varargin)
+        function chd = ChannelData(varargin)
             % CHANNELDATA - Construct a ChannelData object
             %
             % ChannelData(Name1, Value1, ...) constructs a channel data
@@ -57,14 +57,14 @@ classdef ChannelData < matlab.mixin.Copyable
             % 
 
             % set each property by name-value pairs
-            for i = 1:2:nargin, self.(lower(varargin{i})) = varargin{i+1}; end
+            for i = 1:2:nargin, chd.(lower(varargin{i})) = varargin{i+1}; end
         end
     end
     
     % copyable overloads
     methods(Access=protected)
-        function chd = copyElement(self)
-            chd = ChannelData('data',self.data,'fs', self.fs,'t0',self.t0,'ord',self.ord);
+        function chd = copyElement(chd)
+            chd = ChannelData('data',chd.data,'fs', chd.fs,'t0',chd.t0,'ord',chd.ord);
         end
     end
 
@@ -176,13 +176,13 @@ classdef ChannelData < matlab.mixin.Copyable
         % cast underlying type to int8
         function chd =  uint8T(chd) , chd = applyFun2Data (chd, @uint8); end
         % cast underlying type to uint8
-        function T = classUnderlying(self), try T = classUnderlying(self.data); catch, T = class(self.data); end, end % revert to class if undefined
+        function T = classUnderlying(chd), try T = classUnderlying(chd.data); catch, T = class(chd.data); end, end % revert to class if undefined
         % underlying class of the data or class of the data
-        function T = underlyingType(self), try T = underlyingType(self.data); catch, T = class(self.data); end, end % R2020b+ overload
+        function T = underlyingType(chd), try T = underlyingType(chd.data); catch, T = class(chd.data); end, end % R2020b+ overload
         % underlying type of the data or class of the data
-        function tf = isreal(self), tf = isreal(self.data); end
+        function tf = isreal(chd), tf = isreal(chd.data); end
         % whether the underlying data is real
-        function tf = istall(self), tf = istall(self.data); end
+        function tf = istall(chd), tf = istall(chd.data); end
         % whether the underlying data is tall
     end
     
@@ -881,13 +881,13 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % plotting and display
     methods
-        function h = imagesc(self, m, varargin, im_args)
+        function h = imagesc(chd, m, varargin, im_args)
             % IMAGESC - Overload of imagesc function
             %
-            % h = IMAGESC(self, m) displays transmit m of the channel data 
+            % h = IMAGESC(chd, m) displays transmit m of the channel data 
             % and returns the handle h.
             %
-            % h = IMAGESC(self, m, ax) uses the axes ax instead of the axes
+            % h = IMAGESC(chd, m, ax) uses the axes ax instead of the axes
             % returned by gca. 
             %
             % h = IMAGESC(..., 'YData', yax) uses the yax for the
@@ -911,8 +911,8 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also IMAGESC
             arguments
-                self ChannelData
-                m {mustBeInteger} = floor((self.M+1)/2); 
+                chd ChannelData
+                m {mustBeInteger} = floor((chd.M+1)/2); 
             end
             arguments(Repeating)
                 varargin
@@ -929,23 +929,23 @@ classdef ChannelData < matlab.mixin.Copyable
             end
 
             % get full data sizing
-            dims = gather(max(3, [ndims(self.data)])); % (minimum) number of dimensions
-            idims = [self.tdim, self.ndim]; % image dimensions
+            dims = gather(max(3, [ndims(chd.data)])); % (minimum) number of dimensions
+            idims = [chd.tdim, chd.ndim]; % image dimensions
             fdims = setdiff(1:dims, idims); % frame dimensions
-            dsz = gather(size(self.data, fdims)); % full size - data dimensions
-            tsz = gather(size(self.time, fdims));
+            dsz = gather(size(chd.data, fdims)); % full size - data dimensions
+            tsz = gather(size(chd.time, fdims));
 
             % we index the data linearly, but the time axes may be
             % implicitly broadcasted: we can use ind2sub to recover it's
             % sizing
             ix = cell([numel(fdims), 1]); % indices of the frame for the data
             [ix{:}] = ind2sub(dsz, gather(m)); % get cell array of indices
-            it = gather(min([ix{:}], tsz)); % restrict to size of self.time
+            it = gather(min([ix{:}], tsz)); % restrict to size of chd.time
             ix = cellfun(@gather, ix, 'UniformOutput', false); % enforce on CPU
 
             % select the transmit/frame - we can only show first 2
             % dimensions, time x rx
-            d = gather(sub(self.data, ix, fdims));
+            d = gather(sub(chd.data, ix, fdims));
             d = permute(d, [idims, fdims]); % move image dimensions down 
 
             % choose to show real part or dB magnitude
@@ -954,10 +954,10 @@ classdef ChannelData < matlab.mixin.Copyable
             if ~isreal(d), d = mod2db(d); end % assume complex data should be shown in dB
 
             % get the time axes for this frame
-            t = gather(double(sub(self.time, num2cell(it), fdims)));
+            t = gather(double(sub(chd.time, num2cell(it), fdims)));
 
             % choose which dimensions to show
-            if ~isfield(im_args, 'XData'), im_args.XData = 1:self.N; end
+            if ~isfield(im_args, 'XData'), im_args.XData = 1:chd.N; end
             if ~isfield(im_args, 'YData'), im_args.YData = t; end 
 
             % show the data
@@ -1024,7 +1024,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % dependent methods
     methods
-        function set.time(self, t)
+        function set.time(chd, t)
             % set.time - set the time axis
             %
             % time must be of dimensions (T x 1 x [1|M]) where M is the
@@ -1034,24 +1034,24 @@ classdef ChannelData < matlab.mixin.Copyable
             % TODO: warn or error if time axis is not regularly spaced
 
             %  get the possible sampling freuqencies
-            fs_ = unique(diff(t,1,1));
+            fs_ = unique(diff(t,1,chd.tdim));
 
             % choose the sampling frequency with the best adherence to the
             % data
-            t0_ = sub(t, 1, 1);
-            m = arrayfun(@(fs) sum(abs((t0_ + (0 : numel(t) - 1)' ./ fs ) - t), 'all'), fs_);
-            fs_ = fs_(argmin(m));
+            t0_ = sub(t, 1, chd.tdim);
+            m = arrayfun(@(fs) sum(abs((t0_ + swapdim((0 : numel(t) - 1),2,chd.tdim) ./ fs ) - t), 'all'), fs_);
+            fs_ = fs_(argmin(m,[],'all'));
 
             % set the time axis
-            self.t0 = t0_;
-            self.fs = fs_;
+            chd.t0 = t0_;
+            chd.fs = fs_;
         end
-        function t = get.time(self), t = cast(self.t0 + shiftdim((0 : self.T - 1)', 1-self.tdim) ./ self.fs, 'like', real(self.data)); end % match data type, except always real
-        function T = get.T(self), T = gather(size(self.data,self.tdim)); end
-        function N = get.N(self), N = gather(size(self.data,self.ndim)); end
-        function M = get.M(self), M = gather(size(self.data,self.mdim)); end
-        function n = get.rxs(self), n=cast(shiftdim((1:self.N)',1-self.ndim), 'like', real(self.data)); end
-        function m = get.txs(self), m=cast(shiftdim((1:self.M)',1-self.mdim), 'like', real(self.data)); end
+        function t = get.time(chd), t = cast(chd.t0 + shiftdim((0 : chd.T - 1)', 1-chd.tdim) ./ chd.fs, 'like', real(chd.data)); end % match data type, except always real
+        function T = get.T(chd), T = gather(size(chd.data,chd.tdim)); end
+        function N = get.N(chd), N = gather(size(chd.data,chd.ndim)); end
+        function M = get.M(chd), M = gather(size(chd.data,chd.mdim)); end
+        function n = get.rxs(chd), n=cast(shiftdim((1:chd.N)',1-chd.ndim), 'like', real(chd.data)); end
+        function m = get.txs(chd), m=cast(shiftdim((1:chd.M)',1-chd.mdim), 'like', real(chd.data)); end
     end
 
     % sizing functions (used to control tall behaviour and reshaping)
@@ -1229,9 +1229,9 @@ classdef ChannelData < matlab.mixin.Copyable
         end
     end
     methods
-        function d = get.tdim(self), d = find(self.ord == 'T'); end
-        function d = get.ndim(self), d = find(self.ord == 'N'); end
-        function d = get.mdim(self), d = find(self.ord == 'M'); end
+        function d = get.tdim(chd), d = find(chd.ord == 'T'); end
+        function d = get.ndim(chd), d = find(chd.ord == 'N'); end
+        function d = get.mdim(chd), d = find(chd.ord == 'M'); end
     end
 end
 
