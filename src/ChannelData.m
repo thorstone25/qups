@@ -33,7 +33,7 @@ classdef ChannelData < matlab.mixin.Copyable
         fs = 1  % sampling frequency (scalar)
     end
     properties(Access=public)
-        ord = 'TNM'; % data order: T: time, N: receive, M: transmit
+        order = 'TNM'; % data order: T: time, N: receive, M: transmit
     end
     properties (Dependent)
         time    % time axis (T x 1 x [1|M] x [1|F] x ...)
@@ -64,7 +64,7 @@ classdef ChannelData < matlab.mixin.Copyable
     % copyable overloads
     methods(Access=protected)
         function chd = copyElement(chd)
-            chd = ChannelData('data',chd.data,'fs', chd.fs,'t0',chd.t0,'ord',chd.ord);
+            chd = ChannelData('data',chd.data,'fs', chd.fs,'t0',chd.t0,'order',chd.order);
         end
     end
 
@@ -221,7 +221,7 @@ classdef ChannelData < matlab.mixin.Copyable
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
                 c = copy(b); c.data = times(a, b.data);
             else % if both are ChannelData, we check that the time axis is identical
-                if all(a.ord == b.ord) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
+                if all(a.order == b.order) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
                     c = copy(a); c.data = times(a.data, b.data);
                 else
                     error('ChannelData does not match - cannot perform arithmetic')
@@ -235,7 +235,7 @@ classdef ChannelData < matlab.mixin.Copyable
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
                 c = copy(b); c.data = plus(a, b.data);
             else % if both are ChannelData, we check that the time axis is identical
-                if all(a.ord == b.ord) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
+                if all(a.order == b.order) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
                     c = copy(a); c.data = plus(a.data, b.data);
                 else
                     error('ChannelData does not match - cannot perform arithmetic')
@@ -1080,7 +1080,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also CHANNELDATA/SPLICE
 
             assert(isalmostn([chds.fs], repmat(median([chds.fs]), [1,numel(chds)]))); % sampling frequency must be identical
-            assert(all(string(chds(1).ord) == {chds.ord})); % data orders are identical
+            assert(all(string(chds(1).order) == {chds.order})); % data orders are identical
 
             T_ = max([chds.T]); % maximum length of data
             chds = arrayfun(@(chds) zeropad(chds,0,T_ - chds.T), chds); % make all the same length
@@ -1135,7 +1135,7 @@ classdef ChannelData < matlab.mixin.Copyable
             x = cellfun(@(i) sub(chd.data, i, dim), ix, 'UniformOutput',false);
             
             % make array of new ChannelData objects
-            chds = repmat(ChannelData('fs', chd.fs, 'ord', chd.ord), [max(numel(t),numel(x)),1]); % new ChannelData objects
+            chds = repmat(ChannelData('fs', chd.fs, 'order', chd.order), [max(numel(t),numel(x)),1]); % new ChannelData objects
             chds = arrayfun(@copy, shiftdim(chds, 1-dim)); % make unique and move to dimension dim
             [chds.t0  ] = deal(t{:}); % set start time(s)
             [chds.data] = deal(x{:}); % set data
@@ -1178,41 +1178,41 @@ classdef ChannelData < matlab.mixin.Copyable
                 all(ismember('TMN', cord)), ...
                 "Dimension labels must contain 'T', 'N', and 'M'."...
                 );
-            chd.ord = cord; 
+            chd.order = cord; 
         end
         function chd = expandDims(chd, d)
             chd = copy(chd); % copy semantics
-            nc = numel(chd.ord); % number of dimension labels
-            ccand = setdiff(char(double('F') + (0 : 2*(d-nc))), chd.ord); % get unique labels, starting with 'F'
-            chd.ord(nc+1:d) = ccand(1:d-nc);
+            nc = numel(chd.order); % number of dimension labels
+            ccand = setdiff(char(double('F') + (0 : 2*(d-nc))), chd.order); % get unique labels, starting with 'F'
+            chd.order(nc+1:d) = ccand(1:d-nc);
         end
         function chd = truncateDims(chd)
-            nd = numel(chd.ord); % number of (labelled) dimensions
-            [~,o] = ismember('TMN', chd.ord); % position of necessary params
+            nd = numel(chd.order); % number of (labelled) dimensions
+            [~,o] = ismember('TMN', chd.order); % position of necessary params
             sdims = find(size(chd.data,1:nd) ~= 1); % singleton dims
             kdims = sort(union(o, sdims)); % dims to keep: necessary or non-singleton
             rdims = setdiff(1:nd, kdims); % dims to remove: all others
             chd = permute(chd, [kdims, rdims]); % squeeze data down
-            chd.ord = chd.ord(kdims); % remove unnecesary dimensions 
+            chd.order = chd.order(kdims); % remove unnecesary dimensions 
         end
         function chd = swapdim(chd, i, o)
-            D = max([i,o,numel(chd.ord), ndims(chd.data)]); % max possible dim
+            D = max([i,o,numel(chd.order), ndims(chd.data)]); % max possible dim
             chd = expandDims(chd, D); % expand to have enough dim labels
             chd.data = swapdim(chd.data, i, o); % swap data
             chd.t0   = swapdim(chd.t0  , i, o); % swap start time
-            chd.ord([i o])  = chd.ord([o i]); % swap labels
+            chd.order([i o])  = chd.order([o i]); % swap labels
         end
         function chd = permute(chd, dord)
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
             chd.data = permute(chd.data, dord); % change data dimensions
             chd.t0   = permute(chd.t0, dord); % change t0 dimensions
-            chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
+            chd.order(1:numel(dord)) = chd.order(dord); % change data order
         end
         function chd = ipermute(chd, dord)
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
             chd.data = ipermute(chd.data, dord); % change data dimensions
             chd.t0   = ipermute(chd.t0, dord); % change t0 dimensions
-            chd.ord(1:numel(dord)) = chd.ord(dord); % change data order
+            chd.order(1:numel(dord)) = chd.order(dord); % change data order
         end
         function [chd, dord] = rectifyDims(chd)
             % RECTIFYDIMS - Set dimensions to default order
@@ -1221,17 +1221,26 @@ classdef ChannelData < matlab.mixin.Copyable
             % their default order of time x receive x transmit x ...
             %
 
-            D = gather(max(numel(chd.ord), ndims(chd.data))); % number of dimensions
-            dord = arrayfun(@(o) find(chd.ord == o), 'TNM'); % want this order to start
+            D = gather(max(numel(chd.order), ndims(chd.data))); % number of dimensions
+            dord = arrayfun(@(o) find(chd.order == o), 'TNM'); % want this order to start
             dord = [dord, setdiff(1:D, dord)]; % make sure we have all dimensions accounted for
             chd = permute(chd, dord); % set dims to match in lower dimensions
             % chd = truncateDims(chd); % remove unnecessary dimensions
         end
     end
     methods
-        function d = get.tdim(chd), d = find(chd.ord == 'T'); end
-        function d = get.ndim(chd), d = find(chd.ord == 'N'); end
-        function d = get.mdim(chd), d = find(chd.ord == 'M'); end
+        function d = get.tdim(chd), d = find(chd.order == 'T'); end
+        function d = get.ndim(chd), d = find(chd.order == 'N'); end
+        function d = get.mdim(chd), d = find(chd.order == 'M'); end
+    end
+    
+    % aliases
+    properties(Hidden, Dependent)
+        ord
+    end
+    methods % deprecated
+        function o = get.ord(chd), warning("QUPS:ChannelData:syntaxDeprecated","ChannelData.ord is deprecated. Use the .order property instead."); o = chd.order; end
+        function set.ord(chd, o),  warning("QUPS:ChannelData:syntaxDeprecated","ChannelData.ord is deprecated. Use the .order property instead."); chd.order = o; end
     end
 end
 
