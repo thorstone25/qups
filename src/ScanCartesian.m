@@ -5,9 +5,9 @@
 % See also SCAN SCANPOLAR SCANGENERIC
 classdef ScanCartesian < Scan
     properties
-        x (1,:) {mustBeVector} = 1e-3*linspace(-20,20,128) % image x values
+        x (1,:) {mustBeVector} = 1e-3*linspace(-20,20,161) % image x values
         y (1,:) {mustBeVector} = 0                         % image y values
-        z (1,:) {mustBeVector} = 1e-3*linspace(0,40,128)   % image z values
+        z (1,:) {mustBeVector} = 1e-3*linspace(0,40,161)   % image z values
         order = 'ZXY'; 
     end
     

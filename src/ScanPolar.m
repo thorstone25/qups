@@ -5,9 +5,9 @@
 % See also SCAN SCANCARTESIAN SCANGENERIC
 classdef ScanPolar < Scan
     properties
-        r (1,:) {mustBeVector} = 1e-3*linspace(0,40,128)   % image range values
-        a (1,:) {mustBeVector} = linspace(-45,45,128)      % image angle values (deg)
-        y (1,:) {mustBeVector} = 0                         % image elevation values
+        r (1,:) {mustBeVector} = 1e-3*linspace(0,40,161)  % image range values
+        a (1,:) {mustBeVector} = linspace(-45,45,91)      % image angle values (deg)
+        y (1,:) {mustBeVector} = 0                        % image elevation values
         order = 'RAY';                
         origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
