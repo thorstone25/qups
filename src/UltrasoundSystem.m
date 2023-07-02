@@ -696,7 +696,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             iszero = all(chd(f).data == 0, 2:ndims(chd(f).data)); % true if 0 for all tx/rx/targs
             n0 = gather(find(cumsum(~iszero, 'forward'), 1, 'first'));
             T_ = gather(find(cumsum(~iszero, 'reverse'), 1, 'last' ));
-            chd(f) = sub(chd(f), n0:T_, chd(f).tdim);
+            chd(f) = subD(chd(f), n0:T_, chd(f).tdim);
 
 
             % synthesize linearly
@@ -2438,7 +2438,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % data must be ordered T x N x M
                 ord = [chd.tdim, chd.ndim, chd.mdim];
-                if ~isequal(ord, 1:3), chd = permute(chd, [ord, 4:ndims(chd.data)]); end % reorder if necessary
+                if ~isequal(ord, 1:3), chd = rectifyDims(chd); end % reorder if necessary
 
                 % get the beamformer arguments
                 dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args

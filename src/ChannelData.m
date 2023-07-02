@@ -549,7 +549,7 @@ classdef ChannelData < matlab.mixin.Copyable
                 ratio (1,1) {mustBePositive, mustBeInteger}
             end
             chd = copy(chd); % copy semantics
-            chd = sub(chd, 1:ratio:chd.T, chd.tdim); % sub-index
+            chd = subD(chd, 1:ratio:chd.T, chd.tdim); % sub-index
             chd.fs(:) = chd.fs / ratio; % reduce sampling frequency
         end
         function chd = resample(chd, fs, varargin)
@@ -748,7 +748,7 @@ classdef ChannelData < matlab.mixin.Copyable
             
             % move data up to match the sampling/apodization matrix
             D = max(3,ndims(chd.data));
-            chd = swapdim(chd, [chd.ndim, chd.mdim, 4:D], [apdim, max(apdim) + (1 : (D - 3))]);            
+            chd = swapdimD(chd, [chd.ndim, chd.mdim, 4:D], [apdim, max(apdim) + (1 : (D - 3))]);            
 
             % check condition that we can implicitly broadcast
             for d = setdiff(1:gather(ndims(tau)), chd.tdim) % all dims except time must match
@@ -851,7 +851,7 @@ classdef ChannelData < matlab.mixin.Copyable
             
             % move data up to match the sampling/apodization matrix
             D = max(3,ndims(chd.data));
-            chd = swapdim(chd, [chd.ndim, chd.mdim, 4:D], [apdim, max(apdim) + (1 : (D - 3))]);            
+            chd = swapdimD(chd, [chd.ndim, chd.mdim, 4:D], [apdim, max(apdim) + (1 : (D - 3))]);            
 
             % check condition that we can implicitly broadcast
             for tau = {tau1, tau2}
@@ -1173,7 +1173,7 @@ classdef ChannelData < matlab.mixin.Copyable
             [chds.data] = deal(x{:}); % set data
 
         end
-        function chd = sub(chd, ind, dim)
+        function chd = subD(chd, ind, dim)
             if ~iscell(ind), ind = {ind}; end % enforce cell syntax
             tind = ind; % separate copy for the time indices
             tind(size(chd.time,dim) == 1) = {1}; % set singleton where t0 is sliced
@@ -1214,37 +1214,41 @@ classdef ChannelData < matlab.mixin.Copyable
         end
         function chd = expandDims(chd, d)
             chd = copy(chd); % copy semantics
-            nc = numel(chd.order); % number of dimension labels
-            ccand = setdiff(char(double('F') + (0 : 2*(d-nc))), chd.order); % get unique labels, starting with 'F'
-            chd.order(nc+1:d) = ccand(1:d-nc);
+            for j = 1:numel(chd)
+                nc = numel(chd(j).order); % number of dimension labels
+                ccand = setdiff(char(double('F') + (0 : 2*(d-nc))), chd(j).order); % get unique labels, starting with 'F'
+                chd(j).order(nc+1:d) = ccand(1:d-nc);
+            end
         end
-        function chd = truncateDims(chd)
-            nd = numel(chd.order); % number of (labelled) dimensions
-            [~,o] = ismember('TMN', chd.order); % position of necessary params
-            sdims = find(size(chd.data,1:nd) ~= 1); % singleton dims
-            kdims = sort(union(o, sdims)); % dims to keep: necessary or non-singleton
-            rdims = setdiff(1:nd, kdims); % dims to remove: all others
-            chd = permute(chd, [kdims, rdims]); % squeeze data down
-            chd.order = chd.order(kdims); % remove unnecesary dimensions 
+        function chd = swapdimD(chd, i, o)
+            D = max([i,o,ndims(chd), cellfun(@numel, {chd.order}), cellfun(@ndims, {chd.data})]); % max possible dim
+            ord = 1:D;
+            l = min(min(i),min(o)) : max(max(i),max(o)); % all indices within swap
+            i = [i, setdiff(l, i)]; % expanded input indices
+            o = [o, setdiff(l, o)]; % expanded output indices
+            ord(o) = i; % full permutation ordering
+            for j = 1:numel(chd)
+                chd(j) = expandDims(chd(j), D); % expand to have enough dim labels
+                chd(j).data = swapdim(chd(j).data, i, o); % swap data
+                chd(j).t0   = swapdim(chd(j).t0  , i, o); % swap start time
+                chd(j).order  = chd(j).order(ord); % swap labels
+            end
         end
-        function chd = swapdim(chd, i, o)
-            D = max([i,o,numel(chd.order), ndims(chd.data)]); % max possible dim
-            chd = expandDims(chd, D); % expand to have enough dim labels
-            chd.data = swapdim(chd.data, i, o); % swap data
-            chd.t0   = swapdim(chd.t0  , i, o); % swap start time
-            chd.order([i o])  = chd.order([o i]); % swap labels
-        end
-        function chd = permute(chd, dord)
+        function chd = permuteD(chd, dord)
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
-            chd.data = permute(chd.data, dord); % change data dimensions
-            chd.t0   = permute(chd.t0, dord); % change t0 dimensions
-            chd.order(1:numel(dord)) = chd.order(dord); % change data order
+            for j = 1:numel(chd)
+                chd(j).data = permute(chd(j).data, dord); % change data dimensions
+                chd(j).t0   = permute(chd(j).t0, dord); % change t0 dimensions
+                chd(j).order(1:numel(dord)) = chd(j).order(dord); % change data order
+            end
         end
-        function chd = ipermute(chd, dord)
+        function chd = ipermuteD(chd, dord)
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
-            chd.data = ipermute(chd.data, dord); % change data dimensions
-            chd.t0   = ipermute(chd.t0, dord); % change t0 dimensions
-            chd.order(1:numel(dord)) = chd.order(dord); % change data order
+            for j = 1:numel(chd)
+                chd(j).data = ipermute(chd(j).data, dord); % change data dimensions
+                chd(j).t0   = ipermute(chd(j).t0, dord); % change t0 dimensions
+                chd(j).order(1:numel(dord)) = chd(j).order(dord); % change data order
+            end
         end
         function [chd, dord] = rectifyDims(chd)
             % RECTIFYDIMS - Set dimensions to default order
@@ -1252,12 +1256,23 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd = RECTIFYDIMS(chd) sets the dimension of the data to
             % their default order of time x receive x transmit x ...
             %
-
-            D = gather(max(numel(chd.order), ndims(chd.data))); % number of dimensions
-            dord = arrayfun(@(o) find(chd.order == o), 'TNM'); % want this order to start
-            dord = [dord, setdiff(1:D, dord)]; % make sure we have all dimensions accounted for
-            chd = permute(chd, dord); % set dims to match in lower dimensions
-            % chd = truncateDims(chd); % remove unnecessary dimensions
+            for j = 1:numel(chd)
+                chdj = chd(j);
+                D = gather(max(numel(chdj.order), ndims(chdj.data))); % number of dimensions
+                [~, dord] = ismember('TNM', chdj.order); % want this order to start
+                dord = [dord, setdiff(1:D, dord)]; %#ok<AGROW> % make sure we have all dimensions accounted for
+                chd(j) = permuteD(chdj, dord); % set dims to match in lower dimensions
+                % chd = truncateDims(chd); % remove unnecessary dimensions
+            end
+        end
+        function chd = truncateDims(chd)
+            nd = numel(chd.order); % number of (labelled) dimensions
+            [~,o] = ismember('TMN', chd.order); % position of necessary params
+            sdims = find(size(chd.data,1:nd) ~= 1); % singleton dims
+            kdims = sort(union(o, sdims)); % dims to keep: necessary or non-singleton
+            rdims = setdiff(1:nd, kdims); % dims to remove: all others
+            chd = permuteD(chd, [kdims, rdims]); % squeeze data down
+            chd.order = chd.order(kdims); % remove unnecesary dimensions 
         end
     end
     methods
