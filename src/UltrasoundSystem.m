@@ -112,6 +112,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % initialize
             for s = f, self.(s) = kwargs.(s); end
             
+            % if neither transmit nor receive provided, make them
+            % equivalent for convenience.
+            if ~isfield(kwargs, 'tx') && ~isfield(kwargs, 'rx'), self.tx = self.rx; end
+            
             % create a default Sequence if none provided
             if ~isfield(kwargs, 'seq')
                 self.seq = Sequence(...
@@ -121,9 +125,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     );
             end
 
-            % if neither transmit nor receive provided, make them
-            % equivalent for convenience.
-            if ~isfield(kwargs, 'tx') && ~isfield(kwargs, 'rx'), self.tx = self.rx; end
+            % if the scan was not provided, create one and set the
+            % resolution
+            if ~isfield(kwargs, 'scan')
+                if isa(self.rx, 'TransducerConvex')
+                    self.scan = ScanPolar('origin', self.rx.center);
+                    self.scan.r = self.scan.r + norm(self.rx.center);
+                    [self.scan.dr, self.scan.dy] = deal(self.lambda / 4);
+                    self.scan.da = 1; % every 1 degree
+                elseif isa(self.rx, 'TransducerMatrix')
+                    self.scan = ScanCartesian();
+                    self.scan.y = self.scan.x;
+                    [self.scan.dx, self.scan.dy, self.scan.dz] = deal(self.lambda / 4);
+                else
+                    self.scan = ScanCartesian();
+                    [self.scan.dx, self.scan.dy, self.scan.dz] = deal(self.lambda / 4);
+                end
+            end
             
             % shadow with the (newly created) temp folder for binaries and 
             % const-compiled code
