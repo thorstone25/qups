@@ -5,14 +5,20 @@ fc = 6e6;
 % define a pre-defined linear or phased array transducer
 xdc = TransducerArray.L12_3v();
 
-% define a linear array or phased array transducer
+% define a custom linear array or phased array transducer
 xdc = TransducerArray('fc', fc, 'pitch', c0/fc, 'numel', 128);
 
 % define a pre-defined curvilinear array 
 xdc = TransducerConvex.C5_2v();
 
-% define a curvilinear array
+% define a custom curvilinear array
 xdc = TransducerConvex('fc', fc, 'pitch', c0/fc, 'numel', 128);
+
+% define a pre-defined matrix transducer
+xdc = TransducerMatrix.PO192O();
+
+% define a custom matrix transducer
+xdc = TransducerMatrix('fc', fc, 'pitch', [c0/fc c0/fc], 'numd', [16 16]);
 
 % change number of elements
 xdc.numel = 256;
@@ -328,10 +334,11 @@ chd = tall(chd);
 % create some example objects and data for this section
 us = UltrasoundSystem();
 [scan, seq, xdc] = deal(us.scan, us.seq, us.xdc);
+us.seq.pulse = Waveform('t0',-1/xdc.fc, 'tend',1/xdc.fc,'fun', @(t)sinpi(2*xdc.fc*t));
 med = Medium();
 scat = Scatterers('pos', [0,0,30e-3]');
 chd = greens(us, scat);
-b = DAS(us, chd);
+b = DAS(us, chd, 'keep_tx', true);
 
 % --------- Ultrasound System Definitions ----------- %
 % plot the entire system 
@@ -347,7 +354,7 @@ plot(seq);
 plot(xdc, 'r+');
 
 % plot the surface of the transducer elements
-patch(xdc); shading interp;
+patch(scale(xdc,'dist',1e3)); shading faceted;
 
 % plot the impulse response (affectssimulation only)
 plot(xdc.impulse);
@@ -373,14 +380,19 @@ imagesc(real(chd));
 imagesc(hilbert(chd));
 
 % loop through transmits of channel data
-h = imagesc(chd); colormap gray;
+h = imagesc(hilbert(chd)); colormap(h.Parent, 'jet');
 animate(h, chd.data, 'loop', false);
 
 % display a b mode image
-h = imagesc(us.scan, b); colormap gray;
+h = imagesc(us.scan, b); colormap(h.Parent,'gray');
 
 % loop through frames/transmits/receives of images data
-hmv = animate(h, b, 'fs', 2, 'loop', false);
+animate(h, b, 'loop', false);
+
+% animate multiple plots together
+nexttile(); h(1) = imagesc(hilbert(chd)); colormap(h(1).Parent,'jet');
+nexttile(); h(2) = imagesc(us.scan, b); colormap(h(2).Parent,'gray');
+hmv = animate(h, {chd.data, b}, 'loop', false);
 
 % save animation to a gif
 % NOTE: MATLAB may have a bug causing frame sizing to be inconsistent
