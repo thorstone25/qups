@@ -70,20 +70,25 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % conversion functions
     methods
-        function channel_data = getUSTBChannelData(chd, seq, xdc)
+        function channel_data = getUSTBChannelData(chd, seq, xdc, fmod)
             % GETUSTBCHANNELDATA - Create a USTB channel data object
             % 
-            % channel_data = getUSTBChannelData(chd, sequence, xdc) 
+            % channel_data = getUSTBChannelData(chd, seq, xdc) 
             % creates a USTB compatible uff.channel_data object from the 
             % ChannelData chd, Sequence seq, and Tranducer xdc. USTB must 
             % be on the path.
             %
+            % channel_data = getUSTBChannelData(..., fmod) sets the
+            % modulation frequency to fmod. The default is 0.
             % 
-            
+            % 
+            if nargin < 4, fmod = 0; end
             chd = rectifyDims(chd); % make sure it's in order 'TNM' first
             channel_data = uff.channel_data(...
                 'sampling_frequency', chd.fs, ...
                 'sound_speed', seq.c0, ...
+                'initial_time', 0, ...
+                'modulation_frequency', fmod, ...
                 'sequence', seq.getUSTBSequence(xdc, chd.t0), ...
                 'probe', xdc.getUSTBProbe(), ...
                 'data', chd.data(:,:,:,:) ... limit to 4 dimensions
