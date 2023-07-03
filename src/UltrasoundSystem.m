@@ -2739,7 +2739,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd.t0 = t0;
         end
 
-        function b = bfAdjoint(self, chd, c0, kwargs)
+        function [b, tau_rx, tau_tx, tau_foc] = bfAdjoint(self, chd, c0, kwargs)
             % BFADJOINT - Adjoint method beamformer
             %
             % b = BFADJOINT(self, chd) beamforms the ChannelData chd using
@@ -2783,6 +2783,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % accelerate computation but with a loss of accuracy. The
             % default is -Inf.
             %
+            % b = BFADJOINT(..., 'parenv', clu) or
+            % b = BFADJOINT(..., 'parenv', pool) uses the
+            % parallel.Cluster clu or the parallel.Pool pool to
+            % parallelize computations. parallel.ThreadPools will be
+            % ignored due to mex function restrictions.
+            % 
+            % [b, tau_rx] = BFADJOINT(...) additionally returns the receive
+            % delays used in the receive propagation step.
+            % 
+            % [b, tau_rx, tau_tx, tau_foc] = BFADJOINT(...) additionally 
+            % returns the transmitter delays and focal delays used in the 
+            % transmit propagation step. 
+            % 
+            % The ND-array tau_tx represents the propagation delay from 
+            % element to pixel. The matrix tau_foc represents the transmit
+            % element delays per transmit of the pulse sequence. Note that
+            % these have a different interpretation than in bfDAS due to
+            % how the adjoint method is defined. 
+            % 
             % Example:
             % 
             % % Define the setup
@@ -2806,7 +2825,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % should work ...
             arguments
                 self (1,1) UltrasoundSystem
-                chd ChannelData
+                chd (1,1) ChannelData
                 c0 (:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
                 kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
@@ -2816,6 +2835,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
                 kwargs.bsize (1,1) {mustBeFloat, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.N*self.scan.nPix*8)))); % vector computation block size
                 kwargs.verbose (1,1) logical = true 
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
                 % heuristic: 1/4 Gibibyte limit on the size of the delays
             end
 
@@ -2837,10 +2857,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     );
             end
 
+            % set the default parallel environment
+            if ~isfield(kwargs, 'parenv')
+                % use a thread pool if activated and no gpu variables in use
+                if isa(gcp('nocreate'), 'parallel.ThreadPool') && ~isa(chd.data, 'gpuArray')
+                    kwargs.parenv = gcp('nocreate');
+                else 
+                    kwargs.parenv = 0;
+                end
+            end
+
             % parse inpcccuts
             sumtx = ~kwargs.keep_tx;
             sumrx = ~kwargs.keep_rx;
             fmod = kwargs.fmod;
+            kvb = kwargs.verbose;
 
             % move the data to the frequency domain, being careful to
             % preserve the time axis
@@ -2908,21 +2939,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             xk = cellfun(@(k) sub(x,k,chd.tdim), k, 'UniformOutput',false);
             chd_ord = [chd.ndim, chd.mdim, chd.tdim]; % permution order
 
-            % beamform for a block of frequencies at a time
-            if kwargs.verbose, hw = waitbar(0,'Beamforming ...'); end
-
+            if kwargs.verbose, tt = tic; fprintf("Beamforming for " + numel(k) + " frequency bands. Completed: ["); end
             % DEBUG: plot
             % figure; h = imagesc(squeeze(zeros(self.scan.size))); colorbar; colormap jet;
 
             % TODO: parallelize for thread-based pools only
-            % parfor (ik = 1:numel(k))
-            for ik = 1:numel(k)
+            parfor (ik = 1:numel(k), kwargs.parenv)
+            % for ik = 1:numel(k)
                 % get discrete frequency index - must be float due to pow
                 k_ = shiftdim(k{ik}, -2); % 1 x 1 x F
 
                 % report progress
-                lbl = "Beamforming freqs: " + min(gather(f(k_))) + " - " + max(gather(f(k_)));% + " MHz";
-                if kwargs.verbose && isvalid(hw), waitbar(ik/numel(k), hw, char(lbl)); end
+                % lbl = "Beamforming freqs: " + min(gather(f(k_))) + " - " + max(gather(f(k_)));% + " MHz";
                 % fprintf(lbl + "\n");
 
                 % data, in freq. domain (N x V x ...)
@@ -2953,11 +2981,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % DEBUG: update display
                 % h.CData(:) = mod2db(sum(y,3)); drawnow limitrate; 
+            
+                if kvb, fprintf(string(ik) +","); end
             end
-            if kwargs.verbose && isvalid(hw), close(hw); end
+            if kwargs.verbose, fprintf("\b]\nDone! "); toc(tt), end
 
             % move to image dimensions ([I] x ... x perm([1|N] x [1|V] x 1)
             b = swapdim(ipermute(b,[chd_ord, 4:(D+3)]), 1:3, D+(1:3));
+
+            % set delays to proper output sizing
+            if nargout >= 2
+                tau_rx = permute(reshape(tau_rx, [self.rx.numel, self.scan.size]), [2:4,1,5]);
+                tau_tx = permute(reshape(tau_tx, [self.tx.numel, self.scan.size]), [2:4,5,1]);
+                tau_foc = del_tx; 
+            end
         end    
 
         function [b, tau_rx, tau_tx] = bfEikonal(self, chd, medium, cscan, kwargs)
