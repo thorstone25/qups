@@ -3574,7 +3574,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                chd ChannelData
+                chd (1,1) ChannelData
                 c0 (1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
                 kwargs.Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
@@ -3627,7 +3627,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     	    chd0 = chd; % save og ChannelData, time delays
     	    if kwargs.keep_tx, bm = cell(1,numel(chds)); else, bm = 0; end % init
-            for j = 1:numel(chds)
+            for j = 1:numel(chds) % loop over blocks of transmits
 
                 chd = chds(j); % reference the ChannelData
 
