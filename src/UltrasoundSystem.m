@@ -3233,33 +3233,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_rx = cat(4, tau_rx{:}); % use all at a time
             tau_tx = cat(5, tau_tx{:}); % reconstruct matrix
 
-            % identify dimensions to sum after apodization
-            sdim = [];
-            if ~kwargs.keep_rx, sdim = [sdim, 4]; end
-            if ~kwargs.keep_tx, sdim = [sdim, 5]; end
-
             % short-circuit - empty matrix with output image sizing
             if kwargs.delay_only, b = zeros([self.scan.size, 1+kwargs.keep_rx*(self.rx.numel-1), 1+kwargs.keep_tx*(self.tx.numel-1), 0]); return; end
-     
-            % max dimension of data
-            D = max([3, ndims(chd), cellfun(@ndims, {chd.data})]);
 
-            % sample, apodize, and sum over tx/rx if requested
-            for i = numel(chd):-1:1
-                bi = sample2sep(chd(i), tau_tx, tau_rx, kwargs.interp, kwargs.apod, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
+            % extract relevant arguments
+            lut_args = ["apod", "fmod", "interp", "keep_tx", "keep_rx"];
+            args = namedargs2cell(rmfield(kwargs, setdiff(fieldnames(kwargs), lut_args)));
 
-                % move aperture dimension to end
-                bi = swapdim(bi, 4:5, D+(3:4)); % (I1 x I2 x I3 x 1 x 1 x [F x ... ] x [1|N] x [1|M])
-                bi = reshape(bi, size(bi, [1:3, 6:ndims(bi)])); % (I1 x I2 x I3 x [F x ... ] x [1|N] x [1|M])
-                b{i} = bi;
-            end
-            
-            % combine to form output data
-            if isempty(chddim), b = b{1}; % scalar
-            else, b = cat(chddim, b{:}); end % array
+            % beamform
+            b = bfDASLUT(self, chd, tau_rx, tau_tx, args{:});
         end
     
-        function b = bfDAS(self, chd, c0, kwargs)
+        function [b, tau_rx, tau_tx] = bfDAS(self, chd, c0, kwargs)
             % BFDAS - Delay-and-sum beamformer
             %
             % b = BFDAS(self, chd, c0) creates a b-mode image b from the 
@@ -3328,10 +3313,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.delay_only (1,1) logical = isempty(chd); % compute only delays
             end
 
-            % get dimensions of ChannelData
-            assert(sum(size(chd) > 1) <= 1, "ChannelData array may only have 1 non-singleton dimension (" + join(string([size(chd)])," x ") + ").");
-            chddim = find(size(chd) > 1, 1, 'first');
-
             % get image pixels, outside of range of data
             Pi = self.scan.positions; % 3 x I1 x I2 x I3
 
@@ -3366,14 +3347,146 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tau_rx = dr;
             tau_tx = dv;
 
-            % identify dimensions to sum after apodization
-            sdim = []; 
-            if ~kwargs.keep_rx, sdim = [sdim, 4]; end 
-            if ~kwargs.keep_tx, sdim = [sdim, 5]; end
-
             % short-circuit - empty matrix with output image sizing
             if kwargs.delay_only, b = zeros([self.scan.size, 1+kwargs.keep_rx*(self.rx.numel-1), 1+kwargs.keep_tx*(self.tx.numel-1), 0]); return; end
-     
+
+            % extract relevant arguments
+            lut_args = ["apod", "fmod", "interp", "keep_tx", "keep_rx"];
+            args = namedargs2cell(rmfield(kwargs, setdiff(fieldnames(kwargs), lut_args)));
+
+            % beamform
+            b = bfDASLUT(self, chd, tau_rx, tau_tx, args{:});
+        end
+    
+        function b = bfDASLUT(self, chd, tau_rx, tau_tx, kwargs)
+            % BFDASLUT - Look-up table delay-and-sum beamformer
+            %
+            % b = BFDASLUT(self, chd, tau_rx, tau_tx) creates a b-mode 
+            % image b from the ChannelData chd using the time delay tables
+            % tau_rx and tau_tx. 
+            % 
+            % The delay tables tau_rx and tau_tx must be broadcastable to
+            % size [self.scan.size, chd.N, 1] and [self.scan.size, 1, chd.M]
+            % respectively i.e. tau_rx and tau_tx should be in the order of
+            % pixels x receives and pixels x transmits respectively.
+            % 
+            % b = BFDASLUT(self, chd, tau) uses the same delay table for
+            % receive and transmit. This is valid primarily for FSA data
+            % acquisitions.
+            % 
+            % b = BFDASLUT(..., Name, Value, ...) passes additional Name/Value
+            % pair arguments
+            % 
+            % b = BFDASLUT(..., 'apod', apod) uses an apodization matrix
+            % of apod. It must be singular in the receive dimension, the 
+            % transmit dimension, or all image dimensions. The apodization
+            % matrix must be broadcastable to size (I1 x I2 x I3 x N x M)
+            % where [I1, I2, I3] == self.scan.size, N is the number of 
+            % receive elements, and M is the number of transmits.
+            % 
+            % b = BFDASLUT(..., 'keep_tx', true) preserves the transmit
+            % dimension in the output image b.
+            %
+            % b = BFDASLUT(..., 'keep_rx', true) preserves the receive
+            % dimension in the output image b.
+            %
+            % b = BFDASLUT(..., 'fmod', fc) upmixes the data at a modulation
+            % frequency fc. This undoes the effect of
+            % demodulation/downmixing at the same frequency.
+            %
+            % b = BFDASLUT(..., 'interp', method) specifies the method for
+            % interpolation. Support is provided by the
+            % ChannelData/sample2sep method. The default is 'cubic'.
+            %        
+            % Example:
+            % 
+            % % Define the setup
+            % us = UltrasoundSystem(); % get a default system
+            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
+            % 
+            % % Compute the image
+            % chd = greens(us, scat); % compute the response
+            % 
+            % % Get rx and tx delay tables for beamforming
+            % [~, tau_rx, tau_tx] = bfDAS(us, chd, 'delay_only', true); % beamform the data
+            % 
+            % % Beamform
+            % b = bfDASLUT(us, chd, tau_rx, tau_tx);
+            % 
+            % % Display the image
+            % bim = mod2db(b); % log-compression
+            % figure;
+            % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
+            % colormap gray; colorbar;
+            %
+            % See also DAS BFDAS BFEIKONAL BFADJOINT CHANNELDATA/SAMPLE PARCLUSTER PARPOOL
+            arguments
+                self (1,1) UltrasoundSystem
+                chd ChannelData
+                tau_rx (:,:,:,:,1) {mustBeNumeric}
+                tau_tx (:,:,:,1,:) {mustBeNumeric} = swapdim(tau_rx,4,5)
+                kwargs.fmod (1,1) {mustBeNumeric} = 0 
+                kwargs.apod {mustBeNumericOrLogical} = 1
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "lanczos3"])} = 'cubic'
+                kwargs.keep_tx (1,1) logical = false
+                kwargs.keep_rx (1,1) logical = false
+            end
+            
+            % validate / parse receive table sizing
+            N = unique([chd.N]);
+            if ~isscalar(N)
+                error( ...
+                    "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueReceiverSize", ...
+                "Expected a single receiver size, but instead they have sizes [" ...
+                + join(string(N),",") + "]." ...
+                )
+            end
+            if ~all(double([self.scan.size, N]) == size(tau_rx, 1:4))
+                D = ndims(tau_rx); % last dim
+                [I, L] = deal(prod(size(tau_rx, 1:D-1)), size(tau_rx, D)); % pixel and rx sizing
+                if I == self.scan.nPix && L == N % sizing matches
+                    tau_rx = reshape(tau_rx, [self.scan.size, N]);
+                else
+                    error( ...
+                        "QUPS:UltrasoundSystem:bfDASLUT:incompatibleReceiveDelayTable", ...
+                        "Expected a table with " + self.scan.nPix ...
+                        + " pixels and " + N ...
+                        + " receives but instead there are " + I ...
+                        + " pixels and " + L + " receives." ...
+                         );
+                end
+            end
+
+           % validate / parse transmit table sizing
+           M = unique([chd.M]);
+           if ~isscalar(M)
+               error( ...
+                   "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueTransmitSize", ...
+                   "Expected a single transmit size, but instead they have sizes [" ...
+                   + join(string(M),",") + "]." ...
+                   )
+           end
+           if ~all(double([self.scan.size, 1, M]) == size(tau_tx, 1:5))
+                D = ndims(tau_tx); % last dim
+                [I, L] = deal(prod(size(tau_tx, 1:D-1)), size(tau_tx, D)); % pixel and rx sizing
+                if I == self.scan.nPix && L == N % sizing matches
+                    tau_tx = reshape(tau_tx, [self.scan.size, 1, M]);
+                else
+                    error( ...
+                        "QUPS:UltrasoundSystem:bfDASLUT:incompatibleTransmitDelayTable", ...
+                        "Expected a table with " + self.scan.nPix ...
+                        + " pixels and " + M ...
+                        + " transmits but instead there are " + I ...
+                        + " pixels and " + L + " receives." ...
+                         );
+                end
+            end
+
+            % identify dimensions to sum after apodization
+            sdim = []; 
+            if ~kwargs.keep_rx, sdim = [sdim, 4]; end
+            if ~kwargs.keep_tx, sdim = [sdim, 5]; end
+
             % max dimension of data
             D = max([3, ndims(chd), cellfun(@ndims, {chd.data})]);
 
@@ -3388,10 +3501,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             
             % combine to form output data
+            chddim = find(size(chd) > 1, 1, 'first');
             if isempty(chddim), b = b{1}; % scalar
             else, b = cat(chddim, b{:}); end % array
         end
-    
+        
         function [b, bscan] = bfMigration(self, chd, c0, kwargs)
             % BFMIGRATION - Plane-Wave Stolt's f-k migration beamformer
             %
