@@ -214,7 +214,7 @@ classdef TransducerMatrix < Transducer
 
     % Fullwave functions (unsupported)
     methods
-        function xdc = getFullwaveTransducer(self, sscan), return; end
+        function xdc = getFullwaveTransducer(self, sscan), error("Not implemented."); end
     end
 
     methods

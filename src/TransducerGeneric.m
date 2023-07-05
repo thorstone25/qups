@@ -100,7 +100,6 @@ classdef TransducerGeneric < Transducer
         function [theta, phi, normal, width, height] = orientations(xdc)
             theta = xdc.az;
             phi   = xdc.el;
-            ZERO  = zeros(size(theta));
             normal     = [cosd(phi).*sind(theta); sind(phi);  cosd(phi).*cosd(theta)];
             width      = [cosd(phi).*cosd(theta); sind(phi); -cosd(phi).*sind(theta)];
             height     = [sind(phi).*sind(theta); cosd(phi);  sind(phi).*cosd(theta)];
@@ -109,9 +108,7 @@ classdef TransducerGeneric < Transducer
 
     % Fullwave functions
     methods
-        function xdc = getFullwaveTransducer(self, sscan)
-            error('Not implemented.');
-        end
+        function xdc = getFullwaveTransducer(self, sscan), error('Not implemented.'); end
     end
 
     % SIMUS conversion functions

@@ -177,7 +177,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % element contains {X,Y,Z,C} tuples of 2x2 matrices specifying four
             % corners of each patch, where each patch is a subdivision of the
             % elements into sub-elements specified by the 1 x 2 array sub_div.
-            % pch is a [Ndiv x Nel] matrix where Nel is the number of elements
+            % pch is a [Nel x Ndiv] matrix where Nel is the number of elements
             % and Ndiv is the number of sub-elements given by the
             % prod(sub_div).
             %
@@ -229,7 +229,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         end
     
         function pb = bounds(xdc)
-            % BOUNDS - Compute the boundaries of the arrays
+            % BOUNDS - Compute the boundaries of the Transducer
             %
             % pb = BOUNDS(xdc) returns a 3 x 2 array of the minimum and maximum
             % cartesian coordinate in x/y/z for the Transducer xdc.
@@ -259,11 +259,11 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % xdc.patches and returns them as a 3 x N matrix of positions
             % p.
             %
-            % p = GETBARYCENTERS(xdc, el_sub_div) uses the 2-element
-            % array el_sub_div to divide each element into el_sub_div(1) x
-            % el_sub_div(2) elements and returns the positions as a 
-            % 3 x N x E array of positions p, where E = prod(el_sub_div). 
-            % The default is [1,1].
+            % p = GETBARYCENTERS(xdc, sub_div) uses the 2-element
+            % array sub_div to divide each element into 
+            % sub_div(1) x sub_div(2) sub-elements and returns the 
+            % positions as a 3 x N x E array of positions p, where 
+            % E = prod(el_sub_div). The default is [1,1].
             %
             % See also PATCHES POSITIONS ORIENTATIONS
 
@@ -318,7 +318,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     % Verasonics conversion functions
     methods (Static)
         function xdc = Verasonics(Trans, c0)
-            % VERASONICS - Construct a Transducer from A Verasonics struct
+            % VERASONICS - Construct a Transducer from a Verasonics struct
             %
             % xdc = Transducer.VERASONICS(Trans) constructs a Transducer 
             % from the properties defined in the Verasonics 'Trans' struct.
@@ -394,13 +394,13 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % UFF constructor
     methods(Static)
-        % UFF - Construct a Transducer from a UFF probe
-        %
-        % xdc = TRANSDUCER.UFF(probe) converts the uff.probe probe to a
-        % Transducer xdc.
-        %
-        % See also TRANSDUCER.QUPS2USTB
         function xdc = UFF(probe)
+            % UFF - Construct a Transducer from a UFF probe
+            %
+            % xdc = TRANSDUCER.UFF(probe) converts the uff.probe probe to a
+            % Transducer xdc.
+            %
+            % See also TRANSDUCER.QUPS2USTB
             arguments, probe uff.probe; end
             switch class(probe)
                 case 'uff.linear_array',     xdc = TransducerArray.UFF(probe);
@@ -777,14 +777,13 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % fullwave functions
     methods (Abstract)
-        % GETFULLWAVETRANSDUCER - define a fullwave transducer structure
+        % GETFULLWAVETRANSDUCER - define a Fullwave transducer structure
         %
         % xdc_fw = GETFULLWAVETRANSDUCER(xdc, scan) creates a fullwave
         % compatible structure xdc_fw defined on the ScanCartesian scan.
         %
-        % Outputs:
-        %   - xdc_fw: a Fullwave compatible struct with (at least) the
-        %           following fields:
+        % xdc_fw is a Fullwave compatible struct with (at least) the
+        % following fields:
         %       - npx           number of elements
         %       - inmap         mask of the input pixels
         %       - nInPx         number of input pixels
