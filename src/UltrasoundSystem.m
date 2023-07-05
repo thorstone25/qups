@@ -1650,7 +1650,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     % k-Wave calls
     methods
-        function [chd, readfun] = kspaceFirstOrder(self, med, sscan, varargin, kwargs, karray_args, kwave_args, ksensor_args)
+        function [chd, readfun, args] = kspaceFirstOrder(self, med, sscan, varargin, kwargs, karray_args, kwave_args, ksensor_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(self, med) simulates the Medium med 
@@ -1812,6 +1812,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.seq.numPulse
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
                 kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim
+                kwargs.gpu (1,1) logical = logical(gpuDeviceCount()) % whether to employ gpu during pre-processing
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10, ...
@@ -1819,7 +1820,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
             end
             arguments % kWave 1.1 arguments - these are passed to kWave
-                kwave_args.BinaryPath (1,1) string
+                kwave_args.BinaryPath (1,1) string = getkWavePath('binaries')
                 kwave_args.CartInterp (1,1) string {mustBeMember(kwave_args.CartInterp, ["linear", "nearest"])}
                 kwave_args.CreateLog (1,1) logical
                 kwave_args.DataCast (1,1) string = [repmat('gpuArray-',[1,logical(gpuDeviceCount())]), 'single']
@@ -1913,15 +1914,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 case 'nearest'
                     pg = sscan.positions(); % -> 3 x Z x X x Y
                     pn = self.xdc.positions; % element positions
+                    if kwargs.gpu, [pg, pn] = dealfun(@gpuArray, pg, pn); end
                     [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing ( 1 if sliced )
                     mask = false(Nx, Ny, Nz); % grid size
                     assert(all(size(mask,1:3) == sscan.size), 'kWave mask and Scan size do not correspond.');
                     for n = self.xdc.numel:-1:1 % get nearest pixel for each element
                         ind(n) = argmin(vecnorm(pn(:,n) - pg,2,1),[],'all', 'linear');
                     end
+                    assert(numel(unique(ind)) == self.xdc.numel, 'Elements are not unique; the Scan spacing or sizing may be too small.');
                     mask(ind) = true;
                     psig = pagetranspose(txsamp .* wnorm); % -> (J' x T' x V x 1 x 3) with M == J'
                     elem_weights = eye(self.xdc.numel) ; % J' x M with ( J' == M )
+                    clear pg;
 
                 case 'linear'
                     % get ambient sound speed
@@ -2079,6 +2083,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     case 3, kspaceFirstOrderND_ = @kspaceFirstOrder3D;
                     otherwise, error("Unsupported dimension size (" + kgrid.dim  +").");
                 end
+                kwave_args = rmfield(kwave_args, 'BinaryPath');
             end
 
             if self.seq.numPulse > 1
@@ -2157,6 +2162,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 args{end+1} = kwargs.parenv; % parfor arg: execution environment
 
                 chd = UltrasoundSystem.kspaceRunSim(args{:});
+                readfun = [];
 
                 % TODO: make reports optional
                 fprintf(string(self.seq.type) + " k-Wave simulation completed in %0.3f seconds.\n", toc(tt_kwave));
