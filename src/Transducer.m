@@ -288,19 +288,29 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % from the Transducer xdc. If FieldII is not initialized before
         % calling this function, it will be initiated.
         %
-        % ap = GETFIELDIIAPERTURE(xdc, focus, element_sub_divisions)
-        % creates an aperture with the focus at focus and with the
-        % mathematical elements determined by 2-element array
-        % element_sub_divisions.
+        % ap = GETFIELDIIAPERTURE(xdc, sub_div) divides the width and 
+        % height of each element by into a sub_div(1) x sub_div(2)
+        % sub-elements. The default is [1 1].
         %
-        % See also FIELD_INIT
-        aperture = getFieldIIAperture(xdc, focus, element_sub_divisions);
+        % ap = GETFIELDIIAPERTURE(xdc, sub_div, focus) creates an aperture
+        % with an elevational focus at the point focus. A focal depth of
+        % Inf represents no focus. The default is [0 0 Inf].
+        % 
+        % When creating the aperture, an infinite focus in instead set to
+        % realmax('single').
+        %
+        % See also ULTRASOUNDSYSTEM.CALC_SCAT_ALL, FIELD_INIT
+        aperture = getFieldIIAperture(xdc, sub_div, focus);
 
         % QUPS2USTB - Create a USTB compatible uff.probe object
         %
         % probe = QUPS2USTB(xdc) creates a uff.probe probe from the
         % Transducer xdc. USTB must be on the path.
         %
+        % Example:
+        %
+        % probe = QUPS2USTB(TransducerArray.L12_3v());
+        % 
         % See also UFF.PROBE
         probe = QUPS2USTB(xdc); % get the USTB probe object
     end

@@ -123,16 +123,16 @@ classdef TransducerGeneric < Transducer
     end
 
     % Field II conversion function
-    methods(Access=public)
-        function aperture = getFieldIIAperture(xdc, focus, element_sub_divisions)
+    methods
+        function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
                 xdc (1,1) Transducer
-                focus (1,3) double = [0 0 realmax('single')];
-                element_sub_divisions (1,2) double = [1,1]
+                sub_div (1,2) double = [1,1]
+                focus (1,3) double = [0 0 realmax('single')]
             end
 
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite        
-            sdiv = element_sub_divisions; % alias            
+            sdiv = sub_div; % alias            
             pch = patches(xdc, sdiv); % [Nel x Ndv] array with  {X / Y / Z / C} tuples
             
             r = zeros([size(pch'),19]); % Ndv x Nel x 19

@@ -1448,8 +1448,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get Tx/Rx apertures
             p_focal = [0;0;0];
-            Tx = tx_.Value.getFieldIIAperture(p_focal.', element_subdivisions); %#ok<PFBNS> % constant over workers
-            Rx = rx_.Value.getFieldIIAperture(p_focal.', element_subdivisions); %#ok<PFBNS> % constant over workers
+            Tx = tx_.Value.getFieldIIAperture(element_subdivisions, p_focal.'); %#ok<PFBNS> % constant over workers
+            Rx = rx_.Value.getFieldIIAperture(element_subdivisions, p_focal.'); %#ok<PFBNS> % constant over workers
 
             % set the impulse response function / excitation function
             xdc_impulse   (Tx, tx_imp);
@@ -1606,8 +1606,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % get Tx/Rx apertures
                 p_focal = [0;0;0];
-                Tx = tx_.Value.getFieldIIAperture(p_focal.', element_subdivisions); %#ok<PFBNS> % constant over workers
-                Rx = rx_.Value.getFieldIIAperture(p_focal.', element_subdivisions); %#ok<PFBNS> % constant over workers
+                Tx = tx_.Value.getFieldIIAperture(element_subdivisions, p_focal.'); %#ok<PFBNS> % constant over workers
+                Rx = rx_.Value.getFieldIIAperture(element_subdivisions, p_focal.'); %#ok<PFBNS> % constant over workers
 
                 % set the impulse response function / excitation function
                 xdc_impulse   (Tx, tx_imp);

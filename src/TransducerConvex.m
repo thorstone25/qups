@@ -142,26 +142,25 @@ classdef TransducerConvex < Transducer
 
 
     % Field II conversion function
-    methods(Access=public)
-        function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
+    methods
+        function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
-                self TransducerConvex
+                xdc (1,1) TransducerConvex
+                sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
-                element_sub_divisions (1,2) double = [1,1];
             end
 
-            % make focus finite
-            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus)));
+            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
                         
             % Field II parameters
             xdc_convex_params = { ...
-                self.numel,     ... no of elements in x direciton
-                self.width,     ... size of elements in x-arc direction
-                self.height,    ... size of elements in y direciton
-                self.kerf,      ... kerf in x-arc direction
-                self.radius,    ... inner convex radius (circumscribed)
-                element_sub_divisions(1), ... x sub-divisions
-                element_sub_divisions(2), ... y sub-divisions
+                xdc.numel,     ... no of elements in x direciton
+                xdc.width,     ... size of elements in x-arc direction
+                xdc.height,    ... size of elements in y direciton
+                xdc.kerf,      ... kerf in x-arc direction
+                xdc.radius,    ... inner convex radius (circumscribed)
+                sub_div(1), ... x sub-divisions
+                sub_div(2), ... y sub-divisions
                 focus.'         ... focal depth
                 };
             
