@@ -277,29 +277,16 @@ classdef TransducerMatrix < Transducer
             z = reshape(Trans.ElementPos(:,2), numd);
             pitch = [mode(mode(diff(x,1,1))), mode(mode(diff(z,1,2)))];
 
-            % for true matrix arrays, create a length property matching the
-            % width 
+            % for true matrix arrays, create a length property matching the width 
             if ~isfield(Trans, 'elementLength'), Trans.elementLength = Trans.elementWidth; end
 
-            % parse the impulse response
-            if isfield(Trans, 'IR1wy')
-                h = Trans.IR1wy; % impulse response
-                t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
-                wv = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
-            else
-                wv = Waveform.Delta();
-            end
-            
             % set relevant properties
             xdc = TransducerMatrix(...
-                'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
-                'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
-                'impulse', wv, ... % impulse response function
-                'width' , scale*Trans.elementWidth, ... % linear kerf
-                'height', scale*Trans.elementLength, ... % Height of element
-                'numd', numd, ... % number of elements in each axes
-                'pitch', 1e-3*pitch, ... % probe pitch in each axes
-                'el_focus', inf ... % elevation focal depth (none)
+                'fc',       1e6*Trans.frequency, ... % Transducer center frequency [Hz]
+                'width' ,   scale*Trans.elementWidth, ... % linear kerf
+                'height',   scale*Trans.elementLength, ... % Height of element
+                'numd',     numd, ... % number of elements in each axes
+                'pitch',    scale*pitch ... % probe pitch in each axes
                 );
 
             % apply mux hardware offset

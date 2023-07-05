@@ -329,23 +329,62 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     % Verasonics conversion functions
-    methods (Abstract, Static)
+    methods (Static)
         % VERASONICS - Construct a Transducer from A Verasonics struct
         % 
-        % xdc = VERASONICS(Trans) constructs a Transducer from the 
-        % properties defined in the Verasonics 'Trans' struct.
+        % xdc = Transducer.VERASONICS(Trans) constructs a Transducer from
+        % the properties defined in the Verasonics 'Trans' struct.
         %
-        % To construct a linear array, use TransducerArray.Verasonics(). 
-        % To construct a curvilinear or convex array, use
-        % TransducerConvex.Verasonics().
-        % 
-        % xdc = VERASONICS(Trans, c0) uses c0 as the sound speed
-        % instead of 1540. This is typicaly set by the Verasonics
+        % xdc = Transducer.VERASONICS(Trans, c0) uses c0 as the sound speed
+        % instead of 1540, in m/s. This is typicaly set by the Verasonics
         % property 'Resource.Parameters.speedOfSound'. Be sure to
         % explicitly set this if other than 1540.
         %
         % 
-        xdc = Verasonics(Trans, c0)
+        function xdc = Verasonics(Trans, c0)
+            arguments
+                Trans (1,1) struct
+                c0 (1,1) double = 1540
+            end
+
+            % get distance property scaling
+            switch Trans.units
+                case 'wavelengths', scale = c0 / Trans.frequency * 1e-6; % lambda -> m
+                case 'mm', scale = 1e-3; % mm -> m
+            end
+
+            % set the element length: search for an indication of the element height
+            if isfield(Trans, 'elementLength') % best - leave as is
+            elseif isfield(Trans, 'elevationApertureMm') % backup
+                Trans.elementLength = Trans.elevationApertureMm * (1e-3 / scale); 
+            else % fallback - make it square
+                Trans.elementLength = Trans.elementWidth; 
+            end
+
+            % set required arguments
+            switch Trans.type % 0=Lin(y=z=0),1=CrvdLn(y=0),2=2D,3=ann,4=R/C
+                case 0,     xdc = TransducerArray.Verasonics(Trans  , c0);
+                case 1,     xdc = TransducerConvex.Verasonics(Trans , c0);
+                case {2,4}, xdc = TransducerMatrix.Verasonics(Trans , c0);
+                otherwise,  xdc = TransducerGeneric.Verasonics(Trans, c0);
+            end
+            
+            % set optional arguments
+            % parse the impulse response
+            if isfield(Trans, 'IR1wy')
+                h = Trans.IR1wy; % impulse response
+                t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
+                xdc.impulse = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
+            else
+                xdc.impulse = Waveform.Delta();
+            end
+
+            % set the elevation focus
+            if isfield(Trans, 'elevationFocusMm'), xdc.el_focus = 1e-3 * Trans.elevationFocusMm; end
+
+            % set the bandwidth
+            if isfield(Trans, 'Bandwidth'), xdc.bw = 1e6*Trans.Bandwidth([1 end]); end
+        end
     end
 
     % SIMUS functions

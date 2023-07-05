@@ -403,25 +403,18 @@ classdef TransducerArray < Transducer
                 case 'mm', scale = 1e-3; % mm -> m
             end
 
-            % parse the impulse response
-            if isfield(Trans, 'IR1wy')
-                h = Trans.IR1wy; % impulse response
-                t0 = - (argmax(hilbert(h))-1) / 250e6; % offset to peak time
-                wv = Waveform('t', t0 + (0:numel(h)-1) / 250e6, 'samples',h); % impulse response
-            else
-                wv = Waveform.Delta();
+            if isfield(Trans, 'spacingMm'),   d = 1e-3 * Trans.spacingMm;
+            elseif isfield(Trans, 'spacing'), d = c0 / Trans.frequency * 1e-6 * Trans.spacing;
+            else, error("QUPS:TransducerArray:Verasonics:undefinedSpacing", "Cannot find the element spacing in the given Trans struct.")
             end
-            
+
             % set relevant properties
             xdc = TransducerArray(...
-                'fc', 1e6*Trans.frequency, ... % Transducer center frequency [Hz]
-                'bw', 1e6*Trans.Bandwidth([1 end]), ... % bandwidth [Hz]
-                'impulse', wv, ... % impulse response function
-                'width', scale*Trans.elementWidth, ... % linear kerf
-                'height', 1e-3*Trans.elevationApertureMm, ... % Height of element [m]
-                'numel', Trans.numelements, ... % number of elements
-                'pitch', 1e-3*Trans.spacingMm, ... % probe pitch [m]
-                'el_focus', 1e-3*Trans.elevationFocusMm ... % elevation focal depth
+                'fc',       1e6*Trans.frequency, ... % Transducer center frequency [Hz]
+                'width',    scale*Trans.elementWidth, ... % linear kerf
+                'height',   scale*Trans.elementLength, ... % Height of element [m]
+                'numel',    Trans.numelements, ... % number of elements
+                'pitch',    d ... % probe pitch [m]
                 );
         end
         function xdc = UFF(probe)
