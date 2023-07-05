@@ -37,11 +37,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % constructor
     methods
-        function xdc = Transducer(probe, kwargs)
+        function xdc = Transducer(kwargs)
             % TRANSDUCER - Transducer constructor
-            %
-            % xdc = TRANSDUCERARRAY(uff_probe) constructs a Transducer from
-            % the uff.probe uff_probe.
             %
             % xdc = TRANSDUCER(Name, Value, ...) constructs a
             % Transducer using name/value pair arguments.
@@ -52,46 +49,26 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % See also TRANSDUCERARRAY TRANSDUCERCONVEX
 
             arguments
-                probe {mustBeScalarOrEmpty} = []
-                kwargs.width
-                kwargs.height
-                kwargs.fc
-                kwargs.bw
-                kwargs.el_focus
-                kwargs.numel
-                kwargs.offset
-                kwargs.impulse
-                kwargs.origin
-                kwargs.bw_frac
+                kwargs.?Transducer
             end
-            if nargin == 1 && isa(probe, 'uff.probe') % uff Constructor
-                props = string(fieldnames(probe))';
-                for p = props
-                    switch p
-                        case {'N','N_elements'},xdc.numel  = probe.(p);
-                        case 'element_width',   xdc.width  = probe.(p);
-                        case 'element_height',  xdc.height = probe.(p);
-                        case 'origin',          xdc.origin(:) = probe.origin.xyz;
-                    end
-                end
-            else % name-value pair initialization
-                % if width set but not height, default to 20x
-                if isfield(kwargs,'width') && ~isfield(kwargs, 'height')
-                    kwargs.height = 20*kwargs.width;
-                end
+            % name-value pair initialization
+            % if width set but not height, default to 20x
+            if isfield(kwargs,'width') && ~isfield(kwargs, 'height')
+                kwargs.height = 20*kwargs.width;
+            end
 
-                % set all properties except bw_frac
-                for f = setdiff(string(fieldnames(kwargs)), {'bw_frac'})', xdc.(f) = kwargs.(f); end
-                
-                % if frequency but not bandwidth or fractional bandwidth is
-                % set, default to 60%
-                if ~isfield(kwargs, 'bw') && ~isfield(kwargs, 'bw_frac')
-                    kwargs.bw_frac = 0.6; 
-                end
-                
-                % set fractional bandwidth last
-                if isfield(kwargs, 'bw_frac'), xdc.bw_frac = kwargs.bw_frac; end
+            % set all properties except bw_frac
+            for f = setdiff(string(fieldnames(kwargs)), {'bw_frac'})', xdc.(f) = kwargs.(f); end
+
+            % if frequency but not bandwidth or fractional bandwidth is
+            % set, default to 60%
+            if ~isfield(kwargs, 'bw') && ~isfield(kwargs, 'bw_frac')
+                kwargs.bw_frac = 0.6;
             end
+
+            % set fractional bandwidth last
+            if isfield(kwargs, 'bw_frac'), xdc.bw_frac = kwargs.bw_frac; end
+
 
             % regardless of input, if impulse is empty, initialize it
             if isempty(xdc.impulse)
