@@ -79,7 +79,78 @@ classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
             if type == "halfT", [x,tau] = dealfun(@(x)single(gather(x)), x,tau); end
 
             % use a (slow) for loop
-            y0 = zeros(size(i+n+m+f)) .* y(1);
+            y0 = zeros(size(i+n+m+f)) .* y(1); %#ok<SZARLOG> 
+            for fi = 1+flip(f(:)'), for mi = 1+flip(m(:)), for ni = 1+flip(n(:))'
+                y0(:,ni,mi,fi) = interp1(x(:,ni,1,fi), 1+tau(:,ni,mi,1), terp, 0);
+            end, end, end
+            if isempty(dsum), dsum = ndims(y0) + 1; end % avoid summing empty dimensions
+            y0 = sum(w .* y0, dsum);
+
+
+            % compare answers
+            import matlab.unittest.constraints.RelativeTolerance;
+            import matlab.unittest.constraints.IsEqualTo;
+            tol = 1e2; 
+            if terp == "cubic"
+            switch type % needs much more room because the algs aren't the same
+                case "double", tol = tol * 1e16; 
+                case "single", tol = tol * 1e8;
+                case "halfT",  tol = tol * 1;
+            end
+            end
+            switch type
+                case "halfT"
+                    test.assertThat(double(y), IsEqualTo(double(y0), 'Within', RelativeTolerance(tol*double(max(eps(y0(:)))))))
+                otherwise
+                    test.assertThat(y, IsEqualTo(y0, 'Within', RelativeTolerance(tol*(max(eps(y0(:)))))))
+            end
+        end
+        function wsinterpd2Test(test,dsize,terp,dsum,wvecd,type,dev)
+
+            if type == "halfT"
+                test.assumeTrue(logical(exist('halfT', 'class')));
+            end
+    	    if dev == "GPU"
+        		test.assumeTrue(gpuDeviceCount > 0);
+    	    end
+
+            % get sizing
+            tmp = num2cell(dsize);
+            [I,T,N,M,F] = deal(tmp{:});
+            
+            % data vectors
+            i = (0:I-1)';
+            t = (0:T-1)'/T;
+            n = (0:N-1);
+            m = shiftdim((0:M-1),-1);
+            f = shiftdim((0:F-1),-2);
+
+            % create data and sampling matrices
+            x0 = exp(2j*pi*(1/2+f/2.*n/4).*t); % T x N x 1 x F
+            t1 = 4 + (T-8) * ((1+i)./I .*   1./N    .* (1+m)./M); % I x 1 x M x 1
+            t2 = 4 + (T-8) *   1./I    .* (1+n)./N .*      1    ; % 1 x N x 1 x 1
+            tau = t1 + t2; % I x N x M x 1
+            
+            % expand w as requested
+            w = 1; for d = wvecd, w = w + shiftdim(rand([max(size(x0,d),size(t,d)),1]),1-d); end
+
+            % gpu/cpu
+            switch dev, 
+                case "CPU", x = gather(x0); 
+                case "GPU", x = gpuArray(x0);
+            end
+
+            % cast data type
+            [x, tau, w] = dealfun(str2func(type), x, tau, w);
+
+            % compute using optimized routine
+            y = wsinterpd2(x, t1, t2, 1, w, dsum, terp, 0);
+
+            % use single precision for comparing to half values
+            if type == "halfT", [x,tau] = dealfun(@(x)single(gather(x)), x,tau); end
+
+            % use a (slow) for loop
+            y0 = zeros(size(i+n+m+f)) .* y(1); %#ok<SZARLOG> 
             for fi = 1+flip(f(:)'), for mi = 1+flip(m(:)), for ni = 1+flip(n(:))'
                 y0(:,ni,mi,fi) = interp1(x(:,ni,1,fi), 1+tau(:,ni,mi,1), terp, 0);
             end, end, end
