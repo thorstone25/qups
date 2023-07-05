@@ -3177,7 +3177,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             grd = {cscan.x, cscan.y, cscan.z}; % grid definition
             nsdims = (~isinf(dp)); % non-singleton dimensions
             dp = uniquetol(dp(nsdims)); % spatial step size
-            ord = cscan.getPermuteOrder(); % order of grid
+            ord = argn(2, @ismember, self.order, 'XYZ'); % order of grid
             sel = ord(ismember(ord, find(nsdims))); % selection of grid indices
             grd = grd(sel); % re-order and trim the grid
             
