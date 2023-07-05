@@ -795,16 +795,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         xdc_fw = getFullwaveTransducer(xdc, scan)
     end
 
-    % legacy
-    methods(Hidden)
-        % get positions
-        function p = getPositions(xdc)
-            % returns a 3 x N vector of the positions of the N elements with
-            % the center element at the origin
-            p = xdc.positions();
-        end
-    end
-
     % Field II calls - rely on being able to get a FieldII aperture
     methods
         function p = getFieldIIPositions(xdc)
