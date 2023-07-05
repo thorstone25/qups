@@ -32,22 +32,25 @@ classdef Scan < matlab.mixin.Copyable
     
     % USTB interop
     methods(Abstract)
-        % QUPS2USTB - Return a USTB/UFF compatible uff.scan object
+        % QUPS2USTB - Convert a Scan to a USTB/UFF compatible uff.scan
         %
-        % uscan = QUPS2USTB(scan) returns a uff.scan object
+        % uscan = QUPS2USTB(scan) returns a uff.scan object.
         %
+        % Example:
+        % uscan = QUPS2USTB(ScanCartesian());
+        % 
         % See also UFF.SCAN
         uscan = QUPS2USTB(scan)
     end
         
     % UFF constructor
     methods(Static)
-        % UFF - Construct a Scan from a UFF scan
+        function scan = UFF(uscan)
+        % UFF - Construct a Scan from a uff.scan
         %
         % scan = Scan.UFF(uscan) converts the uff.scan uscan to a Scan.
         %
         % See also SCAN.QUPS2USTB
-        function scan = UFF(uscan)
             arguments, uscan uff.scan; end
             switch class(uscan)
                 case 'uff.linear_scan',         scan = ScanCartesian.UFF(uscan);
