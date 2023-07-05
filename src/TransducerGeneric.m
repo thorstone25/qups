@@ -124,30 +124,34 @@ classdef TransducerGeneric < Transducer
 
     % Field II conversion function
     methods(Access=public)
-        function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
-            error('Not implemented.');
-            if nargin < 2 || isempty(focus), focus = [0 0 realmax('single')]; end % ~ 0-deg plane wave
-            if nargin < 3, element_sub_divisions = [1,3]; end % no sub divisions
-            % TODO: error if origin not at 0.
-                        
-            % Field II parameters
-            xdc_lin_array_params = { ...
-                self.numel, ...
-                self.width, ...
-                self.height,...
-                self.kerf, ...
-                element_sub_divisions(1), ...
-                element_sub_divisions(2), ...
-                reshape(focus, 1, []),...
-                };
+        function aperture = getFieldIIAperture(xdc, focus, element_sub_divisions)
+            arguments
+                xdc (1,1) Transducer
+                focus (1,3) double = [0 0 realmax('single')];
+                element_sub_divisions (1,2) double = [1,1]
+            end
+
+            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite        
+            sdiv = element_sub_divisions; % alias            
+            pch = patches(xdc, sdiv); % [Nel x Ndv] array with  {X / Y / Z / C} tuples
             
-            % ensure double type
-            xdc_lin_array_params = cellfun(@double, xdc_lin_array_params, 'UniformOutput', false);
-            xdc_lin_array_params = cellfun(@gather, xdc_lin_array_params, 'UniformOutput', false);
-            
+            r = zeros([size(pch'),19]); % Ndv x Nel x 19
+            for i = 1 : size(pch,1) % each element
+                for j = 1 : size(pch,2) % each subelement
+                    pchij = pch{i,j}; % get tuple
+                    p = reshape(permute(cat(3, pchij{1:3}), [3,1,2]), 3, 4); % get as 3 x 4 array
+                    p = p(:,[1,2,4,3]); % swap 4th<->3rd for clockwise ordering
+                    r(j,i,:) = [i, p(:)', 1, [xdc.width, xdc.height] ./ sdiv, mean(p,2)']; % get rectangle
+                end
+            end
+
+            % reshape arguments
+            r = reshape(r, [numel(pch) 19]); % rectangles: [sdiv x element] x 19
+            c = double(gather(xdc.pos')); % element centers
+
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_linear_array(xdc_lin_array_params{:});
+            aperture = xdc_rectangles(r, c, focus);
         end        
     end
     
