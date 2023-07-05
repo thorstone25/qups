@@ -1027,7 +1027,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             end
 
             % get positions
-            p = self.getPositions();
+            p = self.positions();
 
             % plot
             plot_args = struct2nvpair(plot_args);
