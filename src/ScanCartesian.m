@@ -142,19 +142,6 @@ classdef ScanCartesian < Scan
             end % pack if 1 output requested
         end
                     
-        function ord = getPermuteOrder(self)
-            % GETPERMUTEORDER - Get the permutation of 'XYZ'
-            %
-            % ord = GETPERMUTEORDER(self) returns the permutation of the
-            % scan.
-            % 
-            % This functon is likely to be deprecated.
-            %
-            %
-
-            ord = arrayfun(@(c) find(c == 'XYZ'), self.order);
-        end
-
         function setImageGridOnSequence(self, seq)
             % setImageGridOnSequence Align Scan to a Sequence
             %

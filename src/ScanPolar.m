@@ -140,51 +140,6 @@ classdef ScanPolar < Scan
             if nargout == 1, R = {R, A, Y}; end % pack if 1 output requested
         end
                 
-        function setImageGridOnTarget(self, target, margin)
-            % SETIMAGEGRIDONTARGET - Make the scan encompass the target
-            % 
-            % setImageGridOnTarget(self, target) sets the imaging grid to 
-            % surround Target target but leaves unchanged the number of 
-            % points on the grid. Typically this implies that the 
-            % resolution of the image will changewhenever this function is 
-            % called.
-            %
-            % setImageGridOnTarget(self, target, margin) applies an
-            % additional margin around the Target.
-            %
-            % See also Target
-
-            if(nargin < 3 || isempty(margin))
-                % margin expansion (m)
-                margin = [0 3e-3; ...
-                          0 0;...
-                         -2 2;];
-            end
-
-            % convert the target boundaries to their polar equivalent
-            og = self.origin;
-            [Xb, Yb, Zb] = ndgrid(target.xb, target.yb, target.zb);
-            [a_, r_, y_] = cart2pol(Xb(:) - og(1), Yb(:)- og(2), Zb(:) - og(3));
-
-            % copy the boundaries - gaurd against unreasonable values
-            self.rb = [min(min(r_), 0   ),     max(r_)      ] + margin(1,:);
-            self.ab = [min(min(a_), -180), max(max(a_), 180)] + margin(2,:);
-            self.yb = [    min(y_),            max(y_)      ] + margin(3,:);
-        end
-    
-        function ord = getPermuteOrder(self)
-            % GETPERMUTEORDER - Get the permutation of 'RAY'
-            %
-            % ord = GETPERMUTEORDER(self) returns the permutation of the
-            % Scan.
-            % 
-            % This functon is likely to be deprecated.
-            %
-            %
-
-            ord = arrayfun(@(c) find(c == 'RAY'), self.order);
-        end
-
         function [b_cart, scanC] = scanConvert(self, b_pol, scanC)
             % SCANCONVERT - Move the image onto a ScanCartesian
             %
