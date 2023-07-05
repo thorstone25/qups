@@ -319,9 +319,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % See also FIELD_INIT
         aperture = getFieldIIAperture(xdc, focus, element_sub_divisions);
 
-        % GETUSTBPROBE - Create a USTB compatible uff.probe object
+        % QUPS2USTB - Create a USTB compatible uff.probe object
         %
-        % probe = GETUSTBPROBE(xdc) creates a uff.probe probe from the
+        % probe = QUPS2USTB(xdc) creates a uff.probe probe from the
         % Transducer xdc. USTB must be on the path.
         %
         % See also UFF.PROBE
@@ -330,18 +330,25 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % Verasonics conversion functions
     methods (Static)
-        % VERASONICS - Construct a Transducer from A Verasonics struct
-        % 
-        % xdc = Transducer.VERASONICS(Trans) constructs a Transducer from
-        % the properties defined in the Verasonics 'Trans' struct.
-        %
-        % xdc = Transducer.VERASONICS(Trans, c0) uses c0 as the sound speed
-        % instead of 1540, in m/s. This is typicaly set by the Verasonics
-        % property 'Resource.Parameters.speedOfSound'. Be sure to
-        % explicitly set this if other than 1540.
-        %
-        % 
         function xdc = Verasonics(Trans, c0)
+            % VERASONICS - Construct a Transducer from A Verasonics struct
+            %
+            % xdc = Transducer.VERASONICS(Trans) constructs a Transducer 
+            % from the properties defined in the Verasonics 'Trans' struct.
+            %
+            % xdc = Transducer.VERASONICS(Trans, c0) uses c0 in m/s as the 
+            % sound speed when converting from wavelengths to meters. This
+            % is typicaly set by the Verasonics property
+            % 'Resource.Parameters.speedOfSound'. Be sure to explicitly set
+            % this if other than 1540. 
+            %
+            % Example:
+            %
+            % Trans = struct('name', 'L12-3v', 'units', 'mm');
+            % Trans = computeTrans(Trans);
+            % xdc = Transducer.Verasonics(Trans);
+            %
+            % See also TRANSDUCER.UFF TRANSDUCER.QUPS2USTB
             arguments
                 Trans (1,1) struct
                 c0 (1,1) double = 1540

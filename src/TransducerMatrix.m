@@ -265,8 +265,8 @@ classdef TransducerMatrix < Transducer
                 Trans (1,1) struct
                 c0 (1,1) double = 1540
             end
-            % determine the scaling of the properties
-            switch Trans.units
+           
+            switch Trans.units % determine the scaling of the properties
                 case 'wavelengths', scale = c0 / Trans.frequency * 1e-6; % lambda -> m
                 case 'mm', scale = 1e-3; % mm -> m
             end
