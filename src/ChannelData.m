@@ -42,8 +42,6 @@ classdef ChannelData < matlab.mixin.Copyable
         T       % number of time samples
         N       % number of receiver channels
         M       % number of transmits
-        rxs     % receives vector
-        txs     % transmits vector
     end
 
     % constructor/destructor
@@ -1082,8 +1080,6 @@ classdef ChannelData < matlab.mixin.Copyable
         function T = get.T(chd), T = gather(size(chd.data,chd.tdim)); end
         function N = get.N(chd), N = gather(size(chd.data,chd.ndim)); end
         function M = get.M(chd), M = gather(size(chd.data,chd.mdim)); end
-        function n = get.rxs(chd), n=cast(shiftdim((1:chd.N)',1-chd.ndim), 'like', real(chd.data)); end
-        function m = get.txs(chd), m=cast(shiftdim((1:chd.M)',1-chd.mdim), 'like', real(chd.data)); end
     end
 
     % sizing functions (used to control tall behaviour and reshaping)
