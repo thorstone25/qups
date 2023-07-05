@@ -188,6 +188,33 @@ classdef Scatterers < matlab.mixin.Copyable
         end
     end
 
+    % conversion
+    methods
+        function s = obj2struct(scat)
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % scat = OBJ2STRUCT(scat) converts the Scatterers scat and all
+            % of it's properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create a Scatterers
+            % scat = Scatterers()
+            %
+            % % convert to a MATLAB struct
+            % scat = obj2struct(scat)
+            %
+            arguments
+                scat Scatterers
+            end
+
+            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            s = struct(scat); % convert scan
+            s.class = class(scat); % append class info
+            warning(W); % restore warnings
+        end
+    end
+
     % plot methods
     methods 
         function h = plot(self, varargin, plot_args)

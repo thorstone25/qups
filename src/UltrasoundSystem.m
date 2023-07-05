@@ -230,6 +230,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     s.(f) = obj2struct(s.(f)); 
                 end
             end
+            s.class = class(us); % append class info
 
             % restore warnings
             warning(S);

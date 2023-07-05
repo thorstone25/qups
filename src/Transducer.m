@@ -95,6 +95,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(xdc); % convert self
             if ~isempty(s), s.impulse = obj2struct(s.impulse); end % convert impulse
+            s.class = class(xdc); % append class info
             warning(W); % restore warnings
         end
     end

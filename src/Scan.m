@@ -149,6 +149,7 @@ classdef Scan < matlab.mixin.Copyable
             arguments, scan Scan {mustBeScalarOrEmpty}; end
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(scan); % convert scan
+            s.class = class(scan); % append class info
             warning(W); % restore warnings
         end
     end

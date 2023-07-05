@@ -123,6 +123,30 @@ classdef ChannelData < matlab.mixin.Copyable
                 [chd.fs, chd.t0] = deal(chd.fs/w, w*chd.t0);
             end
         end
+        
+        function s = obj2struct(chd)
+            % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
+            %
+            % chd = OBJ2STRUCT(chd) converts the ChannelData chd and all
+            % of it's properties into native MATLAB structs.
+            %
+            % Example:
+            %
+            % % Create a ChannelData
+            % chd = ChannelData()
+            %
+            % % convert to a MATLAB struct
+            % chd = obj2struct(chd)
+            %
+            arguments
+                chd ChannelData
+            end
+
+            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            s = struct(chd); % convert scan
+            s.class = class(chd); % append class info
+            warning(W); % restore warnings
+        end
     end
 
     methods(Static)

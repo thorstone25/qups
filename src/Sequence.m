@@ -220,6 +220,11 @@ classdef Sequence < matlab.mixin.Copyable
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(seq); % convert self
             if ~isempty(s), s.pulse = obj2struct(s.pulse); end % convert pulse
+            s.class = class(seq); % append class info
+            % remove empty hidden fields
+            fds  = string(fieldnames(s))'; % all fieldnames
+            ids = endsWith(fds, '_') & arrayfun(@(f) isempty(s.(f)), fds); % empty, hidden props
+            s = rmfield(s, [fds(ids), "FSA_n_tx"]); % remove empty, hidden & redundant props
             warning(W); % restore warnings
         end
         

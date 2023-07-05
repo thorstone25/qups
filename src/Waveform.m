@@ -198,6 +198,7 @@ classdef Waveform < matlab.mixin.Copyable
             
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(wv); % convert self to a struct
+            s.class = class(wv); % append class info
             warning(W); % restore warnings
 
             % convert function
