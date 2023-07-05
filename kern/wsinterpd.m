@@ -205,6 +205,7 @@ else
 
     parfor(i = 1:numel(xc), parenv)
         if wcscal, wci = w; else, wci = wc{i}; end
+        wci = swapdim(wci, nsing, Dt+nsing-1);
         y{i} = sum(exp(omega .* tc{i}) .* wci .* interp1(xc{i},1+tc{i},interp,extrapval), dsumi, 'omitnan'); 
         y{i} = swapdim(y{i}, nsing, Dt+nsing-1);
     end

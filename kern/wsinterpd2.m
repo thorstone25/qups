@@ -151,8 +151,8 @@ if exist('interpd.ptx', 'file') ...
     end
 
     % enforce complex type for gpu data
-    if isa(x, 'gpuArray'), x = complex(x); end
-    if isa(w, 'gpuArray'), w = complex(w); end
+    if isa(x, 'gpuArray') || isa(x, 'halfT'), x = complex(x); end
+    if isa(w, 'gpuArray') || isa(w, 'halfT'), w = complex(w); end
     switch suffix
         case "h", 
             y = complex(gpuArray(halfT(zeros(osz))));
@@ -209,7 +209,9 @@ else
     elseif isa(gcp("nocreate"), "parallel.ProcessPool"), parenv = 0; % no parpool - memory overhead outweighs benefits
     else,                                                parenv = gcp; % ideally a ThreadPool
     end
-    
+
+    nsing = 1+find((size(t1,2:maxdims) == 1) & (size(t2,2:maxdims) == 1)); % where t singular in dims of x
+
     parfor(i = 1:numel(xc), parenv)
         % get 0-based sub indices
         inds = cell(1,maxdims);
@@ -221,14 +223,17 @@ else
         % index, sample, weight, sum
         tau = (t1c{jt1} + t2c{jt2}); %#ok<PFBNS> % time
         amp = wc{jwc}; %#ok<PFBNS> % weighting
-        y{i} = sum(exp(omega .* tau) .* amp .* interp1(xc{i},1+tau,interp,extrapval), dsumi, 'omitnan'); 
+        amp = swapdim(amp, nsing, Dt+nsing-1); % move singleton dimensions into upper dimensions
+        yi = sum(exp(omega .* tau) .* amp .* interp1(xc{i},1+tau,interp,extrapval), dsumi, 'omitnan'); 
+        
+        % store output
+        yi = swapdim(yi, nsing, Dt+nsing-1); % move singleton dimensions into upper dimensions
+        y{i} = yi;
     end
 
     % fold the non-singleton dimensions of x back down into the singleton
     % dimensions of the output
     % swap out entries of t that are singular corresponding to where x is non-singular
-    nsing = 1+find((size(t1,2:maxdims) == 1) & (size(t2,2:maxdims) == 1)); % where t singular in dims of x
-    y = cellfun(@(y) {swapdim(y, nsing, Dt+nsing-1)}, y);
     y = cat(maxdims+1, y{:}); % unpack matching dims in upper dimensions
     lsz = max(esize(t1,mdms), esize(t2,mdms)); % get original shape of matching dims
     y = reshape(y, [size(y,1:maxdims), lsz]); % restore data size in upper dimension
