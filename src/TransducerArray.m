@@ -142,7 +142,9 @@ classdef TransducerArray < Transducer
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
             if nargin < 2 || isempty(focus), focus = [0 0 realmax('single')]; end % ~ 0-deg plane wave
             if nargin < 3, element_sub_divisions = [1,3]; end % no sub divisions
-            % TODO: error if origin not at 0.
+            
+            % make focus finite
+            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus)));
                         
             % Field II parameters
             xdc_lin_array_params = { ...

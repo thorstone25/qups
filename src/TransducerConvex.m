@@ -146,11 +146,13 @@ classdef TransducerConvex < Transducer
         function aperture = getFieldIIAperture(self, focus, element_sub_divisions)
             arguments
                 self TransducerConvex
-                focus (3,1) double = [0 0 1e-3]'
+                focus (3,1) double = [0 0 realmax('single')]
                 element_sub_divisions (1,2) double = [1,1];
             end
-            % TODO: error if origin not at 0.
 
+            % make focus finite
+            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus)));
+                        
             % Field II parameters
             xdc_convex_params = { ...
                 self.numel,     ... no of elements in x direciton

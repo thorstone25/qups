@@ -21,7 +21,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     properties
-        el_focus (1,1) double = realmax('single') % elevation focal depth
+        el_focus (1,1) double = Inf % elevation focal depth
     end
 
     properties(GetAccess=public, SetAccess=protected, Dependent)
