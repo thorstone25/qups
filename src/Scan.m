@@ -105,7 +105,7 @@ classdef Scan < matlab.mixin.Copyable
                     [r, az, el] = deal(ax{:});
                     apex = PData.Origin;
                     [az, el] = deal(rad2deg(az), rad2deg(el));
-                    scan = ScanPolar('origin', apex, 'r', r, 'a', az, 'e', el);
+                    scan = ScanSpherical('origin', apex, 'r', r, 'a', az, 'e', el);
             end
             scan = scan.scale('dist', scale);
         end
