@@ -98,7 +98,8 @@ isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuA
 % use ptx on gpu if available or use native MATLAB
 if exist('interpd.ptx', 'file') ...
         && ( isa(x, 'gpuArray') || isa(t1, 'gpuArray') || isa(t2, 'gpuArray') || isa(x, 'halfT') && x.gtype) ...
-        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
+        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
+        && real(omega) == 0
 
     % get stride for weighting
     wstride = sz2stride(size(w,1:S));
@@ -172,7 +173,7 @@ if exist('interpd.ptx', 'file') ...
     strides = cat(1,wstride,ystride,t1stride,t2stride,xstride);
 
     % compute
-    y_ = k.feval(y_, w_, x_, t1_, t2_, dsizes, iflags, strides, flagnum, omega); 
+    y_ = k.feval(y_, w_, x_, t1_, t2_, dsizes, iflags, strides, flagnum, imag(omega)); 
 
     % for halfT, store the data back in the output
     switch suffix, case "h", y.val = y_; otherwise, y = y_; end
