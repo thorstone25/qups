@@ -63,6 +63,54 @@ classdef Scan < matlab.mixin.Copyable
         end
     end
 
+    % Verasonics import
+    methods(Static)
+        function scan = Scan.Verasonics(PData, scale)
+            % VERASONICS - Create a Scan from a Verasonics PData struct
+            %
+            % scan = Scan.Verasonics(PData) creates a Scan scan from the
+            % pixel data struct PData.
+            % 
+            % scan = Scan.Verasonics(PData, scale) scales the pixels by
+            % scale. The default is 1.
+            % 
+            % Example:
+            %
+            % % get wavelengths in meters
+            % lambda = Resource.Parameters.speedOfSound / (Trans.frequency * 1e6);
+            % 
+            % % import in meters
+            % scan = Scan.Verasonics(PData, lambda); 
+            % 
+            % See also TRANSDUCER.VERASONICS
+            arguments
+                PData (1,1) struct
+                scale (1,1) double = 1;
+            end
+            ax = arrayfun(@(N,dx) {(0:N-1)*dx}, PData.Size, PData.PDelta); % axes
+            switch PData.Coord
+                case "rectangular"
+                    og = num2cell(PData.Origin);
+                    ax = cellfun(@plus, ax, og, 'UniformOutput',false); % offset by origin
+                    scan = ScanCartesian('x', ax{1}, 'y', ax{2}, 'z', ax{3});
+
+                case "polar"
+                    [r, az, y] = deal(ax{:});
+                    apex = PData.Origin;
+                    az = rad2deg(az);
+                    scan = ScanPolar('origin', apex, 'r', r, 'a', az, 'y', y);
+
+                case "spherical"
+                    warning("Unverified import definition: proceed with caution.");
+                    [r, az, el] = deal(ax{:});
+                    apex = PData.Origin;
+                    [az, el] = deal(rad2deg(az), rad2deg(el));
+                    scan = ScanPolar('origin', apex, 'r', r, 'a', az, 'e', el);
+            end
+            scan = scan.scale('dist', scale);
+        end
+    end
+
     % imaging computations
     methods(Abstract)
         % GETIMAGINGGRID - get the multi-dimensional grid for imaging

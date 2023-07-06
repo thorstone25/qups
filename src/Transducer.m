@@ -336,7 +336,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % Trans = computeTrans(Trans);
             % xdc = Transducer.Verasonics(Trans);
             %
-            % See also TRANSDUCER.UFF TRANSDUCER.QUPS2USTB
+            % See also SCAN.VERASONICS TRANSDUCER.UFF TRANSDUCER.QUPS2USTB
             arguments
                 Trans (1,1) struct
                 c0 (1,1) double = 1540
