@@ -65,7 +65,7 @@ classdef Scan < matlab.mixin.Copyable
 
     % Verasonics import
     methods(Static)
-        function scan = Scan.Verasonics(PData, scale)
+        function scan = Verasonics(PData, scale)
             % VERASONICS - Create a Scan from a Verasonics PData struct
             %
             % scan = Scan.Verasonics(PData) creates a Scan scan from the
@@ -87,24 +87,30 @@ classdef Scan < matlab.mixin.Copyable
                 PData (1,1) struct
                 scale (1,1) double = 1;
             end
-            ax = arrayfun(@(N,dx) {(0:N-1)*dx}, PData.Size, PData.PDelta); % axes
+            if ~isfield(PData, 'Coord'), PData.Coord = 'rectangular'; end
             switch PData.Coord
                 case "rectangular"
-                    og = num2cell(PData.Origin);
+                    ax = arrayfun(@(N,dx) {(0:N-1)*dx}, PData.Size([2,3,1]), PData.PDelta([1,2,3])); % axes
+                    ax{1} = ax{1} + 0.5 * PData.PDelta(1); % x-axis offset
+                    og = num2cell(PData.Origin); 
                     ax = cellfun(@plus, ax, og, 'UniformOutput',false); % offset by origin
                     scan = ScanCartesian('x', ax{1}, 'y', ax{2}, 'z', ax{3});
 
                 case "polar"
+                    warning("Unverified import definition.");
+                    ax = arrayfun(@(N,dx) {(0:N-1)*dx}, PData.Size, PData.PDelta([2,1,3])); % axes
                     [r, az, y] = deal(ax{:});
                     apex = PData.Origin;
-                    az = rad2deg(az);
+                    az = rad2deg(az - mean(az));
                     scan = ScanPolar('origin', apex, 'r', r, 'a', az, 'y', y);
 
                 case "spherical"
-                    warning("Unverified import definition: proceed with caution.");
+                    warning("Unverified import definition.");
+                    ax = arrayfun(@(N,dx) {(0:N-1)*dx}, PData.Size, PData.PDelta); % axes
                     [r, az, el] = deal(ax{:});
                     apex = PData.Origin;
-                    [az, el] = deal(rad2deg(az), rad2deg(el));
+                    az = rad2deg(az - mean(az));
+                    el = rad2deg(el - mean(el));
                     scan = ScanSpherical('origin', apex, 'r', r, 'a', az, 'e', el);
             end
             scan = scan.scale('dist', scale);
