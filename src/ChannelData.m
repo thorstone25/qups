@@ -357,7 +357,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % digitalFilter object D with a passband between bw(1) and 
             % bw(end). It can be used to filter the ChannelData.
             %
-            % D = GETPASSBANDFILTER(chd, bw, N) uses N coefficients.
+            % D = GETPASSBANDFILTER(chd, bw, N) uses N coefficients. The
+            % default is 25.
             %
             % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
             % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
@@ -372,6 +373,31 @@ classdef ChannelData < matlab.mixin.Copyable
                 'FilterOrder', N, ...
                 'CutoffFrequency1', bw(1), ...
                 'CutoffFrequency2', bw(end), ...
+                'DesignMethod', 'window' ...
+                );
+        end
+        function D = getLowpassFilter(chd, cutoff, N)
+            % GETPASSBANDFILTER Get a passband filter
+            %
+            % D = GETPASSBANDFILTER(chd, cutoff) creates a FIR bandpass
+            % digitalFilter object D with a cutoff frequency cutoff. It can
+            % be used to filter the ChannelData.
+            %
+            % D = GETPASSBANDFILTER(chd, cutoff, N) uses N coefficients.
+            % The default is 25.
+            %
+            % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
+            % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
+
+
+            % defaults
+            if nargin < 3, N = 25; end
+
+            % make a
+            D = designfilt('lowpassfir', ...
+                'SampleRate',chd.fs, ...
+                'FilterOrder', N, ...
+                'CutoffFrequency', cutoff, ...
                 'DesignMethod', 'window' ...
                 );
         end
