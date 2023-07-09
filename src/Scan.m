@@ -300,7 +300,7 @@ classdef Scan < matlab.mixin.Copyable
 
             arguments
                 scan (1,1) Scan
-                b {mustBeNumeric}
+                b {mustBeNumericOrLogical}
             end
             arguments(Repeating)
                 varargin
