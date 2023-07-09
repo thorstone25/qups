@@ -323,12 +323,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             set(ax, 'ydir', 'reverse');
             title(ax, 'Geometry');
             plargs = struct2nvpair(im_args);
-            hps = plot(self.scan, 'm.', 'DisplayName', 'Image', plargs{:}); % the imaging points
+            hps = plot(self.scan, '.', 'Color', [1.0 0.75 0.75], 'DisplayName', 'Grid', plargs{:}); % the imaging points
             if self.tx == self.rx
-                hxdc = plot(self.xdc, ax, 'r+', 'DisplayName', 'Elements', plargs{:}); % elements
+                hxdc = plot(self.xdc, ax, 'Color', [1 0 1], 'DisplayName', 'Elements', plargs{:}); % elements
             else
-                htx = plot(self.tx, ax, 'b+', 'DisplayName', 'Transmit Elements', plargs{:}); % tx elements
-                hrx = plot(self.rx, ax, 'r+', 'DisplayName', 'Receive Elements', plargs{:}); % rx elements
+                htx = plot(self.tx, ax, 'b', 'DisplayName', 'Transmit Elements', plargs{:}); % tx elements
+                hrx = plot(self.rx, ax, 'r', 'DisplayName', 'Receive Elements', plargs{:}); % rx elements
                 hxdc = [htx, hrx];
             end
             switch self.seq.type % show the transmit sequence
@@ -1810,7 +1810,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.seq.numPulse
-                kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
+                kwargs.binary (1,1) logical = true; % whether to use the binary form of k-Wave
                 kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim
                 kwargs.gpu (1,1) logical = logical(gpuDeviceCount()) % whether to employ gpu during pre-processing
             end
@@ -3158,7 +3158,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get dimensions of ChannelData
             assert(sum(size(chd) > 1) <= 1, "ChannelData array may only have 1 non-singleton dimension (" + join(string([size(chd)])," x ") + ").");
-            chddim = find(size(chd) > 1, 1, 'first');
+
+            % check the data is FSA and matches transmit / receive
+            % transducers
+            if ~kwargs.delay_only
+                assert(all(self.tx.numel == [chd.M]), 'Number of transmits must match number of transmitter elements.')
+                assert(all(self.rx.numel == [chd.N]), 'Number of receives must match number of receiver elements.')
+            end
 
             % get cluster
             parenv = kwargs.parenv; % compute cluster/pool/threads
@@ -3186,11 +3192,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             assert(numel(dp) == 1, ...
                 "The simulation scan must have equally sized steps in all non-singleton dimensions." ...
                 );
-
-            % check the data is FSA and matches transmit / receive
-            % transducers
-            assert(all(self.tx.numel == [chd.M]), 'Number of transmits must match number of transmitter elements.')
-            assert(all(self.rx.numel == [chd.N]), 'Number of receives must match number of receiver elements.')
 
             % get the transmit, receive
             Pv = self.tx.positions();
