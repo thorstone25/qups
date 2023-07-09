@@ -1019,6 +1019,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             arguments
                 plot_args.?matlab.graphics.chart.primitive.Line
                 plot_args.DisplayName = 'Elements'
+                plot_args.LineStyle = 'none'
+                plot_args.Marker = 'square'
             end
             
             % extract axes
