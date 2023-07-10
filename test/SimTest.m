@@ -23,7 +23,8 @@ classdef SimTest < matlab.unittest.TestCase
             'linpw', string({"L11-5V",'Plane-wave'}), ...
             'linvs', string({"L11-5V",'Focused'}), ...
             'crvfsa', string({"C5-2V",'FSA'}), ...
-            'crvvs', string({"C5-2V",'sector'}) ...
+            'crvvs', string({"C5-2V",'sector'}), ...
+            'matpw', string({"PO192O", 'Plane-wave'}) ...
             );
     end
 
@@ -80,8 +81,14 @@ classdef SimTest < matlab.unittest.TestCase
                 case 'L11-5V', xdc = TransducerArray.L11_5v(); % linear array
                 case 'L12-3V', xdc = TransducerArray.L12_3v(); % another linear array
                 case 'C5-2V' , xdc = TransducerConvex.C5_2v(); % convex array
+                case 'PO192O', xdc = TransducerMatrix.PO192O(); % matrix array
             end
-            xdc.numel = 3; % low number of elements - still an array, but we only check the center
+            
+            % reduce number of elements - still an array, but we only check the center
+            switch xdc_name
+                case 'PO192O', xdc.numd(:) = 3;
+                otherwise, xdc.numel = 3;
+            end
 
             % Choose a transmit sequence
             seq_name = xdc_seq_name(2);
@@ -112,6 +119,13 @@ classdef SimTest < matlab.unittest.TestCase
                         seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0 ...
                             ); % FSA - convex sequence
                 end
+            elseif isa(xdc, 'TransducerMatrix')
+                switch seq_name
+                    case 'Plane-wave'
+                        [amin, amax, Na] = deal( -25 ,  25 , 3 );
+                        seq = SequenceRadial('type', 'PW', 'c0', scat.c0, ...
+                            'ranges', 1, 'angles',  linspace(amin, amax, Na)); % Plane Wave (PW) sequence
+                end
             end
 
             % make a cartesian scan
@@ -120,7 +134,7 @@ classdef SimTest < matlab.unittest.TestCase
             xb = pn(1,[1,end]); % x-limits are the edge of the aperture
             zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
 
-            Npixd = 2^8;
+            Npixd = 2^7;
             scanc = ScanCartesian(...
                 'x', linspace(xb(1), xb(end), Npixd+1), ...
                 'z', linspace(zb(1), zb(end), Npixd+1) ...
@@ -128,14 +142,14 @@ classdef SimTest < matlab.unittest.TestCase
             scanc.x(end) = [];
             scanc.z(end) = [];
 
-            % For linear transducers only!
-            if isa(xdc, 'TransducerArray'),
-                scan = scanc; % use the cartesian one
-            elseif isa(xdc, 'TransducerConvex') % use with a SequenceRadial!
+            % choose the scan
+            if isa(xdc, 'TransducerConvex') && seq_name == "sector" % sector scan 
                 scan = ScanPolar('origin', xdc.center, 'a', -40:0.5:40, ...
                     'r', norm(xdc.center) + linspace(zb(1), zb(end), Npixd+1)...
                     ); % R x A scan
                 scan.r(end) = [];
+            else
+                scan = scanc; % use the cartesian one
             end
             
             % Choose the simulation region (eikonal)
@@ -180,7 +194,7 @@ classdef SimTest < matlab.unittest.TestCase
     % some of these options aren't fully supported yet.
     properties(TestParameter)
         terp = {'nearest', 'linear', 'cubic'};  % interpolation
-        sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'}% k-Wave just takes a while, SIMUS has seemingly random phase errors
+        sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
     end
     methods(TestMethodSetup)
     end
@@ -370,7 +384,7 @@ for i = numel(pnms):-1:1
         case "default",     try test.clu = parcluster(); catch, tf(i) = false; end
         case "threads",     try test.clu = parpool('threads'); close(gcp()); catch,  tf(i) = false; end
         case "background",  try test.clu = backgroundPool(); close(gcp()); catch, tf(i) = false; end
-        case "pool",        try test.clu = parpool('local', 'SpmdEnabled',true); close(gcp()); catch tf(i) = false; end
+        case "pool",        try test.clu = parpool('local', 'SpmdEnabled',true); close(gcp()); catch, tf(i) = false; end
     end
 end
 pnms = pnms(tf); % filter the pools that fail to launch
