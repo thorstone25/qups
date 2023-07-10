@@ -145,7 +145,7 @@ __global__ void conv(const double* x, const double* y, double* z, size_t * sizes
     conv_temp<double>(x, y, z, 0.0, sizes);
 }
 #if (__CUDA_ARCH__ >= 530)
-__global__ void convh(const ushort* x, const ushort* y, ushort* z, size_t * sizes){
+__global__ void convh(const unsigned short* x, const unsigned short* y, unsigned short* z, size_t * sizes){
     conv_temp<half>((half*)x, (half*)y, (half*)z, 0.0f, sizes);
 }
 #endif

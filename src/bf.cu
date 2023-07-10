@@ -95,7 +95,8 @@ void __device__ DAS_temp(U2 * __restrict__ y,
             # pragma unroll
             for(size_t n = 0; n < N; ++n){
                 // 2-way virtual path distance
-                rv = pi[i] - (U3){pv[m].x,pv[m].y,pv[m].z}; // (virtual) transmit to pixel vector
+                const U3 pvm = {pv[m].x,pv[m].y,pv[m].z}; // declared for MSVC (2019)
+                rv = pi[i] - pvm; // (virtual) transmit to pixel vector
 
                 dv = QUPS_VS ? // tx path length
                     copysign(length(rv), dot(rv, nv[m])) // virtual source
