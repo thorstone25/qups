@@ -2552,7 +2552,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                chd ChannelData
+                chd (1,1) ChannelData
                 seq (1,1) Sequence = self.seq;
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.length string {mustBeScalarOrEmpty} = [];
@@ -2700,7 +2700,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % See also FOCUSTX
             arguments
                 self (1,1) UltrasoundSystem
-                chd ChannelData
+                chd (1,1) ChannelData
                 seq (1,1) Sequence = self.seq
                 kwargs.gamma (1,1) {mustBeNumeric} = (chd.N / 10)^2 % heuristically chosen
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
@@ -3155,8 +3155,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                chd ChannelData
-                medium Medium
+                chd ChannelData = ChannelData.empty
+                medium Medium = Medium('c0', self.seq.c0)
                 cscan (1,1) ScanCartesian = self.scan
                 kwargs.fmod (1,1) {mustBeNumeric} = 0
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
@@ -3166,6 +3166,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_tx (1,1) logical = false;
                 kwargs.verbose (1,1) logical = true;
                 kwargs.delay_only (1,1) logical = isempty(chd); % compute only delays
+            end
+
+            % oops?
+            if kwargs.delay_only && (nargout <= 1)
+                warning( ...
+                    "QUPS:bfEikonal:unexpectedOutput", ...
+                    "Computing delays only, but only " + nargout + " outputs were requested. Was this intentional?" ...
+                    )
+            elseif ~kwargs.delay_only && isempty(chd)
+                warning( ...
+                    "QUPS:bfEikonal:emptyChannelData", ...
+                    "An image was requested , but the ChannelData is empty. Was this intentional?" ...
+                    )
             end
 
             % get dimensions of ChannelData
@@ -3323,7 +3336,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 self (1,1) UltrasoundSystem
-                chd ChannelData
+                chd ChannelData = ChannelData.empty
                 c0 (:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.apod {mustBeNumericOrLogical} = 1
