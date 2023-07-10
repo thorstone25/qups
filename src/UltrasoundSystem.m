@@ -1221,11 +1221,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.periods (1,1) {mustBePositive} = 1
                 kwargs.dims {mustBeScalarOrEmpty, mustBeMember(kwargs.dims, [2,3])} = []
                 simus_kwargs.FullFrequencyDirectivity (1,1) logical = false % use central freq as reference
-                simus_kwargs.ElementSplitting (1,1) {mustBeInteger, mustBePositive} = 1 % element subdivisions
+                simus_kwargs.ElementSplitting (1,2) {mustBeInteger, mustBePositive} = 1 % element subdivisions
                 simus_kwargs.dBThresh (1,1) {mustBeReal} % = -100 % threshold for computing each frequency
                 simus_kwargs.FrequencyStep (1,1) {mustBeReal} % = df frequency domain resolution                
                 simus_kwargs.WaitBar (1,1) logical = false % add wait bar
             end
+
+            % set options
+            simus_kwargs.ParPool = false; % disable parpool within pfield.m
 
             % load options
             if isempty(kwargs.parenv), kwargs.parenv = 0; end % select 0 workers if empty
@@ -1245,15 +1248,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 scat, 'UniformOutput',false);
             [X,Y,Z,A] = dealfun(@(x) cellfun(@(x){cast(x, 'like', proto)},x), X,Y,Z,A);
             if isempty(kwargs.dims) 
-                if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all'), kwargs.dims = 2; [Y{:}] = deal([]); % don't simulate in Y if it is all zeros 
-                else, kwargs.dims = 3; end
+                if all(cellfun(@(Y)all(Y == 0,'all'),Y), 'all') ...
+                        && ~isa(self.xdc, 'TransducerMatrix')
+                    kwargs.dims = 2; 
+                    [Y{:}] = deal([]); % don't simulate in Y if in 1D and it is all zeros 
+                else
+                    kwargs.dims = 3; 
+                end
             end
             if kwargs.dims == 2 && any(cellfun(@(Y)any(Y ~= 0, 'all'),Y))
                 warning("QUPS:UltrasoundSystem:simus:casting", "Projecting all points onto Y == 0 for a 2D simulation.");
             end
 
-            % get all other param struct values (implicitly force same
-            % transducer)
+            % get all other param struct values 
+            % (implicitly force same transducer by calling .xdc)
             p = {getSIMUSParam(self.xdc)};
             p = cellfun(@struct2nvpair, p, 'UniformOutput', false);
             p = cat(2, p{:});
@@ -1261,7 +1269,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % set transmit sequence ... the only way we can
             % TODO: forward arguments to transmit parameters
-            p.fs    = cast(self.fs, 'like', proto);
+            p.fs    = self.fs;
             p.TXnow = kwargs.periods; % number of wavelengths
             p.TXapodization = zeros([self.xdc.numel,1], 'like', proto); % set tx apodization
             p.RXdelay = zeros([self.xdc.numel,1], 'like', proto); % receive delays (none)
@@ -1281,17 +1289,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 off(3) = off(3) + range(sub(self.xdc.positions,3,1)); % offset to the chord
             end
 
-            % set options 
-            simus_kwargs.ParPool = false; % parpool within pfield.m
-            ... opt = struct( ...
-                ... 'ParPool', false, ... % parpool on pfield.m
-                ... 'FullFrequencyDirectivity', false, ... % use central freq as reference
-                ... 'ElementSplitting', 1, ... % element subdivisions
-                ... 'WaitBar', false, ... % add wait bar
-                ... 'dBThresh', -100 ... % threshold for computing each frequency
-                ... 'FrequencyStep', df, ... % freuqency domain resolution
-                ... 'CallFun', 'simus' ... % hack: use the simulation portion of the code
-                ... );
+            % choose simus/simus3 handle
+            if isa(self.xdc, 'TransducerMatrix'),   mustfun = @simus3;
+            else,                                   mustfun = @simus;
+            end
+ 
+            % force ElementSplitting scalar for 1D arrays
+            if ~isa(self.xdc, 'TransducerMatrix')
+                if simus_kwargs.ElementSplitting(2) ~= simus_kwargs.ElementSplitting(1)
+                warning( ...
+                    "The 2nd value of 'ElementSplitting' is ignored for " ...
+                    + class(self.xdc) + " types." ...
+                    );
+                end
+                simus_kwargs.ElementSplitting = simus_kwargs.ElementSplitting(1);
+            end
 
             % select the computing environment
             parenv = kwargs.parenv;
@@ -1306,8 +1318,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 parfor (m = 1:M, pclu) % use parallel rules, but execute on main thread
                     args = argf; % copy settings for this frame
                     args{6}.TXapodization(m) = 1; % transmit only on element m
-                    if isloc, rf{m,f} = simus(args{:}); % local compute
-                    else, out(m,f) = parfeval(parenv, @simus, 1, args{:}); % add cluster job
+                    if isloc, rf{m,f} = mustfun(args{:}); %#ok<PFBNS> % local compute
+                    else, out(m,f) = parfeval(parenv, mustfun, 1, args{:}); % add cluster job
                     end
                 end
             end
