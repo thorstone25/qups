@@ -129,7 +129,7 @@ You may also want to delete this folder after the temporary files are deleted. R
 
 On Linux, the filesystem does not deallocate deleted temporary files until MATLAB is closed. This can lead to write erros if many large simulations are run in the same MATLAB session. To avoid this issue, within `kspaceFirstOrder3DC.m`, set the file size of the temporary input/output files to 0 bytes prior to deleting them.
 ```
-if isunix % avoid deferred deletion for parpools on linux
+if isunix % tolerate deferred deletion for parpools on linux
         system("truncate -s 0 " + input_filename );
         system("truncate -s 0 " + output_filename);
 end
@@ -138,5 +138,5 @@ delete(output_filename);
 ```
 
 #### [MUST](https://www.biomecardio.com/MUST/documentation.html)
-To enable the usage of a `parallel.ThreadPool` with `simus.m`, interactive GUI calls and semaphores such as `mlock` and `munlock` must be removed from `pfield.m`.
+To enable the usage of a `parallel.ThreadPool` with `simus.m`, GUI and file I/O calls such as those used in `AdMessage` and `MUSTStat` must be removed from `pfield.m` and/or `pfield3.m`. It is safe to comment out the advertising and statistics functions.
 
