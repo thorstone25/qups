@@ -126,7 +126,7 @@ end
 %% Display the images, showing the effect of the Transducer and Sequence
 % plot options
 dbr = 60; % dbRange
-scale_global = true; % whether to use the same intensity scale
+scale_global = false; % whether to use the same intensity scale
 
 % make plots
 figure('Name', 'PSF');
