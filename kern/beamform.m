@@ -165,6 +165,7 @@ per_cell = {'UniformOutput', false};
 % move replicating dimensions of the data to dims 6+
 % TODO: support doing this with non-scalar t0 definition
 x = permute(x, [1:3,(max(3,ndims(x))+[1,2]),4:ndims(x)]); % (T x N x M x 1 x 1 x F x ...)
+fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
     
 if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
 
@@ -296,7 +297,6 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     Pv(4,:) = t0;
     
     % partition data per frame
-    fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
     F = prod(fsz);
 
     % for each data frame, run the kernel
@@ -406,6 +406,7 @@ else
                 end
                 y = y + yn;
             end
+            y = reshape(y, [Isz, 1, 1, fsz]);
         case 'MUL'
             y = dtypefun(zeros([Isz, 1, M]));
             drn = num2cell(dr, [1:3]); % ({I} x  N  x 1)
@@ -430,7 +431,7 @@ else
                 ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym))]);
                 y = y + ym;
             end
-            
+            y = reshape(y, [Isz, 1, M, fsz]);
         case 'SYN'
             y = dtypefun(zeros([Isz, N, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
@@ -455,7 +456,7 @@ else
                 ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym))]);
                 y = y + ym;
             end
-            
+            y = reshape(y, [Isz, N, 1, fsz]);
         case 'BF'
             % time delay ([I] x N x M)
             tau = cinv .* (dv + dr) - t0;
@@ -469,7 +470,7 @@ else
                 a .* interp1(x,  1 + tau * fs, interp_type, 0), ...
                 pck(xmn), pck(tau), pck(apod), per_cell{:} ...
                 );
-            y = reshape(y, [Isz, size(y,4:ndims(y))]);
+            y = reshape(y, [Isz, N M fsz]);
     end
 end
 
