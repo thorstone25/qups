@@ -102,7 +102,7 @@ a = us.apAcceptanceAngle(25); % 25 degrees is close to an f# of 1
 
 % preprocess
 chd = chd0;
-chd = downmix(chd, floor(chd.fs / 50e6)); % at least 25MHz sampling frequency
+chd = downsample(chd, floor(chd.fs / 50e6)); % at least 25MHz sampling frequency
 chd = hilbert(chd); % get analytic signal
 if gpuDeviceCount(), chd = gpuArray(chd); end % move to gpu if available
 
