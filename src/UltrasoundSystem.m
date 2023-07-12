@@ -720,6 +720,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     % USTB interop
     methods
         function [uchannel_data, uscan] = QUPS2USTB(us, chd, fmod)
+            % QUPS2USTB - Create a USTB channel data object
+            %
+            % uchannel_data = QUPS2USTB(us, chd) creates a USTB
+            % compatible uff.channel_data object from the UltrasoundSystem
+            % us and ChannelData chd. USTB must be on the path.
+            %
+            % uchannel_data = QUPS2USTB(..., fmod) sets the modulation
+            % frequency to fmod. The default is 0.
+            %
+            % [uchannel_data, uscan] = QUPS2USTB(...) additionally returns
+            % a USTB compatible uff.scan.
+            %
+            % See also ULTRASOUNDSYSTEM.UFF
             arguments
                 us (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
@@ -732,6 +745,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
     methods(Static)
         function [us, chd] = UFF(uchannel_data, uscan)
+            % UFF - Create an UltrasoundSystem and ChannelData from a uff.channel_data object
+            %
+            % [us, chd] = UFF(uchannel_data) creates an
+            % UltrasoundSystem us and ChannelData chd from the
+            % uff.channel_data object uchannel_data.
+            %
+            % [us, chd] = UFF(uchannel_data, uscan) additionally sets the
+            % Scan us.scan from the uff.scan uscan.
+            %
+            % See also ULTRASOUNDSYSTEM.UFF
+
             arguments
                 uchannel_data (1,1) uff.channel_data
                 uscan (1,1) uff.scan
@@ -4102,9 +4126,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % apod = APACCEPTANCEANGLE(us, theta) uses an acceptance angle
             % of theta in degrees. The default is 45.
             %
-            % The output apod has dimensions I1 x I2 x I3 x N x M where
+            % The output apod has dimensions I1 x I2 x I3 x N x 1 where
             % I1 x I2 x I3 are the dimensions of the scan, N is the number
-            % of receive elements, and M is the number of transmits.
+            % of receive elements.
             %
             % Example:
             %
@@ -4119,7 +4143,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
             %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
-            %   apod = apApertureGrowth(us, 2); % use a f# of 2
+            %   apod = apAcceptanceAngle(us, 25); % use a limit of 25   degrees
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
             %
@@ -4131,7 +4155,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             %   bima = mod2db(ba); % log-compression
             %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
-            %   colormap gray; colorbar; title("Aperture growth apodization");
+            %   colormap gray; colorbar; title("Acceptance angle apodization");
             %
             % See also ULTRASOUNDSYSTEM/APAPERTUREGROWTH
 
@@ -4142,9 +4166,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % get the receiver positions and orientations, N in dim 5
-            Pn      = swapdim(us.rx.positions   , 2, 5); % (3 x 1 x 1 x 1 x N) % positions
+            Pn      = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N) % positions
             [~,~,n] = us.rx.orientations;
-            n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % normals
+            n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % element normals
 
             % get the image pixels
             Pi = us.scan.positions(); % (3 x I1 x I2 x I3)

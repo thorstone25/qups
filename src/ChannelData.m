@@ -7,14 +7,13 @@
 % QUPS. Most methods that affect the time axes, such as zeropad or filter, 
 % will shift the time axes accordingly.
 %
-% The underlying datacube can be N-dimensional as long as the first
-% dimension is time. The second and third dimensions should be receivers 
-% and transmits respectively to be compatible with QUPS. All data must
-% share the same sampling frequency fs, but the start time t0 may vary
-% across any dimension(s) except for the first and second dimensions. For
-% example, if each transmit has a different t0, this can be represented by
-% an array of size [1,1,M].
-%
+% The underlying datacube can be N-dimensional as long as the first three
+% dimensions contain the (fast) time, receive and transmit dimensions. All 
+% data must share the same sampling frequency fs, but the start time t0 may
+% vary across any dimension(s) except for the time and receiver dimensions.
+% For example, if each transmit has a different t0, this can be represented
+% by an array of size [1,1,M] where M is the number of transmits.
+% 
 % The underlying numeric type of the data can be cast by appending 'T' to
 % the type (e.g. singleT(chd) produces a ChannelData) whereas the datacube 
 % itself can be cast using the numeric type constructor (e.g. single(chd) 
@@ -23,7 +22,7 @@
 % type. This enables MATLABian casting rules to apply to the object, which
 % can be used by other functions.
 % 
-% See also SEQUENCE TRANSDUCER
+% See also SEQUENCE TRANSDUCER ULTRASOUNDSYSTEM
 
 classdef ChannelData < matlab.mixin.Copyable
 

@@ -275,14 +275,14 @@ classdef Sequence < matlab.mixin.Copyable
     % conversion methods
     methods
         function sequence = QUPS2USTB(seq, xdc, t0)
-            % QUPS2USTB - Get a USTB/UFF uff.sequence object
+            % QUPS2USTB - Get a USTB compatible uff.wave object array
             %
-            % sequence = QUPS2USTB(seq, xdc, t0) creates a USTB
-            % compatible uff.wave array from the QUPS Sequence object seq
-            % where xdc is a QUPS transducer and t0 is the start time in
-            % the QUPS coordinate system.
+            % sequence = QUPS2USTB(seq, xdc, t0) creates a USTB compatible
+            % uff.wave array from the QUPS Sequence object seq where xdc is
+            % a Transducer and t0 is the start time in the QUPS coordinate
+            % system.
             %
-            % See also TRANSDUCER/QUPS2USTB CHANNELDATA/QUPS2USTB
+            % See also TRANSDUCER.QUPS2USTB CHANNELDATA.QUPS2USTB
             arguments
                 seq (1,1) Sequence
                 xdc (1,1) Transducer
@@ -329,9 +329,20 @@ classdef Sequence < matlab.mixin.Copyable
 
     methods(Static)
         function seq = UFF(sequence, c0)
+            % UFF - Create a Sequence from a uff.wave object array
+            %
+            % seq = UFF(sequence) creates a
+            % Sequence seq from the
+            % uff.wave object array sequence.
+            %
+            % seq = UFF(sequence, c0) additionally sets the
+            % Scan us.scan from the uff.scan uscan.
+            %
+            % See also SEQUENCE.UFF
+
             arguments
                 sequence (1,:) uff.wave
-                c0 (1,1) {mustBeReal}
+                c0 {mustBeReal, mustBeScalarOrEmpty} = uniquetol([sequence.sound_speed])
             end
 
             wvt = unique([sequence.wavefront]);
