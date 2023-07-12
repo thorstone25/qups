@@ -190,11 +190,63 @@ __device__ void interpd_temp(T2 * __restrict__ y,
     }
 }
 
-// atomicAdd supported @ CC 6.x+
-#if (__CUDA_ARCH__ >= 600)
-// nothing to do 
-#else
-// TODO: implement atomicAdd for half/double via atomicCAS
+// atomicAdd natively supported @ CC 6.x+
+#if __CUDA_ARCH__ < 600
+__device__ double atomicAdd(double* address, double val)
+{
+    unsigned long long int* address_as_ull =
+                              (unsigned long long int*)address;
+    unsigned long long int old = *address_as_ull, assumed;
+
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed,
+                        __double_as_longlong(val +
+                               __longlong_as_double(assumed)));
+
+    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
+    } while (assumed != old);
+
+    return __longlong_as_double(old);
+}
+
+// half type supported @ CC 5.3+
+#if (__CUDA_ARCH__ >= 530) 
+
+/// @brief Device function to reinterpret ushort values as half
+inline __device__ half2 ui2h(const unsigned int i){
+    union {
+        unsigned int i;
+        half2 h;
+    } v;
+    v.i = i;
+    return __halves2half2(__ushort_as_half(v.h.x), __ushort_as_half(v.h.y));
+}
+
+inline __device__ unsigned int h2ui(const half2 a){
+    union {
+        unsigned int i;
+        half2 h;
+    } v;
+    v.h = a;
+    return v.i;
+}
+
+__device__ void atomicAdd(half2* address, half2 val)
+{
+    unsigned int * address_as_ull = (unsigned int*) address;
+    unsigned int old = *address_as_ull, assumed;
+
+    do {
+        assumed = old;
+        old = atomicCAS(address_as_ull, assumed, h2ui(val + ui2h(assumed)));
+
+    // Note: uses integer comparison to avoid hang in case of NaN (since NaN != NaN)
+    } while (assumed != old);
+
+    // return 	__ushort_as_half(old);
+}
+#endif
 #endif
 
 // half type supported @ CC 5.3+
