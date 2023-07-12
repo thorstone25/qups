@@ -190,10 +190,19 @@ __device__ void interpd_temp(T2 * __restrict__ y,
     }
 }
 
+// atomicAdd supported @ CC 6.x+
+#if (__CUDA_ARCH__ >= 600)
+// nothing to do 
+#else
+// TODO: implement atomicAdd for half/double via atomicCAS
+#endif
 
+// half type supported @ CC 5.3+
+#if (__CUDA_ARCH__ >= 530)
 inline __device__ void atomicAddStore(half2 * y, const half2 val){
     atomicAdd(y, val);
 }
+#endif
 inline __device__ void atomicAddStore(float2 * y, const float2 val){
     atomicAdd(&y[0].x, val.x);
     atomicAdd(&y[0].y, val.y);
