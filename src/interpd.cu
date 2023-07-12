@@ -220,7 +220,7 @@ inline __device__ half2 ui2h(const unsigned int i){
         half2 h;
     } v;
     v.i = i;
-    return __halves2half2(__ushort_as_half(v.h.x), __ushort_as_half(v.h.y));
+    return __halves2half2(v.h.x, v.h.y);
 }
 
 inline __device__ unsigned int h2ui(const half2 a){
