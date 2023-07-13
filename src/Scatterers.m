@@ -250,6 +250,9 @@ classdef Scatterers < matlab.mixin.Copyable
             else, axs = gca;
             end
 
+            % default plotting style
+            if isempty(varargin), varargin{1} = '.'; end
+
             % plot
             plot_args = struct2nvpair(plot_args);
             h = plot(axs, self.pos(1,:), self.pos(3,:), varargin{:}, plot_args{:});
