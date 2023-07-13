@@ -1,26 +1,50 @@
-% ULTRASOUNDSYSTEM - Complete ultrasound system class
+% ULTRASOUNDSYSTEM - Comprehensive ultrasound system definition class
 %
 % The ULTRASOUNDSYSTEM class is a synthesis class containing the properties
-% describing a medical ultrasound system and providing methods to simulate
-% channel data or beamform channel data. The complete system is described
-% by the transmit and receive Transducer, the transmit Sequence, and the
-% Scan defining the region for simulation or beamforming.
+% describing a medical ultrasound system. Once a Transducer, Sequence, and
+% Scan are defined, the methods are provided to use a Scatterers or Medium
+% to simulate ChannelData, or beamform ChannelData into an image.
 %
-% Multiple simulators are supported, but external simulators must be
-% installed separately. They include:
+% Multiple simulators are supported. Most simulators support the arbitrary
+% Sequences and arbitrary Transducers allowed in QUPS. All simulators
+% support parallel enviroments such as ProcessPools (multiple MATLAB
+% instances) and parclusters (for compute clusters) with some supporting
+% ThreadPools (multi-threading). External simulators must be installed
+% separately. They include:
 % 
-% * greens via QUPS
-% * simus via MUST
-% * calc_scat_all, calc_scat_multi via FieldII
-% * kspaceFirstOrder via K-wave
-% * fullwaveSim via Fullwave
+% * greens - simulate point scatterers via QUPS (GPU-enabled)
+% * simus  - simulate point scatterers via MUST
+% * calc_scat_all - simulate point scatterers via FieldII, then synthesize transmits
+% * calc_scat_multi - simulate point scatterers via FieldII, per transmit
+% * kspaceFirstOrder - simulate a medium via K-wave (GPU-enabled)
+% * fullwaveSim - simulate a medium via Fullwave (currently non-public)
 % 
-% Multiple beamformers are provided which include
+% Multiple beamformers are provided, all of which are GPU enabled, either
+% natively in MATLAB or via ptx binaries, or both. They include:
 % 
-% * bfDAS - a naive delay-and-sum beamformer
-% * DAS - a more performant naive delay-and-sum beamformer
-% * bfEikonal - a sound speed delay-and-sum beamformer using the eikonal equation
-% * bfAdjoint - a frequency domain beamformer
+% * bfDAS - a standard delay-and-sum beamformer
+% * DAS - a restricted but more performant standard delay-and-sum beamformer
+% * bfDASLUT - a delay-and-sum beamformer for custom delays
+% * bfEikonal - a delay-and-sum beamformer using eikonal equation delays
+% * bfAdjoint - a frequency domain matrix adjoint beamformer
+% * bfMigration - a frequency domain stolt's f-k migration beamformer
+%
+% Most beamformers are pixel-based, so classical scanline-based processing
+% must be emulated via apodization ND-arrays. The provided receive
+% apodization generators include:
+%
+% * apScanline - emulate a scan-line beamformer (focal sequences)
+% * apMultiline - emulate a multi-line beamformer (focal sequences)
+% * apTranslatingAperture - emulate a translating transmit aperture
+% * apApertureGrowth - receive apodization limiting the f#
+% * apAcceptanceAngle - receive apodization limited by the element to pixel angle
+% 
+% One can also synthesize new transmit sequences from full synthetic
+% aperture (FSA) data or synthesizse FSA data from focused pulses. These
+% utilities are provided by:
+%
+% * focusTx - synthesize a transmit sequence from FSA data
+% * refocus - synthesize FSA data from a transmit sequence
 % 
 % See also CHANNELDATA TRANSDUCER SEQUENCE SCAN SCATTERERS MEDIUM 
 
@@ -50,7 +74,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
     
     properties(Dependent)
-        fc  {mustBeNumeric} % central operating frequency(ies) (from the Transducer(s))
+        fc  {mustBeNumeric} % central operating frequency(ies)
         xdc Transducer      % Transducer object (if receive and transmit are identical)
         pulse Waveform      % Waveform object (from the Sequence)
         lambda {mustBeNumeric} % wavelength at the central frequency(ies)

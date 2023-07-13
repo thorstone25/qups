@@ -4,18 +4,25 @@
 % sequences and is used to define beamforming delays and apodizations
 % per element per pulse. The same waveform must be sent for all
 % elements and pulses. Delays and apodization matrices are generated
-% when given a Transducer.
+% when given a Transducer using the delays() method.
 %
-% The interpretation of the time-axis of the generated delays and the
-% foci depend on the Sequence type property. For type 'PW', the foci
-% are normal vectors and time 0 is when the wavefront passes through
-% the spatial origin (i.e. x=y=z=0). For type 'VS', the foci are
-% spatial positions and time 0 is when the wavefront passes through the
-% foci. For type 'FSA', the foci are ignored and time 0 is when the
-% wavefront passes through each element of the given Transducer.
+% The interpretation of the foci (i.e. the `focus` property) and the
+% time-axis of the generated delays depend on the Sequence type property.
+% 
+% For type 'PW', the foci are normal vectors and time 0 is when the
+% wavefront passes through the spatial origin (i.e. x=y=z=0).
+% 
+% For type 'VS', the foci are spatial positions and time 0 is when the
+% wavefront passes through the foci.
+% 
+% For type 'FSA', the foci are ignored and time 0 is when the wavefront
+% passes through each element of the given Transducer.
 %
-%
-%
+% Use type 'FSA' and set the hidden `delays_` and/or `apodization_`
+% properties to use custom transmit delays and apodization. These will be
+% compatible with all simulation methods.
+% 
+% 
 % See also: SEQUENCERADIAL SEQUENCEGENERIC WAVEFORM
 classdef Sequence < matlab.mixin.Copyable    
     properties
