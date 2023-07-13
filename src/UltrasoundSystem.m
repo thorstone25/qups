@@ -3772,11 +3772,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     % apodization functions
     methods
         function apod = apScanline(us, tol)
-            % APSCANLINE Create scanline apodization array
+            % APSCANLINE - Create scanline apodization array
             %
-            % apod = APSCANLINE(us) creates an ND-array
-            % to mask delayed data using the UltrasoundSystem self in order
-            % to form an image using scanlines.
+            % apod = APSCANLINE(us) creates an ND-array apod to mask 
+            % data using the UltrasoundSystem us in order to form an image
+            % using scanlines.
             %
             % Scanline apodization is determined by accepting only
             % transmits and scanlines that are aligned across the transmit
@@ -3822,36 +3822,31 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 us (1,1) UltrasoundSystem
-                tol {mustBePositive, mustBeScalarOrEmpty} = min(abs(diff(sub(us.seq.focus,1,1)))); % numerical tolerance
+                tol (1,1) {mustBePositive} = us.scan.("d"+scanlat(us.scan)); % numerical tolerance - e.g. us.scan.dx: assumes 2nd index the index of change
             end
 
-            % alias
-            sq = us.seq;
-
             % soft validate the transmit sequence type: it should be focused
-            if sq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + sq.type + ": This may produce unexpected results."...
+            if us.seq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + us.seq.type + ": This may produce unexpected results."...
                     );
             end
 
             % create a mask such that the transmit and pixel lateral
             % positions must 'match'
             if isa(us.scan, 'ScanCartesian')
-                xdim = find(us.scan.order == 'X'); % dimension of change in lateral
-                xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
-                xv = swapdim(sub(sq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
+                xi = swapdim(us.scan.x, 2, us.scan.xdim); % lateral per pixel
+                xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
-                xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
-                xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
-                xv = swapdim(sq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+                xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
+                xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
             end
             apod = abs(xi - xv) < tol; % create mask
         end
 
         function apod = apMultiline(us)
-            % APMULTILINE Create multi-line apodization array
+            % APMULTILINE - Create a multi-line apodization array
             %
-            % apod = APMULTILINE(us) creates an ND-array
+            % apod = APMULTILINE(us) creates an ND-array apod 
             % to mask delayed data using the UltrasoundSystem us in order
             % to form an image using scanlines.
             %
@@ -3897,26 +3892,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 us (1,1) UltrasoundSystem
             end
 
-            % alias
-            sq = us.seq;
-
             % soft validate the transmit sequence type: it should be focused
-            if sq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + sq.type + ": This may produce unexpected results."...
+            if us.seq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + us.seq.type + ": This may produce unexpected results."...
                     );
             end
 
             % extract lateral or angle of transmit in order to compare
             if isa(us.scan, 'ScanCartesian')
-                xdim = find(us.scan.order == 'X'); % dimension of change in lateral
-                xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
-                xv = swapdim(sub(sq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
+                xdim = us.scan.xdim; % dimension of change
+                xi = swapdim(us.scan.x, 2, us.scan.xdim); % lateral per pixel
+                xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
-                xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
-                xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
-                xv = swapdim(sq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+                xdim = us.scan.adim; % dimension of change
+                xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
+                xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
             end
-            X = us.scan.size(xdim);
 
             % TODO: switch this to accept multiple transmits instead of
             % just left/right transmit
@@ -3941,7 +3932,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             [a_l(ind0), a_r(ind0)] = deal(1, 0); %  set left to 1, right to 0
 
             % build Tx x Rx apodization matrix
-            apod  = zeros([X, sq.numPulse]); % build in reduced dimensions
+            apod  = zeros([us.scan.size(xdim), us.seq.numPulse]); % build in reduced dimensions
             alind = sub2ind(size(apod), find(val), lind); % left matrix indices
             arind = sub2ind(size(apod), find(val), rind); % right matrix indices
             apod(alind) = apod(alind) + a_l; % add left apod
@@ -3950,13 +3941,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
 
         function apod = apTranslatingAperture(us, tol)
-            % APTRANSLATINGAPERTURE Create translating aperture apodization array
+            % APTRANSLATINGAPERTURE - Create translating aperture apodization array
             %
-            % apod = APTRANSLATINGAPERTURE(us, tol)
-            % creates an ND-array to mask delayed data from the
-            % UltrasoundSystem us with a translating aperture of size tol.
-            % The default is 1/4 the length of the aperture.
-            %
+            % apod = APTRANSLATINGAPERTURE(us) creates an ND-array apod to
+            % mask data from the UltrasoundSystem us in order to emulate a 
+            % translating transmit aperture beamformer configuration. The
+            % transmit Sequence us.seq must be a focused.
+            % 
             % If us.scan is a ScanCartesian, us.rx must be a
             % TransducerArray and the aperture is limited to receive
             % elements that are within tol of the focus laterally.
@@ -4001,35 +3992,38 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             arguments
                 us (1,1) UltrasoundSystem
-                tol (1,1) {mustBePositive} = max(range(us.rx.bounds,2)) / 4; % defaults to 1/4 aperture
+                tol (1,2) {mustBePositive} = us.scan.("d"+scanlat(us.scan)); % numerical tolerance - e.g. us.scan.dx
+            end
+            
+            % soft validate the transmit sequence type: it should be focused
+            if us.seq.type ~= "VS", warning(...
+                    "Expected sequence type to be VS but instead got " + us.seq.type + ": This may produce unexpected results."...
+                    );
             end
 
             % extract lateral or angle of transmit in order to compare
             if isa(us.scan, 'ScanCartesian')
-                xdim = find(us.scan.order == 'X'); % dimension of change in lateral
-                xi = shiftdim(us.scan.x(:), xdim-1); % lateral per pixel
-                xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % lateral per transmit 1 x 1 x 1 x 1 x M
                 % soft error on transducer type
-                if isa(us.rx, 'TransducerArray'), else, warning( ...
+                if ~isa(us.rx, 'TransducerArray'), warning( ...
                         "Expected a TransducerArray but instead got " + class(us.rx) + ": This may produce unexpected results."...
                         ); end %#ok<ALIGN>
+                xi = swapdim(us.scan.x, 2, us.scan.xdim); % lateral per pixel
+                xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % lateral per transmit 1 x 1 x 1 x 1 x M
                 xn = swapdim(sub(us.rx.positions,1,1), 2,4); % lateral per receiver
             elseif isa(us.scan, 'ScanPolar')
-                xdim = find(us.scan.order == 'A'); % dimension of change in azimuth
-                xi = shiftdim(us.scan.a(:), xdim-1); % angle per pixel
-                xv = swapdim(us.seq.angles, 2, 5); % angle per transmit 1 x 1 x 1 x 1 x M
                 % soft error on transducer type
-                if isa(us.rx, 'TransducerConvex'), else, warning( ...
-                        "Expected a TransducerArray but instead got " + class(us.rx) + ": This may produce unexpected results."...
+                if ~isa(us.rx, 'TransducerConvex'), warning( ...
+                        "Expected a TransducerConvex but instead got " + class(us.rx) + ": This may produce unexpected results."...
                         ); end %#ok<ALIGN>
-                xn = swapdim(us.rx.orientations,2,4); % lateral per receiver
+                xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
+                xv = swapdim(us.seq.angles, 2, 5); % angle per transmit 1 x 1 x 1 x 1 x M
+                xn = swapdim(us.rx.orientations,2,4); % angle per receiver
             end
             apod = abs(xi - xv) <= tol(1) & abs(xi - xn) <= tol(end); % create mask
-
         end
 
         function apod = apApertureGrowth(us, f, Dmax)
-            % APAPERTUREGROWTH Create an aperture growth aperture apodization array
+            % APAPERTUREGROWTH - Create an aperture growth aperture apodization array
             %
             % apod = APAPERTUREGROWTH(us) creates an
             % ND-array to mask delayed data using the transmit Sequence seq
@@ -4101,8 +4095,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
 
             % get the pixel positions in the proper dimensions
-            Xi = swapdim(us.scan.x(:), 1, 1+us.scan.xdim); % (1 x I1 x I2 x I3)
-            Zi = swapdim(us.scan.z(:), 1, 1+us.scan.zdim); % (1 x I1 x I2 x I3)
+            Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
+            Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
 
             % get the equivalent aperture width (one-sided) and pixel depth
             % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
@@ -4116,7 +4110,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
 
         function apod = apAcceptanceAngle(us, theta)
-            % APACCEPTANCEANGLE Create an acceptance angle apodization array
+            % APACCEPTANCEANGLE - Create an acceptance angle apodization array
             %
             % apod = APACCEPTANCEANGLE(us) creates an ND-array to
             % mask delayed data from the UltrasoundSystem us which includes
@@ -4183,22 +4177,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             r = pagemtimes(n, 'transpose', r, 'none'); 
             r = reshape(r, size(r,2:6)); % -> (I1 x I2 x I3 x N x 1)
 
-            % accept if greater than the cutoff
+            % accept if greater than the cutoff angle
             apod = r >= cosd(theta);
-
-            % ----------------------- LEGACY --------------------- %
-            % get the receiver positions and orientations, N in dim 5
-            % Pn2 = swapdim(us.rx.positions   , 2, 4); % (3 x 1 x 1 x N)
-            % thn = swapdim(us.rx.orientations, 2, 4); % (3 x 1 x 1 x N)
-
-            % get the points as a variance in depth and lateral
-            % [Xi, ~, Zi] = us.scan.getImagingGrid(); % (I1 x I2 x I3)
-
-            % restrict to points where the angle is less than theta at the
-            % receiver
-            % thi = atan2d(Xi - sub(Pn2,1,1), Zi - sub(Pn2,3,1)); % angle at which the ray hits the element
-            % apod = abs(thi - thn) <= theta; % (I1 x I2 x I3 x N x M)
-        end
+        end    
     end
 
     % dependent methods
@@ -4666,6 +4647,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     end
 end
 
+% defaults
 function tmp = mktempdir()
 tmp = tempname(); % new folder
 try
@@ -4685,6 +4667,15 @@ try
 catch
     warning("Unable to access GPU.");
     arch = string.empty; % don't use this argument
+end
+end
+
+function lat_name = scanlat(scan)
+arguments, scan (1,1) Scan, end
+if     isa(scan, 'ScanCartesian'),  lat_name = "x";
+elseif isa(scan, 'ScanPolar'),      lat_name = "a";
+elseif isa(scan, 'ScanGeneric'),    lat_name = "v";
+elseif isa(scan, 'ScanSpherical'),  lat_name = "a";
 end
 end
 
