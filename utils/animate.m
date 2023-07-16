@@ -1,12 +1,14 @@
-function [mvf, mvh] = animate(h, x, kwargs)
+function [mvf, mvh] = animate(x, h, kwargs)
 % ANIMATE - Animate imagesc data
 %
-% ANIMATE(h, x) animates the multi-dimensional data x by looping through
+% ANIMATE(x, h) animates the multi-dimensional data x by looping through
 % the upper dimensions and iteratively updating the image handle h. The
 % data will be plotted until the figure is closed.
 %
 % If h is an array of image handles and x is a corresponding cell array of
 % image data, each image h(i) will be updated by the data x{i}.
+%
+% If x or x{i} is complex, the magnitude in dB will be displayed.
 %
 % ANIMATE(..., 'loop', false) plays through the animation once, rather than
 % looping until the figure is closed.
@@ -20,7 +22,7 @@ function [mvf, mvh] = animate(h, x, kwargs)
 % [mvf, mvh] = ANIMATE(...) returns a cell matrix of movie frames for each
 % axes. This can be used to construct a movie or gif of each axes.
 % 
-% Note: MATLAB execution will be paused while the animation is playing.
+% NOTE: MATLAB execution will continue indefinitely while the animation is playing.
 % Close the figure or press 'ctrl + c' in the command window to stop the
 % animation.
 %
@@ -28,36 +30,34 @@ function [mvf, mvh] = animate(h, x, kwargs)
 % % Simulate some data
 % us = UltrasoundSystem(); % get a default system
 % us.fs = single(us.fs); % use single precision for speed
-% us.sequence = SequenceRadial('type', 'PW', 'angles', -21:0.5:21);
-% scat = Scatterers('pos', [0;0;30e-3], 'c0', us.sequence.c0); % define a point target
+% us.seq = SequenceRadial('type', 'PW', 'angles', -21:0.5:21);
+% scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
 % chd = greens(us, scat); % simulate the ChannelData
 % 
 % % Configure the image of the Channel Data
 % figure;
-% chd_im = mod2db(chd);
 % nexttile();
-% h = imagesc(chd_im); % initialize the image
+% h = imagesc(chd); % initialize the image
 % caxis(max(caxis) + [-60 0]); % 60 dB dynamic range
 % colorbar;
 % title('Channel Data per Transmit');
 % 
 % % Animate the data across transmits 
-% animate(h, chd_im.data, 'loop', false); % show once
+% animate(chd.data, h, 'loop', false); % show once
 %
 % % Beamform the data
-% b = DAS(us, chd, 'keep_tx', true); % B-mode image
-% bim = mod2db(b); % log-compression / envelope detection
+% b = DAS(us, chd, 'keep_tx', true); % B-mode images per tx
 % 
 % % Initialize the B-mode image
 % nexttile();
-% h(2) = imagesc(us.scan, bim(:,:,1)); % show the first image
+% h(2) = imagesc(us.scan, b); % show the center tx
 % colormap(h(2).Parent, 'gray');
 % caxis(max(caxis) + [-60 0]); % 60 dB dynamic range
 % colorbar;
 % title('B-mode per Transmit');
 %  
 % % Animate both images across transmits
-% mvf = animate(h, {chd_im.data, bim}, 'loop', false); % show once
+% mvf = animate({chd.data, b}, h, 'loop', false); % show once
 % 
 % % Create a movie
 % vobj = VideoWriter('tmp', 'Motion JPEG AVI');
@@ -68,8 +68,8 @@ function [mvf, mvh] = animate(h, x, kwargs)
 % 
 % See also IMAGESC FRAME2GIF
 arguments
-    h (1,:) matlab.graphics.primitive.Image
-    x {mustBeA(x, ["cell","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} = 1 % data
+    x {mustBeA(x, ["cell","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} % data
+    h (1,:) matlab.graphics.primitive.Image = inferHandles(x)
     kwargs.fs (1,1) {mustBePositive} = 20; % refresh rate (hertz)
     kwargs.loop (1,1) logical = true; % loop until cancelled
 end
@@ -109,6 +109,7 @@ while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
         for i = 1:I, if isreal(x{i}), h(i).CData(:) = x{i}(:,:,m); else, h(i).CData(:) = mod2db(x{i}(:,:,m)); end, end% update image
+        % if isa(h, 'matlab.graphics.chart.primitive.Surface'), h(i).ZData(:) = h(i).CData(:); end % TODO: integrate surfaces
         if m == 1, drawnow; getframe(); end % toss a frame to avoid bug where the first frame has a different size
         drawnow limitrate; 
         tic;
@@ -119,4 +120,38 @@ while(all(isvalid(h)))
     if ~kwargs.loop, break; end
 end
 
+function him = inferHandles(x)
+% get the current figure
+hf = gcf();
+if isempty(hf.Children) % new figure; no axes
+    % create images for this data
+    if isnumeric(x) || islogical(x), x = {x}; end % -> cell
+
+    % use a tiledlayout by default
+    htl = tiledlayout(hf, 'flow');
+
+    % squeeze data into first 2 dims
+    x = cellfun(@squeeze, x, 'UniformOutput', false);
+
+    % make images
+    him = cellfun(@(x) imagesc(nexttile(htl), x(:,:,1)), x);
+
+    % done
+    return;
+
+elseif isa(hf.Children,  'matlab.graphics.layout.TiledChartLayout')
+    % parse the tree structure to extract axes handles
+    hax = hf.Children.Children; 
+elseif isa(hf.Children, 'matlab.graphics.axis.Axes') % (sub)plot(s)
+    hax = hf.Children;
+else
+    error("Unable to infer plot handle; please explictly pass the handle.")
 end
+
+% parse to grab image handles in same order as the data
+hax = hax(arrayfun(@(hax)isa(hax, 'matlab.graphics.axis.Axes'), hax)); % axes only
+him = {hax.Children}; % image and plot handles
+him = cellfun(@(h) {h(isa(h, 'matlab.graphics.primitive.Image'))}, him);
+him = flip([him{:}]); % image handle array, in order of creation
+
+% TODO: check sizing of data versus image handles?
