@@ -132,7 +132,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             if isfield(kwargs, 'dist')
                 w = kwargs.dist;
                 % scale distance (e.g. m -> mm)
-                [xdc.width, xdc.height, xdc.offset] = deal(w*xdc.width, w*xdc.height, w*xdc.offset);
+                [xdc.width, xdc.height, xdc.offset, xdc.el_focus] = deal(w*xdc.width, w*xdc.height, w*xdc.offset, w*xdc.el_focus);
             end
             if isfield(kwargs, 'time')
                 w = kwargs.time;
