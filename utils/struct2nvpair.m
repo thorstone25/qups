@@ -12,5 +12,5 @@
 % 
 % See also STRUCT STRUCT2CELL FIELDNAMES
 function nv = struct2nvpair(s), arguments, s (1,1) struct, end
-nv = cat(1, shiftdim(fieldnames(s),-1), shiftdim(struct2cell(s),-1));
+nv = reshape(namedargs2cell(s), 2, []);
 end
