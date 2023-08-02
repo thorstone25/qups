@@ -1164,7 +1164,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
             T_ = max([chds.T]); % maximum length of data
             chds = arrayfun(@(chds) zeropad(chds,0,T_ - chds.T), chds); % make all the same length
-            chd = ChannelData('t0', cat(dim,chds.t0), 'fs', median([chds.fs]), 'data', cat(dim, chds.data)); % combine
+            chd = ChannelData('t0', cat(dim,chds.t0), 'fs', median([chds.fs]), 'data', cat(dim, chds.data), 'order', chds(1).order); % combine
             if all(chd.t0 == sub(chd.t0,1,dim),'all'), chd.t0 = sub(chd.t0,1,dim); end % simplify for identical t0
 
         end
