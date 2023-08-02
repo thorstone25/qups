@@ -495,15 +495,18 @@ classdef ChannelData < matlab.mixin.Copyable
             if nargin < 3, dim = chd.tdim; end
             if nargin < 2 || isempty(N), N = size(chd.data, dim); end
 
-            % use MATLAB's optimized implementation
-            % chd = applyFun2Dim(chd, @hilbert, chd.tdim, varargin{:});
-            
-            % apply natively to support half type
-            chd = fft(chd, N, chd.tdim); % send to freq domain
-            Nd2 = floor(N/2); % number of postive/negative frequencies
-            w = [1; 2*ones([Nd2-1,1]); 1+mod(N,2); zeros([N-Nd2-1,1])]; % hilbert weight vector
-            chd.data = chd.data .* shiftdim(w, 1-chd.tdim); % apply 
-            chd = ifft(chd, N, chd.tdim);
+            if chd.tdim == 1 && ~isa(chd.data, 'halfT')
+                % use MATLAB's optimized implementation
+                chd = copy(chd); % copy semantics
+                chd.data = hilbert(chd.data, N); % in-place
+            else
+                % otherwise apply natively to support all types
+                chd = fft(chd, N, chd.tdim); % send to freq domain
+                Nd2 = floor(N/2); % number of postive/negative frequencies
+                w = [1; 2*ones([Nd2-1,1]); 1+mod(N,2); zeros([N-Nd2-1,1])]; % hilbert weight vector
+                chd.data = chd.data .* shiftdim(w, 1-chd.tdim); % apply
+                chd = ifft(chd, N, chd.tdim);
+            end
         end
         function chd = fft(chd, N, dim)
             % FFT - overload of fft
