@@ -932,7 +932,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % continuous resampling of the waveform
                 case 'continuous', icmat = cell2mat(arrayfun(@(tau) {wv_tx.sample(t(:) - tau)}, tau_tx_pix));
                 case 'interpolate' % interpolate, upsampling by 10x in time first
-                    t_up = wv_tx.getSampleTimes(10*fs_);
+                    wv_tx.fs = 10*fs_;
+                    t_up = wv_tx.time;
                     icmat = interp1(t_up, wv_tx.sample(t_up), t(:) - tau_tx_pix, 'spline', 0); 
             end
 
