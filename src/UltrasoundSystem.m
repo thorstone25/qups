@@ -2702,9 +2702,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % Example:
             % % Define the setup - make plane waves
-            % seqpw = SequenceRadial('type', 'PW', 'angles', -45:0.5:45);
-            % us = UltrasoundSystem(); 
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', seqpw.c0); % define a point target
+            % c0 = 1500;
+            % us = UltrasoundSystem();
+            % us.seq.c0 = c0;
+            % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
+            % seqfc = SequenceRadial('type', 'VS', 'focus', [1;0;0].*(sub(us.xdc.positions,1,1)) + [0;0;20e-3], 'c0', c0);
+            % scat = Scatterers('pos', [5e-3;0;30e-3], 'c0', seqpw.c0); % define a point target
             %
             % % Compute the image
             % chd = greens(us, scat); % compute the response
@@ -2715,37 +2718,45 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % uspw = copy(us);
             % uspw.seq = seqpw;
             % bpw = DAS(uspw, chdpw);
-            % 
-            % % Refocus back to FSA, and beamform 
-            % chdfsa = refocus(us, chdpw, seqpw);
-            % bfsa = DAS(us, chdfsa);
             %
-            % % Display the channel data
+            % % Refocus back to FSA, and beamform
+            % chdfsa1 = refocus(us, chdpw, seqpw);
+            % bfsa1 = DAS(us, chdfsa1);
+            %
+            % % Focus at focal points and beamform
+            % chdfc = focusTx(us, chd, seqfc);
+            % usfc = copy(us);
+            % usfc.seq = seqfc;
+            % bfc = DAS(usfc, chdfc);
+            %
+            % % Refocus back to FSA, and beamform
+            % chdfsa2 = refocus(us, chdpw, seqpw);
+            % bfsa2 = DAS(us, chdfsa2);
+            %
+            % %% Display the channel data
             % figure('Name', 'Channel Data');
-            % tiledlayout('flow'); 
-            % nexttile();
-            % imagesc(chd); title('Original');
-            % nexttile();
-            % imagesc(chdpw); title('Plane-Wave');
-            % nexttile();
-            % imagesc(chdfsa); title('Refocused');
-            %
-            % % Display the images
-            % bim = mod2db(b); % log-compression
-            % bimpw = mod2db(bpw);
-            % bimfsa = mod2db(bfsa); 
-            % figure('Name', 'B-mode'); 
             % tiledlayout('flow');
-            % nexttile();
-            % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
-            % colormap gray; colorbar; title('Original');
-            % nexttile();
-            % imagesc(us.scan, bimpw, [-80 0] + max(bimpw(:)));
-            % colormap gray; colorbar; title('Plane-Wave');
-            % nexttile();
-            % imagesc(us.scan, bimfsa, [-80 0] + max(bimfsa(:)));
-            % colormap gray; colorbar; title('Refocused');
-            % 
+            % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
+            % tnms = ["Original", "Original", "PW", "PW-REF", "FC", "FC-REF"];
+            % for i = 1:numel(chds)
+            %     himc = imagesc(chds(i),ceil(chds(i).M/2),nexttile()); 
+            %     title(tnms(i));
+            %     colorbar; colormap default; caxis(max(caxis) + [-50 0]);
+            % end
+            % linkaxes([himc.Parent]);
+            %
+            % %% Display the images
+            % figure('Name', 'B-mode');
+            % tiledlayout('flow');
+            % bs = cat(4, b, b, bpw, bfsa1, bfc, bfsa2);
+            % bpow = gather(mod2db(max(bs,[],1:2)));
+            % for i = 1:size(bs,4)
+            %     himb(i) = imagesc(us.scan, sub(bs,i,4), nexttile(), bpow(i) + [-80 0]);
+            %     colormap gray; colorbar; 
+            %     title(tnms(i));
+            % end
+            % linkaxes([himb.Parent]);
+            %
             % See also FOCUSTX
             arguments
                 self (1,1) UltrasoundSystem
@@ -2755,12 +2766,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
 
+            % dispatch pagenorm function based on MATLAB version
+            if verLessThan('matlab', '9.13')
+                pagenorm2 = @(x) pagenorm(x,2);
+            else
+                pagenorm2 = @(x) max(pagesvd(x),[],1:2);
+            end
+
             % get the apodization / delays from the sequence
             tau = -seq.delays(self.tx); % (M x V)
             a   =  seq.apodization(self.tx); % (M x V)
 
             % get the frequency vectors
-            f = chd.fftaxis; % perm(... x T x ...)
+            f = gather(chd.fftaxis); % perm(... x T x ...)
 
             % construct the encoding matrix (M x V x T)
             H = a .* exp(+2j*pi*shiftdim(f(:),-2).*tau);
@@ -2772,16 +2790,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 case "tikhonov"
                     % TODO: option to use pinv, as it is (slightly)
                     % different than matrix division
-                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm(gather(H),2).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
+                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm2(gather(H)).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
                     Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);
             end
 
-            % move to matching data dimensions
+            % move inverse matrix to matching data dimensions
             D = max(ndims(chd.data));
             ord = [chd.mdim, D+1, chd.tdim];
             ord = [ord, setdiff(1:D, ord)]; % all dimensions
-            Hi = permute(Hi, ord);
+            Hi = ipermute(Hi, ord);
 
             % move data to the frequency domain
             x = chd.data;
