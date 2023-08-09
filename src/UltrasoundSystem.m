@@ -2755,8 +2755,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % get the apodization / delays from the sequence
-            tau = seq.delays(self.tx); % (M x V)
-            a   = seq.apodization(self.tx); % (M x V)
+            tau = -seq.delays(self.tx); % (M x V)
+            a   =  seq.apodization(self.tx); % (M x V)
 
             % get the frequency vectors
             f = chd.fftaxis; % perm(... x T x ...)
@@ -2771,7 +2771,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 case "tikhonov"
                     % TODO: option to use pinv, as it is (slightly)
                     % different than matrix division
-                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * eye(chd.M)); % A = (H'*H + gamma * I)
+                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm(gather(H),2).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
                     Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);
             end
