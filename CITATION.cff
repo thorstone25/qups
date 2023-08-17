@@ -1,0 +1,8 @@
+@software{Quick Ultrasound Simulation \& Processing,
+  author = {Thurston Brevett},
+  month = {7},
+  title = {{Quick Ultrasound Simulations \& Processing}},
+  url = {https://github.com/thorstone25/qups},
+  version = {v0.1.0-alpha},
+  year = {2023}
+}
