@@ -1,8 +1,10 @@
-@software{Quick Ultrasound Simulation \& Processing,
-  author = {Thurston Brevett},
-  month = {7},
-  title = {{Quick Ultrasound Simulations \& Processing}},
-  url = {https://github.com/thorstone25/qups},
-  version = {v0.1.0-alpha},
-  year = {2023}
-}
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "Brevett"
+  given-names: "Thurston"
+  orcid: "https://orcid.org/0000-0002-0720-6955"
+title: "Quick Ultrasound Simulation & Processing"
+version: v0.1.0-alpha
+date-released: 2023-07-12
+url: "https://github.com/thorstone25/qups"
