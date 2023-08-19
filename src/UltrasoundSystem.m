@@ -1545,15 +1545,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % helper function
             vec = @(x) x(:); % column-vector helper function
 
-            % initialize field II
-            try
-                evalc('field_info');
-                field_started = false;
-            catch
-                field_init(-1);
-                field_started = true;
-            end
-
             % get the Tx/Rx impulse response function / excitation function
             wv_tx = copy(self.tx.impulse); % transmitter impulse
             wv_rx = copy(self.rx.impulse); % receiver impulse
@@ -1654,9 +1645,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % set sampling frequency and transmit times for all
             chd.fs = self.fs;
             chd.t0 = chd.t0 + t0;
-
-            % cleanup
-            if field_started, evalc('field_end'); end
         end
     end
     
