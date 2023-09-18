@@ -407,6 +407,62 @@ classdef Sequence < matlab.mixin.Copyable
             end
 
         end
+    
+        function seq = Verasonics(TX, Trans, Resource, TW)
+            ismux = isfield(TX, 'aperture'); % whether muxed or not
+            if ismux, ap = Trans.HVMux.ApertureES; % mux
+            else,     ap = 1:Resource.Parameters.numTransmit; % no muxing
+            end
+
+            % constants
+            c0 = Resource.Parameters.speedOfSound;
+            fc = 1e6*Trans.frequency;
+            lambda = c0 / fc;
+
+            % tx params
+            apd = cat(1,TX.Apod  ); % apodization
+            ang = cat(1,TX.Steer ); % angles
+            rf  = cat(1,TX.focus ) .* lambda; % focal range  
+            pog = cat(1,TX.Origin) .* lambda; % beam origin
+            tau = cat(1,TX.Delay ) ./ fc; % tx delays
+
+            % create the corresponding Sequence
+            if isfield(TX, "FocalPt") % focal points -> VS
+                pf = cat(1, TX.FocalPt)' .* lambda; % focal points
+                seq = Sequence("type","VS", "focus", pf);
+            elseif ~any(tau,'all') % no delays -> FSA
+                M = numel(TX);
+                seq = Sequence("type","FSA", "numPulse",M);
+            elseif all(pog == 0) && all(rf == 0) && any(ang) % PW
+                az = rad2deg(ang(:,1)'); % azimuth
+                el = rad2deg(ang(:,2)'); % elevation
+                if any(el)
+                    seq = SequenceSpherical("type","PW", "angles", [az; el]);
+                else
+                    seq = SequenceRadial("type","PW", "angles",az);
+                end
+            elseif any(rf)
+                pf = pog + rf * [
+                    sin(ang(:,1)) * cos(ang(:,2)), ...
+                          1       * sin(ang(:,2)), ...
+                    cos(ang(:,1)) * cos(ang(:,2)), ...
+                    ]; % focal points
+                seq = Sequence("type","VS", "focus",pf);
+            else
+                error("Unable to infer focal sequence type.");
+            end
+            seq.c0 = c0;
+
+            % import waveform
+            % TODO: validate
+            if nargin >= 4
+                t = (0:TW.numsamples-1)' ./ 250e6;
+                t0 = - TW.peak ./ fc;
+                flds = "TriLvlWvfm" + ["", "_Sim"];
+                f = flds(isfield(TW, flds));
+                seq.pulse = Waveform('t', t + t0, 'samples', TW.(f), 'fs', 250e6);
+            end
+        end
     end
     
     % temporal response methods
