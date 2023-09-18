@@ -407,7 +407,7 @@ classdef Waveform < matlab.mixin.Copyable
 
             arguments
                 this (1,1) Waveform
-                that (1,1) Waveform
+                that (1,1) Waveform = this
                 fs double = max([this.fs, that.fs])
             end
 
@@ -448,6 +448,40 @@ classdef Waveform < matlab.mixin.Copyable
             % 
             wv = Waveform('t0', 0, 'tend', 0, 'fun', @(t) t == 0);
         end
+    
+        function [wvtri, wvm1wy, wvm2wy] = Verasonics(TW, fc)
+            if nargin < 2
+                if isfield(TW, 'Parameters')
+                    warning("Inferring transducer frequency from pulse frequency. Use the second input to avoid this warning.");
+                    fc = TW.Parameters(1);
+                else
+                    error("Unable to infer pulse frequency.");
+                end
+            end
+
+            % identify tri-leve field name
+            fld = "TriLvlWvfm" + ["", "_Sim"]; % potential field names
+            f = fld(isfield(TW, fld));
+            
+            % start time(s)
+            t02 =  - [TW.peak] ./ fc*1e-6 ;
+            t01 =  t02 ./ 2;
+            t0t =  - cellfun(@(h) median(find(logical(h))) ./ 250e6, {TW.(f)});
+            
+            % signal length
+            Ts = {TW.numsamples};
+
+            % Sampled waveform constructor
+            wvfun = @(t0, T, w) Waveform( ...
+                "t0", t0, "fs", 250e6, "dt", 4e-9, "tend", t0 + (T-1)*4e-9, ...
+                "t", t0 + (0:T-1)*4e-9, "samples", w ...
+                );
+            
+            % create Waveforms
+            wvm1wy = reshape(cellfun(wvfun,num2cell(t01), Ts, {TW.Wvfm1Wy}), size(TW));
+            wvm2wy = reshape(cellfun(wvfun,num2cell(t02), Ts, {TW.Wvfm2Wy}), size(TW));
+            wvtri  = reshape(cellfun(wvfun,num2cell(t0t), Ts, {TW.(f)    }), size(TW));
+        end    
     end
 end
 
