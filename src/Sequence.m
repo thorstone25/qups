@@ -422,9 +422,9 @@ classdef Sequence < matlab.mixin.Copyable
             % tx params
             apd = cat(1,TX.Apod  ); % apodization
             ang = cat(1,TX.Steer ); % angles
-            rf  = cat(1,TX.focus ) .* lambda; % focal range  
-            pog = cat(1,TX.Origin) .* lambda; % beam origin
-            tau = cat(1,TX.Delay ) ./ fc; % tx delays
+            rf  = cat(1,TX.focus );% .* lambda; % focal range  
+            pog = cat(1,TX.Origin);% .* lambda; % beam origin
+            tau = cat(1,TX.Delay );% ./ fc; % tx delays
 
             % create the corresponding Sequence
             if isfield(TX, "FocalPt") % focal points -> VS
@@ -433,7 +433,7 @@ classdef Sequence < matlab.mixin.Copyable
             elseif ~any(tau,'all') % no delays -> FSA
                 M = numel(TX);
                 seq = Sequence("type","FSA", "numPulse",M);
-            elseif all(pog == 0) && all(rf == 0) && any(ang) % PW
+            elseif all(all(pog == 0,2) & all(rf == 0,1) & any(ang,2),1) % PW
                 az = rad2deg(ang(:,1)'); % azimuth
                 el = rad2deg(ang(:,2)'); % elevation
                 if any(el)
@@ -442,12 +442,12 @@ classdef Sequence < matlab.mixin.Copyable
                     seq = SequenceRadial("type","PW", "angles",az);
                 end
             elseif any(rf)
-                pf = pog + rf * [
-                    sin(ang(:,1)) * cos(ang(:,2)), ...
-                          1       * sin(ang(:,2)), ...
-                    cos(ang(:,1)) * cos(ang(:,2)), ...
+                pf = pog + rf .* [
+                    sin(ang(:,1)) .* cos(ang(:,2)), ...
+                          1       .* sin(ang(:,2)), ...
+                    cos(ang(:,1)) .* cos(ang(:,2)), ...
                     ]; % focal points
-                seq = Sequence("type","VS", "focus",pf);
+                seq = Sequence("type","VS", "focus", lambda * pf.');
             else
                 error("Unable to infer focal sequence type.");
             end
