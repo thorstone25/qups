@@ -115,7 +115,6 @@ classdef TransducerGeneric < Transducer
     methods
         function p = getSIMUSParam(self)
             error("SIMUS does not support a TransducerGeneric.");
-            % TODO: error if origin not at 0.
         end
     end
 
