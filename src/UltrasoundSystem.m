@@ -2571,6 +2571,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % the data to the next power of 2. This accelerates the fft
             % computation, but uses more memory.
             %
+            % chd = FOCUSTX(..., 'bsize', B) uses a maximum block size of B
+            % output transmits at a time when vectorizing computations. A 
+            % larger block size will run faster, but use more memory. The
+            % default is seq.numPulse.
+            %
             % Example:
             % 
             % % Define the setup
@@ -2581,8 +2586,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us.seq = Sequence('type', 'FSA', 'c0', us.seq.c0, 'numPulse', us.xdc.numel);
             % chd = greens(us, scat); % compute the response
             %
-            % % Create plane-wave data by synthesizing the transmits with
-            % plane-wave delays
+            % % Create plane-wave data by synthesizing the transmits with plane-wave delays
+            % 
             % seq_pw = SequenceRadial('type', 'PW', 'c0', us.seq.c0, ...
             %  'angles', -25:0.5:25, 'ranges', 1); % plane-wave sequence
             % chd_pw = focusTx(us, chd, seq_pw); % synthesize transmits
@@ -2604,8 +2609,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 chd (1,1) ChannelData
                 seq (1,1) Sequence = self.seq;
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-                kwargs.length string {mustBeScalarOrEmpty} = [];
+                kwargs.length string {mustBeScalarOrEmpty} = string.empty;
                 kwargs.buffer (1,1) {mustBeNumeric, mustBeInteger} = 0
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = seq.numPulse
             end
 
             % Copy semantics
@@ -2646,14 +2652,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             
             % align dimensions
-            D = 1+max(3,ndims(chd.data)); % get a free dimension for M'
+            D = 1+max([3,ndims(chd.data), ndims(chd.t0)]); % get a free dimension for M'
             assert(D > chd.mdim, "Transmit must be in the first 3 dimensions (" + chd.mdim + ").");
             tau  = swapdim(tau ,[1 2],[chd.mdim D]); % move data
             apod = swapdim(apod,[1 2],[chd.mdim D]); % move data
+            id   = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:seq.numPulse-1),1); % output sequence indices
+            id{end}(id{end} > seq.numPulse) = []; % delete OOB indices
 
             % sample and store
-            z = chd.sample(chd.time - tau, kwargs.interp, apod, chd.mdim); % sample (perm(T' x N x 1) x F x ... x M')
-            z = swapdim(z, chd.mdim, D); % replace transmit dimension (perm(T' x N x M') x F x ...)
+            for i = numel(id):-1:1
+                z{i} = chd.sample(chd.time - sub(tau,id{i},D), kwargs.interp, sub(apod,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
+                z{i} = swapdim(z{i}, chd.mdim, D); % replace transmit dimension (perm({T' x N} x M') x {F x ...})
+            end
+            z = cat(chd.mdim, z{:}); % unpack transmit dimension (perm(T' x N x M') x F x ...)
             chd.data = z; % store output channel data % (perm(T' x N x M') x F x ...)
         end
         
