@@ -2514,15 +2514,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
                 if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
                 ext_args = [interp_args, apod_args]; % extra args
-
+    
                 switch self.seq.type
                     case 'FSA'
-                        pos_args = {P_im, P_rx, self.tx.positions(), [0;0;1]};
+                        [~,~,nf] = self.tx.orientations(); % normal vectors
+                        pos_args = {P_im, P_rx, self.tx.positions(), nf};
                     case 'PW'
                         pos_args = {P_im, P_rx, [0;0;0], self.seq.focus}; % TODO: use origin property in tx sequence
                         ext_args{end+1} = 'plane-waves'; %#ok<AGROW> 
                     case 'VS'
-                        pos_args = {P_im, P_rx, self.seq.focus, [0;0;1]};
+                        nf = self.seq.focus - self.xdc.offset; % normal vector
+                        pos_args = {P_im, P_rx, self.seq.focus, nf ./ norm(nf)};
                 end
 
                 % request the CUDA kernel?
@@ -3432,8 +3434,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get virtual source or plane wave geometries
             switch self.seq.type
-                case 'FSA', [Pv, Nv] = deal(self.tx.positions(), [0;0;1]);
-                case 'VS',  [Pv, Nv] = deal(self.seq.focus, [0;0;1]);
+                case 'FSA', [Pv, Nv] = deal(self.tx.positions(), argn(3, @()self.tx.orientations));
+                case 'VS',  [Pv, Nv] = deal(self.seq.focus, normalize(self.seq.focus - self.xdc.offset,1,"norm"));
                 case 'PW',  [Pv, Nv] = deal([0;0;0], self.seq.focus); % TODO: use origin property in tx sequence
             end
             Pr = swapdim(Pr,2,5); % move N to dim 5
@@ -3715,21 +3717,26 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             cs = c0/sqrt(2);
 
             % get the frequency domains' axes with negative frequencies
-            f  = ((0 : F - 1)' - floor(F/2)) / F * chd.fs        ; % T x 1 - temporal frequencies
-            kx = ((0 : K - 1)' - floor(K/2)) / K / self.xdc.pitch; % K x 1 - lateral spatial frequencies
+            f  = ((0 : F - 1) - floor(F/2)) / F * chd.fs        ; % 1 x T - temporal frequencies
+            kx = ((0 : K - 1) - floor(K/2)) / K / self.xdc.pitch; % 1 x K - lateral spatial frequencies
 
             % move to dimensions aligned to the data
-            f  = shiftdim(f , 1-chd.tdim);
-            kx = shiftdim(kx, 1-chd.ndim);
+            f  = swapdim(f , 2, chd.tdim);
+            kx = swapdim(kx, 2, chd.ndim);
+
+            % get array elements
+            pn = self.xdc.positions;
+            x0 = pn(1,1); % element lateral start position
 
             % get transmit mapping in compatiable dimensions
             sq = copy(self.seq);
             sq.c0 = c0;
+            th0 = self.xdc.rot(1); % array orientation (azimuth)
             tau = sq.delays(self.xdc); % N x M
             ord = [chd.ndim, chd.mdim]; % send to these dimensions
             ord = [ord, setdiff(1:max(ord), ord)]; % account for all dimensions
             tau = ipermute(tau, ord); % permute to compatible dimensions
-            gamma = swapdim(sind(sq.angles) ./ (2 - cosd(sq.angles)), 2, chd.mdim); % lateral scaling
+            gamma = swapdim(sind(sq.angles-th0) ./ (2 - cosd(sq.angles-th0)), 2, chd.mdim); % lateral scaling
 
     	    % splice the data to operate per block of transmits
     	    [chds, ix] = splice(chd, chd.mdim, kwargs.bsize); % split into groups of data
@@ -3780,7 +3787,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % get the spatial axes
                 zax = sq.c0 ./ 2 .* tb;
-                xax = self.xdc.pitch .* (0 : K-1) + sub(self.xdc.positions,{1,1},[1,2]);
+                xax = self.xdc.pitch .* (0 : K-1) + x0;
 
                 % align data laterally using Garcia's PWI mapping
                 b = b .* exp(2j*pi*kx.*gamma{j}.*zax);
@@ -3798,7 +3805,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if kwargs.keep_tx, b = cat(chd0.mdim, bm{:}); else, b = bm; end
 
             % create the corresponding scan - it aligns with our data
-            bscan = ScanCartesian('z', double(zax(1:chd0.T)), 'x', xax(1:chd0.N));
+            bscan = ScanCartesian( ...
+                'z', self.xdc.offset(3) + double(zax(1:chd0.T)), ...
+                'x', xax(1:chd0.N), ...
+                'y', self.xdc.offset(2) ...
+                );
 
             % work-around: sometimes the numerical precision is
             % insufficient and interp2 is thrown off: ensure that the data
