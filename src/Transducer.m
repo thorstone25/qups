@@ -981,12 +981,12 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
             % plot a patch: use depth as the color
             args = struct2nvpair(patch_args);
-            hp = patch(axs, 'XData', Xp, 'YData', Yp, 'ZData', Zp, 'CData', Zp, varargin{:}, args{:});
+            hp = patch(axs, 'XData', Xp, 'YData', Zp, 'ZData', Yp, 'CData', Zp, varargin{:}, args{:});
 
             % set default axis arguments
             xlabel(axs, 'x');
-            ylabel(axs, 'y');
-            zlabel(axs, 'z');
+            ylabel(axs, 'z');
+            zlabel(axs, 'y');
             grid  (axs, 'on');
             % zlim  (axs, [-1e-3, 1e-3] + [min(Zp(:)), max(Zp(:))])
             axis  (axs, 'equal')
