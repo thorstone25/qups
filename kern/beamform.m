@@ -91,6 +91,8 @@ elseif isType(x, 'double')
     idataType = 'double';
 elseif isType(x, 'halfT')
     idataType = 'halfT'; 
+else
+    idataType = 'double'; % default
 end
 if any(cellfun(@(c) isType(c, 'single'), {Pi, Pr, Pv, Nv}))
     posType = 'single';
