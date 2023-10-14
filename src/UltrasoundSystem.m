@@ -3456,9 +3456,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 
             % transmit sensing vector
             dv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
-            switch self.seq.type, 
-                case {'VS', 'FSA'}, dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
-                case {'PW'},        dv = sum(dv .* Nv, 1);
+            switch self.seq.type
+                case 'FSA' , dv = vecnorm(dv, 2, 1);
+                case {'VS'}, dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
+                case {'PW'}, dv = sum(dv .* Nv, 1);
             end % 1 x I1 x I2 x I3 x 1 x M
 
             % bring to I1 x I2 x I3 x 1 x M
