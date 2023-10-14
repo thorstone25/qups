@@ -255,7 +255,7 @@ classdef ScanGeneric < Scan
             end
 
             sz = scan.size;
-            P = scan.pos();
+            P = scan.pos;
             X = reshape(sub(P, 1, 1), sz);
             Y = reshape(sub(P, 2, 1), sz);
             Z = reshape(sub(P, 3, 1), sz);
