@@ -64,7 +64,6 @@ b = 0; % init
 N = size(bn, dim); % aperture length
 for i = 1:N-1 % multiply and sum along all non-identical pairs
     b = b + sum(sub(bn,1:N-i,dim) .* sub(bn,1+i:N,dim), dim);
-    him.CData(:) = mod2db(b);
 end
 
 % re-scale the amplitude, preserve the phase (sign)
