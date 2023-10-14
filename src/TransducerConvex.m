@@ -49,8 +49,10 @@ classdef TransducerConvex < Transducer
 
             % initialize the TransducerConvex
             for f = string(fieldnames(array_args))'
+                if f == "pitch", continue; end % set this last
                 self.(f) = array_args.(f);
             end
+            if isfield(array_args, "pitch"), self.pitch = array_args.pitch; end
 
             % if kerf not set, default it to 0
             if isempty(self.pitch), self.kerf = 0; end
