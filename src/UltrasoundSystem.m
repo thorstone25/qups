@@ -355,9 +355,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 hrx = plot(self.rx, ax, 'r', 'DisplayName', 'Receive Elements', plargs{:}); % rx elements
                 hxdc = [htx, hrx];
             end
+            rq = max([range([hps.XData]), range([hps.YData]), range([hps.ZData])]); % scale quivers by range of the image
+            % rq = max(rq, range(xlim(ax))); % include x?
             switch self.seq.type % show the transmit sequence
-                case 'PW', hseq = plot(self.seq, ax, 3e-2, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % scale the vectors for the plot
-                otherwise, hseq = plot(self.seq, ax, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % plot focal points, if they exist
+                case 'PW', hseq = plot(self.seq, ax, rq/2, 'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % scale the vectors for the plot
+                otherwise, hseq = plot(self.seq, ax,       'k.', 'DisplayName', 'Tx Sequence', plargs{:}); % plot focal points, if they exist
             end
             h = [hxdc, hps, hseq];
             legend(ax, h);

@@ -388,6 +388,7 @@ classdef Scan < matlab.mixin.Copyable
             end
             arguments
                 plot_args.?matlab.graphics.chart.primitive.Line
+                plot_args.DisplayName = 'Grid'
                 kwargs.slice (1,1) char
                 kwargs.index (1,1) {mustBeInteger, mustBeNonnegative} = 1
             end
