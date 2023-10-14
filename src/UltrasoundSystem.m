@@ -2920,14 +2920,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % See also BFEIKONAL BFDAS DAS FOCUSTX
 
-            % TODO: test for tall types where receive diomension is tall -
+            % TODO: test for tall types where receive dimension is tall -
             % should work ...
             arguments
                 self (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
                 c0 (:,:,:,1,1) {mustBeNumeric} = self.seq.c0
-                kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
-                kwargs.fthresh (1,1) {mustBeReal} = -Inf; % threshold for including frequencies
+                kwargs.fmod (1,1) {mustBeNumeric, mustBeFinite} = 0 % modulation frequency
+                kwargs.fthresh (1,1) {mustBeReal, mustBeNegative} = -Inf; % threshold for including frequencies
                 kwargs.apod {mustBeNumericOrLogical} = 1; % apodization matrix (I1 x I2 x I3 x N x M)
                 kwargs.Nfft (1,1) {mustBeInteger, mustBePositive} = chd.T; % FFT-length
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
