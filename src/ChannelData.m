@@ -994,7 +994,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also IMAGESC
             arguments
                 chd ChannelData
-                m {mustBeInteger} = floor((chd.M+1)/2); 
+                m {mustBeInteger} = ceil(chd.M/2); 
             end
             arguments(Repeating)
                 varargin
@@ -1179,6 +1179,11 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % chds = SPLICE(chd, dim, bsize) uses a maximum block size of 
             % bsize to partition the ChannelData objects. The default is 1.
+            %
+            % [chds, ix] = SPLICE(...) also returns the indices for each 
+            % ChannelData in the spliced dimension. For example, if chd is
+            % spliced with a block size of 2 over a dimension of length 5,
+            % ix = {[1 2], [3 4], [5]}.
             %
             % Example:
             % 
