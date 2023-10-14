@@ -2809,7 +2809,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % move inverse matrix to matching data dimensions
-            D = max(ndims(chd.data));
+            D = max(ndims(chd.data), ndims(chd.t0));
             ord = [chd.mdim, D+1, chd.tdim];
             ord = [ord, setdiff(1:D, ord)]; % all dimensions
             Hi = ipermute(Hi, ord);
@@ -2990,7 +2990,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             f_val = any(f_val, setdiff(1:ndims(x), chd.tdim)); % evaluate only freqs across aperture/frames that is above threshold
 
             % get the pixel positions
-            D = max(4, gather(ndims(chd.data))); % >= 4
+            D = gather(max([4, ndims(chd.data), ndims(chd.t0)])); % >= 4
             Pi = self.scan.positions();
             Pi = swapdim(Pi, [1:4], [1, D+(1:3)]); % place I after data dims (3 x 1 x 1 x 1 x ... x [I])
             c0 = shiftdim(c0, -D); % 1 x 1 x 1 x 1 x ... x [I]
@@ -3617,7 +3617,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if ~kwargs.keep_tx, sdim = [sdim, 5]; end
 
             % max dimension of data
-            D = max([3, ndims(chd), cellfun(@ndims, {chd.data})]);
+            D = max([3, ndims(chd), cellfun(@ndims, {chd.data}), cellfun(@ndims, {chd.t0})]);
 
             % sample, apodize, and sum over tx/rx if requested
             for i = numel(chd):-1:1
