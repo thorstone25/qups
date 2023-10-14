@@ -165,9 +165,9 @@ if exist('interpd.ptx', 'file') ...
     end
      % zeros: uint16(0) == storedInteger(half(0)), so this is okay
     % index label flags
-    iflags = zeros([1 maxdims], 'uint8');
-    iflags(mdms) = 1;
-    iflags(rdmsx) = 2; 
+    iflags = zeros([1 maxdims], 'uint8'); % increase index i
+    iflags(mdms) = 1; % increase index n
+    iflags(rdmsx) = 2; % increase index f
     
     % strides
     strides = cat(1,wstride,ystride,t1stride,t2stride,xstride);
