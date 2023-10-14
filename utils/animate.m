@@ -142,7 +142,7 @@ if isempty(hf.Children) % new figure; no axes
 elseif isa(hf.Children,  'matlab.graphics.layout.TiledChartLayout')
     % parse the tree structure to extract axes handles
     hax = hf.Children.Children; 
-elseif isa(hf.Children, 'matlab.graphics.axis.Axes') % (sub)plot(s)
+elseif any(arrayfun(@(h) isa(h, 'matlab.graphics.axis.Axes'), hf.Children)) % (sub)plot(s)
     hax = hf.Children;
 else
     error("Unable to infer plot handle; please explictly pass the handle.")
@@ -151,7 +151,7 @@ end
 % parse to grab image handles in same order as the data
 hax = hax(arrayfun(@(hax)isa(hax, 'matlab.graphics.axis.Axes'), hax)); % axes only
 him = {hax.Children}; % image and plot handles
-him = cellfun(@(h) {h(isa(h, 'matlab.graphics.primitive.Image'))}, him);
+him = cellfun(@(h) {h(arrayfun(@(h)isa(h, 'matlab.graphics.primitive.Image'),h))}, him);
 him = flip([him{:}]); % image handle array, in order of creation
 
 % TODO: check sizing of data versus image handles?
