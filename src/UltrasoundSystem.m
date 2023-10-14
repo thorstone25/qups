@@ -2871,8 +2871,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % modulation frequency fc. This undoes the effect of
             % demodulation/downmixing at the same frequency.
             %
-            % b = BFADJOINT(..., 'bsize', B) uses an block size of B when
-            % vectorizing computations. A larger block size will run
+            % b = BFADJOINT(..., 'bsize', B) uses a maximum block size of B
+            % when vectorizing computations. A larger block size will run 
             % faster, but use more memory. The default is chosen
             % heuristically.
             %
@@ -3152,6 +3152,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % method for interpolation. Support is provided by the 
             % ChannelData/sample method. The default is 'cubic'.
             %
+            % b = BFEIKONAL(..., 'bsize', B) uses a maximum block size of B
+            % when vectorizing computations. A larger block size will run 
+            % faster, but use more memory. The default is Inf.
+            %
             % [b, tau_rx, tau_tx] = BFEIKONAL(...) additionally returns the
             % receive and transmit time delays tau_rx and tau_tx are size
             % (I1 x I2 x I3 x N x 1) and (I1 x I2 x I3 x 1 x M), where 
@@ -3245,6 +3249,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_rx (1,1) logical = false;
                 kwargs.keep_tx (1,1) logical = false;
                 kwargs.verbose (1,1) logical = true;
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = self.seq.numPulse;
                 kwargs.delay_only (1,1) logical = isempty(chd); % compute only delays
             end
 
@@ -3350,7 +3355,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if kwargs.delay_only, b = zeros([self.scan.size, 1+kwargs.keep_rx*(self.rx.numel-1), 1+kwargs.keep_tx*(self.tx.numel-1), 0]); return; end
 
             % extract relevant arguments
-            lut_args = ["apod", "fmod", "interp", "keep_tx", "keep_rx"];
+            lut_args = ["apod", "fmod", "interp", "keep_tx", "keep_rx", "bsize"];
             args = namedargs2cell(rmfield(kwargs, setdiff(fieldnames(kwargs), lut_args)));
 
             % beamform
@@ -3387,6 +3392,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % interpolation. Support is provided by the
             % ChannelData/sample2sep method. The default is 'cubic'.
             % 
+            % b = BFDAS(..., 'bsize', B) uses a maximum block size of B
+            % when vectorizing computations. A larger block size will run 
+            % faster, but use more memory. The default is Inf.            
+            %
             % [b, tau_rx, tau_tx] = BFDAS(...) additionally returns the
             % receive and transmit time delays tau_rx and tau_tx are size
             % (I1 x I2 x I3 x N x 1) and (I1 x I2 x I3 x 1 x M), where 
@@ -3424,6 +3433,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
                 kwargs.delay_only (1,1) logical = isempty(chd); % compute only delays
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = self.seq.numPulse
             end
 
             % get image pixels, outside of range of data
@@ -3464,7 +3474,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if kwargs.delay_only, b = zeros([self.scan.size, 1+kwargs.keep_rx*(self.rx.numel-1), 1+kwargs.keep_tx*(self.tx.numel-1), 0]); return; end
 
             % extract relevant arguments
-            lut_args = ["apod", "fmod", "interp", "keep_tx", "keep_rx"];
+            lut_args = ["apod", "fmod", "interp", "keep_tx", "keep_rx", "bsize"];
             args = namedargs2cell(rmfield(kwargs, setdiff(fieldnames(kwargs), lut_args)));
 
             % beamform
@@ -3511,6 +3521,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % interpolation. Support is provided by the
             % ChannelData/sample2sep method. The default is 'cubic'.
             %        
+            % b = BFEIKONAL(..., 'bsize', B) uses a maximum block size of B
+            % when vectorizing computations. A larger block size will run 
+            % faster, but use more memory. The default is self.seq.numPulse.
+            %
             % Example:
             % 
             % % Define the setup
@@ -3543,6 +3557,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
                 kwargs.keep_rx (1,1) logical = false
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(self.seq.numPulse, size(tau_tx,5), 'omitnan');
             end
             
             % validate / parse receive table sizing
@@ -3605,7 +3620,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % sample, apodize, and sum over tx/rx if requested
             for i = numel(chd):-1:1
-                bi = sample2sep(chd(i), tau_tx, tau_rx, kwargs.interp, kwargs.apod, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
+                if isfinite(kwargs.bsize)
+                    [chds, im] = splice(chd(i), chd.mdim, kwargs.bsize); % always splice tx
+                    bi = {0}; % implicit preallocation
+                    for m = numel(chds):-1:1
+                        tau_txm = sub(tau_tx, im(m), 5); 
+                        bim = sample2sep(chds(m), tau_txm, tau_rx, kwargs.interp, kwargs.apod, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
+                        if kwargs.keep_tx, bi{m} = bim;
+                        else, bi{1} = bi{1} + bim;
+                        end
+                    end
+                    bi = cat(5, bi{:});
+                else
+                    bi = sample2sep(chd(i), tau_tx, tau_rx, kwargs.interp, kwargs.apod, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
+                end
 
                 % move aperture dimension to end
                 bi = swapdim(bi, 4:5, D+(3:4)); % (I1 x I2 x I3 x 1 x 1 x [F x ... ] x [1|N] x [1|M])
