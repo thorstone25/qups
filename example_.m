@@ -25,6 +25,8 @@
 % an adjoint matrix method, or Stolt's migration
 % * Focus FSA data to some pulse sequence, or retrospectively refocus data back 
 % to FSA
+% * Compute coherence based images with techniques including SLSC, DMAS, and 
+% coherence factor
 %% 
 % Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -69,14 +71,19 @@ switch "L11-5v"
     case 'L12-3v', xdc = TransducerArray.L12_3v(); % another linear array
     case 'P4-2v',  xdc = TransducerArray.P4_2v(); % a phased array 
     case 'C5-2v' , xdc = TransducerConvex.C5_2v(); % convex array
+    case 'PO192O', xdc = TransducerMatrix.PO192O(); % matrix array
 end
 xdc.impulse = xdc.ultrasoundTransducerImpulse(); % set the impulse response function
 % Define the Simulation Region
 
-tscan = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60));
+if isa(xdc, 'TransducerMatrix')
+    tscan = ScanCartesian('x', 1e-3*(-10 : 1/16 : 10), 'z', 1e-3*(-5 : 1/16 : 50)); tscan.y = tscan.x; % 3D grid
+else
+    tscan = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60)); % 2D grid
+end % make 3D region
 
 % point per wavelength - aim for >2 for a simulation
-ppw = scat.c0 / xdc.fc / min([tscan.dx, tscan.dz]); 
+ppw = scat.c0 / xdc.fc / min([tscan.dx, tscan.dy, tscan.dz], [], 'omitnan'); 
 
 % Define the Transmit  Pulse Sequence
 
@@ -134,11 +141,6 @@ if isa(xdc, 'TransducerArray')
     scan = ScanCartesian('x', xb, 'z', zb);
     [scan.dx, scan.dz] = deal(dr);
 
-    % label the axes
-    scan.xlabel = "Lateral (m)";
-    scan.ylabel = "Elevation (m)";
-    scan.zlabel = "Axial (m)";
-
     % For convex transducers only!
 elseif isa(xdc, 'TransducerConvex') 
     % ranges
@@ -150,10 +152,6 @@ elseif isa(xdc, 'TransducerConvex')
         'r', norm(xdc.center) + r...
         ); % R x A scan
 
-    % label the axes
-    scan.rlabel = "Range (m)";
-    scan.alabel = "Angle (^o)";
-    scan.ylabel = "Elevation (m)";
 end
 %% 
 % 
@@ -166,10 +164,10 @@ rho0 = 1000;
 
 % make a scatterer, if not diffuse
 if scat.numScat < 500
-    s_rad = max([tscan.dx, tscan.dz]); % scatterer radius
+    s_rad = max([tscan.dx,tscan.dy,tscan.dz],[],'omitnan'); % scatterer radius
     nextdim = @(p) ndims(p) + 1; % helper function
-    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p)); % finds all points within scatterer radius
-    med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]}});
+    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,5),2,1) < s_rad, 5); % finds all points within scatterer radius
+    med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]'}});
 else
     med = Medium('c0', scat.c0, 'rho0', rho0);
 end
@@ -181,7 +179,8 @@ if false, figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); en
 
 % Show the transmit signal - a single point means it's a delta function
 if false, figure; plot(seq.pulse, '.-'); title('Transmit signal'); end
-%  Plot configuration of the simulation
+%  
+% Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
 
@@ -190,35 +189,26 @@ switch "sound-speed"
     case 'sound-speed', imagesc(med, tscan, 'props', 'c'  ); colorbar; % show the background medium for the simulation/imaging region
     case 'density',     imagesc(med, tscan, 'props', 'rho'); colorbar; % show the background medium for the simulation/imaging region
 end
+% Construct an UltrasoundSystem object, combining all of these properties
+fs = single(ceil(2*us.xdc.bw(end)/1e6)*1e6);
+us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', fs, 'recompile', false);
 
-% plot the transducer
-plot(xdc, 'r+', 'DisplayName', 'Elements'); % elements
-
-% plot the imaging region (Scan)
-hps = plot(scan, 'w.', 'MarkerSize', 0.5, 'DisplayName', 'Image'); % the imaging points
-
-% plot the transmit pulse sequence
-switch seq.type 
-    case 'PW', plot(seq, 3e-2, 'k.', 'DisplayName', 'Tx Sequence'); % scale the vectors for the plot
-    otherwise, plot(seq,       'k.', 'DisplayName', 'Tx Sequence'); % plot focal points, if they exist
-end
+% plot the system
+hs = plot(us);
 
 % plot the point scatterers
 if scat.numScat < 500
-    plot(scat, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
+    hs(end+1) = plot(scat, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
 else
     disp('INFO: Too many scatterers to display.');
 end
-hl = legend(gca, 'Location','bestoutside'); 
-set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
+hl = legend(gca, 'Location','bestoutside');
 %% Simulate the Point Scatterer(s)
 
  
 %% 
 % 
 
-% Construct an UltrasoundSystem object, combining all of these properties
-us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', single(40e6), 'recompile', false);
 
 % Simulate a point target
 tic;
@@ -237,7 +227,7 @@ chd0
  
 % display the channel data across the transmits
 figure; 
-h = imagesc(mod2db(chd0)); 
+h = imagesc(chd0); 
 colormap jet; colorbar; 
 cmax = gather(mod2db(max(chd0.data(:)))); % maximum power
 caxis([-80 0] + cmax); % plot up to 80 dB down
@@ -279,6 +269,7 @@ if dev, chd = gpuArray(chd); end % move data to GPU
 switch class(xdc)
     case 'TransducerArray' , scale = xdc.pitch; % Definitions in elements
     case 'TransducerConvex', scale = xdc.angular_pitch; % Definitions in degrees
+    case 'TransducerMatrix', scale = min(xdc.pitch); % Definitions in elements
 end
 
 % Choose the apodization (beamforming weights)
@@ -298,8 +289,8 @@ if false, apod = apod .* apAcceptanceAngle(us, 50); end
 % Choose a beamforming method
 
 bf_args = {'apod', apod, 'fmod', fmod}; % arguments for all beamformers
-bscan = us.scan;
-switch "DAS-direct"
+bscan = us.scan; % default b-mode image scan
+switch "DAS"
     case "DAS-direct"
         b = DAS(us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
     case "DAS"
