@@ -62,18 +62,8 @@ function z = slsc(x, dim, L, method, kdim)
 % end
 % med = Medium.Sampled(sscan, c, rho, 'c0', 1500);
 % 
-% % Setup a compute cluster
-% clu = parcluster('local');
-% clu.NumWorkers = 1 + 2*gpuDeviceCount;
-% clu.NumThreads = 4*gpuDeviceCount;
-%
 % % Simulate the ChannelData
-% if gpuDeviceCount, dtype = 'gpuArray-single';
-% else, dtype = 'single'; end
-% [job, rfun] = kspaceFirstOrder(us, med, sscan, 'DataCast', dtype, 'parenv', clu);
-% submit(job); % launch
-% wait(job);
-% chd = rfun(job); % read data into a ChannelData object
+% chd = kspaceFirstOrder(us, med, sscan);
 % 
 % % Pre-process the data
 % chd = hilbert(chd);
@@ -113,7 +103,7 @@ end
 A = gather(size(x,dim)); % the full size of the aperture
 [M, N] = ndgrid(1:A, 1:A);
 H = abs(M - N); % lags for each receiver/cross-receiver pair (M x M')
-lags = L; % if isscalar(L), lags = 1:L; else, lags = L; end % chosen lags for adding (i.e. the short lags)
+if isscalar(L), lags = 1:L; else, lags = L; end % chosen lags for adding (i.e. the short lags)
 S = ismember(H,lags); % selection mask for the lags (M x M') - true if (rx, xrx) is a short lag
 L = numel(lags); % number of (active) lags - this normalizes the sum of the average estimates
 K = gather(size(x,kdim)); % number of samples in time
@@ -121,12 +111,8 @@ K = gather(size(x,kdim)); % number of samples in time
 % choose average or ensemble
 switch method
     case "average"
-        % normalize magnitude per time sample (averaging)
-        x = x ./ vecnorm(x,2,kdim) / K;
-        x(isnan(x)) = 0; % 0/0 -> 0
-        
-        % TODO: test if norm(x) close to zero instead of assuming all nans
-        % are from computing 0/0 
+        % normalize magnitude per time sample (averaging) with 0/0 -> 0
+        x = nan2zero(x ./ vecnorm(x,2,kdim) / K);
 
         % get weighting / filter across receiver pairs
         W = S ./ (A - H) / 2 / L; % weights per pair (debiased, pos & neg averaged, multi-correlation-averaged)
@@ -159,8 +145,7 @@ switch method
             b = b + sum(w .* conj(xc) .* xc, [dim, kdim],'omitnan'); % b-norm
         end
 
-        % normalize by the norm of the vector
-        z = z .* rsqrt(a) .* rsqrt(b);
+        % normalize by the norm of the vector with 0/0 -> 0
+        z = z .* nan2zero(rsqrt(a) .* rsqrt(b));
 end
 end
-
