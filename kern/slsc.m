@@ -15,9 +15,9 @@ function z = slsc(x, dim, L, method, kdim)
 % z = SLSC(x, dim, L, method) uses the specified method. Must be one
 % of {"ensemble" | "average"*}.
 % 
-% z = SLSC(x, dim, L, method, kdim) interprets kdim as the time dimension. 
-% When dimension kdim is non-singular, samples in time are treated as part
-% of the same correlation.
+% z = SLSC(x, dim, L, method, kdim) interprets kdim as the time kernel
+% dimension. When dimension kdim is non-singular, samples in time are
+% treated as part of the same correlation.
 % 
 % About: 
 % The short-lag spatial coherence measures how similar signals are across a
@@ -38,7 +38,7 @@ function z = slsc(x, dim, L, method, kdim)
 % vol. 58, no. 7, pp. 1377-1388, July 2011.  
 % doi: <a href="matlab:web('doi.org/10.1109/TUFFC.2011.1957')">10.1109/TUFFC.2011.1957</a>
 %
-% Example:
+% Example 1:
 % % This example requires kWave
 % if ~exist('kWaveGrid', 'class')
 %   warning('kWave must be on the path to run this example.');
@@ -69,19 +69,41 @@ function z = slsc(x, dim, L, method, kdim)
 % chd = hilbert(chd);
 %
 % % generate an image, preserving the receive dimension
-% lambda = med.c0 / us.xdc.fc; % wavelength
-% us.scan.dz = lambda / 4; % axial resolution
-% us.scan.dx = lambda / 4; % lateral resolution
-% b = DAS(us, chd, 'keep_rx', true);
-% mdim = ndims(b); % the last dimension is the receiver dimension
+% us.scan.dz = us.lambda / 4; % axial resolution
+% us.scan.dx = us.lambda / 4; % lateral resolution
+% b = DAS(us, chd, 'keep_rx', true); % preserve the receive aperture dimension
+% mdim = ndims(b); % the last dimension is the receive aperture dimension
 % 
 % % compute and show the SLSC image
 % z = slsc(b, mdim);
 % figure;
 % imagesc(us.scan, real(z));
 % colorbar;
+%
+% % Example 2:
+% % image with a small time kernel
+% K = 3; % one-sided time kernel size
+% t0 = chd.t0; % original start time
+% dt = 1/chd.fs; % time shift
+% for k = -K:K
+%     chd.t0 = t0 + k*dt; % shift time axis
+%     bk{k+K+1} = DAS(us, chd, 'keep_rx', true); % preserve the receive aperture dimension
+% end
+% chd.t0 = t0; % restore time axis
+% mdim = ndims(bk{1}); % receive aperture dimension
+% kdim = ndims(bk{1}) + 1; % find a free dimension
+% bk = cat(kdim, bk{:});
+%
+% % compute SLSC with a time kernel
+% L = floor(us.rx.numel/4); % maximum lag
+% zk = slsc(bk, mdim, L, "average", kdim);
+%
+% % show the SLSC image
+% figure;
+% imagesc(us.scan, real(zk));
+% colorbar;
 % 
-% See also COHFAC
+% See also DMAS COHFAC 
 
 % defaults
 arguments
@@ -106,13 +128,12 @@ H = abs(M - N); % lags for each receiver/cross-receiver pair (M x M')
 if isscalar(L), lags = 1:L; else, lags = L; end % chosen lags for adding (i.e. the short lags)
 S = ismember(H,lags); % selection mask for the lags (M x M') - true if (rx, xrx) is a short lag
 L = numel(lags); % number of (active) lags - this normalizes the sum of the average estimates
-K = gather(size(x,kdim)); % number of samples in time
 
 % choose average or ensemble
 switch method
     case "average"
         % normalize magnitude per time sample (averaging) with 0/0 -> 0
-        x = nan2zero(x ./ vecnorm(x,2,kdim) / K);
+        x = nan2zero(x ./ vecnorm(x,2,kdim));
 
         % get weighting / filter across receiver pairs
         W = S ./ (A - H) / 2 / L; % weights per pair (debiased, pos & neg averaged, multi-correlation-averaged)
