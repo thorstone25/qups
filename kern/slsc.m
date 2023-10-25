@@ -103,7 +103,7 @@ function z = slsc(x, dim, L, method, kdim)
 % imagesc(us.scan, real(zk));
 % colorbar;
 % 
-% See also DMAS COHFAC 
+% See also DMAS COHFAC PCF
 
 % defaults
 arguments

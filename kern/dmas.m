@@ -62,7 +62,7 @@ function b = dmas(bn, dim, L)
 % ylim([ 27.5 32.5]*1e-3);
 % caxis(max(cax1(2), cax2(2)) + [-60 0]); % 60dB dynamic range
 % 
-% See also SLSC COHFAC
+% See also SLSC COHFAC PCF
 
 arguments
     bn {mustBeNumeric}

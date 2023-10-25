@@ -52,7 +52,7 @@ function r = cohfac(b, dim)
 %
 % linkaxes(ax); % set both axes to scroll together
 % 
-% See also SLSC
+% See also DMAS SLSC PCF
 
 arguments
     b {mustBeNumeric}
