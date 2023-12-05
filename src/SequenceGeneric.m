@@ -206,7 +206,7 @@ classdef SequenceGeneric < Sequence
                     for n=1:N, seq(n).source.xyz = p(:,n).'; end
                     for n=1:N, seq(n).delay = p(:,n)/self.c0 + t0; end
 
-                case {'VS'}
+                case {'VS','DV','FC'}
                     [seq.wavefront] = deal(uff.wavefront.spherical);
                     for n=1:N, seq(n).source.xyz = self.focus(:,n).'; end
                     [seq.delay] = deal(t0);

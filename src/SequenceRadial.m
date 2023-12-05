@@ -50,7 +50,7 @@ classdef SequenceRadial < Sequence
 
             arguments % Sequence arguments
                 seq_args.?Sequence
-                seq_args.type (1,1) string {mustBeMember(seq_args.type, ["PW", "VS"])} = "PW" % restrict 
+                seq_args.type (1,1) string {mustBeMember(seq_args.type, ["PW", "FC", "DV", "VS",])} = "PW" % restrict 
             end
             arguments % SequenceRadial arguments
                 seqr_args.apex (3,1) {mustBeNumeric} = [0;0;0]

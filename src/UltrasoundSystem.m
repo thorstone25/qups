@@ -2521,12 +2521,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     case 'FSA'
                         [~,~,nf] = self.tx.orientations(); % normal vectors
                         pos_args = {P_im, P_rx, self.tx.positions(), nf};
+                        ext_args{end+1} = 'diverging-waves'; %#ok<AGROW>
                     case 'PW'
                         pos_args = {P_im, P_rx, [0;0;0], self.seq.focus}; % TODO: use origin property in tx sequence
                         ext_args{end+1} = 'plane-waves'; %#ok<AGROW> 
-                    case 'VS'
+                    case {'VS', 'FC', 'DV'}
                         nf = self.seq.focus - self.xdc.offset; % normal vector
                         pos_args = {P_im, P_rx, self.seq.focus, nf ./ norm(nf)};
+                        if self.seq.type == "DV", ext_args{end+1} = 'diverging-waves'; end %#ok<AGROW>
                 end
 
                 % request the CUDA kernel?
@@ -2952,7 +2954,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % validate sequence/transducer: doesn't work for
             % non-linear/focused - not sure why yet - seems like a
             % difficult to trace phase error bug.
-            if ~isa(self.tx, 'TransducerArray') && ~isa(self.rx, 'TransducerArray') && self.seq.type == "VS"
+            if ~isa(self.tx, 'TransducerArray') && ~isa(self.rx, 'TransducerArray') && any(self.seq.type == ["DV","FC","VS"])
                 warning('QUPS:bfAdjoint:UnsupportedSequence', ...
                     'This function is unsupported for focused transmits with non-linear transducers.' ...
                     );
@@ -3446,9 +3448,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get virtual source or plane wave geometries
             switch self.seq.type
-                case 'FSA', [Pv, Nv] = deal(self.tx.positions(), argn(3, @()self.tx.orientations));
-                case 'VS',  [Pv, Nv] = deal(self.seq.focus, normalize(self.seq.focus - self.xdc.offset,1,"norm"));
-                case 'PW',  [Pv, Nv] = deal([0;0;0], self.seq.focus); % TODO: use origin property in tx sequence
+                case 'FSA',             [Pv, Nv] = deal(self.tx.positions(), argn(3, @()self.tx.orientations));
+                case {'VS','FC','DV'},  [Pv, Nv] = deal(self.seq.focus, normalize(self.seq.focus - self.xdc.offset,1,"norm"));
+                case 'PW',              [Pv, Nv] = deal([0;0;0], self.seq.focus); % TODO: use origin property in tx sequence
             end
             Pr = swapdim(Pr,2,5); % move N to dim 5
             [Pv, Nv] = deal(swapdim(Pv,2,6), swapdim(Nv,2,6)); % move M to dim 6
@@ -3459,9 +3461,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % transmit sensing vector
             dv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
             switch self.seq.type
-                case 'FSA' , dv = vecnorm(dv, 2, 1);
-                case {'VS'}, dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
-                case {'PW'}, dv = sum(dv .* Nv, 1);
+                case {'DV','FSA'},  dv = vecnorm(dv, 2, 1)                         ;
+                case {'VS','FC'},   dv = vecnorm(dv, 2, 1) .* sign(sum(dv .* Nv,1));
+                case 'PW',          dv =                           sum(dv .* Nv,1) ;
             end % 1 x I1 x I2 x I3 x 1 x M
 
             % bring to I1 x I2 x I3 x 1 x M
@@ -3922,8 +3924,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % soft validate the transmit sequence type: it should be focused
-            if us.seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + us.seq.type + ": This may produce unexpected results."...
+            styps = ["VS", "FC", "DV"]; % valid sequence types
+            if all(us.seq.type ~= styps), warning(...
+                    "Expected a Sequence of type " + join(styps, " or ") + ...
+                    ", but instead got a Sequence of type " + us.seq.type + ": This may produce unexpected results." ...
                     );
             end
 
@@ -3989,8 +3993,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % soft validate the transmit sequence type: it should be focused
-            if us.seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + us.seq.type + ": This may produce unexpected results."...
+            styps = ["VS", "FC", "DV"]; % valid sequence types
+            if all(us.seq.type ~= styps), warning(...
+                    "Expected a Sequence of type " + join(styps, " or ") + ...
+                    ", but instead got a Sequence of type " + us.seq.type + ": This may produce unexpected results." ...
                     );
             end
 
@@ -4092,8 +4098,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             
             % soft validate the transmit sequence type: it should be focused
-            if us.seq.type ~= "VS", warning(...
-                    "Expected sequence type to be VS but instead got " + us.seq.type + ": This may produce unexpected results."...
+            styps = ["VS", "FC", "DV"]; % valid sequence types
+            if all(us.seq.type ~= styps), warning(...
+                    "Expected a Sequence of type " + join(styps, " or ") + ...
+                    ", but instead got a Sequence of type " + us.seq.type + ": This may produce unexpected results." ...
                     );
             end
 
@@ -4474,7 +4482,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
             
             % get the other sizes for beamform.m
-            VS = ~(self.seq.type == "PW"); % whither virtual source
+            VS = ~(self.seq.type == "PW"); % whether virtual source or plane-wave
+            DV = any(self.seq.type == ["DV", "FSA"]); % whether virtual source or plane-wave
             Isz = self.scan.size; % size of the scan
             N = self.rx.numel; % number of receiver elements
             M = self.seq.numPulse; % number of transmits
@@ -4488,6 +4497,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 def.DefinedMacros, ... keep the current defs
                 "QUPS_" + {... prepend 'QUPS_'
                 "VS="+VS,... virtual source model
+                "DV="+DV,... diverging wave model
                 "N="+N,... elements
                 "M="+M,... transmits
                 "I1="+Isz(1),... pixel dim 1

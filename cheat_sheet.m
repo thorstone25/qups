@@ -64,13 +64,13 @@ seq.apodization_ = hadamard(xdc.numel); % set hidden apodization matrix
 seq = SequenceRadial('type','PW', 'angles', -20 : 0.5 : 20);
 
 % ---------- Focused Sequences ---------- %
-% setup a focused pulse (VS) sequence
+% setup a focused pulse (FC) sequence
 zf = 60e-3; % focal depth 
 xf = (-40 : 1 : 40) * 1e-3; % focal point lateral positions
 pf = [0,0,1]'.*zf + [1,0,0]'.*xf; % focal points 
-seq = Sequence('type','VS', 'focus', pf);
+seq = Sequence('type','FC', 'focus', pf);
 
-% setup a walking transmit aperture focused pulse (VS) for a linear transducer
+% setup a walking transmit aperture focused pulse (FC) for a linear transducer
 xdc = TransducerArray();
 pn = xdc.positions(); % element positions
 Na = floor(xdc.numel/2); % active aperture size
@@ -83,10 +83,10 @@ for i = 1 : Nv
     % get focal positions centered on the active aperture
     pf(:,i) = mean(pn(:, logical(apod(:,i))),2); 
 end
-seq = Sequence('type','VS','focus',pf);
+seq = Sequence('type','FC','focus',pf);
 seq.apodization_ = apod; % set hidden apodization matrix
 
-% setup a walking transmit aperture focused pulse (VS) for a curvilinear array
+% setup a walking transmit aperture focused pulse (FC) for a curvilinear array
 xdc = TransducerConvex();
 th = xdc.orientations(); % element azimuth angles (deg)
 Na = floor(xdc.numel/2); % active aperture size
@@ -101,7 +101,7 @@ for i = 1 : xdc.numel - Na + 1
 end
 rfocal = 60e-3; %% focal range
 seq = SequenceRadial( ...
-    'type','VS', ...
+    'type','FC', ...
     'angles',tha, ...
     'ranges',norm(xdc.center) + rfocal, ...
     'apex',xdc.center ...
@@ -187,8 +187,8 @@ cscan.dz = us.lambda / 10;
 b = bfEikonal(us, chd, med, cscan);
 
 % frequency-domain adjoint Green's function beamformer
-% (poor performance on 'VS' sequences, convex arrays, or rotated/offset 
-% transducers)
+% Note: you may get poor performance on virtual source ('FC'/'DV'/'VS')
+% sequences, convex arrays, or rotated/offset transducers
 b = bfAdjoint(us, chd);
 
 % Stolt's f-k-migration with FFT padding and output scan (PW only)

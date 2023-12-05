@@ -9,15 +9,16 @@
 % The interpretation of the foci (i.e. the `focus` property) and the
 % time-axis of the generated delays depend on the Sequence type property.
 % 
-% For type 'PW', the foci are normal vectors and time 0 is when the
-% wavefront passes through the spatial origin (i.e. x=y=z=0).
-% 
-% For type 'VS', the foci are spatial positions and time 0 is when the
-% wavefront passes through the foci.
-% 
-% For type 'FSA', the foci are ignored and time 0 is when the wavefront
-% passes through each element of the given Transducer.
+% For type 'FSA' (full synthetic aperture), the foci are ignored and time 0
+% is when the wavefront passes through each element of the given
+% Transducer.
 %
+% For type 'PW' (plane waves), the foci are normal vectors and time 0 is
+% when the wavefront passes through the spatial origin (i.e. x=y=z=0).
+% 
+% For types 'FC' (focused), 'DV' (diverging), the foci are spatial
+% positions and time 0 is when the wavefront passes through the foci.
+% 
 % Use type 'FSA' and set the hidden `delays_` and/or `apodization_`
 % properties to use custom transmit delays and apodization. These will be
 % compatible with all simulation methods.
@@ -29,25 +30,36 @@ classdef Sequence < matlab.mixin.Copyable
         % TYPE - Type of pulse sequence definition
         %
         % SEQUENCE.TYPE determines the type of pulse sequence. It must be
-        % one of {'FSA', 'PW', 'VS'}.
+        % one of {'FSA', 'PW', 'DV', 'FC', 'VS'}.
         %
         % When the type is 'FSA', the pulse sequence represents a full 
         % synthetic aperture acquisition where each pulse has one element 
-        % transmitting at a time with no delays applied. When using this
-        % type, the numpulse property must be set.
+        % transmitting at a time, and each element transmits at time 0.
+        % When using this type, the numpulse property must be set.
         %
         % When the type is 'PW', the pulse sequence represents a plane-wave
-        % acquisition where the time delays are applied such that a planar
-        % wavefront forms that travels in the direction of the focal
-        % vectors and passes through the origin at time 0.
+        % acquisition where a planar wavefront forms that travels in the 
+        % direction of the focal vectors and passes through the origin of
+        % the coordinate system at time 0.
         %
-        % When the type is 'VS', the pulse sequence represents a virtual
-        % source acquisition where the time delays are applied such that a
-        % wavefront forms that travels radially towards and/or away from
-        % each foci and passes through the foci at time 0.
+        % When the type is 'DV', the pulse sequence represents a diverging
+        % wave acquisition where a radial wavefront forms that travels
+        % radially away from each foci, starting from each foci at time 0.
+        %
+        % When the type is 'FC', the pulse sequence represents a focused
+        % transmit acquisition where a radial wavefront forms that travels
+        % radially towards, through, then away from each foci, passing
+        % through each foci at time 0.
+        % 
+        % The type 'VS' is a legacy representation of a virtual-source that
+        % is either a focused or diverging wave transmit. This can be
+        % convenient as a placeholder when importing data. It's usage for
+        % beamforming is discouraged, as it can be difficult to
+        % disambiguate the sign of the beamforming delays based on the
+        % geometry of the transducer and foci alone.
         %
         % See also SEQUENCE.FOCUS SEQUENCE.C0 SAEQUENCE.NUMPULSE
-        type (1,1) string {mustBeMember(type, ["FSA", "PW", "VS"])} = 'FSA' 
+        type (1,1) string {mustBeMember(type, ["FSA", "PW", "FC", "DV", "VS"])} = 'FSA'
         % FOCUS - Pulse sequence foci or focal vectors
         %
         % SEQUENCE.FOCUS specifies the foci of pulse sequence.
@@ -57,15 +69,14 @@ classdef Sequence < matlab.mixin.Copyable
         % When the Sequence type is 'PW', the foci are unit normal vectors
         % specifying the propagation direction for each plane wave.
         %
-        % When the Sequence type is 'VS', the foci are the positions in
-        % space where all wavefronts must converge.
+        % When the Sequence type is 'FC', 'DV', or 'VS', the foci are the
+        % positions in space where each wavefront (virtually) converges.
         %
         % See also SEQUENCE.TYPE SEQUENCE.C0
         focus (3,:) {mustBeNumeric} = zeros([3,1]);
         % C0 - Reference sound speed
         %
-        % SEQUENCE.C0 specifies the sound speed used for creating the
-        % delays.
+        % SEQUENCE.C0 specifies the sound speed used for computing delays.
         %
         % See also DELAYS SEQUENCE.FOCUS SEQUENCE.TYPE
         c0 (1,1) {mustBeNumeric} = 1540         
@@ -185,8 +196,9 @@ classdef Sequence < matlab.mixin.Copyable
             % defines a plane  wave (PW) sequence at the 1 x S array of 
             % angles theta. The norm of the focus should always be 1.
             %
-            % seq = SEQUENCE('type', 'VS', 'focus', FOCI) defines a 
-            % focused or diverging virtual source (VS) sequence with 
+            % seq = SEQUENCE('type', 'FC', 'focus', FOCI) or 
+            % seq = SEQUENCE('type', 'DV', 'focus', FOCI) defines a 
+            % focused (FC) or diverging (DV) virtual source sequence with 
             % focal point locations at the focal points FOCI. FOCI is a
             % 3 x S array of focal points. 
             %
@@ -198,7 +210,7 @@ classdef Sequence < matlab.mixin.Copyable
             %
             % See also SEQUENCERADIAL WAVEFORM
             arguments
-                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["FSA", "PW", "VS"])}
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["FSA", "PW", "VS", "FC", "DV"])}
                 kwargs.focus (3,:) double
                 kwargs.c0 (1,1) double
                 kwargs.pulse (1,1) Waveform
@@ -250,7 +262,7 @@ classdef Sequence < matlab.mixin.Copyable
             % Example:
             %
             % % Create a Sequence
-            % seq = Sequence('type', 'VS', 'c0', 1500, 'focus', [0;0;30e-3]); % m, s, Hz
+            % seq = Sequence('type', 'FC', 'c0', 1500, 'focus', [0;0;30e-3]); % m, s, Hz
             %
             % % convert from meters to millimeters, hertz to megahertz
             % seq = scale(seq, 'dist', 1e3, 'time', 1e6); % mm, us, MHz
@@ -322,10 +334,18 @@ classdef Sequence < matlab.mixin.Copyable
                     for n=1:N, sequence(n).source.xyz = p(:,n).'; end
                     t0 = t0 + vecnorm(p,2,1) ./ seq.c0; % delay transform from element to origin for FSA
                     
-                case {'VS'}
+                case {'VS', 'DV', 'FC'} % focused and diverging wave
                     [sequence.wavefront] = deal(uff.wavefront.spherical);
                     for n=1:N, sequence(n).source.xyz = seq.focus(:,n).'; end
-                    t0 = t0 + vecnorm(seq.focus,2,1) ./ seq.c0; % transform for focal point to origin
+                    switch seq.type % transform for focal point to origin
+                        case 'DV', t0 = t0 - vecnorm(seq.focus,2,1) ./ seq.c0;
+                        case 'FC', t0 = t0 + vecnorm(seq.focus,2,1) ./ seq.c0;
+                        case 'VS', t0 = t0 + vecnorm(seq.focus,2,1) ./ seq.c0;
+                            warning("QUPS:QUPS2USTB:ambiguousSequence", ...
+                                "A Sequence of type 'VS' (virtual source) is ambiguous and will be treated as a focused transmit: " ...
+                                + "set the type to 'FC' or 'DV' to avoid this warning." ...
+                                );                                   
+                    end
             end   
 
             % set the start time
@@ -395,7 +415,7 @@ classdef Sequence < matlab.mixin.Copyable
             end
 
             switch type
-                case 'VS'
+                case {'FC','DV','VS'}
                     seq = Sequence('type', type, 'c0', c0, 'focus', cat(1,p0.xyz)');
                 case 'FSA'
                     seq = Sequence('type', type, 'c0', c0, 'numPulse', numel(sequence));
@@ -429,7 +449,29 @@ classdef Sequence < matlab.mixin.Copyable
             % create the corresponding Sequence
             if isfield(TX, "FocalPt") % focal points -> VS
                 pf = cat(1, TX.FocalPt)' .* lambda; % focal points
-                seq = Sequence("type","VS", "focus", pf);
+                try % attempt to infer focused or diverging wave
+                    xdc = Transducer.Verasonics(Trans, c0); % get transducer
+                    if     isa(class(xdc), "TransducerArray") ...
+                        || isa(class(xdc), "TransducerMatrix")
+                        if     all(pf(3,:) < 0), styp = "DV";
+                        elseif all(pf(3,:) > 0), styp = "FC";
+                        end
+                    elseif isa(class(xdc), "TransducerConvex")
+                        r = vecnorm(pf - xdc.center,2,1);
+                        if     all(r < xdc.radius), styp = "DV";
+                        elseif all(r > xdc.radius), styp = "FC";
+                        end                    
+                    else
+                        warning("QUPS:Verasonics:ambiguousSequence", ...
+                            "Cannot infer whether sequence is focused or diverging.");
+                        styp = "VS"; % default type
+                    end
+                catch
+                    warning("QUPS:Verasonics:ambiguousSequence", ...
+                        "Cannot infer whether sequence is focused or diverging.");
+                    styp = "VS"; % default type
+                end
+                seq = Sequence("type",styp, "focus", pf);
             elseif ~any(tau,'all') % no delays -> FSA
                 M = numel(TX);
                 seq = Sequence("type","FSA", "numPulse",M);
@@ -447,7 +489,11 @@ classdef Sequence < matlab.mixin.Copyable
                           1       .* sin(ang(:,2)), ...
                     cos(ang(:,1)) .* cos(ang(:,2)), ...
                     ]; % focal points
-                seq = Sequence("type","VS", "focus", lambda * pf.');
+                if     all(rf > 0), styp = "FC"; % focused
+                elseif all(rf < 0), styp = "DV"; % diverging
+                else,               styp = "VS"; % unclear
+                end
+                seq = Sequence("type",styp, "focus", lambda * pf.');
             else
                 error("Unable to infer focal sequence type.");
             end
@@ -479,9 +525,11 @@ classdef Sequence < matlab.mixin.Copyable
             % Sequence type. 
             % 
             % Type:
-            %     'VS' : t = 0 when a wave intersects the focus
             %     'PW' : t = 0 when a wave intersects the point [0;0;0]
             %     'FSA': t = 0 when a wave intersects the transmit element
+            %     'FC' : t = 0 when a wave intersects the focus
+            %     'DV' : t = 0 when a wave intersects the focus
+            %     'VS' : t = 0 when a wave intersects the focus
             %
             % If using the plane wave method, the focus is instead
             % interpreted as a normal unit vector. 
@@ -497,13 +545,15 @@ classdef Sequence < matlab.mixin.Copyable
             
             if isempty(self.delays_)
                 switch self.type
-                    case 'VS'
-                        % TODO: use more robust logic for diverging wave test
+                    case {'FC','DV','VS'}
                         v = self.focus - p; % element to focus vector (3 x S x N)
-                        s = ~all(sub(self.focus,3,1) > sub(p,3,1), 3); % whether in behind of the transducer (1 x S)
                         tau = hypot(hypot(sub(v,1,1), sub(v,2,1)),sub(v,3,1)) ./ self.c0; % delay magnitude (1 x S x N)
-                        tau = (-1).^s .* tau; % swap sign for diverging transmit
-
+                        switch self.type % get sign swap
+                            case 'VS', s = (-1).^(~all(sub(self.focus,3,1) > sub(p,3,1), 3)); % whether behind the transducer (1 x S)
+                            case 'FC', s = +1; % positive delays
+                            case 'DV', s = -1; % negate delays
+                        end
+                        tau = tau .* s; % swap sign for diverging transmit
                     case 'PW'
                         % use inner product of plane-wave vector with the
                         % positions to get plane-aligned distance
@@ -559,7 +609,7 @@ classdef Sequence < matlab.mixin.Copyable
             % 
             % % construct the Sequence
             % seq = Sequence(...
-            % 'type', 'VS', ...
+            % 'type', 'FC', ...
             % 'focus', [0;0;30e-3] + xf .* [1;0;0] ...
             % );
             % 
@@ -595,15 +645,16 @@ classdef Sequence < matlab.mixin.Copyable
             %
             % t0 = t0Offset(seq) computes the start time offset t0 for the
             % Sequence seq. For FSA and PW sequences, t0 is always 0. For
-            % VS sequences, it can be used to shift the spatial location of
-            % t0 from the foci to the origin of the cooredinate system.           
+            % virtual source sequences, it can be used to shift the spatial
+            % location of t0 from the foci to the origin of the coordinate
+            % system.
             % 
             % Example: 
             % % get a default system
             % us = UltrasoundSystem();
             % 
             % % create a focused Sequence and a scatterer at the focus
-            % us.seq = Sequence('type', 'VS', 'focus', [0,0,30e-3]', 'c0', 1500);
+            % us.seq = Sequence('type', 'FC', 'focus', [0,0,30e-3]', 'c0', 1500);
             % scat = Scatterers('pos', us.seq.focus,'c0',us.seq.c0);
             %
             % % get channel data for a scatterrer at the focus
@@ -624,9 +675,12 @@ classdef Sequence < matlab.mixin.Copyable
 
             arguments, seq Sequence, end
             switch seq.type
-                case 'VS' % for virtual source, t0 is at the foci
+                case {'VS', 'FC'} % for virtual source, t0 is at the foci
                     t0 = - vecnorm(seq.focus, 2,1) ./ seq.c0; % (1 x S)
-                otherwise % PW - t0 is at origin; FSA - t0 at the element
+                case {'DV'} % for virtual source, t0 is at the foci
+                    warning("Untested: please verify this code.");
+                    t0 = + vecnorm(seq.focus, 2,1) ./ seq.c0; % (1 x S)
+                case {'FSA', 'PW'} % PW - t0 is at origin; FSA - t0 at the element
                     t0 = 0; % (1 x 1)
             end
         end

@@ -54,12 +54,12 @@ for i = numel(xdcs):-1:1
     % construct a plane wave pulse sequence
     seqp(i) = SequenceRadial('type','PW','angles', -10 : 0.5 : 10);
 
-    % construct a focus pulse sequence
-    seqf(i) = Sequence('type','VS', 'focus', pf);
+    % construct a focused pulse sequence
+    seqf(i) = Sequence('type','FC', 'focus', pf);
     seqf(i).apodization_ = aptx; % set the apodization explicitly
 
     % construct a diverging pulse sequence
-    seqv(i) = Sequence('type','VS', 'focus', pdv);
+    seqv(i) = Sequence('type','DV', 'focus', pdv);
     seqv(i).apodization_ = aptx; % set the apodization explicitly
 end
 
@@ -109,8 +109,7 @@ end
 % beamforming options
 fnbr = 1; % set the acceptance angle with an f#
 
-bi = cell(size(us)); % pre-allocate
-for i = 1:numel(us)
+for i = numel(us):-1:1
     tic, 
     % create the receive apodization matrix
     a = us(i).apAcceptanceAngle(atand(0.5/fnbr));
@@ -119,7 +118,7 @@ for i = 1:numel(us)
     bi{i} = DAS(us(i), chd(i), 'apod', a);
 
     % normalize to the number of pulses (for comparable scaling)
-     bi{i} = bi{i} ./ sqrt(us(i).seq.numPulse);
+    bi{i} = bi{i} ./ sqrt(us(i).seq.numPulse);
     toc,
 end
 
@@ -177,7 +176,9 @@ arguments
 end
 
 % apodization matrix (elems x txs)
-aptx = cell2mat(arrayfun(@(i) {circshift([true(M,1);false(N-M,1)],i,1)}, 0 : S : N - M));
+aptx = [true(M,1); false(N-M,1)];
+aptx = (arrayfun(@(i) {circshift(aptx,i,1)}, 0 : S : N - M));
+aptx = cell2mat(aptx);
 
 end
 

@@ -161,6 +161,9 @@ classdef ChannelData < matlab.mixin.Copyable
             switch seq.type
                 case 'FSA', t0 = t0 - vecnorm(xdc.positions,2,1) ./ seq.c0; % delay transform from element to origin for FSA
                 case 'VS',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
+                case 'FC',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
+                case 'DV',  warning("Untested code: please validate."); 
+                            t0 = t0 + vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
                 case 'PW' % no action necessary
             end
 
