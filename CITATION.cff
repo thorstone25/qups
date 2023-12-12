@@ -4,7 +4,7 @@ authors:
 - family-names: "Brevett"
   given-names: "Thurston"
   orcid: "https://orcid.org/0000-0002-0720-6955"
-title: "Quick Ultrasound Simulation & Processing"
+title: "Quick Ultrasound Processing & Simulation"
 version: v0.1.0-alpha
 date-released: 2023-07-12
 url: "https://github.com/thorstone25/qups"
