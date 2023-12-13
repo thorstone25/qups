@@ -133,6 +133,10 @@ if isempty(hf.Children) % new figure; no axes
     % squeeze data into first 2 dims
     x = cellfun(@squeeze, x, 'UniformOutput', false);
 
+    % take modulos of complex data
+    val = cellfun(@isreal, x);
+    x(~val) = cellfun(@mod2db, x(~val), 'UniformOutput', false);
+
     % make images
     him = cellfun(@(x) imagesc(nexttile(htl), x(:,:,1)), x);
 
