@@ -208,6 +208,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % the buffer indices b corresponding to each element of
             % RcvData. The default is unique([Receive.bufnum], 'stable').
             %
+            % [...] =  ChannelData.Verasonics(..., 'insert0s', false)
+            % disables 0-insertion to replace missing samples when the 
+            % buffer sample mode is one of ["BS100BW", "BS67BW", "BS50BW"]. 
+            % The default is true.
+            % 
             % Example:
             % chd = ChannelData.Verasonics(RcvData, Receive, Trans);
             % chd = hilbert(singleT(chd));
@@ -220,6 +225,7 @@ classdef ChannelData < matlab.mixin.Copyable
                 Trans struct {mustBeScalarOrEmpty} = struct.empty
                 kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
                 kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
+                kwargs.insert0s (1,1) logical = true
             end
 
             % validate the RcvData
@@ -243,6 +249,15 @@ classdef ChannelData < matlab.mixin.Copyable
                 fr = unique([Rx.framenum]); % frames
                 sm = unique({Rx.sampleMode}); % sampling mode
                 F = numel(fr); % number of frames
+
+                % validate sample mode
+                if isscalar(sm), sm = string(sm);
+                else           , sm = "N/A";
+                    warning( ...
+                        "QUPS:Verasonics:InconsistentAcquisitionSize", ...
+                        "Buffer " + kwargs.buffer(i) + " contains multiple sample modes." ...
+                        )
+                end
                 
                 % validate sizing
                 dupCnt = @(x) unique(groupcounts(x(:))); % count duplicates
@@ -306,6 +321,21 @@ classdef ChannelData < matlab.mixin.Copyable
                         y(:,j,k~=0,:) = x(:,j,k(k~=0),:); % load
                     end
                     x = y; % (time x acq x elem x frame)
+                end
+
+                % transform the sampled data depending on the sample mode
+                if kwargs.insert0s
+                    switch sm
+                        case "NS200BW", [N, K] = deal(0, 1); % fully sampled      - insert N=0 0s every K=1 samples
+                        case "BS100BW", [N, K] = deal(2, 2); % [1,1,0,0,]         - insert N=2 0s every K=2 samples
+                        case "BS67BW",  [N, K] = deal(2, 1); % [1,0,0,]           - insert N=2 0s every K=1 samples
+                        case "BS50BW",  [N, K] = deal(6, 2); % [1,1,0,0,0,0,0,0,] - insert N=6 0s every K=2 samples
+                        otherwise,      [N, K] = deal(0, 1); % unknown            - insert N=0 0s every K=1 samples
+                    end
+                    dsz = size(x); % data size
+                    x = reshape(x, [K, dsz(1)/K, dsz(2:end)]); % set sample singles/pairs in dim 1
+                    x(end+(1:N),:) = 0; % insert N 0s
+                    x = reshape(x, [(K+N) * (dsz(1)/K), dsz(2:end)]); % return to original dimensions
                 end
                 
                 % construct ChannelData
