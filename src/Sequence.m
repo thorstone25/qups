@@ -428,61 +428,138 @@ classdef Sequence < matlab.mixin.Copyable
 
         end
     
-        function seq = Verasonics(TX, Trans, Resource, TW)
+        function [seq, t0] = Verasonics(TX, Trans, TW, kwargs)
+            % VERASONICS - Construct a Sequence from Verasonics structs
+            %
+            % seq = Sequence.Verasonics(TX, Trans) constructs a Sequence
+            % from the Verasonics 'TX' and 'Trans' structs.
+            %
+            % seq = Sequence.Verasonics(TX, Trans, TW) additionally imports
+            % the trilevel excitation waveform from the 'TW' struct as a
+            % Waveform. If omitted, seq.pulse is a Waveform.Delta instead.
+            % 
+            % [seq, t0] = Sequence.Verasonics(...) additionally returns an
+            % offset time array t0 between the transmit delay conventions
+            % used by QUPS and Verasonics. If the delays cannot be
+            % validated, t0 will be NaN.
+            % 
+            % [...] = Sequence.Verasonics(..., 'tol', tol) sets the numeric
+            % threshold for verifying the parsed Verasonics delays are
+            % equivalent to the delays used by QUPS. The default is 1e-16.
+            % 
+            % [...] =  Sequence.Verasonics(..., 'c0', c0) sets the sound
+            % speed c0 in m/s. This should match the value of the Versonics
+            % variable 'Resource.Parameters.speedOfSound'. The default is
+            % 1540.
+            % 
+            % [...] =  Sequence.Verasonics(..., 'aperture', ap) explicitly
+            % provides the element to channel mapping. The default is
+            % 'Trans.HVMux.Aperture' if TX has an 'aperture' property or
+            % 'Trans.ConnectorES' otherwise.
+            % 
+            % [...] =  Sequence.Verasonics(..., 'xdc', xdc) provides a
+            % Transducer for verifying the parsed delays. This is helpful
+            % if you have a custom transducer or if Transducer.Verasonics
+            % fails to import the Trans struct properly.
+            %
+            % Example:
+            % 
+            % % get the reference sound speed in meters / second
+            % c0 = Resource.Parameters.speedOfSound;
+            % 
+            % % import the Sequence and delay offsets
+            % [seq, t0] = Sequence.Verasonics(TX, Trans, TW, 'c0', c0);
+            % 
+            % See also TRANSDUCER.VERASONICS WAVEFORM.VERASONICS SCAN.VERASONICS
+            arguments
+                TX struct
+                Trans (1,1) struct
+                TW struct {mustBeScalarOrEmpty} = struct.empty
+                kwargs.c0 (1,1) {mustBeNumeric, mustBePositive, mustBeFloat} = 1540
+                kwargs.tol (1,2) {mustBeNumeric, mustBePositive, mustBeFloat} = 1e-16 
+                kwargs.aperture (:,:) {mustBeNumeric, mustBeInteger, mustBePositive}
+                kwargs.xdc Transducer {mustBeScalarOrEmpty} = TransducerArray.empty
+            end
+            
+            % get channel mapping
             ismux = isfield(TX, 'aperture'); % whether muxed or not
-            if ismux, ap = Trans.HVMux.ApertureES; % mux
-            else,     ap = 1:Resource.Parameters.numTransmit; % no muxing
+            if isfield(kwargs, 'aperture')
+                            ap = kwargs.aperture; % custom muxing
+            elseif ismux,   ap = Trans.HVMux.Aperture; % mux
+            else,           ap = Trans.ConnectorES; % no muxing
             end
 
             % constants
-            c0 = Resource.Parameters.speedOfSound;
+            tol = kwargs.tol;
+            c0 = kwargs.c0;
             fc = 1e6*Trans.frequency;
             lambda = c0 / fc;
 
             % tx params
             apd = cat(1,TX.Apod  ); % apodization
             ang = cat(1,TX.Steer ); % angles
-            rf  = cat(1,TX.focus );% .* lambda; % focal range  
-            pog = cat(1,TX.Origin);% .* lambda; % beam origin
-            tau = cat(1,TX.Delay );% ./ fc; % tx delays
+            rf  = cat(1,TX.focus );% .* lambda; % focal range (lambda)
+            pog = cat(1,TX.Origin);% .* lambda; % beam origin (lambda)
+            tau = cat(1,TX.Delay ) ./ fc; % tx delays (s)
+
+            % build the full delay/apodization matrix
+            [apdtx, tautx] = deal(zeros(Trans.numelements, numel(TX))); % pre-allocate
+            for i = 1 : numel(TX) % for each transmit
+                if ismux,   api = ap(:, TX(i).aperture); 
+                else,       api = ap(logical(ap)); 
+                end %       selected aperture
+                j = logical(api); % active elements
+                apdtx(j,i) = apd(i,:); % apodization
+                tautx(j,i) = tau(i,:); % delays
+            end
+
+            % attempt to import the Transducer
+            xdc = kwargs.xdc;
+            if isempty(xdc)
+            try    xdc = Transducer.Verasonics(Trans, c0);
+            catch, xdc = TransducerGeneric.empty; 
+            end
+            end
+
+            % virtual source ambiguous sequence type warning
+            [wid, wmsg] = deal( ...
+                "QUPS:Verasonics:ambiguousSequenceType", ...
+                "Cannot infer whether sequence is focused or diverging." ...
+                );
 
             % create the corresponding Sequence
             if isfield(TX, "FocalPt") % focal points -> VS
                 pf = cat(1, TX.FocalPt)' .* lambda; % focal points
-                try % attempt to infer focused or diverging wave
-                    xdc = Transducer.Verasonics(Trans, c0); % get transducer
-                    if     isa(class(xdc), "TransducerArray") ...
+                % attempt to infer focused or diverging wave
+                if     isa(class(xdc), "TransducerArray" ) ...
                         || isa(class(xdc), "TransducerMatrix")
-                        if     all(pf(3,:) < 0), styp = "DV";
-                        elseif all(pf(3,:) > 0), styp = "FC";
-                        end
-                    elseif isa(class(xdc), "TransducerConvex")
-                        r = vecnorm(pf - xdc.center,2,1);
-                        if     all(r < xdc.radius), styp = "DV";
-                        elseif all(r > xdc.radius), styp = "FC";
-                        end                    
-                    else
-                        warning("QUPS:Verasonics:ambiguousSequence", ...
-                            "Cannot infer whether sequence is focused or diverging.");
-                        styp = "VS"; % default type
+                    if     all(pf(3,:) < 0), styp = "DV";
+                    elseif all(pf(3,:) > 0), styp = "FC";
                     end
-                catch
-                    warning("QUPS:Verasonics:ambiguousSequence", ...
-                        "Cannot infer whether sequence is focused or diverging.");
+                elseif isa(class(xdc), "TransducerConvex")
+                    r = vecnorm(pf - xdc.center,2,1);
+                    if     all(r < xdc.radius), styp = "DV";
+                    elseif all(r > xdc.radius), styp = "FC";
+                    end
+                end
+                if ~exist('styp', 'var') % fallback to virtual source
+                    warning(wid, wmsg); % VS ambiguity warning
                     styp = "VS"; % default type
                 end
                 seq = Sequence("type",styp, "focus", pf);
+            
             elseif ~any(tau,'all') % no delays -> FSA
-                M = numel(TX);
-                seq = Sequence("type","FSA", "numPulse",M);
+                seq = Sequence("type","FSA", "numPulse",numel(TX));
+            
             elseif all(all(pog == 0,2) & all(rf == 0,1) & any(ang,2),1) % PW
                 az = rad2deg(ang(:,1)'); % azimuth
                 el = rad2deg(ang(:,2)'); % elevation
                 if any(el)
-                    seq = SequenceSpherical("type","PW", "angles", [az; el]);
+                    seq = SequenceSpherical("type","PW","angles",[az; el]);
                 else
-                    seq = SequenceRadial("type","PW", "angles",az);
+                    seq = SequenceRadial(   "type","PW","angles", az     );
                 end
+            
             elseif any(rf)
                 pf = pog + rf .* [
                     sin(ang(:,1)) .* cos(ang(:,2)), ...
@@ -492,21 +569,54 @@ classdef Sequence < matlab.mixin.Copyable
                 if     all(rf > 0), styp = "FC"; % focused
                 elseif all(rf < 0), styp = "DV"; % diverging
                 else,               styp = "VS"; % unclear
+                                    warning(wid, wmsg); % VS ambiguity warning
                 end
                 seq = Sequence("type",styp, "focus", lambda * pf.');
+            
             else
-                error("Unable to infer focal sequence type.");
+                warning( ...
+                    "QUPS:Verasonics:ambiguousSequenceType", ...
+                    "Unable to infer transmit sequence type." ...
+                    );
+                seq = SequenceGeneric("apod",apdtx, "del",tautx, "numPulse",numel(TX));
             end
             seq.c0 = c0;
 
+            % validate the apodization and override if necessary
+            val = ~isempty(xdc) && isalmostn(apdtx, seq.apodization(xdc), tol(end));
+            if ~val
+                    warning(...
+                        "QUPS:Verasonics:overrideSequenceApodization", ...
+                        "Overriding QUPS apodization with Vantage defined values." ...
+                        );
+                    seq.apodization_ = apdtx;
+            end
+
+            % validate the delays
+            [t0, val] = deal(NaN, false); % no offset / unverified until proven successful
+            if ~isempty(xdc) % transducer successfully imported
+                act  = logical(apdtx); % whether elements were active
+                tauq = seq.delays(xdc); % QUPS delays (N x S)
+                tauv = -tautx;          % VSX  delays (N x S)
+                if isequal(size(tauq), size(tauv)) % sizing matches (proceed)
+                    [tauq(~act), tauv(~act)] = deal(nan); % set inactive delays to NaN
+                    t0 = mean(tauv - tauq,1,'omitnan'); % offset time per transmit
+                    val = isalmostn(tauv, tauq + t0, tol(1)); % verified with offset
+                end
+            end
+
+            % override delays if they don't match 
+            if ~val
+                warning(...
+                    "QUPS:Verasonics:overrideSequenceDelays", ...
+                    "Overriding QUPS delays with Vantage defined values." ...
+                    );
+                seq.delays_ = tautx;
+            end
+
             % import waveform
-            % TODO: validate
-            if nargin >= 4
-                t = (0:TW.numsamples-1)' ./ 250e6;
-                t0 = - TW.peak ./ fc;
-                flds = "TriLvlWvfm" + ["", "_Sim"];
-                f = flds(isfield(TW, flds));
-                seq.pulse = Waveform('t', t + t0, 'samples', TW.(f), 'fs', 250e6);
+            if isscalar(TW), seq.pulse = Waveform.Verasonics(TW, fc); 
+            else,            seq.pulse = Waveform.Delta();
             end
         end
     end
