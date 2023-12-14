@@ -1328,7 +1328,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % identical in dimension dim for all ChannelData objects.
             %
             % See also CHANNELDATA/SPLICE
-
+            
+            if isempty(chds), sz=size(chds); sz(dim)=1; chd=reshape(chds, sz); return; end % trivial case
             assert(isalmostn([chds.fs], repmat(median([chds.fs]), [1,numel(chds)]))); % sampling frequency must be identical
             assert(all(string(chds(1).order) == {chds.order})); % data orders are identical
 
