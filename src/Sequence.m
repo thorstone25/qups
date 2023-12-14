@@ -436,7 +436,8 @@ classdef Sequence < matlab.mixin.Copyable
             %
             % seq = Sequence.Verasonics(TX, Trans, TW) additionally imports
             % the trilevel excitation waveform from the 'TW' struct as a
-            % Waveform. If omitted, seq.pulse is a Waveform.Delta instead.
+            % Waveform. If omitted or empty, seq.pulse is a Waveform.Delta
+            % instead. 
             % 
             % [seq, t0] = Sequence.Verasonics(...) additionally returns an
             % offset time array t0 between the transmit delay conventions
@@ -551,7 +552,7 @@ classdef Sequence < matlab.mixin.Copyable
             elseif ~any(tau,'all') % no delays -> FSA
                 seq = Sequence("type","FSA", "numPulse",numel(TX));
             
-            elseif all(all(pog == 0,2) & all(rf == 0,1) & any(ang,2),1) % PW
+            elseif all(all(pog == 0,2) & all(rf == 0,1) & any(ang,'all'),1) % PW
                 az = rad2deg(ang(:,1)'); % azimuth
                 el = rad2deg(ang(:,2)'); % elevation
                 if any(el)
