@@ -37,6 +37,11 @@ function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 % y = BEAMFORM(..., 'plane-waves', ...) uses a plane-wave delay model 
 % instead of a virtual-source delay model (default).
 % 
+% y = BEAMFORM(..., 'diverging-waves', ...) specifies a diverging-wave 
+% delay model, in which the time delay is always positive rather than
+% negative prior to reaching the virtual source in the virtual-source delay
+% model (default).
+% 
 % In a plane-wave model, time t == 0 is when the wave passes through the 
 % origin of the coordinate system. Pv is the origin of the coordinate
 % system (typically [0;0;0]) and Nv is the normal vector of the plane wave.
@@ -44,7 +49,9 @@ function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 % In a virtual-source model, time t == 0 is when the wavefront (in theory) 
 % passes through the focus. For a full-synthetic-aperture (FSA) 
 % acquisition, Pv is the position of the transmitting element. In a focused
-% or diverging wave transmit, Pv is the focus. Nv is ignored.
+% or diverging wave transmit, Pv is the focus. For a focused wave, Nv is
+% used to determine whether the theoretical wavefront has reached the focal
+% point. For a diverging wave, Nv is ignored. 
 % 
 % y = BEAMFORM(..., 'apod', apod, ...) applies apodization across the image
 % and data dimensions. apod must be able to broadcast to size 
@@ -81,7 +88,8 @@ function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 
 % TODO: switch to kwargs struct to support arguments block
 % default parameters
-VS = true;
+VS = true; % whither plane wave
+DV = false; % whither diverging wave
 interp_type = 'linear'; 
 apod = 1;
 isType = @(c,T) isa(c, T) || isa(c, 'gpuArray') && strcmp(classUnderlying(c), T);
@@ -91,6 +99,8 @@ elseif isType(x, 'double')
     idataType = 'double';
 elseif isType(x, 'halfT')
     idataType = 'halfT'; 
+else
+    idataType = 'double'; % default
 end
 if any(cellfun(@(c) isType(c, 'single'), {Pi, Pr, Pv, Nv}))
     posType = 'single';
@@ -113,6 +123,10 @@ while (n <= nargs)
             VS = false;
         case 'virtual-source'
             VS = true;
+        case 'diverging-waves'
+            DV = true;
+        case 'focused-waves'
+            DV = false;
         case 'position-precision'
             n = n + 1;
             posType = varargin{n};
@@ -275,7 +289,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % set constant args
     k.setConstantMemory('QUPS_I', I); % gauranteed
     try k.setConstantMemory('QUPS_T', T); end % if not const compiled with ChannelData
-    try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
+    try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
     
     % set kernel size
     k.ThreadBlockSize = nThreads;
@@ -354,7 +368,8 @@ else
     % transmit sensing vector
     rv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
     if VS % virtual source delays
-        dv = vecnorm(rv, 2, 1) .* sign(sum(rv .* Nv,1));
+        if DV, s = 1; else, s = sign(sum(rv .* Nv,1)); end % diverging or focused
+        dv = vecnorm(rv, 2, 1) .* s;
     else % plane-wave delays
         dv = sum(rv .* Nv, 1);
     end % 1 x I1 x I2 x I3 x 1 x M

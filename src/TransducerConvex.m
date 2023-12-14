@@ -49,8 +49,10 @@ classdef TransducerConvex < Transducer
 
             % initialize the TransducerConvex
             for f = string(fieldnames(array_args))'
+                if f == "pitch", continue; end % set this last
                 self.(f) = array_args.(f);
             end
+            if isfield(array_args, "pitch"), self.pitch = array_args.pitch; end
 
             % if kerf not set, default it to 0
             if isempty(self.pitch), self.kerf = 0; end
@@ -77,49 +79,27 @@ classdef TransducerConvex < Transducer
         end
     end
 
-    % define abstract methods
-    methods
-        function p = positions(self), p = findPositions(self); end
-        function [theta, phi, normal, width, height] = orientations(self) 
-            [theta, phi, normal, width, height] = getOrientations(self); 
-        end
-    end
-    
     % define position methods
-    methods(Hidden,Access=private)
+    methods
         % get methods                
-        function p = findPositions(self)
-            % returns a 3 x N vector of the positions of the N elements with
-            % the center element at the origin
-            
+        function p = positions(self)
             array_angular_width = (self.numel - 1)* self.angular_pitch;
             theta = linspace(-array_angular_width/2, array_angular_width/2, self.numel);
             z = self.radius * cosd(theta);
             x = self.radius * sind(theta);
             y = zeros(size(theta));
-            p = cat(1, x, y, z) + self.center;
+            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
+            p = rotatepoint(q, cat(1, x, y, z)')' + self.center;
         end
         
-        function [theta, phi, normal, width, height] = getOrientations(self)
-            % Outputs:
-            % 
-            %   - theta:    the azimuthal angle in cylindrical coordinates
-            % 
-            %   - phi:      the elevation angle in cylindrical coordinates
-            % 
-            %   - normal:   a 3 x N array of the element normals
-            % 
-            %   - width:    a 3 x N array of element width vectors
-            % 
-            %   - height:   a 3 x N array of element height vectors
-            
+        function [theta, phi, normal, width, height] = orientations(self)
             array_angular_width = (self.numel - 1)* self.angular_pitch;
-            theta = linspace(-array_angular_width/2, array_angular_width/2, self.numel);
-            phi   = zeros(size(theta));
+            theta =  self.rot(1) + linspace(-array_angular_width/2, array_angular_width/2, self.numel);
+            phi   = -self.rot(2) + zeros(size(theta));
             ZERO  = zeros(size(theta));
-            normal     = [cosd(phi).*sind(theta); sind(phi); cosd(phi).*cosd(theta)];
-            width      = [cosd(theta);           sind(ZERO); -cosd(ZERO).*sind(theta)];
-            height     = [sind(phi).*sind(ZERO);  cosd(phi); sind(phi).*cosd(ZERO)];
+            normal     = [cosd(phi).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
+            width      = [cosd(theta);            sind(ZERO); -cosd(ZERO).*sind(theta)];
+            height     = [sind(phi).*sind(ZERO ); cosd(phi );  sind(phi ).*cosd(ZERO )];
         end        
     end
 

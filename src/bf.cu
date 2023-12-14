@@ -99,7 +99,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
                 rv = pi[i] - pvm; // (virtual) transmit to pixel vector
 
                 dv = QUPS_VS ? // tx path length
-                    copysign(length(rv), dot(rv, nv[m])) // virtual source
+                    copysign(length(rv), (QUPS_DV ? 1.f : dot(rv, nv[m]))) // virtual source
                     : dot(rv, nv[m]); // plane wave
 
                 dr = length(pi[i] - pr[n]); // rx path length
@@ -230,7 +230,7 @@ __global__ void delaysf(float * __restrict__ tau,
                 rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector 
                 
                 dv = QUPS_VS ? // tx path length
-                    copysign(length(rv), dot(rv, nv[m])) // virtual source
+                    copysign(length(rv), (QUPS_DV ? 1.f : dot(rv, nv[m]))) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
                 dr = length(pi[i] - pr[n]); // rx path length
@@ -275,7 +275,7 @@ __global__ void delays(double * __restrict__ tau,
                 rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector 
                 
                 dv = QUPS_VS ? // tx path length
-                    copysign(length(rv), dot(rv, nv[m])) // virtual source
+                    copysign(length(rv), (QUPS_DV ? 1.f : dot(rv, nv[m]))) // virtual source
                     : dot(rv, nv[m]); // plane wave
                 
                 dr = length(pi[i] - pr[n]); // rx path length

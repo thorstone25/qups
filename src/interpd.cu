@@ -99,6 +99,7 @@ __device__ T2 cubic(const T2 * x, U tau, T2 no_v) {
   T2 s3 = x[ti + 2];
 
   // Cubic Hermite interpolation (increased precision using fused multiply-adds)
+  // (Catmull-Rom)
   U a0 = 0 + u * (-1 + u * (+2 * u - 1));
   U a1 = 2 + u * (+0 + u * (-5 * u + 3));
   U a2 = 0 + u * (+1 + u * (+4 * u - 3));
@@ -220,7 +221,7 @@ inline __device__ half2 ui2h(const unsigned int i){
         half2 h;
     } v;
     v.i = i;
-    return __halves2half2(__ushort_as_half(v.h.x), __ushort_as_half(v.h.y));
+    return __halves2half2(v.h.x, v.h.y);
 }
 
 inline __device__ unsigned int h2ui(const half2 a){
@@ -269,15 +270,20 @@ __device__ size_t global_offset(size_t * dind, const size_t * sizes, const char 
 // global index
     // init
     size_t dsz[3] = {1,1,1}; // {I,N,F} index cumulative sizes
-    size_t sz = 1, j = 0; 
+    size_t str, j = 0; // stride, output index
 
     // find offset
-    for(size_t s = 0; s < QUPS_S; ++s){
-        const char iflg = iflags[s]; // which label
-        dsz[iflg] *= sizes[s]; // increase size for this label
-        j += sz * (dind[iflg] %  dsz[iflg]); // add offset
-                   dind[iflg] /= dsz[iflg]; // fold index
-        sz *= sizes[s]; // increase indexing stride
+    # pragma unroll
+    for(char i = 0; i < 3; ++i){ // each label
+        str = 1; // reset stride
+        for(size_t s = 0; s < QUPS_S; ++s){ // for each data dimension
+            if(i == iflags[s]){ // matching label
+                const size_t k = (dind[i] / dsz[i]) % sizes[s]; // get sub-index
+                dsz[i] *= sizes[s]; // increase size for this label
+                j += str * k; // add offset
+            }
+            str *= sizes[s]; // increase indexing stride
+        }
     }
 
     return j;

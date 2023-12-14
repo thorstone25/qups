@@ -1,3 +1,9 @@
+% CHEAT_SHEET - "Copy & paste" QUPS syntax and usage examples
+%
+% This script provides basic syntax and usage examples for a variety of
+% QUPS classes, methods, and compute kernels (functions). It is meant to
+% provide a list of "copy & paste" ready lines of code.
+
 %% Transducers
 c0 = 1500; 
 fc = 6e6;
@@ -64,13 +70,13 @@ seq.apodization_ = hadamard(xdc.numel); % set hidden apodization matrix
 seq = SequenceRadial('type','PW', 'angles', -20 : 0.5 : 20);
 
 % ---------- Focused Sequences ---------- %
-% setup a focused pulse (VS) sequence
+% setup a focused pulse (FC) sequence
 zf = 60e-3; % focal depth 
 xf = (-40 : 1 : 40) * 1e-3; % focal point lateral positions
 pf = [0,0,1]'.*zf + [1,0,0]'.*xf; % focal points 
-seq = Sequence('type','VS', 'focus', pf);
+seq = Sequence('type','FC', 'focus', pf);
 
-% setup a walking transmit aperture focused pulse (VS) for a linear transducer
+% setup a walking transmit aperture focused pulse (FC) for a linear transducer
 xdc = TransducerArray();
 pn = xdc.positions(); % element positions
 Na = floor(xdc.numel/2); % active aperture size
@@ -83,10 +89,10 @@ for i = 1 : Nv
     % get focal positions centered on the active aperture
     pf(:,i) = mean(pn(:, logical(apod(:,i))),2); 
 end
-seq = Sequence('type','VS','focus',pf);
+seq = Sequence('type','FC','focus',pf);
 seq.apodization_ = apod; % set hidden apodization matrix
 
-% setup a walking transmit aperture focused pulse (VS) for a curvilinear array
+% setup a walking transmit aperture focused pulse (FC) for a curvilinear array
 xdc = TransducerConvex();
 th = xdc.orientations(); % element azimuth angles (deg)
 Na = floor(xdc.numel/2); % active aperture size
@@ -101,7 +107,7 @@ for i = 1 : xdc.numel - Na + 1
 end
 rfocal = 60e-3; %% focal range
 seq = SequenceRadial( ...
-    'type','VS', ...
+    'type','FC', ...
     'angles',tha, ...
     'ranges',norm(xdc.center) + rfocal, ...
     'apex',xdc.center ...
@@ -171,10 +177,10 @@ b = bfDAS(us, chd);
 % (incompatible with non-standard Sequences)
 b = DAS(us, chd);
 
-% (coming soon) look-up table (LUT) delay-and-sum (DAS)
+% look-up table (LUT) delay-and-sum (DAS)
 tau_tx = zeros([us.scan.size, chd.M]); % delay tensor: pixels x transmits
 tau_rx = zeros([us.scan.size, chd.N]); % delay tensor: pixels x receives
-% b = bfDASLUT(us, chd, tau_tx, tau_rx);
+b = bfDASLUT(us, chd, tau_tx, tau_rx);
 
 % eikonal equation beamformer (FSA only)
 b = bfEikonal(us, chd, med);
@@ -187,7 +193,8 @@ cscan.dz = us.lambda / 10;
 b = bfEikonal(us, chd, med, cscan);
 
 % frequency-domain adjoint Green's function beamformer
-% (poor performance on 'VS' sequences)
+% Note: you may get poor performance on virtual source ('FC'/'DV'/'VS')
+% sequences, convex arrays, or rotated/offset transducers
 b = bfAdjoint(us, chd);
 
 % Stolt's f-k-migration with FFT padding and output scan (PW only)
@@ -195,6 +202,7 @@ uspw = copy(us); % same system
 uspw.seq = SequenceRadial('type', 'PW','angles',-10:1/4:10); % use plane waves instead
 chdpw = focusTx(uspw, chd); % focus FSA into PW pulses
 [b, bscan] = bfMigration(uspw, chdpw, 'Nfft', [2*chd.T, 4*chd.N]);
+% image using this scan i.e. with `imagesc(bscan, b);`
 
 % ----------------- Aperture Reduction Functions --------------- %
 bn = DAS(us, chd, 'keep_rx', true); % first, preserve the receive dimension
@@ -216,7 +224,8 @@ a = us.apAcceptanceAngle(45);
 % set aperture growth to limit f# >= 1
 a = us.apApertureGrowth(1);
 
-% apply apodization when beamforming
+% apply apodization when beamforming 
+% (works in most cases with most beamformers)
 b = DAS(us, chd, 'apod', a);
 
 %% Channel Data
@@ -334,7 +343,7 @@ chd = tall(chd);
 % create some example objects and data for this section
 us = UltrasoundSystem();
 [scan, seq, xdc] = deal(us.scan, us.seq, us.xdc);
-us.seq.pulse = Waveform('t0',-1/xdc.fc, 'tend',1/xdc.fc,'fun', @(t)sinpi(2*xdc.fc*t));
+us.seq.pulse = Waveform('t0',-1/xdc.fc, 'tend',1/xdc.fc, 'fun',@(t)sinpi(2*xdc.fc*t));
 med = Medium();
 scat = Scatterers('pos', [0,0,30e-3]');
 chd = greens(us, scat);
@@ -354,7 +363,7 @@ plot(seq);
 plot(xdc, 'r+');
 
 % plot the surface of the transducer elements
-patch(scale(xdc,'dist',1e3)); shading faceted;
+patch(xdc); shading faceted;
 
 % plot the impulse response (affectssimulation only)
 plot(xdc.impulse);
@@ -381,18 +390,18 @@ imagesc(hilbert(chd));
 
 % loop through transmits of channel data
 h = imagesc(hilbert(chd)); colormap(h.Parent, 'jet');
-animate(h, chd.data, 'loop', false);
+animate(chd.data, h, 'loop', false);
 
 % display a b mode image
 h = imagesc(us.scan, b); colormap(h.Parent,'gray');
 
 % loop through frames/transmits/receives of images data
-animate(h, b, 'loop', false);
+animate(b, h, 'loop', false);
 
 % animate multiple plots together
 nexttile(); h(1) = imagesc(hilbert(chd)); colormap(h(1).Parent,'jet');
 nexttile(); h(2) = imagesc(us.scan, b); colormap(h(2).Parent,'gray');
-hmv = animate(h, {chd.data, b}, 'loop', false);
+hmv = animate({chd.data, b}, h, 'loop', false);
 
 % save animation to a gif
 % NOTE: MATLAB may have a bug causing frame sizing to be inconsistent
@@ -429,6 +438,10 @@ chd = simus(us, scat);
 % k-Wave
 chd = kspaceFirstOrder(us, med, cscan);
 
+% run on a local or remote cluster
+clu = parcluster('local');
+chd = kspaceFirstOrder(us, med, cscan, 'parenv', clu);
+
 
 %% Waveforms (affects Simulation only)
 % Waveforms are used when simulating with an excitation function and/or a 
@@ -453,7 +466,7 @@ wv = Waveform('t', t, 'samples', x);
 
 % ----------- Signal processing ------------ %
 % sample the waveform 
-tau = zeros([1024, 1]);
+tau = (0 : 1023) .* 0.1e-6;
 y = wv.sample(tau);
 
 % convolve waveforms

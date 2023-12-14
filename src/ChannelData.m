@@ -7,14 +7,13 @@
 % QUPS. Most methods that affect the time axes, such as zeropad or filter, 
 % will shift the time axes accordingly.
 %
-% The underlying datacube can be N-dimensional as long as the first
-% dimension is time. The second and third dimensions should be receivers 
-% and transmits respectively to be compatible with QUPS. All data must
-% share the same sampling frequency fs, but the start time t0 may vary
-% across any dimension(s) except for the first and second dimensions. For
-% example, if each transmit has a different t0, this can be represented by
-% an array of size [1,1,M].
-%
+% The underlying datacube can be N-dimensional as long as the first three
+% dimensions contain the (fast) time, receive and transmit dimensions. All 
+% data must share the same sampling frequency fs, but the start time t0 may
+% vary across any dimension(s) except for the time and receiver dimensions.
+% For example, if each transmit has a different t0, this can be represented
+% by an array of size [1,1,M] where M is the number of transmits.
+% 
 % The underlying numeric type of the data can be cast by appending 'T' to
 % the type (e.g. singleT(chd) produces a ChannelData) whereas the datacube 
 % itself can be cast using the numeric type constructor (e.g. single(chd) 
@@ -23,7 +22,7 @@
 % type. This enables MATLABian casting rules to apply to the object, which
 % can be used by other functions.
 % 
-% See also SEQUENCE TRANSDUCER
+% See also SEQUENCE TRANSDUCER ULTRASOUNDSYSTEM
 
 classdef ChannelData < matlab.mixin.Copyable
 
@@ -162,6 +161,9 @@ classdef ChannelData < matlab.mixin.Copyable
             switch seq.type
                 case 'FSA', t0 = t0 - vecnorm(xdc.positions,2,1) ./ seq.c0; % delay transform from element to origin for FSA
                 case 'VS',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
+                case 'FC',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
+                case 'DV',  warning("QUPS:UFF:unvalidatedTransform", "Unvalidated import: please validate."); % TODO: validate
+                            t0 = t0 + vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
                 case 'PW' % no action necessary
             end
 
@@ -175,6 +177,173 @@ classdef ChannelData < matlab.mixin.Copyable
                 'data', uchannel_data.data, ...
                 'order', 'TNM' ... 
                 );
+        end
+    
+        function [chd, fmod, smode] = Verasonics(RcvData, Receive, Trans, kwargs)
+            % VERASONICS - Construct ChannelData from a Verasonics struct
+            %
+            % chd = ChannelData.Verasonics(RcvData, Receive) constructs an
+            % array of ChannelData chd for each receive buffer referenced
+            % in the Verasonics 'RcvData' and 'Receive' struct. The data
+            % has size (time x acq x channel x frame).
+            % 
+            % Within each buffer, the sampling frequency, samples per
+            % acquisition, demodulation frequency, and the number of
+            % acquisitions per frame must be constant for each buffer.
+            %
+            % chd = ChannelData.Verasonics(RcvData, Receive, Trans) maps
+            % channels to transducer elements and returns the data with
+            % size (time x acq x elem x frame).
+            % 
+            % [chd, fmod] = ChannelData.Verasonics(...) additionally
+            % returns an array of the demodulation frequencies fmod.
+            %
+            % [chd, fmod, smode] = ChannelData.Verasonics(...) additionally
+            % returns an array the sample modes for each buffer.
+            %
+            % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
+            % frames. The default is unique([Receive.framenum]).
+            %
+            % [...] = ChannelData.Verasonics(..., 'buffer', b) specfies
+            % the buffer indices b corresponding to each element of
+            % RcvData. The default is unique([Receive.bufnum], 'stable').
+            %
+            % [...] =  ChannelData.Verasonics(..., 'insert0s', false)
+            % disables 0-insertion to replace missing samples when the 
+            % buffer sample mode is one of ["BS100BW", "BS67BW", "BS50BW"]. 
+            % The default is true.
+            % 
+            % Example:
+            % chd = ChannelData.Verasonics(RcvData, Receive, Trans);
+            % chd = hilbert(singleT(chd));
+            % figure; animate(chd.data, 'fs', 5);
+            % 
+            % See also SEQUENCE.VERASONICS WAVEFORM.VERASONICS
+            arguments
+                RcvData cell
+                Receive struct
+                Trans struct {mustBeScalarOrEmpty} = struct.empty
+                kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
+                kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
+                kwargs.insert0s (1,1) logical = true
+            end
+
+            % validate the RcvData
+            cellfun(@mustBeNumeric, RcvData);
+
+            % for each buffer
+            B = numel(kwargs.buffer);
+            for i = B:-1:1
+                % get relevant receive info
+                b = kwargs.buffer(i);
+                Rx = Receive((b == [Receive.bufnum]) & ismember([Receive.framenum], kwargs.frames)); % filter by buffer and frame
+                if isempty(Rx) 
+                    warning("No data found for buffer " + kwargs.buffer(i) + "."); 
+                    [smode(i), fmod(i), chd(i)] = deal("N/A", nan, ChannelData('order','TMNF'));
+                    continue;
+                end
+
+                % constants
+                fs = unique([Rx.decimSampleRate]); % get sampling frequency
+                fm = unique([Rx.demodFrequency ]); % get demodulation frequency
+                fr = unique([Rx.framenum]); % frames
+                sm = unique({Rx.sampleMode}); % sampling mode
+                F = numel(fr); % number of frames
+
+                % validate sample mode
+                if isscalar(sm), sm = string(sm);
+                else           , sm = "N/A";
+                    warning( ...
+                        "QUPS:Verasonics:InconsistentAcquisitionSize", ...
+                        "Buffer " + kwargs.buffer(i) + " contains multiple sample modes." ...
+                        )
+                end
+                
+                % validate sizing
+                dupCnt = @(x) unique(groupcounts(x(:))); % count duplicates
+                if any(F ~= cellfun(dupCnt, {[Rx.acqNum], [Rx.startSample], [Rx.endSample]}))
+                    error( ...
+                        "QUPS:Verasonics:InconsistentAcquisitionSize", ...
+                        "Unable to parse buffer " + kwargs.buffer(i) + "." ...
+                        + " The number of acquisitions and the acquisition sample indices must be constant across all frames." ...
+                        ); 
+                end
+
+                % validate ordering
+                Rx  = reshape( Rx, [], F); % -> acquisitions by frames
+                fnm = reshape([Rx.framenum], size(Rx));
+                acq = reshape([Rx.acqNum  ], size(Rx));
+                A = numel(unique(acq)); % number of acquisitions
+                if ~(all(acq == acq(:,1),'all') && all(fnm == fnm(1,:),'all'))
+                    error( ...
+                        "QUPS:Verasonics:InconsistentAcquisitionOrder", ...
+                        "Unable to parse buffer " + b  + "." ...
+                        + " The acquisition numbers and frame numbers must be separable" ...
+                        + " when formed as a " + A + " x " + F + " array." ...
+                        );
+                end
+
+                j = cellfun(@colon, {Rx.startSample}, {Rx.endSample}, 'UniformOutput', false); % sample indices
+                j = unique([j{:}], 'stable'); % should be identical across acquisitions
+
+                % load data (time x acq x channel x frame)
+                x = RcvData{i}(j,:,fr); % only extract the filled portion
+                x = reshape(x, [], A, size(x,2), size(x,3)); % (T x A x Np x F)
+
+                % if Trans exists, make chd.N match Trans
+                if ~isempty(Trans)
+                    % get aperture indexing
+                    if isfield(Rx, 'aperture')
+                        aps = Trans.HVMux.ApertureES;
+                        as = reshape([Rx.aperture], size(Rx)); % apertures
+                        if(~all(as(:,1) == as, 'all'))
+                            error( ...
+                                "QUPS:Verasonics:InconsistentAcquisitionOrder", ...
+                                "Unable to parse buffer " + b  + "." ...
+                                + " The apertures must be identical across frames." ...
+                                );
+                        end
+                        as = as(:,1);
+                    else
+                        aps = Trans.ConnectorES;
+                        as = 1;
+                    end
+
+                    % pre-allocate output
+                    ysz = size(x);
+                    ysz(2) = Trans.numelements;
+                    y = zeros(ysz, 'like', x);
+
+                    % load into output
+                    for a = unique(as)' % for each aperture
+                        j = a == as; % matching aperture
+                        k = aps(:,a); % channel indices
+                        y(:,j,k~=0,:) = x(:,j,k(k~=0),:); % load
+                    end
+                    x = y; % (time x acq x elem x frame)
+                end
+
+                % transform the sampled data depending on the sample mode
+                if kwargs.insert0s
+                    switch sm
+                        case "NS200BW", [N, K] = deal(0, 1); % fully sampled      - insert N=0 0s every K=1 samples
+                        case "BS100BW", [N, K] = deal(2, 2); % [1,1,0,0,]         - insert N=2 0s every K=2 samples
+                        case "BS67BW",  [N, K] = deal(2, 1); % [1,0,0,]           - insert N=2 0s every K=1 samples
+                        case "BS50BW",  [N, K] = deal(6, 2); % [1,1,0,0,0,0,0,0,] - insert N=6 0s every K=2 samples
+                        otherwise,      [N, K] = deal(0, 1); % unknown            - insert N=0 0s every K=1 samples
+                    end
+                    dsz = size(x); % data size
+                    x = reshape(x, [K, dsz(1)/K, dsz(2:end)]); % set sample singles/pairs in dim 1
+                    x(end+(1:N),:) = 0; % insert N 0s
+                    x = reshape(x, [(K+N) * (dsz(1)/K), dsz(2:end)]); % return to original dimensions
+                end
+                
+                % construct ChannelData
+                % TODO: account for different sample modes
+                chd(i) = ChannelData('data', x, 'fs', 1e6*fs, 'order', 'TMNF');
+                fmod(i) = fm; % assume only one demod frequency
+                smode(i) = sm; % assume only one sample mode 
+            end
         end
     end
 
@@ -496,15 +665,18 @@ classdef ChannelData < matlab.mixin.Copyable
             if nargin < 3, dim = chd.tdim; end
             if nargin < 2 || isempty(N), N = size(chd.data, dim); end
 
-            % use MATLAB's optimized implementation
-            % chd = applyFun2Dim(chd, @hilbert, chd.tdim, varargin{:});
-            
-            % apply natively to support half type
-            chd = fft(chd, N, chd.tdim); % send to freq domain
-            Nd2 = floor(N/2); % number of postive/negative frequencies
-            w = [1; 2*ones([Nd2-1,1]); 1+mod(N,2); zeros([N-Nd2-1,1])]; % hilbert weight vector
-            chd.data = chd.data .* shiftdim(w, 1-chd.tdim); % apply 
-            chd = ifft(chd, N, chd.tdim);
+            if chd.tdim == 1 && ~isa(chd.data, 'halfT')
+                % use MATLAB's optimized implementation
+                chd = copy(chd); % copy semantics
+                chd.data = hilbert(chd.data, N); % in-place
+            else
+                % otherwise apply natively to support all types
+                chd = fft(chd, N, chd.tdim); % send to freq domain
+                Nd2 = floor(N/2); % number of postive/negative frequencies
+                w = [1; 2*ones([Nd2-1,1]); 1+mod(N,2); zeros([N-Nd2-1,1])]; % hilbert weight vector
+                chd.data = chd.data .* shiftdim(w, 1-chd.tdim); % apply
+                chd = ifft(chd, N, chd.tdim);
+            end
         end
         function chd = fft(chd, N, dim)
             % FFT - overload of fft
@@ -992,7 +1164,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also IMAGESC
             arguments
                 chd ChannelData
-                m {mustBeInteger} = floor((chd.M+1)/2); 
+                m {mustBeInteger} = ceil(chd.M/2); 
             end
             arguments(Repeating)
                 varargin
@@ -1156,13 +1328,14 @@ classdef ChannelData < matlab.mixin.Copyable
             % identical in dimension dim for all ChannelData objects.
             %
             % See also CHANNELDATA/SPLICE
-
+            
+            if isempty(chds), sz=size(chds); sz(dim)=1; chd=reshape(chds, sz); return; end % trivial case
             assert(isalmostn([chds.fs], repmat(median([chds.fs]), [1,numel(chds)]))); % sampling frequency must be identical
             assert(all(string(chds(1).order) == {chds.order})); % data orders are identical
 
             T_ = max([chds.T]); % maximum length of data
             chds = arrayfun(@(chds) zeropad(chds,0,T_ - chds.T), chds); % make all the same length
-            chd = ChannelData('t0', cat(dim,chds.t0), 'fs', median([chds.fs]), 'data', cat(dim, chds.data)); % combine
+            chd = ChannelData('t0', cat(dim,chds.t0), 'fs', median([chds.fs]), 'data', cat(dim, chds.data), 'order', chds(1).order); % combine
             if all(chd.t0 == sub(chd.t0,1,dim),'all'), chd.t0 = sub(chd.t0,1,dim); end % simplify for identical t0
 
         end
@@ -1177,6 +1350,11 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % chds = SPLICE(chd, dim, bsize) uses a maximum block size of 
             % bsize to partition the ChannelData objects. The default is 1.
+            %
+            % [chds, ix] = SPLICE(...) also returns the indices for each 
+            % ChannelData in the spliced dimension. For example, if chd is
+            % spliced with a block size of 2 over a dimension of length 5,
+            % ix = {[1 2], [3 4], [5]}.
             %
             % Example:
             % 

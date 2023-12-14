@@ -3,7 +3,8 @@
 % y = SUB(x, ind) returns x(ind,:,:,...,:) where x is any subscriptable
 % object.
 %
-% y = SUB(x, ind, dim) slices x in dimension dim instead of dimension 1
+% y = SUB(x, ind, dim) slices x in dimension dim. The default is the first
+% non-singleton dimension.
 %
 % y = SUB(x, vecind, vecdim) slices x indices in each specified dimension 
 % in vecdim i.e. returns x(:,...,:,ind,:,...,:,ind,:,...,:). vecind must be
@@ -20,8 +21,7 @@
 % See also SEL SUBSREF SUBSASGN SUBSTRUCT
 
 function y = sub(x, ind, dim, expr)
-% default to dim 1. TODO: default to 1st non-singleton
-if nargin < 3, dim = 1; end
+if nargin < 3, dim = max([1, find(size(x) ~= 1, 1, 'first')]); end
 if nargin < 4, expr = false; end
 
 % ensure indices placed in a cell

@@ -1,10 +1,10 @@
 %% QUPS - Quick Ultrasound Processing & Simulation
 %% What?
-% QUPS is designed to be an accessible, verastile, shareable, lightweight codebase 
+% QUPS is designed to be an accessible, versatile, shareable, lightweight codebase 
 % designed to make developing and running ultrasound algorithms quick and easy! 
 % It offers a standardization of data formatting that serves most common pulse-echo 
-% ultrasound systems and supports homogeneous sound speed simulators such as FieldII 
-% and MUST as well as heterogeneous simulation programs such as k-Wave.
+% ultrasound systems and supports scatterer simulators such as FieldII and MUST 
+% as well as finite difference simulation programs such as k-Wave.
 %% Why?
 % This package seeks to lower the barrier to entry for doing research in ultrasound 
 % by offering a lightweight, easy to use package. Most of the underlying implementations 
@@ -14,17 +14,20 @@
 %% 
 % * Create linear, curvilinear (convex), and matrix transducers, as well as 
 % custom transducers
-% * Define full-synthetic-aperture (FSA), focused (VS), diverging, plane-wave 
+% * Define full-synthetic-aperture (FSA), focused (FC), diverging (DV), plane-wave 
 % (PW), or arbitrary pulse sequences
 % * Simulate point targets natively or via MUST or FieldII
 % * Simulate distributed media via k-Wave
-% * Filter, demodulate, downsample, and resample channel data
+% * Filter, downmix (demodulate), downsample (decimate), and resample channel 
+% data
 % * Define arbitrary apodization schemes across transmits, receives, and pixels, 
 % jointly
 % * Beamform using traditional delay-and-sum, eikonal delays (via the FMM toolbox), 
 % an adjoint matrix method, or Stolt's migration
 % * Focus FSA data to some pulse sequence, or retrospectively refocus data back 
 % to FSA
+% * Compute coherence based images with techniques including SLSC, DMAS, and 
+% coherence factor
 %% 
 % Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -37,7 +40,7 @@
  
 %#ok<*UNRCH> ignore unreachable code due to constant values
 %#ok<*BDLGI> ignore casting numbers to logical values
-dev = -logical(gpuDeviceCount); % select 0 for cpu, -1 for gpu if you have one
+gpu = logical(gpuDeviceCount); % set to false to remain on the cpu
 if ~exist('UltrasoundSystem.m','file')
     % this setup function adds the proper paths to use QUPS: it only needs
     % to be run once.
@@ -59,24 +62,31 @@ switch "array"
         scat = Scatterers('pos', 1e-3 * ps(:,:), 'c0', 1500); % targets every 5mm
     case 'diffuse', N = 1000; % number of random scatterers
         sz = 1e-3*[40;10;60]; % rectangular region size
-        off = -[0.5;0.5;0]; % uniform distribution offset
-        scat = Scatterers('pos', sz.*(rand([3,N]) + off), 'amp', rand([1,N]), 'c0', 1500); % diffuse scattering
+        cen = [true;true;false]; % uniform distribution offset
+        scat = Scatterers('pos', sz.*(rand([3,N]) - 0.5*cen), 'amp', rand([1,N]), 'c0', 1500); % diffuse scattering
 end
 % Choose a Transducer
 
 switch "L11-5v"
-    case 'L11-5v', xdc = TransducerArray.L11_5v(); % linear array
-    case 'L12-3v', xdc = TransducerArray.L12_3v(); % another linear array
-    case 'P4-2v',  xdc = TransducerArray.P4_2v(); % a phased array 
-    case 'C5-2v' , xdc = TransducerConvex.C5_2v(); % convex array
+    case 'L11-5v', xdc = TransducerArray.L11_5v();  % linear array
+    case 'L12-3v', xdc = TransducerArray.L12_3v();  % another linear array
+    case 'P4-2v',  xdc = TransducerArray.P4_2v();   % a phased array 
+    case 'C5-2v' , xdc = TransducerConvex.C5_2v();  % convex array
+    case 'PO192O', xdc = TransducerMatrix.PO192O(); % matrix array
 end
 xdc.impulse = xdc.ultrasoundTransducerImpulse(); % set the impulse response function
 % Define the Simulation Region
 
-tscan = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60));
+if isa(xdc, 'TransducerMatrix')
+    tscan = ScanCartesian('x', 1e-3*(-10 : 1/16 : 10), 'z', 1e-3*(-5 : 1/16 : 50)); 
+    tscan.y = tscan.x; % 3D grid
+else
+    tscan = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60)); % 2D grid
+    tscan.y = 0; % 2D grid
+end
 
 % point per wavelength - aim for >2 for a simulation
-ppw = scat.c0 / xdc.fc / min([tscan.dx, tscan.dz]); 
+ppw = scat.c0 / xdc.fc / min([tscan.dx, tscan.dy, tscan.dz], [], 'omitnan'); 
 
 % Define the Transmit  Pulse Sequence
 
@@ -97,7 +107,7 @@ switch "FSA"
 
         zf = 60 ; xf = linspace( -10 ,  10 , 11 ); % Focused (VS) Sequence  
         pf = 1e-3*([1,0,0]'.*xf + [0,0,zf]');
-        seq = Sequence('type', 'VS', 'focus', pf);
+        seq = Sequence('type', 'FC', 'focus', pf);
     case 'Sector'
         
 %% 
@@ -108,7 +118,7 @@ switch "FSA"
         else,                            cen = [0;0;0]; 
         end
         seq = SequenceRadial( ...
-            'type', 'VS', ...
+            'type', 'FC', ...
             'angles', th, ...
             'ranges', norm(cen) + 1e-3*r, ...
             'apex', cen ...
@@ -134,11 +144,6 @@ if isa(xdc, 'TransducerArray')
     scan = ScanCartesian('x', xb, 'z', zb);
     [scan.dx, scan.dz] = deal(dr);
 
-    % label the axes
-    scan.xlabel = "Lateral (m)";
-    scan.ylabel = "Elevation (m)";
-    scan.zlabel = "Axial (m)";
-
     % For convex transducers only!
 elseif isa(xdc, 'TransducerConvex') 
     % ranges
@@ -150,10 +155,6 @@ elseif isa(xdc, 'TransducerConvex')
         'r', norm(xdc.center) + r...
         ); % R x A scan
 
-    % label the axes
-    scan.rlabel = "Range (m)";
-    scan.alabel = "Angle (^o)";
-    scan.ylabel = "Elevation (m)";
 end
 %% 
 % 
@@ -166,10 +167,9 @@ rho0 = 1000;
 
 % make a scatterer, if not diffuse
 if scat.numScat < 500
-    s_rad = max([tscan.dx, tscan.dz]); % scatterer radius
-    nextdim = @(p) ndims(p) + 1; % helper function
-    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,nextdim(p)),2,1) < s_rad, nextdim(p)); % finds all points within scatterer radius
-    med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]}});
+    s_rad = max([tscan.dx,tscan.dy,tscan.dz],[],'omitnan'); % scatterer radius
+    ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,5),2,1) < s_rad, 5); % finds all points within scatterer radius
+    med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]'}});
 else
     med = Medium('c0', scat.c0, 'rho0', rho0);
 end
@@ -181,54 +181,46 @@ if false, figure; plot(xdc.impulse, '.-'); title('Element Impulse Response'); en
 
 % Show the transmit signal - a single point means it's a delta function
 if false, figure; plot(seq.pulse, '.-'); title('Transmit signal'); end
-%  Plot configuration of the simulation
+%  
+% Plot configuration of the simulation
 
 figure; hold on; title('Geometry');
 
 % plot the medium
-switch "sound-speed"
-    case 'sound-speed', imagesc(med, tscan, 'props', 'c'  ); colorbar; % show the background medium for the simulation/imaging region
-    case 'density',     imagesc(med, tscan, 'props', 'rho'); colorbar; % show the background medium for the simulation/imaging region
-end
+imagesc(med, tscan, 'props', "c"); colorbar; % show the background medium for the simulation/imaging region
 
-% plot the transducer
-plot(xdc, 'r+', 'DisplayName', 'Elements'); % elements
+% Construct an UltrasoundSystem object, combining all of these properties
+fs = single(ceil(2*us.xdc.bw(end)/1e6)*1e6);
+us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', fs, 'recompile', false);
 
-% plot the imaging region (Scan)
-hps = plot(scan, 'w.', 'MarkerSize', 0.5, 'DisplayName', 'Image'); % the imaging points
-
-% plot the transmit pulse sequence
-switch seq.type 
-    case 'PW', plot(seq, 3e-2, 'k.', 'DisplayName', 'Tx Sequence'); % scale the vectors for the plot
-    otherwise, plot(seq,       'k.', 'DisplayName', 'Tx Sequence'); % plot focal points, if they exist
-end
+% plot the system
+hold on;
+hs = plot(us);
 
 % plot the point scatterers
 if scat.numScat < 500
-    plot(scat, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
+    hs(end+1) = plot(scat, 'k', 'LineStyle', 'none', 'Marker', 'diamond', 'MarkerSize', 5, 'DisplayName', 'Scatterers'); % point scatterers
 else
     disp('INFO: Too many scatterers to display.');
 end
-hl = legend(gca, 'Location','bestoutside'); 
-set(gca, 'YDir', 'reverse'); % set transducer at the top of the image
+hl = legend(gca, 'Location','bestoutside');
 %% Simulate the Point Scatterer(s)
 
  
 %% 
 % 
 
-% Construct an UltrasoundSystem object, combining all of these properties
-us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', single(40e6), 'recompile', false);
 
 % Simulate a point target
 tic;
 switch "Greens"
     case 'Greens' , chd0 = greens(us, scat); % use a Greens function with a GPU if available!su-vpn.stanford.edu
-    case 'FieldII', chd0 = calc_scat_all(us, scat); % use FieldII, 
-    case 'FieldII-multi', chd0 = calc_scat_multi(us, scat); % use FieldII, 
-    case 'SIMUS'  , us.fs = 4 * us.fc; % to address a bug in MUST where fs must be a ~factor~ of 4 * us.fc
+    case 'FieldII', chd0 = calc_scat_all(us, scat); % use FieldII to simulate FSA, then focus in QUPS
+    case 'FieldII-multi', 
+                    chd0 = calc_scat_multi(us, scat); % use FieldII to simulate sequence directly
+    case 'SIMUS',   us.fs = 4 * us.fc; % to address a bug in early versions of MUST where fs must be a ~factor~ of 4 * us.fc
                     chd0 = simus(us, scat, 'periods', 1, 'dims', 3); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-    case 'kWave', chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
+    case 'kWave',   chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
 end
 toc; 
 chd0
@@ -237,12 +229,12 @@ chd0
  
 % display the channel data across the transmits
 figure; 
-h = imagesc(mod2db(chd0)); 
+h = imagesc(chd0); 
 colormap jet; colorbar; 
 cmax = gather(mod2db(max(chd0.data(:)))); % maximum power
 caxis([-80 0] + cmax); % plot up to 80 dB down
-% animate(h, chd0.data, 'fs', 10, 'loop', false); % show all transmits
-for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; pause(1/10); end % implement above manually for live editor
+animate(chd0.data, h, 'fs', 10, 'loop', false); % show all transmits
+% for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; pause(1/10); end % implement above manually for live editor
 %% Create a B-mode Image
 
  
@@ -250,7 +242,8 @@ for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; paus
 % 
 
 % Precondition the data
-chd = singleT(chd0); % use less data
+chd = singleT(chd0); % convert to single precision to use less data
+if gpu, chd = gpuArray(chd); end % move data to GPU
 
 % optionally apply a passband filter to retain only the bandwidth of the transducer
 D = chd.getPassbandFilter(xdc.bw, 25); % get a passband filter for the transducer bandwidth
@@ -271,14 +264,15 @@ if demod
     
     chd = downmix(chd, fmod); % downmix - this reduces the central frequency of the data    
     chd = downsample(chd, floor(chd.fs / fmod)); % now we can downsample without losing information
-else,fmod = 0;
+else
+    fmod = 0;
 end % demodulate and downsample (by any whole number)
-if dev, chd = gpuArray(chd); end % move data to GPU
 
 % Choose how to scale apodization: laterally or angularly
 switch class(xdc)
-    case 'TransducerArray' , scale = xdc.pitch; % Definitions in elements
-    case 'TransducerConvex', scale = xdc.angular_pitch; % Definitions in degrees
+    case 'TransducerArray' , scl = xdc.pitch;         % Definitions in elements
+    case 'TransducerConvex', scl = xdc.angular_pitch; % Definitions in degrees
+    case 'TransducerMatrix', scl = min(xdc.pitch);    % Definitions in elements
 end
 
 % Choose the apodization (beamforming weights)
@@ -290,7 +284,7 @@ end
 apod = 1;
 if false, apod = apod .* apMultiline(us); end
 if false, apod = apod .* apScanline(us); end
-if false, apod = apod .* apTranslatingAperture(us, 32*scale); end
+if false, apod = apod .* apTranslatingAperture(us, 32*scl); end
 if false, apod = apod .* apApertureGrowth(us, 2); end
 if false, apod = apod .* apAcceptanceAngle(us, 50); end
 
@@ -298,17 +292,17 @@ if false, apod = apod .* apAcceptanceAngle(us, 50); end
 % Choose a beamforming method
 
 bf_args = {'apod', apod, 'fmod', fmod}; % arguments for all beamformers
-bscan = us.scan;
-switch "DAS-direct"
+bscan = us.scan; % default b-mode image scan
+switch "DAS"
     case "DAS-direct"
-        b = DAS(us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
+        b = DAS(      us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
     case "DAS"
-        b = bfDAS(us, chd, bf_args{:}); % use a generic delay-and-sum beamformer
+        b = bfDAS(    us, chd, bf_args{:}); % use a generic delay-and-sum beamformer
     case "Adjoint"
-        b = bfAdjoint(us, chd, 'fthresh', -20, bf_args{:}); % use an adjoint matrix method, top 20dB frequencies only
+        b = bfAdjoint(us, chd, bf_args{:}, 'fthresh', -20); % use an adjoint matrix method, top 20dB frequencies only
     case "Eikonal"
         b = bfEikonal(us, chd, med, tscan, bf_args{:}); % use the eikonal equation
-    case "Stolts-f-k-Migration"
+    case "Migration"
         % Stolt's f-k Migrartion (no apodization accepted)
         % NOTE: this function works best with small-angle (< 10 deg) plane waves
         [b, bscan] = bfMigration(us, chd, 'Nfft', [2*chd.T, 4*chd.N], 'fmod', fmod); 

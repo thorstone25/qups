@@ -16,7 +16,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         width (1,1) double = 1.5e-4 % width of an element
         height (1,1) double = 6e-3   % height of an element
         numel (1,1) double = 128     % number of elements
-        offset (3,1) double = [0;0;0]% the offset from the origin
+        offset (3,1) double = [0;0;0] % the offset from the origin
+        rot (1,2) double = [0 0] % [azimuth, elevation] rotation after translation (deg)
         impulse Waveform {mustBeScalarOrEmpty} = Waveform.empty() % the impulse response function of the element
     end
 
@@ -755,21 +756,21 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
             % build the rotation vectors
             % v = [cosd(phi); cosd(phi); sind(phi)] .* [cosd(th); sind(th); 1];
-            rot = [phi; th; th] .* [1;1;0];
+            elrot = [phi; th; th] .* [1;1;0];
 
             % convert to kWaveGrid coorindates: axial x lateral x elevation
             switch dim
                 case 2, % we only rotate in x-z plane
-                    [p, rot] = deal(p([3,1  ],:), rot(2,:));
+                    [p, elrot] = deal(p([3,1  ],:), elrot(2,:));
                     [arr_off, arr_rot] = deal(-og(1:2), 0);
                 case 3,
-                    [p, rot] = deal(p([3,1,2],:), rot([3,1,2],:)); % I think this is right?
+                    [p, elrot] = deal(p([3,1,2],:), elrot([3,1,2],:)); % I think this is right?
                     [arr_off, arr_rot] = deal(-og(1:3), [0;0;0]);
             end
 
             % add each element to the array
             for i = 1:n
-                karray.addRectElement(p(:,i), xdc.width, xdc.height, rot(:,i));
+                karray.addRectElement(p(:,i), xdc.width, xdc.height, elrot(:,i));
             end
 
             karray.setArrayPosition(arr_off, arr_rot);
@@ -980,12 +981,12 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
             % plot a patch: use depth as the color
             args = struct2nvpair(patch_args);
-            hp = patch(axs, 'XData', Xp, 'YData', Yp, 'ZData', Zp, 'CData', Zp, varargin{:}, args{:});
+            hp = patch(axs, 'XData', Xp, 'YData', Zp, 'ZData', Yp, 'CData', Zp, varargin{:}, args{:});
 
             % set default axis arguments
             xlabel(axs, 'x');
-            ylabel(axs, 'y');
-            zlabel(axs, 'z');
+            ylabel(axs, 'z');
+            zlabel(axs, 'y');
             grid  (axs, 'on');
             % zlim  (axs, [-1e-3, 1e-3] + [min(Zp(:)), max(Zp(:))])
             axis  (axs, 'equal')

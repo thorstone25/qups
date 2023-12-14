@@ -407,7 +407,7 @@ classdef Waveform < matlab.mixin.Copyable
 
             arguments
                 this (1,1) Waveform
-                that (1,1) Waveform
+                that (1,1) Waveform = this
                 fs double = max([this.fs, that.fs])
             end
 
@@ -448,6 +448,74 @@ classdef Waveform < matlab.mixin.Copyable
             % 
             wv = Waveform('t0', 0, 'tend', 0, 'fun', @(t) t == 0);
         end
+    
+        function [wvtri, wvm1wy, wvm2wy] = Verasonics(TW, fc)
+            % Verasonics - Create a Waveform from a Verasonics TW struct
+            %
+            % wvtri = Waveform.Verasonics(TW, fc) creates a Waveform wvtri
+            % of the voltage excitation signal from the transmit waveform
+            % struct TW and the central frequency in Hz fc.
+            %
+            % wvtri = Waveform.Verasonics(TW) where TW represents all
+            % Parametric waveforms uses the frequency from the Parametric
+            % property.
+            % 
+            % [wvtri, wvm1wy] = Waveform.Verasonics(...) additionally
+            % returns the 1-way waveform wvm1wy.
+            % 
+            % [wvtri, wvm1wy, wvm2wy] = Waveform.Verasonics(...)
+            % additionally returns the 2-way waveform wvm2wy.
+            % 
+            % Example:
+            % % Import the waveforms
+            % fc = 1e6*Trans.frequency; % reference frequency
+            % [wvt,~,wv2] = Waveform.Verasonics(TW, fc);
+            %
+            % % Display the waveforms
+            % figure;
+            % plot(wvt, '.-');
+            % hold on;
+            % plot(wv2, '.-');
+            % 
+            % See also SCAN.VERASONICS SEQUENCE.VERASONICS
+ 
+            arguments
+                TW struct
+                fc {mustBeNumeric, mustBePositive} = 1e6*arrayfun(@(t) t.Parameters(1), TW);
+            end
+
+            % short-circuit on empty inputs
+            if isempty(TW)
+                [wvtri, wvm1wy, wvm2wy] = deal(reshape(Waveform.empty,size(TW)));
+                return;
+            end
+
+            % identify tri-level field name
+            fld = "TriLvlWvfm" + ["", "_Sim"]; % potential field names
+            f = fld(isfield(TW, fld)); % find which one
+            if ~isscalar(f) % must have one or the other
+                error("QUPS:Verasonics:ambiguousProperty", ...
+                    "TW's properties must include exactly 1 of '" + join(fld, "' or '") + "'." ...
+                    ); 
+            end 
+            
+            % start time(s)
+            t02 =  - [TW.peak] ./ (fc(:)');
+            t01 =  t02 ./ 2;
+            t0t =  - cellfun(@(h) median(find(logical(h))) ./ 250e6, {TW.(f)});
+            
+            % Sampled waveform constructor
+            wvfun = @(t0, T, w) Waveform( ...
+                "t0", t0, "fs", 250e6, "dt", 4e-9, "tend", t0 + (T-1)*4e-9, ...
+                "t", t0 + (0:T-1)*4e-9, "samples", w ...
+                );
+            
+            % create Waveforms
+            Ts = {TW.numsamples}; % signal length
+            wvm1wy = reshape(cellfun(wvfun,num2cell(t01), Ts, {TW.Wvfm1Wy}), size(TW)); % one-way
+            wvm2wy = reshape(cellfun(wvfun,num2cell(t02), Ts, {TW.Wvfm2Wy}), size(TW)); % two-way
+            wvtri  = reshape(cellfun(wvfun,num2cell(t0t), Ts, {TW.(f)    }), size(TW)); % voltage
+        end    
     end
 end
 

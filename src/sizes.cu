@@ -16,7 +16,10 @@ __constant__ size_t D; // number of points in the spatial integration
 
 // Beamforming transmit mode: focal point or plane-wave
 # ifndef QUPS_VS
-__constant__ bool QUPS_VS; // whither virtual source mode
+__constant__ bool QUPS_VS; // whether virtual source or plane wave mode
+# endif
+# ifndef QUPS_DV
+__constant__ bool QUPS_DV; // whether diverging or focused wave mode
 # endif
         
 # ifndef QUPS_T

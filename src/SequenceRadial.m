@@ -50,7 +50,7 @@ classdef SequenceRadial < Sequence
 
             arguments % Sequence arguments
                 seq_args.?Sequence
-                seq_args.type (1,1) string {mustBeMember(seq_args.type, ["PW", "VS"])} = "PW" % restrict 
+                seq_args.type (1,1) string {mustBeMember(seq_args.type, ["PW", "FC", "DV", "VS",])} = "PW" % restrict 
             end
             arguments % SequenceRadial arguments
                 seqr_args.apex (3,1) {mustBeNumeric} = [0;0;0]
@@ -178,6 +178,7 @@ classdef SequenceRadial < Sequence
             end
             arguments
                 quiver_args.?matlab.graphics.chart.primitive.Quiver
+                quiver_args.DisplayName = 'Sequence'
             end
             
             if numel(varargin) >= 1 && isa(varargin{1},'matlab.graphics.axis.Axes')
@@ -190,10 +191,10 @@ classdef SequenceRadial < Sequence
             % pointing in the vector direction
             vecs = self.vectors() .* self.ranges;
             og = repmat(self.apex, [1,size(vecs,2)]);
-            [x, y] = deal(og(1,:), og(3,:));
-            [u, v] = deal(vecs(1,:), vecs(3,:));
+            [x, y, z] = deal(  og(1,:),   og(3,:),   og(2,:));
+            [u, v, w] = deal(vecs(1,:), vecs(3,:), vecs(2,:));
             quiver_args = struct2nvpair(quiver_args);
-            h = quiver(hax, x, y, u, v, varargin{:}, quiver_args{:});
+            h = quiver3(hax, x, y, z, u, v, w, varargin{:}, quiver_args{:});
         end
     end
         

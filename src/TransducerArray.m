@@ -88,34 +88,24 @@ classdef TransducerArray < Transducer
             end
         end
     end
-    
-    % define abstract methods
-    methods
-        function p = positions(self), p = findPositions(self); end
-        function [theta, phi, normal, width, height] = orientations(self)
-            [theta, phi, normal, width, height] = getOrientations(self);
-        end
-    end
-
-    
+        
     % define position methods
-    methods(Hidden, Access=private)    
+    methods(Access=public)    
         % get methods
-        function p = findPositions(self)
-            % returns a 1 x N vector of the positions of the N elements with 0
-            % at the center
+        function p = positions(self)
             array_width = (self.numel - 1) * self.pitch;
             x = linspace(-array_width/2, array_width/2, self.numel);
-            p = cat(1, x, zeros(2, numel(x))) + self.offset;
+            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
+            p = rotatepoint(q, cat(1, x, zeros(2, numel(x)))')' + self.offset;
         end
         
-        function [theta, phi, normal, width, height] = getOrientations(self)            
-            theta = zeros([1, self.numel]);
-            phi   = zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(self)            
+            theta =  self.rot(1) + zeros([1, self.numel]);
+            phi   = -self.rot(2) + zeros(size(theta));
             ZERO  = zeros(size(theta));
-            normal     = [cosd(phi).*sind(theta); sind(phi);  cosd(phi).*cosd(theta)];
-            width      = [cosd(theta);            sind(ZERO); -cosd(ZERO).*sind(theta)];
-            height     = [sind(phi).*sind(ZERO);  cosd(phi);   sind(phi).*cosd(ZERO)];
+            normal     = [cosd(phi  ).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
+            width      = [cosd(theta);              sind(ZERO); -cosd(ZERO).*sind(theta)];
+            height     = [sind(phi  ).*sind(ZERO ); cosd(phi );  sind(phi ).*cosd(ZERO )];
         end        
     end
 
