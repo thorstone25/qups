@@ -178,6 +178,143 @@ classdef ChannelData < matlab.mixin.Copyable
                 'order', 'TNM' ... 
                 );
         end
+    
+        function [chd, fmod, smode] = Verasonics(RcvData, Receive, Trans, kwargs)
+            % VERASONICS - Construct ChannelData from a Verasonics struct
+            %
+            % chd = ChannelData.Verasonics(RcvData, Receive) constructs an
+            % array of ChannelData chd for each receive buffer referenced
+            % in the Verasonics 'RcvData' and 'Receive' struct. The data
+            % has size (time x acq x channel x frame).
+            % 
+            % Within each buffer, the sampling frequency, samples per
+            % acquisition, demodulation frequency, and the number of
+            % acquisitions per frame must be constant for each buffer.
+            %
+            % chd = ChannelData.Verasonics(RcvData, Receive, Trans) maps
+            % channels to transducer elements and returns the data with
+            % size (time x acq x elem x frame).
+            % 
+            % [chd, fmod] = ChannelData.Verasonics(...) additionally
+            % returns an array of the demodulation frequencies fmod.
+            %
+            % [chd, fmod, smode] = ChannelData.Verasonics(...) additionally
+            % returns an array the sample modes for each buffer.
+            %
+            % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
+            % frames. The default is unique([Receive.framenum]).
+            %
+            % [...] = ChannelData.Verasonics(..., 'buffer', b) specfies
+            % the buffer indices b corresponding to each element of
+            % RcvData. The default is unique([Receive.bufnum], 'stable').
+            %
+            % Example:
+            % chd = ChannelData.Verasonics(RcvData, Receive, Trans);
+            % chd = hilbert(singleT(chd));
+            % figure; animate(chd.data, 'fs', 5);
+            % 
+            % See also SEQUENCE.VERASONICS WAVEFORM.VERASONICS
+            arguments
+                RcvData cell
+                Receive struct
+                Trans struct {mustBeScalarOrEmpty} = struct.empty
+                kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
+                kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
+            end
+
+            % validate the RcvData
+            cellfun(@mustBeNumeric, RcvData);
+
+            % for each buffer
+            B = numel(kwargs.buffer);
+            for i = B:-1:1
+                % get relevant receive info
+                b = kwargs.buffer(i);
+                Rx = Receive((b == [Receive.bufnum]) & ismember([Receive.framenum], kwargs.frames)); % filter by buffer and frame
+                if isempty(Rx) 
+                    warning("No data found for buffer " + kwargs.buffer(i) + "."); 
+                    [smode(i), fmod(i), chd(i)] = deal("N/A", nan, ChannelData('order','TMNF'));
+                    continue;
+                end
+
+                % constants
+                fs = unique([Rx.decimSampleRate]); % get sampling frequency
+                fm = unique([Rx.demodFrequency ]); % get demodulation frequency
+                fr = unique([Rx.framenum]); % frames
+                sm = unique({Rx.sampleMode}); % sampling mode
+                F = numel(fr); % number of frames
+                
+                % validate sizing
+                dupCnt = @(x) unique(groupcounts(x(:))); % count duplicates
+                if any(F ~= cellfun(dupCnt, {[Rx.acqNum], [Rx.startSample], [Rx.endSample]}))
+                    error( ...
+                        "QUPS:Verasonics:InconsistentAcquisitionSize", ...
+                        "Unable to parse buffer " + kwargs.buffer(i) + "." ...
+                        + " The number of acquisitions and the acquisition sample indices must be constant across all frames." ...
+                        ); 
+                end
+
+                % validate ordering
+                Rx  = reshape( Rx, [], F); % -> acquisitions by frames
+                fnm = reshape([Rx.framenum], size(Rx));
+                acq = reshape([Rx.acqNum  ], size(Rx));
+                A = numel(unique(acq)); % number of acquisitions
+                if ~(all(acq == acq(:,1),'all') && all(fnm == fnm(1,:),'all'))
+                    error( ...
+                        "QUPS:Verasonics:InconsistentAcquisitionOrder", ...
+                        "Unable to parse buffer " + b  + "." ...
+                        + " The acquisition numbers and frame numbers must be separable" ...
+                        + " when formed as a " + A + " x " + F + " array." ...
+                        );
+                end
+
+                j = cellfun(@colon, {Rx.startSample}, {Rx.endSample}, 'UniformOutput', false); % sample indices
+                j = unique([j{:}], 'stable'); % should be identical across acquisitions
+
+                % load data (time x acq x channel x frame)
+                x = RcvData{i}(j,:,fr); % only extract the filled portion
+                x = reshape(x, [], A, size(x,2), size(x,3)); % (T x A x Np x F)
+
+                % if Trans exists, make chd.N match Trans
+                if ~isempty(Trans)
+                    % get aperture indexing
+                    if isfield(Rx, 'aperture')
+                        aps = Trans.HVMux.ApertureES;
+                        as = reshape([Rx.aperture], size(Rx)); % apertures
+                        if(~all(as(:,1) == as, 'all'))
+                            error( ...
+                                "QUPS:Verasonics:InconsistentAcquisitionOrder", ...
+                                "Unable to parse buffer " + b  + "." ...
+                                + " The apertures must be identical across frames." ...
+                                );
+                        end
+                        as = as(:,1);
+                    else
+                        aps = Trans.ConnectorES;
+                        as = 1;
+                    end
+
+                    % pre-allocate output
+                    ysz = size(x);
+                    ysz(2) = Trans.numelements;
+                    y = zeros(ysz, 'like', x);
+
+                    % load into output
+                    for a = unique(as)' % for each aperture
+                        j = a == as; % matching aperture
+                        k = aps(:,a); % channel indices
+                        y(:,j,k~=0,:) = x(:,j,k(k~=0),:); % load
+                    end
+                    x = y; % (time x acq x elem x frame)
+                end
+                
+                % construct ChannelData
+                % TODO: account for different sample modes
+                chd(i) = ChannelData('data', x, 'fs', 1e6*fs, 'order', 'TMNF');
+                fmod(i) = fm; % assume only one demod frequency
+                smode(i) = sm; % assume only one sample mode 
+            end
+        end
     end
 
     % helper functions
