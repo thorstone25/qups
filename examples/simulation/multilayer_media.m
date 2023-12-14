@@ -93,7 +93,7 @@ chd0 = kspaceFirstOrder(us, med, scan, "CFL_max", 0.25, "PML", [20 64]);
 %% Show the channel data
 figure('Name', 'Simulation Channel Data'); 
 him = imagesc(hilbert(chd0)); % show magnitude of the data in dB
-animate(him, hilbert(chd0).data, 'loop', false, 'fs', 5); % make a short animation across transmits
+animate(hilbert(chd0).data, him, 'loop', false, 'fs', 5); % make a short animation across transmits
 
 
 %% Beamform into a b-mode image

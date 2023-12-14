@@ -1,3 +1,9 @@
+% CHEAT_SHEET - "Copy & paste" QUPS syntax and usage examples
+%
+% This script provides basic syntax and usage examples for a variety of
+% QUPS classes, methods, and compute kernels (functions). It is meant to
+% provide a list of "copy & paste" ready lines of code.
+
 %% Transducers
 c0 = 1500; 
 fc = 6e6;
