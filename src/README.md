@@ -1,39 +1,39 @@
 # Class Structure
-QUPS utilizes flexible abstract objects and definitions in order to preserve code re-usability. The following base classes are used to provide the majority of the functionality:
+QUPS utilizes flexible, abstract objects and definitions in order to preserve code re-usability. The following base classes and methods are used to provide the majority of the functionality:
 
 | Class | Main Properties | Main Methods |
 | ------ | ------ | ------ | 
 | `Transducer` | numel  | positions(), orientations() |
 | `Sequence` | c0, numPulse | delays(), apodization() |
 | `Scan` | size | positions(), getImagingGrid() |
+| `UltrasoundSystem` | xdc, seq, scan | DAS() |
 | `ChannelData` | data, t0, fs | sample() |
 | `Medium` | c0, rho0 | props() |
 | `Scatterers` | c0, pos, amp |  |
-| `Waveform` | time, samples | sample(), conv() |
-
-
-A synthesis class `UltrasoundSystem` is provided to combine the `Transducer`, `Scan` and `Sequence` classes into a single definition. This is used to simulate `ChannelData` from a `Scatterer` or `Medium`, or to beamform `ChannelData` into a b-mode image. 
+| `Waveform` | time, samples, fs | sample(), conv() |
 
 All of these classes provide an overloaded `plot` and/or `imagesc` method for easy visualization. 
+
+The synthesis class `UltrasoundSystem` is provided to combine the `Transducer`, `Scan` and `Sequence` classes into a single comprehensive object. This can then be used for simulation e.g. to simulate `ChannelData` from a `Scatterer` or `Medium`, or for processing e.g. to beamform `ChannelData` into a b-mode image. 
 
 # Data Format
 QUPS objects, classes, and functions adhere to some conventions to make prototyping easier.
 
 ## Units
-QUPS is unitless in time and space. Default objects are in seconds and meters, but one can easily use microseconds and millimeters for easier and quicker plotting and numerical stability. All angles are in degrees.
+Static constructors and default objects are given in SI units with the exception of angles, which are always in degrees for readability. However, QUPS is otherwise unitless - one can easily scale metrics of time/frequency, space, and mass to use e.g. microseconds/megahertz and millimeters for clarity and numerical stability.
 
 | Measure | Default Unit | Scalable |
 | ------ | ------ | ------ |
 | Position | Meter | yes |
 | Time | Second | yes |
 | Sound Speed | Meter/Second | yes |
-| Density | Kilogram / Meter^D | yes |
+| Density | Kilogram / Meter^3 | yes |
 | Angle | Degrees | no |
 
 ## Dimensions
-All position properties and methods are defined with 3D Cartesian coordinates stored or returned in the first dimension. This includes e.g. the `Scan.positions()`, `Transducer.positions()`, and `Sequence.focus` when using a virtual source model.
+All position properties and methods are defined with 3D Cartesian coordinates stored or returned in the first dimension. This includes e.g. the `Scan.positions()`, `Transducer.positions()`, and `Sequence.focus` (when using a virtual source model).
 
-Multi-dimensional arrays are described by representative characters in the "order" property of the corresponding object. For example, the data in `ChannelData.data` is described by `ChannelData.order` and the b-mode image `UltrasoundSystem.DAS` is described by `UltrasoundSystem.scan.order`.
+Multi-dimensional arrays are described by representative characters in the "order" property of the corresponding object. For example, the data property `ChannelData.data` is described by `ChannelData.order` and the b-mode image `b = UltrasoundSystem.DAS(...)` is described by `UltrasoundSystem.scan.order`.
  
 | Property | Default Dimension | Swapable | 
 | ------ | ------ | ------ |
@@ -47,9 +47,9 @@ Multi-dimensional arrays are described by representative characters in the "orde
 | ------ | ------ |
 | Full-Synthetic Aperture (FSA) | Peak is centered on the firing element |
 | Plane Wave (PW) | Wavefront centered on the origin (0,0,0) |
-| Virtual Source (VS) | Peak is centered on the focus |
+| Virtual Source (FC, DV) | Peak is centered on the focus |
 
-Note that this transmit sequence definition can result in data with a varying start times across transmits and a negative start time for some transmit sequence. This is explicitly supported! Simply create an array `t0` of size 1 x 1 x M, where M is the number of transmits, and use it to define the `ChannelData` e.g. with `chd = ChannelData('t0', t0, 'data', data ...)`.
+Note that this transmit sequence definition can result in data with a varying start times across transmits and a negative start time for some transmit sequence. This is explicitly supported! Simply create an array `t0` of length M, where M is the number of transmits, set the size to 1 x 1 x M (assuming the transmits are in the 3rd dimension of the `data`), and define the `ChannelData` with `chd = ChannelData('t0', t0, 'data', data, 'order', 'TNM', ...)`.
 
 # Broadcasting Support
 Utilities are provided to assist in writing performant, readable code. The `sub` and `sel` utilities conveniently generate indexing expression in arbitrary dimensions. The `swapdim` utility can replace the built-in `shiftdim` and `permute` functions, and is generally more readable and more performant.
@@ -63,7 +63,7 @@ us = UltrasoundSystem(); % create or load an UltrasoundSystem object with an FSA
 chd = greens(us, Scatterers('pos',[0 0 30e-3]')); % create or load a ChannelData object with FSA data
 N = chd.N; % number of receivers
 M = chd.M; % number of transmitters
-apod = swapdim( (1:N)' == (1:M), [1,2], [4,5]); % swaps dimensions: 1 <-> 4 , 2 <-> 5
+apod = swapdim( (1:N)' == (1:M), [1,2], [4,5] ); % swaps dimensions: 1 <-> 4 , 2 <-> 5
 b = DAS(us, chd, 'apod', apod); % beamform using this apodization
 imagesc(us.scan, b); % display the image
 ```
