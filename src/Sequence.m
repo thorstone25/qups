@@ -801,12 +801,24 @@ classdef Sequence < matlab.mixin.Copyable
     methods
         % number of transmit pulses 
         function v = get.numPulse(self)
-            switch self.type
-                case 'FSA'
-                    v = self.FSA_n_tx;
-                    if isnan(v), warning("Number of pulses is unset."); end
-                otherwise
-                    v = size(self.focus, 2);
+            [asz, tsz] = deal(size(self.apodizationv_), size(self.delaysv_)); % override data sizing
+            if any([asz, tsz])
+                if     ~any(tsz), v = asz(2);
+                elseif ~any(asz), v = tsz(2);
+                else
+                    if ~any(asz ~= tsz), v = asz(2);
+                    else, error("QUPS:Sequence:matrixSizeMismatch",...
+                            "Expected the delay and apodization matrices to have identical sizing."),
+                    end
+                end
+            else
+                switch self.type
+                    case 'FSA'
+                        v = self.FSA_n_tx;
+                        if isnan(v), warning("Number of pulses is unset."); end
+                    otherwise
+                        v = size(self.focus, 2);
+                end
             end
         end
         

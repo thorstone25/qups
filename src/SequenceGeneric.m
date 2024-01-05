@@ -9,7 +9,7 @@ classdef SequenceGeneric < Sequence
     %
     % See also SEQUENCE SEQUENCERADIAL WAVEFORM
 
-    properties
+    properties(Dependent)
         % APOD - Apodization function/matrix definition
         %
         % SEQUENCEGENERIC.APOD specifies the apodization weights a as
@@ -104,14 +104,25 @@ classdef SequenceGeneric < Sequence
                 seq_kwargs.c0 (1,1) double
                 seq_kwargs.pulse (1,1) Waveform
                 seq_kwargs.numPulse (1,1) double {mustBeInteger}
-                gen_kwargs.apod {mustBeA(gen_kwargs.apod, ["function_handle", "numeric", "logical"])} = @(tx, sq) eye(tx.numel);
-                gen_kwargs.del {mustBeA(gen_kwargs.del, ["function_handle", "numeric", "logical"])} = @(tx, sq) zeros(tx.numel);
+                gen_kwargs.apod {mustBeA(gen_kwargs.apod, ["function_handle", "numeric", "logical"])}
+                gen_kwargs.del {mustBeA(gen_kwargs.del, ["function_handle", "numeric", "logical"])}
             end
 
             % initialize the Sequence
             seq_kwargs.type = 'FSA'; % always use FSA format.
             seq_args = struct2nvpair(seq_kwargs);
             seq@Sequence(seq_args{:});
+            
+            % set default apodization / delays based on inputs
+            hasfld = isfield(gen_kwargs, ["apod", "del"]);
+            if     ~hasfld(1) && ~hasfld(2)
+                gen_kwargs.apod = @(tx, sq) eye(tx.numel);
+                gen_kwargs.del = @(tx, sq) zeros(tx.numel);
+            elseif  hasfld(1) && ~hasfld(2)
+                gen_kwargs.del = zeros(size(gen_kwargs.apod));
+            elseif ~hasfld(1) &&  hasfld(2)
+                gen_kwargs.apod = ones(size(gen_kwargs.del));
+            end
 
             % initialize
             for s = string(fieldnames(gen_kwargs))', seq.(s) = gen_kwargs.(s); end
@@ -224,6 +235,44 @@ classdef SequenceGeneric < Sequence
 
             % call superclass for delays, then scale time
             tau = seq.tscale .* delays@Sequence(seq, tx);
+        end
+    end
+    
+    % dependent properties
+    methods
+        function set.apod(seq, apd)
+            arguments
+                seq (1,1) SequenceGeneric
+                apd {mustBeA(apd, ["function_handle", "numeric", "logical"])}
+            end
+            if isa(apd, 'function_handle')
+                [seq.apodizationv_, seq.apodizationf_] = deal([], apd);
+            else
+                [seq.apodizationv_, seq.apodizationf_] = deal(apd, function_handle.empty);
+            end
+        end
+        function set.del(seq, tau)
+            arguments
+                seq (1,1) SequenceGeneric
+                tau {mustBeA(tau, ["function_handle", "numeric"])}
+            end
+            if isa(tau, 'function_handle')
+                [seq.delaysv_, seq.delaysf_] = deal([], tau);
+            else
+                [seq.delaysv_, seq.delaysf_] = deal(tau, function_handle.empty);
+            end
+        end
+        function apd = get.apod(seq)
+            if     ~isempty(seq.apodizationf_), apd = seq.apodizationf_;
+            elseif ~isempty(seq.apodizationv_), apd = seq.apodizationv_;
+            else, apd = [];
+            end
+        end
+        function tau = get.del(seq)
+            if     ~isempty(seq.delaysf_), tau = seq.delaysf_;
+            elseif ~isempty(seq.delaysv_), tau = seq.delaysv_;
+            else, tau = [];
+            end
         end
     end
 end
