@@ -124,8 +124,11 @@ classdef TransducerMatrix < Transducer
             y = linspace(-array_height/2, array_height/2, self.numd(end));
             z = 0;
             [x,y,z] = ndgrid(x,y,z);
-            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-            p = rotatepoint(q,cat(2, x(:), y(:), z(:)))' + self.offset + self.mux_offset;
+            p = cat(2, x(:), y(:), z(:));
+            if any(self.rot)
+                q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
+                p = rotatepoint(q,p)' + self.offset + self.mux_offset;
+            end
             % returns a 1 x N vector of the positions of the N elements with 0
             % at the center
         end

@@ -88,8 +88,11 @@ classdef TransducerConvex < Transducer
             z = self.radius * cosd(theta);
             x = self.radius * sind(theta);
             y = zeros(size(theta));
-            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-            p = rotatepoint(q, cat(1, x, y, z)')' + self.center;
+            p = cat(1, x, y, z);
+            if any(self.rot)
+                q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
+                p = rotatepoint(q, p')' + self.center;
+            end
         end
         
         function [theta, phi, normal, width, height] = orientations(self)

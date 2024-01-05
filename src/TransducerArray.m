@@ -95,8 +95,11 @@ classdef TransducerArray < Transducer
         function p = positions(self)
             array_width = (self.numel - 1) * self.pitch;
             x = linspace(-array_width/2, array_width/2, self.numel);
-            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-            p = rotatepoint(q, cat(1, x, zeros(2, numel(x)))')' + self.offset;
+            p = cat(1, x, zeros(2, numel(x)));
+            if any(self.rot)
+                q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
+                p = rotatepoint(q, p')' + self.offset;
+            end
         end
         
         function [theta, phi, normal, width, height] = orientations(self)            
