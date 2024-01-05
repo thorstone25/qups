@@ -306,12 +306,12 @@ classdef ChannelData < matlab.mixin.Copyable
                         as = as(:,1);
                     else
                         aps = Trans.ConnectorES;
-                        as = 1;
+                        as = ones(size(Rx) ./ [1 F]);
                     end
 
                     % pre-allocate output
                     ysz = size(x);
-                    ysz(2) = Trans.numelements;
+                    ysz(3) = Trans.numelements;
                     y = zeros(ysz, 'like', x);
 
                     % load into output
