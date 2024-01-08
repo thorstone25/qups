@@ -136,7 +136,12 @@ classdef Scatterers < matlab.mixin.Copyable
 
             % check/default amplitudes / positions
             if      Sp &&  Sa % both set: validate
-                if Np ~= Na, error('Number of scatterers must match!'); end 
+                if Np ~= Na
+                    if     Np == 1, self.pos = repmat(self.pos, [1,Na]);
+                    elseif Na == 1, self.amp = repmat(self.amp, [1,Np]);
+                    else,           error('Number of scatterers must match!');
+                    end
+                end 
             elseif  Sp && ~Sa % pos set: default amplitude
                 self.amp = ones([1,Np]);
             elseif ~Sp &&  Sa % amp set: default positions
