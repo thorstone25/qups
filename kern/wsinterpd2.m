@@ -175,9 +175,6 @@ if use_gdev || use_odev
             'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
             'QUPS_N', uint64(N), 'QUPS_F', uint64(F) ...
             );
-        k.ThreadBlockSize = min(k.MaxThreadsPerBlock,I); % I and M are indexed together
-        k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), min(N, 2^15), ceil(N/2^15)];
-
         cargs = {flagnum, imag(omega)}; % constant arguments
     elseif use_odev
         % get the kernel reference
@@ -192,13 +189,13 @@ if use_gdev || use_odev
         k.macros(end+(1:4)) = "QUPS_INTERPD_" + ["PRECISION","NO_V","FLAG","OMEGA"] ...
             + "=" + [prc, "0."+suffix, flagnum, imag(omega)]; % input constants
         k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable", "-cl-opt-disable"];
-
-        % kernel sizing
-        k.ThreadBlockSize(1) = min(k.MaxThreadsPerBlock,I); % local group size
-        k.GlobalSize = [I, min(N, 2^15), ceil(N/2^15)]; % full indexing size
         cargs = {}; 
     end
-    
+
+    % kernel sizing
+    k.ThreadBlockSize(1) = min(k.MaxThreadsPerBlock,I); % I and M are indexed together
+    k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), min(N, 2^15), ceil(N/2^15)];
+
     % index label flags
     iflags = zeros([1 maxdims], 'uint8'); % increase index i
     iflags(mdms) = 1; % increase index n
