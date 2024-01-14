@@ -2456,7 +2456,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 c0(:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
-                kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount) || exist('oclDeviceCount','file') && oclDeviceCount)
                 kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
@@ -2501,7 +2501,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if ~isequal(ord, 1:3), chd = rectifyDims(chd); end % reorder if necessary
 
                 % get the beamformer arguments
-                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
+                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'input-precision', kwargs.prec}; % data args
                 if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
                 ext_args = [interp_args, apod_args]; % extra args
     

@@ -102,11 +102,6 @@ elseif isType(x, 'halfT')
 else
     idataType = 'double'; % default
 end
-if any(cellfun(@(c) isType(c, 'single'), {Pi, Pr, Pv, Nv}))
-    posType = 'single';
-else
-    posType = 'double';
-end
 if gpuDeviceCount && any(cellfun(@(v)isa(v, 'gpuArray'), {Pi, Pr, Pv, Nv, x}))
     device = -1; % GPU
 else
@@ -127,9 +122,6 @@ while (n <= nargs)
             DV = true;
         case 'focused-waves'
             DV = false;
-        case 'position-precision'
-            n = n + 1;
-            posType = varargin{n};
         case 'input-precision'
             n = n + 1;
             idataType = varargin{n};
@@ -180,14 +172,26 @@ per_cell = {'UniformOutput', false};
 % TODO: support doing this with non-scalar t0 definition
 x = permute(x, [1:3,(max(3,ndims(x))+[1,2]),4:ndims(x)]); % (T x N x M x 1 x 1 x F x ...)
 fsz = size(x, 6:max(6,ndims(x))); % frame size: starts at dim 6
-    
-if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
+
+% get devices: must have package, device, and kernel
+gdev = (exist('gpuDeviceCount','file') && gpuDeviceCount() && device <= gpuDeviceCount() && logical(exist('bf.ptx', 'file'))); ... % PTX track available
+odev = (exist('oclDeviceCount','file') && oclDeviceCount() && device <= oclDeviceCount() && logical(exist('bf.cl' , 'file'))); ... OpenCL kernel available
+if odev % check for data type support
+    d = oclDevice();
+    odev = ~isempty(d) ... % must have a device selected
+        && (((idataType == "double") && d.SupportsDouble) ... double support 
+        ||   (idataType == "single") ...                      single always supported)
+        ||  ((idataType == "halfT" ) && d.SupportsHalf  )); % half support 
+end 
+
+% dispatch
+if device && (gdev || odev)
 
     % warn if non-linear interp was requested
     switch interp_type
-        case "nearest",flagnum = 0;
-        case "linear", flagnum = 1;
-        case "cubic",  flagnum = 2;
+        case "nearest", flagnum = 0;
+        case "linear",  flagnum = 1;
+        case "cubic",   flagnum = 2;
         case "lanczos3",flagnum = 3;
         otherwise
             error('QUPS:beamform:UnrecognizedInput', "Unrecognized interpolation of type " ...
@@ -204,16 +208,13 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     src_folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
     
     switch idataType
-        case 'halfT', postfix = 'h';
+        case 'halfT',  postfix = 'h';
         case 'single', postfix = 'f';
         case 'double', postfix = '';
     end
     
-    % currently selected gpu device handle
-    g = gpuDevice();
-    
     % reselect gpu device and copy over inputs if necessary
-    if device > 0 && g.Index ~= device
+    if device > 0 && gdev && getfield(gpuDevice(), 'Index') ~= device
         inps = {Pi, Pr, Pv, Nv, x, t0, fs, cinv};
         oclass = cellfun(@class, inps, per_cell{:}); 
         tmp = cellfun(@gather, inps, per_cell{:});
@@ -221,23 +222,14 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         tmp = cellfun(@(inp, cls)cast(inp, cls), tmp, oclass, per_cell{:});
         [Pi, Pr, Pv, Nv, x, t0, fs, cinv] = deal(tmp{:});
     end
-    
-    % If bf.ptx isn't there, ask the user to generate it
-    if ~exist('bf.ptx', 'file')
-        error('The source code is not compiled for MATLAB on this system. Try using UltrasoundSystem.recompileCUDA() to compile it.')
-    end
-    
-    k = parallel.gpu.CUDAKernel(...
-        'bf.ptx',...
-        fullfile(src_folder, 'bf.cu'),...
-        ['DAS', postfix]); % use the same kernel, just modify the flag here.
-    
+
     % send constant data to GPU
-    typefun = str2func(idataType); % function to cast types
-    ptypefun = @(x) gpuArray(typefun(x));
+    ptypefun = str2func(idataType); % function to cast types
+    if gdev, ptypefun = @(x) gpuArray(ptypefun(x)); end
     dtypefun = @(x) complex(ptypefun(x));
     if idataType == "halfT"
-        ptypefun = @(x) gpuArray(single(x));
+        if gdev, ptypefun = @(x) gpuArray(single(x)); end
+        if odev, ptypefun = @(x)          single(x) ; end
         dtypefun = @(x) complex(halfT(x));
     end
     [x, apod] = dealfun(dtypefun, x, apod);
@@ -269,36 +261,70 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % get output data type
     switch fun
         case {'DAS', 'SYN', 'BF', 'MUL'}
-            obuftypefun = dtypefun;
+            obufproto = x;
         case {'delays'}
-            obuftypefun = @(x)real(dtypefun(x));
+            obufproto = real(x([]));
     end
-   
-    % kernel sizes
-    nThreads = k.MaxThreadsPerBlock; % threads per block
-    nBlocks = min([...
-        g.MaxThreadBlockSize(1), ... max cause device reqs
-        ceil(I / nThreads)... max cause number of pixels
-        ceil(g.AvailableMemory / (2^8) / (prod(osize{:}) * nThreads)),... max cause GPU memory reqs (empirical)
-        ]); % blocks per frame
     
-    % constant arg type casting
-    tmp = cellfun(@uint64, {T,M,N,I,Isz}, per_cell{:});
-    [T, M, N, I, Isz] = deal(tmp{:});
+    if gdev
+        % load kernel
+        k = parallel.gpu.CUDAKernel(...
+            'bf.ptx',...
+            fullfile(src_folder, 'bf.cu'),...
+            ['DAS', postfix]); % use the same kernel, just modify the flag here.
+
+        % constant arg type casting
+        tmp = cellfun(@uint64, {T,M,N,I,Isz}, per_cell{:});
+        [T, M, N, I, Isz] = deal(tmp{:});
+
+        % set constant args
+        k.setConstantMemory('QUPS_I', I); % gauranteed
+        try k.setConstantMemory('QUPS_T', T); end % if not const compiled with ChannelData
+        try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
+
+        % kernel sizes
+        k.ThreadBlockSize(1) = k.MaxThreadsPerBlock; % threads per block
+        k.GridSize(1) = min([...
+            g.MaxThreadBlockSize(1), ... max cause device reqs
+            ceil(I / k.ThreadBlockSize(1))... max cause number of pixels
+            ceil(g.AvailableMemory / (2^8) / (prod(osize{:}) * k.ThreadBlockSize(1))),... max cause GPU memory reqs (empirical)
+            ]); % blocks per frame
+
+    elseif odev
+        
+        % load kernel refernece
+        k = oclKernel(which('bf.cl'), 'DAS');
+        
+        % select device - no risk of resetting anything
+        if device > 0, oclDevice(device); end 
+        k.Device = oclDevice(); 
+
+        % set precision
+        switch idataType
+            case {"single", "double"}, k.defineTypes(idataType, "U");
+            case {"half"}, error("Not implemented :(");
+        end
+
+        % set constant args
+        k.macros = [k.macros, ("QUPS_" + ["I","T","M","N","VS","DV","I1","I2","I3"] + "=" + [I,T,M,N,VS,DV,Isz])];
+        k.macros = [k.macros, ("QUPS_BF_" + ["FLAG"] + "=" + [flagnum])];
+        k.opts = ["-cl-mad-enable"];%, "-cl-fp32-correctly-rounded-divide-sqrt", "-cl-opt-disable"];
+
+        % compile kernel
+        k.build();
     
-    % set constant args
-    k.setConstantMemory('QUPS_I', I); % gauranteed
-    try k.setConstantMemory('QUPS_T', T); end % if not const compiled with ChannelData
-    try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
-    
-    % set kernel size
-    k.ThreadBlockSize = nThreads;
-    k.GridSize = nBlocks;
+        % set kernel size
+        k.ThreadBlockSize(1) = min(I, k.MaxThreadsPerBlock);
+        k.GridSize(1) = ceil(I / k.ThreadBlockSize(1));
+
+        % expand inputs to 4D - in  OpenCL, 3D vectors interpreted are 4D underlying
+        [Pi(4,:), Pr(4,:), Pv(4,:), Nv(4,:)] = deal(0);
+    end 
     
     % allocate output data buffer
     osize = cat(2, {I}, osize);
     osize = cellfun(@uint64, osize, per_cell{:});
-    yg = repmat(obuftypefun(zeros(1)), [osize{:}]);
+    yg = zeros([osize{:}], 'like', obufproto);
     
     % for half types, alias the weights/data, recast the positions as
     % single
@@ -307,7 +333,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
         [yg, apod, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod, x);
     end
 
-    % combine timing infor with the transmit positions
+    % combine timing info with the transmit positions
     Pv(4,:) = t0;
     
     % partition data per frame
@@ -316,6 +342,7 @@ if device && logical(exist('bf.ptx', 'file')) % PTX track must be available
     % for each data frame, run the kernel
     switch fun
         case {'DAS','SYN','BF','MUL'}
+            if ~isreal(obufproto), yg = complex(yg); end % force complex if x is
             % I [x N [x M]] x 1 x 1 x {F x ...}
             for f = F:-1:1 % beamform each data frame
                 y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [fs, fmod]);
