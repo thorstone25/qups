@@ -4129,7 +4129,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % apod = APAPERTUREGROWTH(us, f, Dmax) restricts the
             % maximum size of the aperture to Dmax. The default is Inf.
             %
-            % The Transducer us.rx must be a TransducerArray.
+            % The Transducer us.rx must be a TransducerArray or 
+            % TransducerConvex.
             %
             % The output apod has dimensions I1 x I2 x I3 x N x M where
             % I1 x I2 x I3 are the dimensions of the scan, N is the number
@@ -4174,26 +4175,41 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % soft validate the transmit sequence and transducer types.
-            if ~isa(us.rx, 'TransducerArray'), warning(...
-                    "Expected Transducer to be a TransducerArray but instead got a " + class(us.rx) + ". This may produce unexpected results."...
+            if ~(isa(us.rx, 'TransducerArray') || isa(us.rx, 'TransducerConvex')), warning(...
+                    "Expected Transducer to be a TransducerArray or TransducerConvex but instead got a " + class(us.rx) + ". This may produce unexpected results."...
                     )
             end
 
-            % TODO: generalize to polar
             % get the transmit foci lateral position, M in dim 6
             % Pv = swapdim(sub(seq.focus,1:3,1), 2, 6);
 
             % get the receiver lateral positions, N in dim 5
             Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
 
-            % get the pixel positions in the proper dimensions
-            Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
-            Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            % calculate x and z for scan
+            if isa(us.scan, 'ScanPolar') % polar scan -> convert to Cartesian
+                Xi = permute(us.scan.r' .* sind(us.scan.a) + us.scan.origin(1), [4, 1, 2, 3]); % (1 x I1 x I2 x 1)
+                Zi = permute(us.scan.r' .* cosd(us.scan.a) + us.scan.origin(end), [4, 1, 2, 3]); % (1 x I1 x I2 x 1)
+            else % already in Cartesian
+                % get the pixel positions in the proper dimensions
+                Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
+                Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            end 
 
             % get the equivalent aperture width (one-sided) and pixel depth
-            % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
-            d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
-            z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            if isa(us.rx, 'TransducerConvex') % convex array width and depth calculation
+                ae = swapdim(us.rx.angular_pitch .* ((-(us.rx.numel-1)/2):((us.rx.numel-1)/2)), 2, 5); % angles of elements, in degrees
+                rp = sqrt((Xi - sub(Pn,1,1)).^2 + (Zi - sub(Pn,3,1)).^2); % radii to scan points
+                ap = atan2(Xi - sub(Pn,1,1), Zi - sub(Pn,3,1)); % angles to scan points
+                d = rp .* sin(ap - deg2rad(ae)); % equivalent one-sided widths for points
+                z = abs(rp .* cos(ap - deg2rad(ae))); % equivalent depth for points; take abs() to use same apodization calculation as linear arrays
+            else % linear array width and depth calculation
+                % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
+                d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
+                z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            end
+
+            % determine apodization 
             apod = z > f * abs(2*d) ; % restrict the f-number
             apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
 
