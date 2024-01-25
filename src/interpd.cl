@@ -53,14 +53,19 @@ typedef half    V ;
 // complex number support (single/double)
 // # include "clcomplex.h" // cmul
 
-// DEBUG: to avoid linter errors
-// /*
+// default to avoid compiler/linter errors
 # ifndef QUPS_INTERPD_FLAG
 # define QUPS_INTERPD_FLAG 2
+# endif
+# ifndef QUPS_INTERPD_NO_V
 # define QUPS_INTERPD_NO_V 0.f
+# endif
+# ifndef QUPS_INTERPD_OMEGA
 # define QUPS_INTERPD_OMEGA 0
 # endif
 
+// DEBUG: to avoid linter errrors
+// /*
 # ifndef QUPS_T
 # define QUPS_T 1024
 # define QUPS_N 1
@@ -177,7 +182,7 @@ T2 sample(global const T2 * x, U tau, int flag, const T2 no_v){
 }
 
 // template<typename T2, typename U, typename V> // channel data type, time data type, time-sampling type
-kernel void interpd(global T2 * y, global const T2 * x, global const U * tau, const int flag, const T2 no_v) {
+kernel void interpd(global T2 * y, global const T2 * x, global const U * tau, const int flag) {
     
     // get sampling index
     const size_t tid = get_global_id(0);
@@ -186,6 +191,7 @@ kernel void interpd(global T2 * y, global const T2 * x, global const U * tau, co
     
     // rename for readability
     const size_t I = QUPS_I, M = QUPS_S, N = QUPS_N, T = QUPS_T, F = QUPS_F;
+    const T2 no_v  = QUPS_INTERPD_NO_V;
 
     // remap indices
     const size_t i = tid % I;
