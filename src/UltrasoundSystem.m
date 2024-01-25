@@ -4184,13 +4184,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get the transmit foci lateral position, M in dim 6
             % Pv = swapdim(sub(seq.focus,1:3,1), 2, 6);
 
-            % get the receiver lateral positions, N in dim 5
+            % get the receiver lateral/axial positions, N in dim 5
             Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
+            [Xn, Zn] = deal(sub(Pn,1,1), sub(Pn,3,1)); % (1 x 1 x 1 x 1 x N)
 
             % calculate x and z for scan
             if isa(us.scan, 'ScanPolar') % polar scan -> convert to Cartesian
-                Xi = permute(us.scan.r' .* sind(us.scan.a) + us.scan.origin(1), [4, 1, 2, 3]); % (1 x I1 x I2 x 1)
-                Zi = permute(us.scan.r' .* cosd(us.scan.a) + us.scan.origin(end), [4, 1, 2, 3]); % (1 x I1 x I2 x 1)
+                r = swapdim(us.scan.r, 2, 1+us.scan.rdim);
+                a = swapdim(us.scan.a, 2, 1+us.scan.adim);
+                Xi = r .* sind(a) + us.scan.origin( 1 ); % (1 x I1 x I2 x 1)
+                Zi = r .* cosd(a) + us.scan.origin(end); % (1 x I1 x I2 x 1)
             else % already in Cartesian
                 % get the pixel positions in the proper dimensions
                 Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
@@ -4199,14 +4202,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % get the equivalent aperture width (one-sided) and pixel depth
             if isa(us.rx, 'TransducerConvex') % convex array width and depth calculation
-                ae = swapdim(us.rx.angular_pitch .* ((-(us.rx.numel-1)/2):((us.rx.numel-1)/2)), 2, 5); % angles of elements, in degrees
-                rp = sqrt((Xi - sub(Pn,1,1)).^2 + (Zi - sub(Pn,3,1)).^2); % radii to scan points
-                ap = atan2(Xi - sub(Pn,1,1), Zi - sub(Pn,3,1)); % angles to scan points
-                d = rp .* sin(ap - deg2rad(ae)); % equivalent one-sided widths for points
-                z = abs(rp .* cos(ap - deg2rad(ae))); % equivalent depth for points; take abs() to use same apodization calculation as linear arrays
+                ae = swapdim(us.rx.orientations(), 2, 5); % angles of elements, in degrees
+                rp = hypot( Xi - Xn, Zi - Zn); % radii to scan points
+                ap = atan2d(Xi - Xn, Zi - Zn); % angles to scan points
+                d =     rp .* sind(ap - ae) ; % equivalent one-sided widths for points
+                z = abs(rp .* cosd(ap - ae)); % equivalent depth for points; take abs() to use same apodization calculation as linear arrays
             else % linear array width and depth calculation
-                % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
-                d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
+                d = Xn - Xi; % one-sided width where 0 is aligned with the pixel
                 z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
             end
 
