@@ -267,6 +267,9 @@ if device && (gdev || odev)
     end
     
     if gdev
+        % reference selected device 
+        g = gpuDevice();
+
         % load kernel
         k = parallel.gpu.CUDAKernel(...
             'bf.ptx',...
