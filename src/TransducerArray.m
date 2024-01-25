@@ -98,8 +98,9 @@ classdef TransducerArray < Transducer
             p = cat(1, x, zeros(2, numel(x)));
             if any(self.rot)
                 q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-                p = rotatepoint(q, p')' + self.offset;
+                p = rotatepoint(q, p')';
             end
+            p = p + self.offset;
         end
         
         function [theta, phi, normal, width, height] = orientations(self)            
