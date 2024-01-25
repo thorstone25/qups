@@ -31,10 +31,10 @@ function y = pwznxcorr(x, lags, W, kwargs)
 % the time and channel dimensions.
 % 
 % y = PWZNXCORR(..., 'zero', true) debiases the windowed vectors u and v
-% such that sum(u) == sum(v) == 0. The default is false.
+% such that sum(u) == sum(v) == 0. The default is true.
 % 
 % y = PWZNXCORR(..., 'norm', true) normalizes the windowed vectors u and v
-% such that |u||_2 == ||v||_2 == 1. The default is false.
+% such that |u||_2 == ||v||_2 == 1. The default is true.
 % 
 % y = PWZNXCORR(..., 'ref', 'neighbor') compares each channel n to the
 % neighboring channel n + 1. This is the default.
@@ -88,8 +88,8 @@ arguments
     lags (1,:) double {mustBeInteger, mustBeFinite} % lags
     W {mustBeNumeric} = max([ceil(max(abs(lags)) / 2), 1]) % window size or weighting vector
     kwargs.pad (1,1) logical  = true; % whether to zero-pad the data prior to correlation
-    kwargs.zero (1,1) logical = false; % whether to 0-mean the data
-    kwargs.norm (1,1) logical = false; % whether to normalize the data
+    kwargs.zero (1,1) logical = true; % whether to 0-mean the data
+    kwargs.norm (1,1) logical = true; % whether to normalize the data
     kwargs.ref (1,1) string {mustBeMember(kwargs.ref, ["neighbor", "center", "x0"])} = "neighbor" % reference channel
     kwargs.stride (1,1) double {mustBeInteger, mustBePositive} = 1
     kwargs.x0 {mustBeNumeric, mustBeFloat} = [] % reference data
