@@ -556,7 +556,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), self.rx.numel, self.tx.numel, prod(element_subdivisions));
-            x   = complex(zeros([1 T N M]));
+            x   = complex(zeros([1 T N M 0], 'like', kern)); % set size/type
+            x(:,:,:,:,1) = 0; % pre-allocate
 
             % splice
             c0  = scat(f).c0;
