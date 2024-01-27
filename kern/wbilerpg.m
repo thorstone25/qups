@@ -93,7 +93,7 @@ elseif use_odev
 
     % specify aliased types
     kern.defineTypes({uclass});
-    kern.macros(end+1) = "QUPS_INTERPD_PRECISION="+prc;
+    kern.macros(end+1) = "QUPS_PRECISION="+prc;
 
     % validate precision support
     if   (uclass == "double") && (~kern.Device.SupportsDouble) ...

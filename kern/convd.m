@@ -168,7 +168,7 @@ if use_gdev || use_odev
             case 'halfT' , prc = 16; typ = 'half'  ;
         end
         kern.defineTypes({typ}); % {T}
-        kern.macros = [kern.macros, "QUPS_INTERPD_PRECISION="+prc];
+        kern.macros = [kern.macros, "QUPS_PRECISION="+prc];
         if complex_type, kern.macros = [kern.macros, "QUPS_COMPLEX"]; end
 
         % define the constant data parameters

@@ -632,7 +632,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 elseif use_odev
                     k = oclKernel('greens.cl');
                     k.macros = [k.macros, "QUPS_"+["S","T","N","M","I"]+"="+uint64([QS,QT,QN,QM,QI])]; % set constants
-                    k.macros(end+1) = "QUPS_INTERPD_PRECISION="+prc;
+                    k.macros(end+1) = "QUPS_PRECISION="+prc;
                     k.defineTypes(repmat(typ,[1,3]), ["V","T","U"]); % time / data / position
 
                     % enforce complexity

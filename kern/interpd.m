@@ -137,8 +137,9 @@ if use_gdev || use_odev
 
         % configure the kernel sizing and options
         k.macros = "QUPS_" + ["I", "T", "S", "N", "F"] + "=" + uint64([I T M N F]); % size constants
-        k.macros = [k.macros, "QUPS_INTERPD_" + ["PRECISION","NO_V","FLAG"] ...
-            + "=" + [prc, "0."+suffix, flagnum]]; % input constants
+        k.macros = [k.macros, "QUPS_INTERPD_" + ["NO_V","FLAG"] ...
+            + "=" + ["0."+suffix, flagnum]]; % input constants
+        k.macros(end+1) = "QUPS_PRECISION="+prc;
         k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable", "-cl-opt-disable"];
     end
     

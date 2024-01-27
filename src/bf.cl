@@ -43,11 +43,11 @@
 *
 */
 
-#   if QUPS_INTERPD_PRECISION == 32
+#   if QUPS_PRECISION == 32
 typedef float4 U4;
-# elif QUPS_INTERPD_PRECISION == 64 
+# elif QUPS_PRECISION == 64 
 typedef double4 U4;
-# elif QUPS_INTERPD_PRECISION == 16 
+# elif QUPS_PRECISION == 16 
 typedef float4 U4;
 # endif
 

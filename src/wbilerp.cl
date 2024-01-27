@@ -1,16 +1,16 @@
 // linter ...
-# ifndef QUPS_INTERPD_PRECISION
-# define QUPS_INTERPD_PRECISION 32
+# ifndef QUPS_PRECISION
+# define QUPS_PRECISION 32
 # endif
 
-#   if QUPS_INTERPD_PRECISION == 32
+#   if QUPS_PRECISION == 32
 typedef float  U;
 typedef float2 U2;
-# elif QUPS_INTERPD_PRECISION == 64 
+# elif QUPS_PRECISION == 64 
 #pragma OPENCL EXTENSION cl_khr_fp64 : enable // must enable double precision
 typedef double  U;
 typedef double2 U2;
-# elif QUPS_INTERPD_PRECISION == 16
+# elif QUPS_PRECISION == 16
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable // must enable half precision
 typedef half  U;
 typedef half2 U2;

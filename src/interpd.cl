@@ -1,3 +1,14 @@
+// defaults
+# ifndef QUPS_INTERPD_FLAG
+# define QUPS_INTERPD_FLAG 2
+# endif
+# ifndef QUPS_INTERPD_NO_V
+# define QUPS_INTERPD_NO_V 0.f
+# endif
+# ifndef QUPS_INTERPD_OMEGA
+# define QUPS_INTERPD_OMEGA 0
+# endif
+
 # include "interpolators.cl"
 
 // template<typename T2, typename U, typename V> // channel data type, time data type, time-sampling type
@@ -208,11 +219,11 @@ kernel void wsinterpd(volatile global T2 * y,
             const T2 val = cmul(a, cmul(w[k],sample(&x[(v)*T], (V)tau[u], flag, no_v))); // weighted sample
             // y[l] += (T2)(1.0f, 1.0f);
 
-#   if QUPS_INTERPD_PRECISION == 64
+#   if QUPS_PRECISION == 64
             atomicAddStore(y + l, val); // store
-# elif QUPS_INTERPD_PRECISION == 32
+# elif QUPS_PRECISION == 32
             atomicAddStoref(y + l, val); // store
-# elif QUPS_INTERPD_PRECISION == 16
+# elif QUPS_PRECISION == 16
             atomicAddStoreh(y + l, val); // store
 # endif
 
@@ -268,11 +279,11 @@ kernel void wsinterpd2(volatile global T2 * y,
             const U  t = tau1[r] + tau2[u]; // time
             const T2 a = (omega != 0) ? (T2)(cos(omega * t), sin(omega * t)) : (T2)(1.f, 0.f); // modulation phasor
             const T2 val = cmul(a, cmul(w[k], sample(&x[(v)*T], (V)t, flag, no_v))); // weighted sample
-#   if QUPS_INTERPD_PRECISION == 64
+#   if QUPS_PRECISION == 64
             atomicAddStore(&y[l], val); // store
-# elif QUPS_INTERPD_PRECISION == 32
+# elif QUPS_PRECISION == 32
             atomicAddStoref(&y[l], val); // store
-# elif QUPS_INTERPD_PRECISION == 16
+# elif QUPS_PRECISION == 16
             atomicAddStoreh(&y[l], val); // store
 # endif
         }

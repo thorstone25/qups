@@ -314,7 +314,7 @@ if device && (gdev || odev)
         k.macros = [k.macros, ("QUPS_" + ["I","T","M","N","VS","DV","I1","I2","I3"] + "=" + [I,T,M,N,VS,DV,Isz])];
         k.macros = [k.macros, ("QUPS_" + ["F","S"] + "=" + [1,M])]; % unused ...
         k.macros = [k.macros, ("QUPS_BF_" + ["FLAG"] + "=" + [flagnum])];
-        k.macros(end+1) = "QUPS_INTERPD_PRECISION="+prc;
+        k.macros(end+1) = "QUPS_PRECISION="+prc;
         k.opts = ["-cl-mad-enable"];%, "-cl-fp32-correctly-rounded-divide-sqrt", "-cl-opt-disable"];
 
         % compile kernel

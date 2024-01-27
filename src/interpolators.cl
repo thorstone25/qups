@@ -24,45 +24,11 @@ limitations under the License.
 // enable integer atomics(must be supported!)
 #pragma OPENCL EXTENSION cl_khr_int64_base_atomics : enable 
 
-// constant defines for debugging / if not specified at compile time
+// DEBUG: constant defines for debugging / if not specified at compile time
 // default precision
-# ifndef QUPS_INTERPD_PRECISION
-# define QUPS_INTERPD_PRECISION 32
-# endif
-
-// should be JIT compiles with (T2, U, V) set to the complex-data type, real-data type, and time type
-#   if QUPS_INTERPD_PRECISION == 32
-typedef float2  T2;
-typedef float   U ;
-typedef float   V ;
-# define PI_VAL M_PI_F
-# elif QUPS_INTERPD_PRECISION == 64 
-#pragma OPENCL EXTENSION cl_khr_fp64 : enable // must enable double precision
-typedef double2 T2;
-typedef double  U ;
-typedef double  V ;
-# define PI_VAL M_PI
-# elif QUPS_INTERPD_PRECISION == 16
-#pragma OPENCL EXTENSION cl_khr_fp16 : enable // must enable half precision
-typedef half2   T2;
-typedef half    U ;
-typedef half    V ;
-# define PI_VAL M_PI_H
-# endif
-
-// complex number support (single/double)
-// # include "clcomplex.h" // cmul
-
-// default to avoid compiler/linter errors
-# ifndef QUPS_INTERPD_FLAG
-# define QUPS_INTERPD_FLAG 2
-# endif
-# ifndef QUPS_INTERPD_NO_V
-# define QUPS_INTERPD_NO_V 0.f
-# endif
-# ifndef QUPS_INTERPD_OMEGA
-# define QUPS_INTERPD_OMEGA 0
-# endif
+// # ifndef QUPS_PRECISION
+// # define QUPS_PRECISION 32
+// # endif
 
 // DEBUG: to avoid linter errrors
 /*
@@ -76,13 +42,32 @@ typedef half    V ;
 # endif
 */
 
+// should be JIT compiles with (T2, U, V) set to the complex-data type, real-data type, and time type
+#   if QUPS_PRECISION == 32
+typedef float2  T2;
+typedef float   U ;
+typedef float   V ;
+# define PI_VAL M_PI_F
+# elif QUPS_PRECISION == 64 
+#pragma OPENCL EXTENSION cl_khr_fp64 : enable // must enable double precision
+typedef double2 T2;
+typedef double  U ;
+typedef double  V ;
+# define PI_VAL M_PI
+# elif QUPS_PRECISION == 16
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable // must enable half precision
+typedef half2   T2;
+typedef half    U ;
+typedef half    V ;
+# define PI_VAL M_PI_H
+# endif
+
 // complex multiplication 
 T2 cmul(const T2 a, const T2 b){
     return (T2)(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x);
 }
 
 /// @brief Device function for nearest-neighbor interpolation
-// template<typename U, typename T2>
 T2 nearest(global const T2 * x, U tau, T2 no_v) {
     const int ti = (int) round(tau); // round to nearest integer
     return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
@@ -93,7 +78,6 @@ T2 lerp(const T2 a, const T2 b, const U t) {
 }
 
 /// @brief Device function for linear interpolation
-// template<typename U, typename T2>
 T2 linear(global const T2 * x, U tau, T2 no_v) {
     U tif; // integer part
     
@@ -106,7 +90,6 @@ T2 linear(global const T2 * x, U tau, T2 no_v) {
 }
 
 /// @brief Device function for cubic Hermite interpolation
-// template<typename U, typename T2>
 T2 cubic(global const T2 * x, U tau, T2 no_v) {
   U tf;
   const U u = modf(tau, &tf); // u is the fractional part, tf the integer part
@@ -135,15 +118,12 @@ T2 cubic(global const T2 * x, U tau, T2 no_v) {
 }
 
 /// @brief Inline helper code for Lanczos 3-lobe interpolation
-// template<typename T>
-// float
 U lanczos_helper(U u, int a) {
   return (u == 0.f ? 1.f : (2.f * sinpi(u)*sinpi(u/a) / (PI_VAL*PI_VAL * u*u)));
 }
 
 
 /// @brief Device function for Lanczos 3-lobe interpolation
-// template<typename U, typename T2>
 T2 lanczos3(global const T2 * x, U tau, T2 no_v) {
   const int a = 2;  // a=2 for 3-lobe Lanczos resampling
   U tf;
@@ -164,7 +144,6 @@ T2 lanczos3(global const T2 * x, U tau, T2 no_v) {
   return s0 * a0 + s1 * a1 + s2 * a2 + s3 * a3;
 }
 
-// template <typename U, typename T2>
 T2 sample(global const T2 * x, U tau, int flag, const T2 no_v){
     // sample according to the flag
          if (flag == 0)
