@@ -304,13 +304,17 @@ if device && (gdev || odev)
 
         % set precision
         switch idataType
-            case {"single", "double"}, k.defineTypes(idataType, "U");
-            case {"half"}, error("Not implemented :(");
+            case "single", prc = 32;
+            case "double", prc = 64;
+            otherwise, error("Not implemented :(");
         end
+        k.defineTypes(repmat(idataType,[1,3]), ["V","T","U"]); % time / data / position
 
         % set constant args
         k.macros = [k.macros, ("QUPS_" + ["I","T","M","N","VS","DV","I1","I2","I3"] + "=" + [I,T,M,N,VS,DV,Isz])];
+        k.macros = [k.macros, ("QUPS_" + ["F","S"] + "=" + [1,M])]; % unused ...
         k.macros = [k.macros, ("QUPS_BF_" + ["FLAG"] + "=" + [flagnum])];
+        k.macros(end+1) = "QUPS_INTERPD_PRECISION="+prc;
         k.opts = ["-cl-mad-enable"];%, "-cl-fp32-correctly-rounded-divide-sqrt", "-cl-opt-disable"];
 
         % compile kernel
@@ -320,7 +324,7 @@ if device && (gdev || odev)
         k.ThreadBlockSize(1) = min(I, k.MaxThreadsPerBlock);
         k.GridSize(1) = ceil(I / k.ThreadBlockSize(1));
 
-        % expand inputs to 4D - in  OpenCL, 3D vectors interpreted are 4D underlying
+        % expand inputs to 4D - in  OpenCL, all 3D vectors interpreted are 4D underlying
         [Pi(4,:), Pr(4,:), Pv(4,:), Nv(4,:)] = deal(0);
     end 
     
