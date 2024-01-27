@@ -10,10 +10,13 @@ function [C, lags] = convd(x, y, dim, shape, kwargs)
 % C = CONVD(A, B, dim, shape) selects the shape of the output. Must be one 
 % of {'full'*|'same'|'valid'}. The default is 'full'.
 % 
-% C = CONVD(..., 'gpu', false) selects whether to use a gpu. If true, 
-% a ptx-file will be used if compiled. If false or if no ptx-file is
-% available, native MATLAB code is used. The default is true if x or y is a
-% gpuArray.
+% C = CONVD(..., 'gpu', true) selects whether to use a gpu. A ptx-file will 
+% be used if compiled. The default is true if x or y is a gpuArray.
+%
+% C = CONVD(..., 'ocl', true) selects whether to use an OpenCL device if
+% OpenCL support is available. If the currently selected device does not 
+% support the precision of the data, this argument is ignored. The default
+% is true if OpenCL support is available via Matlab-OpenCL.
 %
 % C = CONVD(..., 'parenv', clu) or C = CONVD(..., 'parenv', pool) or 
 % performs the convolution in parallel on the parcluster clu or the parpool
@@ -24,35 +27,32 @@ function [C, lags] = convd(x, y, dim, shape, kwargs)
 % [C, lags] = CONVD(...) returns the lags of y in the same dimension as the
 % computation.
 % 
-% % Example:
-% % Compute and plot the cross-correlation of two 16-sample
-% % exponential sequences
+% Example:
+% % Create two 16 x 4 exponential sequences
+% n = (1:16)-1;
+% m = (1:4)'-1;
+% xa = single(0.84).^(n+m);
+% xb = single(0.92).^(n+m);
 % 
-% N = 16;
-% M = 4;
-% n = (0:N-1);
-% m = (0:M-1)';
-% a = 0.84;
-% b = 0.92;
-% xa = a.^(n+m);
-% xb = b.^(n+m);
+% % Compute iteratively
 % z0 = 0*xa; % initialize
-% for i = 1:M
+% for i = 1:4
 %    z0(i,:) = conv(xa(i,:), xb(i,:), 'same');
 % end
-% z0
-% z = convd(xa,xb,2,'same')
-% isequal(z, z0)
+% 
+% % Compute with convd
+% z = convd(xa,xb,2,'same');
+% isalmostn(z, z0)
 % 
 % See also CONV CONV2 CONVN
 
-% TODO: update this for tall variables?
 arguments
-    x {mustBeNumeric}
-    y {mustBeNumeric}
+    x {mustBeFloat}
+    y {mustBeFloat}
     dim (1,1) {mustBePositive, mustBeInteger} = findSingletonDim(x, y)
     shape (1,1) string {mustBeMember(shape, ["full", "same", "valid"])} = 'full'
     kwargs.gpu (1,1) logical = isa(x, 'gpuArray') || isa(y, 'gpuArray')
+    kwargs.ocl (1,1) logical = exist('oclDevice', 'file') && ~isempty(oclDevice())
     kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate') % parallel environment
     kwargs.lowmem (1,1) logical = 16 * max(numel(x), numel(y)) > 16 * 2^30; % default true if complex double storage of either argument exceeds 16GB
 end
@@ -87,11 +87,11 @@ N = size(y,dim);
 % get the proper lags for this computation
 switch shape
     case 'full'
-        lags = colon(-(N - 1), M - 1).';
+        lags = colon(-(N - 1), M - 1);
     case 'same'
-        lags = colon(0,        M - 1).' - floor((N-1)/2);
+        lags = colon(0,        M - 1) - floor((N-1)/2);
     case 'valid'
-        lags = colon(0,        M - N).';
+        lags = colon(0,        M - N);
 end
 
 % get kernel sizing info
@@ -105,37 +105,20 @@ C = prod(esize(x, 1:dim-1));
 [xstr, ystr, zstr] = deal(C);
 sizes = [xstr, M, ystr, N, zstr, L, C];
 
-% whether/how to operate on GPU
-if kwargs.gpu && exist('convd.ptx', 'file') && exist('convd.cu', 'file')
-    % get the kernel suffix
-    suffix = '';
-    if complex_type, suffix = [suffix 'c']; end
+% whether/how to operate with CUDA/OpenCL
+use_gdev = kwargs.gpu && exist('convd.ptx', 'file') && exist('convd.cu', 'file');
+use_odev = kwargs.ocl && exist('oclDevice', 'file') && ~isempty(oclDevice()) && exist('convd.cl', 'file');
+if use_odev % validate the device supports the type
+    dev = oclDevice(); % get device
     switch dtype
-        case 'single', suffix = [suffix 'f'];
-        case 'halfT',  suffix = [suffix 'h'];
+        case 'double', use_odev = dev.SupportsDouble;
+        case 'halfT' , use_odev = dev.SupportsHalf;
     end
-    
-    % specify the kernel
-    kern = parallel.gpu.CUDAKernel( ...
-        'convd.ptx', 'convd.cu', ['conv' suffix] ...
-        );
-    
-    % setup the execution size
-    if C == 1
-        blk = [1 min(L, kern.MaxThreadsPerBlock) 1];
-        grd = ceil([1 L S] ./ blk);
-    else
-        blk = [min(C, kern.MaxThreadsPerBlock), 1, 1];
-        grd = ceil([C L S] ./ blk);
-    end
-    kern.ThreadBlockSize = blk;
-    kern.GridSize = grd;
-    
-    % define the constant data parameters: care must be taken to match the
-    % datatype here: for NVIDIA gpus, size_t <-> uint64
-    kern.setConstantMemory('L0', int32(l0));
-    
-    % if complex, ensure both all arguments complex
+end
+
+% dispatch based on device (native vs. kernel)
+if use_gdev || use_odev
+    % if complex, eshiftdimnsure both all arguments complex
     if complex_type && isreal(x), x = complex(x); end
     if complex_type && isreal(y), y = complex(y); end
 
@@ -154,8 +137,53 @@ if kwargs.gpu && exist('convd.ptx', 'file') && exist('convd.cu', 'file')
             z = x;
             x = sub(z, 1:M, dim); % (shared-copy ?)
     end
+    
+    % get the kernel
+    if use_gdev
+        % get the kernel suffix
+        suffix = '';
+        if complex_type, suffix = [suffix 'c']; end
+        switch dtype
+            case 'single', suffix = [suffix 'f'];
+            case 'halfT',  suffix = [suffix 'h'];
+        end
+
+        % specify the kernel
+        kern = parallel.gpu.CUDAKernel( ...
+            'convd.ptx', 'convd.cu', ['conv' suffix] ...
+            );
+
+        % define the constant data parameters: care must be taken to match the
+        % datatype here: for NVIDIA gpus, size_t <-> uint64
+        kern.setConstantMemory('L0', int32(l0));
+    
+    else
+        % reference kernel
+        kern = oclKernel('convd.cl');
+
+        % define typing
+        switch dtype
+            case 'single', prc = 32; typ = 'single';
+            case 'double', prc = 64; typ = 'double';
+            case 'halfT' , prc = 16; typ = 'half'  ;
+        end
+        kern.defineTypes({typ}); % {T}
+        kern.macros = [kern.macros, "QUPS_INTERPD_PRECISION="+prc];
+        if complex_type, kern.macros = [kern.macros, "QUPS_COMPLEX"]; end
+
+        % define the constant data parameters
+        kern.macros = [kern.macros, "QUPS_L0="+int32(l0)];
+    end
+    
+    % setup the execution size
+    if C == 1, blk = [1 min(L, kern.MaxThreadsPerBlock) 1];
+    else,      blk = [min(C, kern.MaxThreadsPerBlock), 1, 1];
+    end
+    kern.ThreadBlockSize = blk;
+    kern.GridSize = ceil([C L S] ./ blk);
+    
     % run the kernel
-    z = kern.feval(x,y,z,sizes);
+    z = kern.feval(x,y,z,sizes); 
     
 else
     % vectorized MATLAB on CPU - perform convolution manually for vectors
@@ -201,13 +229,12 @@ else
     % return to original sizing
     sz(dim) = L;
     z = reshape(z, sz);
-
 end
 
 % cast to output type / dimensions - try to use implicit in-place assignment
 % z = cast(z, 'like', To); 
 C = z; % shared-copy
-lags = shiftdim(lags, 1-dim); % put lags in same dimensions as operation
+lags = swapdim(lags, 2, dim); % put lags in same dimensions as operation
 
 function d = findSingletonDim(A, B)
 dA = find(size(A) ~= 1,1,'first');
