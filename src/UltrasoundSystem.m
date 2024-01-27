@@ -540,6 +540,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             wv.fs = kwargs.fsk;
             kern = wv.samples;
 
+            % choose device
+            use_dev = kwargs.device && ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]);
+            use_gdev = use_dev && exist('greens.ptx', 'file') && gpuDeviceCount(); % use the GPU kernel
+            use_odev = use_dev && exist('oclDeviceCount','file') && oclDeviceCount(); % use the OpenCL kernel
+            if use_odev 
+                if kwargs.device > 0, oclDevice(kwargs.device); end % select device
+                dev = oclDevice(); % reference
+                use_odev = isUnderlyingType(kern, "single") ...
+                       || (isUnderlyingType(kern, "double") && dev.SupportsDouble) ...
+                       || (isUnderlyingType(kern, "half"  ) && dev.SupportsHalf);
+            end
+                
             F = numel(scat);
             % if kwargs.verbose, hw = waitbar(0); end
 
@@ -565,11 +577,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             amp = scat(f).amp; % 1 x S
             fso = self.fs; % output channel data sampling frequency
 
-            % choose device
-            use_dev = kwargs.device && ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]);
-            use_gdev = use_dev && exist('greens.ptx', 'file') && gpuDeviceCount(); % use the GPU kernel
-            use_odev = use_dev && exist('oclDeviceCount','file') && oclDeviceCount(); % use the OpenCL kernel
-                
             if use_gdev || use_odev
                 % function to determine type
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
