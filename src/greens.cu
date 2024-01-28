@@ -10,7 +10,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     const U * __restrict__ Pi, const T2 * __restrict__ a, 
     const U * __restrict__ Pr, const U * __restrict__ Pv, 
     const T2 * __restrict__ x, const U * __restrict__ sb, const size_t * iblock,
-	const U s0t0fscinv[5],
+	const U s0t0fscinv[6],
     const int * E, const int iflag
     ) {
 
@@ -20,6 +20,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     const U fs   = s0t0fscinv[2];
     const U fsr  = s0t0fscinv[3];
     const U cinv = s0t0fscinv[4];
+    const U R0   = s0t0fscinv[5]; // min distance for div by 0
     
     // get starting index of this scatterer
     const size_t s = threadIdx.x + blockIdx.x * blockDim.x; // time 
@@ -39,7 +40,8 @@ __device__ void greens_temp(T2 * __restrict__ y,
     // temp vars
     // const float ts = s + s0*fs; // compute the time index for this thread
     const T2 zero_v = {0, 0}, fpow = {fsr, fsr}; // OOB value, power scaling
-    U r, tau; // length, time (tmp values)
+    // const U A0 = (R0) ? 1 / (R0 * R0) : 1; // max power scaling
+    U r1, r2, tau; // length, time (tmp values)
     T2 val = zero_v; // accumulator
 
     // if valid scat, for each tx/rx
@@ -52,15 +54,25 @@ __device__ void greens_temp(T2 * __restrict__ y,
                     for(size_t ne = 0; ne < E[0]; ++ne){ // for each rx sub-aperture
     
                         // 2-way path distance
-                        r = (length(pi[i] - pr[n + ne*N]) + length(pi[i] - pv[m + me*M])); // (virtual) transmit to pixel vector
+                        r1 = length(pi[i] - pr[n + ne*N]); // rx propagation
+                        r2 = length(pi[i] - pv[m + me*M]); // tx propagation
                         
                         // get kernel delay for the scatterer
-                        tau = (U)s - (cinv * r + t0 - s0)*fs;
+                        tau = (U)s - (cinv * (r1 + r2) + t0 - s0)*fs;
+
+                        // limit to minimum dist of R0
+                        if(R0){
+                            r1 /= R0; r1 = (r1 < 1) ? 1 : r1;
+                            r2 /= R0; r2 = (r2 < 1) ? 1 : r2;
+                        } else {
+                            r1 = 1;
+                            r2 = 1;
+                        }
                         
                         // sample the kernel and add to the signal at this time
                         // fsr applies a 'stretch' operation to the sample time, because the 
                         // input data x is sampled at sampling frequency fsr * fs
-                        val += a[i] * sample(x, fsr*tau, iflag, zero_v); // out of bounds: extrap 0
+                        val += a[i] * sample(x, fsr*tau, iflag, zero_v) / (r1 * r2); // out of bounds: extrap 0
                     }
                 }
             }
@@ -76,7 +88,7 @@ __global__ void greensf(float2 * __restrict__ y,
     const float * __restrict__ Pi, const float2 * __restrict__ a, 
     const float * __restrict__ Pr, const float * __restrict__ Pv, 
     const float2 * __restrict__ x, const float * __restrict__ sb, const size_t * iblock,
-	const float s0t0fscinv[5],
+	const float s0t0fscinv[6],
     const int * E, const int iflag
     ) {
     greens_temp<float2, float, float3>(y, Pi, a, Pr, Pv, x, sb, iblock, s0t0fscinv, E, iflag);
@@ -86,19 +98,22 @@ __global__ void greens(double2 * __restrict__ y,
     const double * __restrict__ Pi, const double2 * __restrict__ a, 
     const double * __restrict__ Pr, const double * __restrict__ Pv, 
     const double2 * __restrict__ x, const double * __restrict__ sb, const size_t * iblock,
-	const double s0t0fscinv[5],
+	const double s0t0fscinv[6],
     const int * E, const int iflag
     ) {
     greens_temp<double2, double, double3>(y, Pi, a, Pr, Pv, x, sb, iblock, s0t0fscinv, E, iflag);
 }
 
 #if (__CUDA_ARCH__ >= 530)
+inline __host__ __device__ half2 operator/(half2 a, float b){
+    return make_half2((float)a.x / b, (float)a.y / b); // scale amplitude in FP32 precision
+}
 
 __global__ void greensh(ushort2 * __restrict__ y, 
     const float * __restrict__ Pi, const short2 * __restrict__ a, 
     const float * __restrict__ Pr, const float * __restrict__ Pv, 
     const ushort2 * __restrict__ x, const float * __restrict__ sb,const size_t * iblock,
-	const float s0t0fscinv[5],
+	const float s0t0fscinv[6],
     const int * E, const int iflag
     ) {
     greens_temp<half2, float, float3>((half2 *)y, Pi, (const half2 *)a, Pr, Pv, (const half2 *)x, sb, iblock, s0t0fscinv, E, iflag);
