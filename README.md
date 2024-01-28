@@ -99,7 +99,8 @@ All extensions to QUPS are optional, but must be installed separately from their
 | [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`|
 | k-Wave([base](http://www.k-wave.org/index.php), [extension](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources)) | distributed medium simulator | `addpath path/to/kWave, addpath path/to/kWaveArray` |
 | [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST` (see issues[#2](https://github.com/thorstone25/qups/issues/2))|
-| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration| see [CUDA Extension](####CUDA-Extension) |
+| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | see [CUDA Extension](####CUDA-Extension) |
+| [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))|
 
 
 ### CUDA Extension
