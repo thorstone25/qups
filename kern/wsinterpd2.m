@@ -189,7 +189,7 @@ if use_gdev || use_odev
         k.macros = [k.macros, "QUPS_INTERPD_" + ["NO_V","FLAG","OMEGA"] ...
             + "=" + ["0."+suffix, flagnum, imag(omega)]]; % input constants
         k.macros(end+1) = "QUPS_PRECISION="+prc;
-        k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable", "-cl-opt-disable"];
+        % k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable"];
         cargs = {}; 
     end
 
