@@ -280,6 +280,66 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
                 patch(1:3)'), el_patches, 'UniformOutput', false);
             p = reshape(cat(1, p{:}), [3, size(p)]);
         end
+
+        function pf = focActive(xdc, apd, r)
+            % focActive - Create foci for the active apertures
+            %
+            % pf = focActive(xdc, apd, r) creates an array of foci pf at a
+            % focal depth r from the Transducer xdc with the apodization
+            % matrix apd. 
+            % 
+            % The array apd must be a (N x S) array of weights where 
+            % N == xdc.numel and S is the number of transmit pulses. The
+            % median of the non-zero elements of each transmit in apd are
+            % used generate the beam origins, and the foci are placed at a
+            % range r normal to the surface of the transducer from the beam
+            % origins. The range r can be a scalar or a (1 x S) array of
+            % ranges per transmit pulse.
+            % 
+            % Note: a negative value of r will define a diverging wave.
+            % 
+            % Example:
+            % % Create a Transducer
+            % xdc = TransducerConvex.C5_2v();
+            % 
+            % % Create a walking aperture of 64 elements each
+            % apd = Sequence.apWalking(xdc.numel, 64);
+            % 
+            % % Create a focused Sequence at a range of 50mm
+            % pf = xdc.focActive(apd, 50e-3);
+            % seq = SequenceRadial('type','FC', 'focus',pf, 'apex',xdc.center); 
+            % seq.apodization_ = apd; % set apodization
+            % 
+            % % Create and plot the system
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
+            % plot(us);
+            % 
+            % See also SEQUENCE.APWALKING
+            arguments
+                xdc (1,1) Transducer
+                apd (:,:) {mustBeNumericOrLogical} % apodization (N x S)
+                r (1,:) {mustBeReal, mustBeFinite}
+            end
+
+            % central element of active apertures
+            ic = cellfun(@(a) median(find(a)), num2cell(apd,1)); % 1 x S
+
+            % compute beams based on transducer geometry
+            if any(arrayfun(@(s)isa(xdc,s),["TransducerArray", "TransducerMatrix"])) % linear interpolation
+                pn = xdc.positions(); % element position (3 x N)
+                [~,~,nn] = xdc.orientations(); % element angles/normals (1xN)/(3xN)
+                pnc = (pn(:,floor(ic)) + pn(:,ceil(ic))) ./ 2; % mean position
+                nnc = (nn(:,floor(ic)) + nn(:,ceil(ic))) ./ 2; % mean normal
+                pf = pnc + r .* nnc; % create focal positions
+            elseif isa(xdc,"TransducerConvex") % angular interpolation
+                th = xdc.orientations(); % element angles/normals (1xN)/(3xN)
+                thc = (th(:,floor(ic)) + th(:,ceil(ic))) ./ 2; % mean angle (1 x S)
+                pf = (xdc.radius + r) * [sind(thc); 0*thc; cosd(thc)] + xdc.center; % extend radius from beam origins
+            else
+                error("Sequence:focActive:unsupportedTransducer", ...
+                    "A "+class(xdc)+" is not supported.");
+            end
+        end
     end
 
     % toolbox conversion functions

@@ -150,23 +150,6 @@ classdef SequenceRadial < Sequence
         function v = vectors_(angles), v = cat(1, sind(angles), zeros(size(angles)), cosd(angles)); end
     end
 
-    
-    % temporal response methods
-    methods           
-        function a = apodization(self, tx)
-            arguments
-                self SequenceRadial
-                tx Transducer
-            end
-            switch self.type
-                case 'FSA'
-                    a = eye(size(tx.positions(),2)); % N x N identity
-                otherwise
-                    a = ones([size(tx.positions(),2) self.numPulse]); % N x S
-            end
-        end
-    end
-
     % plotting functions
     methods
         function h = plot(self, varargin, quiver_args)

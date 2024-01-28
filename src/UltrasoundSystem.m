@@ -441,6 +441,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Setting the subdvisions to [1,1] avoids this behaviour. The
             % Default is [1,1].
             %
+            % chd = GREENS(..., 'R0', R0) sets the minimum distance for
+            % propagation loss. Setting R0 to 0 disables propagation loss.
+            % The default is us.lambda.
+            % 
             % [chd, wv] = GREENS(...) additionally returns the final
             % waveform convolved across the point scatterers and aperture.
             %
@@ -468,14 +472,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % Note: The precision of the computation is determined by the
             % precision of the transmit pulse. Setting 
-            % `self.fs = single(self.fs);` before calling greens or
-            % `[...] = greens(..., 'fsk', single(fsk), ...);` can
-            % dramatically accelerate computation time on consumer GPUs,
+            %       `self.fs = single(self.fs);` 
+            % before calling greens or
+            %       `[...] = greens(..., 'fsk', single(fsk), ...);` 
+            % can dramatically accelerate computation time on consumer GPUs
             % which may have a performance ratio of 32:1 or 64:1 for
             % single:double types.
             % 
             % Example:
-            % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % us.fs = single(us.fs); % use single precision for speed
@@ -501,6 +505,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = 1; % number of simulataneous scatterers
                 kwargs.verbose (1,1) logical = false;
                 kwargs.fsk (1,1) {mustBePositive} = self.fs % input kernel sampling frequency
+                kwargs.R0 (1,1) double {mustBeNonnegative} = self.lambda % minimum distance for divide by 0
             end
             
             % get the centers of all the sub-elements
@@ -569,7 +574,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), self.rx.numel, self.tx.numel, prod(element_subdivisions));
             x   = complex(zeros([1 T N M 0], 'like', kern)); % set size/type
-            x(:,:,:,:,1) = 0; % pre-allocate
+            x(:,:,:,:,1) = 0; % pre-allocate (once, not twice)
 
             % splice
             c0  = scat(f).c0;
@@ -605,21 +610,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % re-map sizing
                 [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
 
-                % compute the minimum and maximum time delay for each scatterer
+                % compute the minimum and maximum distance for each scatterer
                 if use_gdev, ps = gpuArray(ps); end
                 [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1) ./ c0); end % minimum scat time
-                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1) ./ c0); end % maximum scat time
-                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1) ./ c0); end % minimum scat time
-                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1) ./ c0); end % maximum scat time
+                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
+                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1)); end % minimum scat time
+                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1)); end % maximum scat time
                 [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
 
-                % sort points by their maximum delay
-                [~, i] = sort(rmax); % get sorting
+                % sort points by geometric mean of minimum/maximum distance
+                [~, i] = sort((rmin .* rmax)); % get sorting
                 [ps, as, rmin, rmax] = dealfun(@(x)sub(x,i,2), ps,as,rmin,rmax); % apply to all position variables
 
                 % get the index bounds for the output time axis
-                sb = ([rmin; rmax] + t0x - t0k) * fso + [0; QT];
+                sb = ([rmin; rmax] ./ c0 + t0x - t0k) * fso + [0; QT];
 
                 % grab the kernel reference
                 if use_gdev
@@ -656,15 +661,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 
                 % call the kernel
                 if kwargs.verbose, fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
-                x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fso, wv.fs/fso, cinv_], [E,E], flagnum);
+                x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fso, wv.fs/fso, cinv_, kwargs.R0], [E,E], flagnum);
                 
             else % operate in native MATLAB
                 % make time in dim 2
                 tvec = reshape(t,1,[]); % 1 x T full time vector
                 kern_ = reshape(kern,1,[]); % 1 x T' signal kernel
-
-                % switch scat positions to S x 3
-                pos = pos.';
+                K = length(kern_); % kernel length in indices
 
                 % TODO: set data types | cast to GPU/tall? | reset GPU?
                 if kwargs.device > 0, gpuDevice(kwargs.device); end
@@ -678,6 +681,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                         );
                 end
 
+                % compute the maximum distance for each scatterer
+                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
+                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(pos - p, 2, 1)); end % minimum scat time
+                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(pos - p, 2, 1)); end % maximum scat time
+                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(pos - p, 2, 1)); end % minimum scat time
+                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(pos - p, 2, 1)); end % maximum scat time
+                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+                [rmin, rmax] = gather(rmin, rmax);
+
+                % sort points by geometric mean of minimum/maximum distance
+                [~, i] = sort((rmin .* rmax)); % get sorting
+                [pos, amp] = deal(pos(:,i)', amp(:,i)'); % sort and transpose (S x 3) / (S x 1)
+                [rmin, rmax] = deal(rmin(i), rmax(i)); % sort
+                
                 % for each tx/rx pair, extra subelements ...
                 % TODO: parallelize where possible
                 svec = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:scat(f).numScat-1), 1);
@@ -694,9 +711,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
                             tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
                             tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
+                            if kwargs.R0 % propagation loss min distance
+                                r_rx = max(r_rx, kwargs.R0); % avoid div by 0
+                                r_tx = max(r_tx, kwargs.R0); % avoid div by 0
+                                att  = kwargs.R0^-2; % scale by max energy
+                            else
+                                [r_rx, r_tx, att] = deal(1); % no propagation loss
+                            end
 
                             % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
-                            att = sub(amp.',s,1);% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
+                            att = att .* sub(amp,s,1) ./ (r_rx .* r_tx); % propagation attenuation
 
                             % get 0-based sample time delay
                             % switch time and scatterer dimension
@@ -705,10 +729,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             fsr = wv.fs / self.fs; % sampling frequency ratio 
                             % - stretch factor from output to input time domains
 
+                            % convert time delays to indices
+                            tau_tx = tau_tx * self.fs;
+                            tau_rx = tau_rx * self.fs;
+                            t0     = t0     * self.fs;
+
                             % S x T x N x M x 1 x 1
                             if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
                                 % compute as a tall array  % S | T x N x M x 1 x 1
-                                tau = tvec - (tau_tx + tau_rx + t0)*self.fs; % create tall ND-array
+                                tau = tvec - (tau_tx + tau_rx + t0); % create tall ND-array
                                 s_ = matlab.tall.transform( ...
                                     @(tau, att) wsinterpd(kern_, fsr * tau, 2, att ./ fsr, 1, kwargs.interp, 0), ...
                                     ... @(x) sum(x, 1, 'omitnan'), ... reduce
@@ -720,15 +749,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                             else
                                 % compute natively
-                                % TODO: compute where we actually receive a response
-                                tau = (tau_tx + tau_rx + t0)*self.fs; % S x 1 x N x M x 1 x 1
-                                it = tvec == tvec; %(1 x T')
-                                it = it & T-1 >= tvec - max(tau(:));
-                                it = it &   0 <= tvec - min(tau(:));
+                                % tau = (tau_tx + tau_rx + t0); % S x 1 x N x M x 1 x 1
+                                tmax = (t0 + self.fs * max(rmax(s)) / c0);
+                                tmin = (t0 + self.fs * min(rmin(s)) / c0);
+                                it = (tmin - K-1) <= tvec  & tvec <= (tmax + K+1); %(1 x T')
 
                                 % compute only for this range and sum as we go
                                 % (1 x T' x N X M)
-                                s_ = nan2zero(wsinterpd(kern_, fsr * (tvec(it) - tau), 2, att ./ fsr, 1, kwargs.interp, 0));
+                                s_ = nan2zero(wsinterpd2(kern_, fsr * (tvec(it) - tau_rx - t0), - fsr * tau_tx, 2, att ./ fsr, 1, kwargs.interp, 0));
 
                                 % add contribution (1 x T x N X M)
                                 x(1,it,:,:,:,:) = x(1,it,:,:,:,:) + s_;
@@ -4158,7 +4186,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % apod = APAPERTUREGROWTH(us, f, Dmax) restricts the
             % maximum size of the aperture to Dmax. The default is Inf.
             %
-            % The Transducer us.rx must be a TransducerArray.
+            % The Transducer us.rx must be a TransducerArray or 
+            % TransducerConvex.
             %
             % The output apod has dimensions I1 x I2 x I3 x N x M where
             % I1 x I2 x I3 are the dimensions of the scan, N is the number
@@ -4203,26 +4232,43 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % soft validate the transmit sequence and transducer types.
-            if ~isa(us.rx, 'TransducerArray'), warning(...
-                    "Expected Transducer to be a TransducerArray but instead got a " + class(us.rx) + ". This may produce unexpected results."...
+            if ~(isa(us.rx, 'TransducerArray') || isa(us.rx, 'TransducerConvex')), warning(...
+                    "Expected Transducer to be a TransducerArray or TransducerConvex but instead got a " + class(us.rx) + ". This may produce unexpected results."...
                     )
             end
 
-            % TODO: generalize to polar
             % get the transmit foci lateral position, M in dim 6
             % Pv = swapdim(sub(seq.focus,1:3,1), 2, 6);
 
-            % get the receiver lateral positions, N in dim 5
+            % get the receiver lateral/axial positions, N in dim 5
             Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
+            [Xn, Zn] = deal(sub(Pn,1,1), sub(Pn,3,1)); % (1 x 1 x 1 x 1 x N)
 
-            % get the pixel positions in the proper dimensions
-            Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
-            Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            % calculate x and z for scan
+            if isa(us.scan, 'ScanPolar') % polar scan -> convert to Cartesian
+                r = swapdim(us.scan.r, 2, 1+us.scan.rdim);
+                a = swapdim(us.scan.a, 2, 1+us.scan.adim);
+                Xi = r .* sind(a) + us.scan.origin( 1 ); % (1 x I1 x I2 x 1)
+                Zi = r .* cosd(a) + us.scan.origin(end); % (1 x I1 x I2 x 1)
+            else % already in Cartesian
+                % get the pixel positions in the proper dimensions
+                Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
+                Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            end 
 
             % get the equivalent aperture width (one-sided) and pixel depth
-            % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
-            d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
-            z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            if isa(us.rx, 'TransducerConvex') % convex array width and depth calculation
+                ae = swapdim(us.rx.orientations(), 2, 5); % angles of elements, in degrees
+                rp = hypot( Xi - Xn, Zi - Zn); % radii to scan points
+                ap = atan2d(Xi - Xn, Zi - Zn); % angles to scan points
+                d =     rp .* sind(ap - ae) ; % equivalent one-sided widths for points
+                z = abs(rp .* cosd(ap - ae)); % equivalent depth for points; take abs() to use same apodization calculation as linear arrays
+            else % linear array width and depth calculation
+                d = Xn - Xi; % one-sided width where 0 is aligned with the pixel
+                z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            end
+
+            % determine apodization 
             apod = z > f * abs(2*d) ; % restrict the f-number
             apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
 

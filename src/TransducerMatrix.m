@@ -127,8 +127,9 @@ classdef TransducerMatrix < Transducer
             p = cat(2, x(:), y(:), z(:));
             if any(self.rot)
                 q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-                p = rotatepoint(q,p)' + self.offset + self.mux_offset;
+                p = rotatepoint(q,p)';
             end
+            p = p + self.offset + self.mux_offset;
             % returns a 1 x N vector of the positions of the N elements with 0
             % at the center
         end

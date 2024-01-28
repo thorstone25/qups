@@ -622,6 +622,57 @@ classdef Sequence < matlab.mixin.Copyable
         end
     end
     
+    % transmit sequence generator functions
+    methods(Static)
+        function apd = apWalking(N, sz, str, off)
+            % APWALKING - Generate a walking active aperture
+            %
+            % apd = apWalking(N, sz) generates a walking active aperture
+            % apodization array apd for a Transducer with N elements with
+            % sz contiguous elements active per transmit. This method is
+            % valid for 1D Transducers with contiguous elements e.g. a
+            % TransducerArray or TransducerConvex.
+            % 
+            % apd = apWalking(N, sz, str) additionally sets the stride str
+            % between active apertures. The default is 1.
+            % 
+            % apd = apWalking(N, sz, str, off) additionally sets an offset
+            % for the first active aperture. The default is 0.
+            %
+            % Example:
+            % % Create a Transducer
+            % xdc = TransducerArray.L12_3v(); % 192 elements
+            % 
+            % % Generate active apertures of 64 elements moving by 4
+            % apd = Sequence.apWalking(xdc.numel, 64, 4);
+            %
+            % % Create corresponding focal positions
+            % zf  = 50e-3; % focal depth
+            % pf  = xdc.focActive(apd, zf);
+            % 
+            % % Create a focused Sequence
+            % seq = Sequence('type','FC', 'focus',pf);
+            % seq.apodization_ = apd;  % set apodization
+            % 
+            % % Create and plot the system
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
+            % plot(us);
+            % 
+            % See also SEQUENCE.APODIZATION_ TRANSDUCER.FOCACTIVE
+
+
+            arguments
+                N (1,1) % number of total elements
+                sz (1,1) {mustBePositive, mustBeInteger} % active size
+                str (1,1) {mustBePositive, mustBeInteger} = 1 % stride
+                off (1,1) {mustBeNonnegative, mustBeInteger} = 0 % starting offset
+            end
+            apd = cell2mat(arrayfun(@(i){ ...
+                circshift((1:N)' <= sz, i) ...
+                }, off : str : max(off,N-sz)));
+        end
+    end
+
     % temporal response methods
     methods   
         function tau = delays(self, tx)
