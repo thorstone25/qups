@@ -11,10 +11,10 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
     - Arbitrary pixel locations and beamforming apodization
     
 - Performant:
-    - Hardware acceleartion via GPU or multi-threaded CPU
+    - Hardware acceleartion via CUDA, OpenCL, and MATLAB parallel processing
     - Memory efficient data types
     - Beamform a 1024 x 1024 image for 256 x 256 transmits/receives in < 2 seconds (RTX 3070)
-    - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) and scale to a cluster via the [parallel server](https://www.mathworks.com/help/matlab-parallel-server/) toolbox
+    - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) or scale to a cluster via the [parallel server](https://www.mathworks.com/help/matlab-parallel-server/) toolbox
 
 - Modular:
     - Transducer, pulse sequence, pulse waveform, scan region etc. each defined separately
@@ -99,7 +99,8 @@ All extensions to QUPS are optional, but must be installed separately from their
 | [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`|
 | k-Wave([base](http://www.k-wave.org/index.php), [extension](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources)) | distributed medium simulator | `addpath path/to/kWave, addpath path/to/kWaveArray` |
 | [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST` (see issues[#2](https://github.com/thorstone25/qups/issues/2))|
-| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration| see [CUDA Extension](####CUDA-Extension) |
+| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | see [CUDA Extension](####CUDA-Extension) |
+| [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))|
 
 
 ### CUDA Extension

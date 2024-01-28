@@ -55,9 +55,9 @@ assert(isempty(setxor(ord, 1:maxdims)), 'Unable to identify all dimensions: this
 % get the data sizing
 T = size(x, dim);
 I = size(t, dim);
-if isempty(mdms), N = 1; else, N = prod(size(t, mdms)); end
-if isempty(rdms), M = 1; else, M = prod(size(t, rdms)); end
-if isempty(rdms), F = 1; else, F = prod(size(x, rdms)); end
+N = prod(esize(t, mdms));
+M = prod(esize(t, rdms));
+F = prod(esize(x, rdms));
 
 % move the input data to the proper dimensions for the GPU kernel
 if ~isequal(ord, 1:length(ord)) % avoid data copy if already ordered
@@ -68,28 +68,33 @@ end
 % function to determine type
 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
+if exist('oclDeviceCount','file') && oclDeviceCount(), ocl_dev = oclDevice(); else, ocl_dev = []; end % get oclDevice if supported
+
+use_gdev = exist('interpd.ptx', 'file') ...
+        && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') || isa(x, 'halfT') && x.gtype) ...
+        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])); ... 
+
+use_odev = exist('interpd.cl', 'file') ...
+        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
+        && ~isempty(ocl_dev) && ...
+        (  (isftype(x,'double') && ocl_dev.SupportsDouble) ...
+        || (isftype(x,'single')                          ) ... always supported
+        || (isftype(x,'halfT' ) && ocl_dev.SupportsHalf  ));
+
 % use ptx on gpu if available or use native MATLAB
-if exist('interpd.ptx', 'file') ...
-        && ( isa(x, 'gpuArray') || isa(t, 'gpuArray') ) ...
-        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"]))
+if use_gdev || use_odev
     
     % determine the data type
     if     isftype(x, 'double')
-        suffix = "" ; [x,t] = dealfun(@double, x, t);
+        suffix = "" ; prc = 64; [x,t] = dealfun(@double, x, t);
     elseif isftype(x, 'single')
-        suffix = "f"; [x,t] = dealfun(@single, x, t);
-    elseif isftype(x, 'halfT'  )
-        suffix = "h"; [x,t] = dealfun(@(x)gpuArray(halfT(x)), x, t); % custom type
+        suffix = "f"; prc = 32; [x,t] = dealfun(@single, x, t);
+    elseif isftype(x, 'halfT' )
+        suffix = "h"; prc = 16; [x,t] = dealfun(@(x)gpuArray(halfT(x)), x, t); % custom type
     else
+        suffix = "f"; prc = 32;
         warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
-        suffix = "f" ;
     end
-
-    % grab the kernel reference
-    k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix); 
-    k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
-    k.ThreadBlockSize = min(k.MaxThreadsPerBlock,M*I); % I and M are indexed together
-    k.GridSize = [ceil(I*M ./ k.ThreadBlockSize(1)), N, 1];
 
     % translate the interp flag
     switch interp
@@ -100,6 +105,9 @@ if exist('interpd.ptx', 'file') ...
         otherwise, error('Interp option not recognized: ' + string(interp));
     end
 
+    % cache data prototype
+    x0 = zeros(0, 'like', x);
+
     % condition inputs/outputs
     osz = [I, max(size(t,2:maxdims), size(x,2:maxdims))];
     x = complex(x); % enforce complex type
@@ -108,15 +116,43 @@ if exist('interpd.ptx', 'file') ...
             y = complex(gpuArray(halfT(repelem(extrapval,osz))));
             [y_,x_,t_] = dealfun(@(x)x.val, y,x,t);
         otherwise % others
-            y = repmat(cast(extrapval, 'like', x), osz);
+            y = complex(repmat(cast(extrapval, 'like', x), osz));
             [y_,x_,t_] = deal(y,x,t);
     end
+    
+    if use_gdev
+        % grab the kernel reference
+        k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix);
+        
+        % set constants
+        k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
+    
+    elseif use_odev
+        % get the kernel reference
+        k = oclKernel(which('interpd.cl'), 'interpd');
 
+        % set the data types
+        switch prc, case 16, tp = 'uint16'; case 32, tp = 'single'; case 64, tp = 'double'; end
+        k.defineTypes({tp,tp}); % all aliases are this type
+
+        % configure the kernel sizing and options
+        k.macros = "QUPS_" + ["I", "T", "S", "N", "F"] + "=" + uint64([I T M N F]); % size constants
+        k.macros = [k.macros, "QUPS_INTERPD_" + ["NO_V","FLAG"] ...
+            + "=" + ["0."+suffix, flagnum]]; % input constants
+        k.macros(end+1) = "QUPS_PRECISION="+prc;
+        % k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable"];
+    end
+    
+    % kernel sizing
+    k.ThreadBlockSize(1) = min(k.MaxThreadsPerBlock,M*I); % I and M are indexed together
+    k.GridSize = [ceil(I*M ./ k.ThreadBlockSize(1)), N, 1];
+    
     % sample
     y_ = k.feval(y_, x_, t_, flagnum); % compute
 
     % restore type
-    switch suffix, case "h", y.val = y; otherwise y = y_; end
+    if isreal(x0), y_ = real(y_); end
+    switch suffix, case "h", y.val = y; otherwise, y = y_; end
 else
     % get new dimension mapping
     [~, tmp] = cellfun(@(x) ismember(x, ord), {dim, mdms, rdmst, rdmsx}, 'UniformOutput',false);
@@ -154,4 +190,4 @@ if ~isequal(ord, 1:length(ord)) % avoid data copy if already ordered
     y = ipermute(y, ord);
 end
 
-
+function sz = esize(x, sz), if ~isempty(sz), sz = size(x, sz); end

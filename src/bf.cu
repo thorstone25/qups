@@ -47,8 +47,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     const U * __restrict__ Pi, const U * __restrict__ Pr, 
     const U * __restrict__ Pv, const U * __restrict__ Nv, 
 	const U2 * __restrict__ a, const U * __restrict__ cinv, const size_t * acstride, 
-    const U2 * __restrict__ x,
-	const U t0fsfc[3], const int flag) {
+    const U2 * __restrict__ x, const U t0fsfc[2], const int flag) {
     
     // unpack
     // const U t0   = t0fsfc[0]; // start time
@@ -138,7 +137,7 @@ __global__ void DAS(double2 * __restrict__ y,
     const double * __restrict__ Pv, const double * __restrict__ Nv, 
     const double2 * __restrict__ a, const double * __restrict__ cinv, const size_t * acstride,
 	const double2 * __restrict__ x, const int iflag,
-	const double tvars[3]) {
+	const double tvars[2]) {
     DAS_temp<double, double2, double3, double4>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag);
 }
 
@@ -147,7 +146,7 @@ __global__ void DASf(float2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
     const float2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride,
 	const float2 * __restrict__ x, const int iflag,
-	const float tvars[3]) {
+	const float tvars[2]) {
     DAS_temp<float, float2, float3, float4>(y, Pi, Pr, Pv, Nv, a, cinv, acstride, x, tvars, iflag);
 
 }
@@ -158,7 +157,7 @@ __global__ void DASh(ushort2 * __restrict__ y,
     const float * __restrict__ Pv, const float * __restrict__ Nv, 
 	const ushort2 * __restrict__ a, const float * __restrict__ cinv, const size_t * acstride, 
     const ushort2 * __restrict__ x, const int iflag,
-	const float tvars[3]) {
+	const float tvars[2]) {
     DAS_temp<float, half2, float3, float4>((half2 *)y, Pi, Pr, Pv, Nv, (const half2 *)a, cinv, acstride, (const half2 *)x, tvars, iflag);
 }
 #endif
@@ -210,7 +209,7 @@ __global__ void delaysf(float * __restrict__ tau,
     // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
     const float3 * pi = reinterpret_cast<const float3*>(Pi); // 3 x I
     const float3 * pr = reinterpret_cast<const float3*>(Pr); // 3 x N
-    const float3 * pv = reinterpret_cast<const float3*>(Pv); // 3 x M
+    const float4 * pv = reinterpret_cast<const float4*>(Pv); // 4 x M
     const float3 * nv = reinterpret_cast<const float3*>(Nv); // 3 x M
     
     // rename for readability
@@ -227,7 +226,8 @@ __global__ void delaysf(float * __restrict__ tau,
             # pragma unroll
             for(size_t n = 0; n < N; ++n){
                 // 2-way virtual path distance
-                rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector 
+                const float3 pvm = {pv[m].x,pv[m].y,pv[m].z}; // declared for MSVC (2019)
+                rv = pi[i] - pvm; // (virtual) transmit to pixel vector
                 
                 dv = QUPS_VS ? // tx path length
                     copysign(length(rv), (QUPS_DV ? 1.f : dot(rv, nv[m]))) // virtual source
@@ -255,7 +255,7 @@ __global__ void delays(double * __restrict__ tau,
     // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
     const double3 * pi = reinterpret_cast<const double3*>(Pi); // 3 x I
     const double3 * pr = reinterpret_cast<const double3*>(Pr); // 3 x N
-    const double3 * pv = reinterpret_cast<const double3*>(Pv); // 3 x M
+    const double4 * pv = reinterpret_cast<const double4*>(Pv); // 4 x M
     const double3 * nv = reinterpret_cast<const double3*>(Nv); // 3 x M
     
     // rename for readability
@@ -272,7 +272,8 @@ __global__ void delays(double * __restrict__ tau,
             # pragma unroll
             for(size_t n = 0; n < N; ++n){
                 // 2-way virtual path distance
-                rv = pi[i] - pv[m]; // (virtual) transmit to pixel vector 
+                const double3 pvm = {pv[m].x,pv[m].y,pv[m].z}; // declared for MSVC (2019)
+                rv = pi[i] - pvm; // (virtual) transmit to pixel vector
                 
                 dv = QUPS_VS ? // tx path length
                     copysign(length(rv), (QUPS_DV ? 1.f : dot(rv, nv[m]))) // virtual source

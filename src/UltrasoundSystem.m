@@ -499,7 +499,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
             end
             arguments
-                kwargs.device (1,1) {mustBeInteger} = -logical(gpuDeviceCount()); % gpu device
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.tall (1,1) logical = false; % whether to use a tall type
                 kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = 1; % number of simulataneous scatterers
@@ -545,6 +545,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             wv.fs = kwargs.fsk;
             kern = wv.samples;
 
+            % choose device
+            use_dev = kwargs.device && ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]);
+            use_gdev = use_dev && exist('greens.ptx', 'file') && gpuDeviceCount(); % use the GPU kernel
+            use_odev = use_dev && exist('oclDeviceCount','file') && oclDeviceCount(); % use the OpenCL kernel
+            if use_odev 
+                if kwargs.device > 0, oclDevice(kwargs.device); end % select device
+                dev = oclDevice(); % reference
+                use_odev = isUnderlyingType(kern, "single") ...
+                       || (isUnderlyingType(kern, "double") && dev.SupportsDouble) ...
+                       || (isUnderlyingType(kern, "half"  ) && dev.SupportsHalf);
+            end
+                
             F = numel(scat);
             % if kwargs.verbose, hw = waitbar(0); end
 
@@ -569,15 +581,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             pos = scat(f).pos; % 3 x S
             amp = scat(f).amp; % 1 x S
             fso = self.fs; % output channel data sampling frequency
-            if kwargs.device && exist('greens.ptx', 'file') ... % use the GPU kernel
-                    && (ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]))
+
+            if use_gdev || use_odev
                 % function to determine type
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
                 % determine the data type
-                if     isftype(kern, 'double'), suffix = "" ; cfun = @double;
-                elseif isftype(kern, 'single'), suffix = "f"; cfun = @single;
-                elseif isftype(kern, 'halfT' ), suffix = "h"; cfun = @(x) alias(halfT(x));
+                if     isftype(kern, 'double'), typ = "double"; prc = 64; suffix = "" ; cfun = @double;
+                elseif isftype(kern, 'single'), typ = "single"; prc = 32; suffix = "f"; cfun = @single;
+                elseif isftype(kern, 'halfT' ), typ = "halfT" ; prc = 16; suffix = "h"; cfun = @(x) alias(halfT(x));
                 else,   error("Datatype " + class(kern) + " not recognized as a GPU compatible type.");
                 end
 
@@ -599,7 +611,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
 
                 % compute the minimum and maximum distance for each scatterer
-                ps = gpuArray(ps);
+                if use_gdev, ps = gpuArray(ps); end
                 [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
                 for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
                 for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
@@ -615,13 +627,29 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 sb = ([rmin; rmax] ./ c0 + t0x - t0k) * fso + [0; QT];
 
                 % grab the kernel reference
-                k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
-                k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
-                try k.setConstantMemory('QUPS_T', uint64(QT), ...
-                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ... 
-                    ); end % already set by const compiler
-                try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
-                k.ThreadBlockSize = min([k.MaxThreadsPerBlock, 32]); % smaller is better
+                if use_gdev
+                    k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
+                    k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
+                    try k.setConstantMemory('QUPS_T', uint64(QT), ...
+                            'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ...
+                            ); end % already set by const compiler
+                    try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
+                elseif use_odev
+                    k = oclKernel('greens.cl');
+                    k.macros = [k.macros, "QUPS_"+["S","T","N","M","I"]+"="+uint64([QS,QT,QN,QM,QI])]; % set constants
+                    k.macros(end+1) = "QUPS_PRECISION="+prc;
+                    k.defineTypes(repmat(typ,[1,3]), ["V","T","U"]); % time / data / position
+
+                    % enforce complexity
+                    [x, as, kn] = dealfun(@complex, x, as, kn);
+
+                    % expand positions 3D -> 4D
+                    [ps(4,:), pn(1,4,:), pv(1,4,:)] = deal(0);
+
+                end                
+                
+                % set kernel sizing
+                k.ThreadBlockSize(1) = min([k.MaxThreadsPerBlock, 32]); % smaller is better
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
                 % get the computational bounds
@@ -2485,7 +2513,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 c0(:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
-                kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
                 kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
@@ -2530,7 +2558,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if ~isequal(ord, 1:3), chd = rectifyDims(chd); end % reorder if necessary
 
                 % get the beamformer arguments
-                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
+                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'input-precision', kwargs.prec}; % data args
                 if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
                 ext_args = [interp_args, apod_args]; % extra args
     

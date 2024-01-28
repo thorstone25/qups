@@ -95,11 +95,23 @@ dsizes = [max(size(t1,1),size(t2,1)), max([size(t1,2:S); size(t2,2:S); size(x,2:
 % function to determine type
 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
-% use ptx on gpu if available or use native MATLAB
-if exist('interpd.ptx', 'file') ...
+if exist('oclDeviceCount','file') && oclDeviceCount(), ocl_dev = oclDevice(); else, ocl_dev = []; end % get oclDevice if supported
+
+use_gdev = exist('interpd.ptx', 'file') ...
         && ( isa(x, 'gpuArray') || isa(t1, 'gpuArray') || isa(t2, 'gpuArray') || isa(x, 'halfT') && x.gtype) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
-        && real(omega) == 0
+        && real(omega) == 0;
+
+use_odev = exist('interpd.cl', 'file') ...
+        && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
+        && real(omega) == 0 ... 
+        && ~isempty(ocl_dev) && ...
+        (  (isftype(x,'double') && ocl_dev.SupportsDouble) ...
+        || (isftype(x,'single')                          ) ... always supported
+        || (isftype(x,'halfT' ) && ocl_dev.SupportsHalf  ));
+
+% use ptx on gpu if available or use native MATLAB
+if use_gdev || use_odev
 
     % get stride for weighting
     wstride = sz2stride(size(w,1:S));
@@ -117,14 +129,14 @@ if exist('interpd.ptx', 'file') ...
 
     % determine the data type
     if     isftype(x, 'double')
-        suffix = "" ; [x,t1,t2,w] = dealfun(@double, x, t1, t2, w);
+        suffix = "" ; prc = 64; [x,t1,t2,w] = dealfun(@double, x, t1, t2, w);
     elseif isftype(x, 'single')
-        suffix = "f"; [x,t1,t2,w] = dealfun(@single, x, t1, t2, w);
+        suffix = "f"; prc = 32; [x,t1,t2,w] = dealfun(@single, x, t1, t2, w);
     elseif isftype(x, 'halfT'  )
-        suffix = "h"; [x,t1,t2,w] = dealfun(@(x)gpuArray(halfT(x)), x, t1, t2, w); % custom type
+        suffix = "h"; prc = 16; [x,t1,t2,w] = dealfun(@(x)gpuArray(halfT(x)), x, t1, t2, w); % custom type
     else
+        suffix = "f" ; prc = 32;
         warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
-        suffix = "f" ;
     end
 
     % get the data sizing
@@ -132,15 +144,6 @@ if exist('interpd.ptx', 'file') ...
     I = prod(max(esize(t1, [dim, rdmst]), esize(t2, [dim, rdmst])));
     N = prod(esize(x, mdms));
     F = prod(esize(x, rdmsx));
-
-    % grab the kernel reference
-    k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'wsinterpd2' + suffix); 
-    k.setConstantMemory( ...
-        'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
-        'QUPS_N', uint64(N), 'QUPS_F', uint64(F) ...
-        );
-    k.ThreadBlockSize = min(k.MaxThreadsPerBlock,I); % I and M are indexed together
-    k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), min(N, 2^15), ceil(N/2^15)];
 
     % translate the interp flag
     switch interp
@@ -152,8 +155,8 @@ if exist('interpd.ptx', 'file') ...
     end
 
     % enforce complex type for gpu data
-    if isa(x, 'gpuArray') || isa(x, 'halfT'), x = complex(x); end
-    if isa(w, 'gpuArray') || isa(w, 'halfT'), w = complex(w); end
+    if use_odev || isa(x, 'gpuArray') || isa(x, 'halfT'), x = complex(x); end
+    if use_odev || isa(w, 'gpuArray') || isa(w, 'halfT'), w = complex(w); end
     switch suffix
         case "h", 
             y = complex(gpuArray(halfT(zeros(osz))));
@@ -163,7 +166,37 @@ if exist('interpd.ptx', 'file') ...
             [w_,x_,t1_,t2_] = deal(w,x,t1,t2); % copy data
             y_ = zeros(osz, 'like', x_); % pre-allocate output
     end
-     % zeros: uint16(0) == storedInteger(half(0)), so this is okay
+    % zeros: uint16(0) == storedInteger(half(0)), so this is okay
+
+    if use_gdev
+        % grab the kernel reference
+        k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'wsinterpd2' + suffix);
+        k.setConstantMemory( ...
+            'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
+            'QUPS_N', uint64(N), 'QUPS_F', uint64(F) ...
+            );
+        cargs = {flagnum, imag(omega)}; % constant arguments
+    elseif use_odev
+        % get the kernel reference
+        k = oclKernel(which('interpd.cl'), 'wsinterpd2');
+
+        % set the data types
+        switch prc, case 16, t = 'uint16'; case 32, t = 'single'; case 64, t = 'double'; end
+        k.defineTypes({t,t}); % all aliases are this type
+
+        % configure the kernel sizing and options
+        k.macros = "QUPS_" + ["I", "T", "S", "N", "F"] + "=" + uint64([I T S N F]); % size constants
+        k.macros = [k.macros, "QUPS_INTERPD_" + ["NO_V","FLAG","OMEGA"] ...
+            + "=" + ["0."+suffix, flagnum, imag(omega)]]; % input constants
+        k.macros(end+1) = "QUPS_PRECISION="+prc;
+        % k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable"];
+        cargs = {}; 
+    end
+
+    % kernel sizing
+    k.ThreadBlockSize(1) = min(k.MaxThreadsPerBlock,I); % I and M are indexed together
+    k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), min(N, 2^15), ceil(N/2^15)];
+
     % index label flags
     iflags = zeros([1 maxdims], 'uint8'); % increase index i
     iflags(mdms) = 1; % increase index n
@@ -173,7 +206,7 @@ if exist('interpd.ptx', 'file') ...
     strides = cat(1,wstride,ystride,t1stride,t2stride,xstride);
 
     % compute
-    y_ = k.feval(y_, w_, x_, t1_, t2_, dsizes, iflags, strides, flagnum, imag(omega)); 
+    y_ = k.feval(y_, w_, x_, t1_, t2_, dsizes, iflags, strides, cargs{:}); 
 
     % for halfT, store the data back in the output
     switch suffix, case "h", y.val = y_; otherwise, y = y_; end
