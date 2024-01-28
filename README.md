@@ -11,7 +11,7 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
     - Arbitrary pixel locations and beamforming apodization
     
 - Performant:
-    - Hardware acceleartion via CUDA, OpenCL, and MATLAB paralell processing
+    - Hardware acceleartion via CUDA, OpenCL, and MATLAB parallel processing
     - Memory efficient data types
     - Beamform a 1024 x 1024 image for 256 x 256 transmits/receives in < 2 seconds (RTX 3070)
     - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) or scale to a cluster via the [parallel server](https://www.mathworks.com/help/matlab-parallel-server/) toolbox
