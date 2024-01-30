@@ -281,6 +281,42 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             p = reshape(cat(1, p{:}), [3, size(p)]);
         end
 
+        function p = transPos(xdc, p, method)
+            % transPos - Transform positions
+            % 
+            % p = transPos(xdc, p) rotates and translates the matrix of
+            % positions p according to the rotation xdc.rot and translation
+            % xdc.offset. The positions must be a 3 x N array in cartesian
+            % coordinates.
+            %
+            % p = transPos(xdc, p, "quat") uses a quaternionic expression
+            % to performs the rotation.
+            % 
+            % p = transPos(xdc, p, "mat") uses a matrix expression to
+            % performs the rotation. The default is "mat". 
+            %
+            % This method is for internal use, and may be moved or changed
+            % in a future version.
+            % 
+            % See also TRANSDUCER.ROT TRANSDUCER.OFFSET
+
+            arguments
+                xdc Transducer
+                p (3,:)
+                method (1,1) string {mustBeMember(method, ["quat", "mat"])} = "mat" % rotate with quaternions
+            end
+            switch method
+                case "quat"
+                q = prod(quaternion([-xdc.rot(2),0,0;0,xdc.rot(1),0], 'rotvecd'));
+                p = rotatepoint(q, p')' + xdc.offset;
+                case "mat" % rotate with matrices
+                [az, el] = deal(xdc.rot(1), xdc.rot(2)); % azimuth, elevation rotation
+                Raz = [cosd(az), 0, sind(az); 0 1 0; -sind(az), 0, cosd(az)]; % azimuth   rotation (about y)
+                Rel = [1 0 0; 0, cosd(el), sind(el); 0, -sind(el), cosd(el)]; % elevation rotation (about x)
+                p = (Rel * Raz) * p + xdc.offset; % rotation and translation
+            end
+        end
+        
         function pf = focActive(xdc, apd, r)
             % focActive - Create foci for the active apertures
             %
