@@ -92,21 +92,16 @@ classdef TransducerArray < Transducer
     % define position methods
     methods(Access=public)    
         % get methods
-        function p = positions(self)
-            array_width = (self.numel - 1) * self.pitch;
-            x = linspace(-array_width/2, array_width/2, self.numel);
-            p = cat(1, x, zeros(2, numel(x)));
-            if any(self.rot)
-                q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-                p = rotatepoint(q, p')';
-            end
-            p = p + self.offset;
+        function p = positions(xdc)
+            array_width = (xdc.numel - 1) * xdc.pitch;
+            x = linspace(-array_width/2, array_width/2, xdc.numel);
+            p = xdc.transPos([1 0 0]'*x);
         end
         
-        function [theta, phi, normal, width, height] = orientations(self)            
-            theta =  self.rot(1) + zeros([1, self.numel]);
-            phi   = -self.rot(2) + zeros(size(theta));
-            ZERO  = zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(xdc)            
+            theta =  xdc.rot(1) + zeros([1, xdc.numel]);
+            phi   = -xdc.rot(2) + 0 * theta;
+            ZERO  = 0 * theta;
             normal     = [cosd(phi  ).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
             width      = [cosd(theta);              sind(ZERO); -cosd(ZERO).*sind(theta)];
             height     = [sind(phi  ).*sind(ZERO ); cosd(phi );  sind(phi ).*cosd(ZERO )];

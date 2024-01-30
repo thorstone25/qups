@@ -82,25 +82,20 @@ classdef TransducerConvex < Transducer
     % define position methods
     methods
         % get methods                
-        function p = positions(self)
-            array_angular_width = (self.numel - 1)* self.angular_pitch;
-            theta = linspace(-array_angular_width/2, array_angular_width/2, self.numel);
-            z = self.radius * cosd(theta);
-            x = self.radius * sind(theta);
-            y = zeros(size(theta));
-            p = cat(1, x, y, z);
-            if any(self.rot)
-                q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-                p = rotatepoint(q, p')';
-            end
-            p = p + self.center;
+        function p = positions(xdc)
+            array_angular_width = (xdc.numel - 1)* xdc.angular_pitch;
+            theta = linspace(-array_angular_width/2, array_angular_width/2, xdc.numel);
+            z = xdc.radius * cosd(theta);
+            x = xdc.radius * sind(theta);
+            y =      0      *      theta ;
+            p = xdc.transPos([x; y; z]) - [0 0 xdc.radius]';
         end
         
-        function [theta, phi, normal, width, height] = orientations(self)
-            array_angular_width = (self.numel - 1)* self.angular_pitch;
-            theta =  self.rot(1) + linspace(-array_angular_width/2, array_angular_width/2, self.numel);
-            phi   = -self.rot(2) + zeros(size(theta));
-            ZERO  = zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(xdc)
+            array_angular_width = (xdc.numel - 1)* xdc.angular_pitch;
+            theta =  xdc.rot(1) + linspace(-array_angular_width/2, array_angular_width/2, xdc.numel);
+            ZERO  =       0      * theta; % broadcast 
+            phi   = -xdc.rot(2) + ZERO; % implicit broadcast
             normal     = [cosd(phi).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
             width      = [cosd(theta);            sind(ZERO); -cosd(ZERO).*sind(theta)];
             height     = [sind(phi).*sind(ZERO ); cosd(phi );  sind(phi ).*cosd(ZERO )];

@@ -117,26 +117,19 @@ classdef TransducerMatrix < Transducer
     % define position methods
     methods   
         % get methods
-        function p = positions(self)
-            array_width  = (self.numd(1) - 1) * self.pitch(1);
-            array_height = (self.numd(end) - 1) * self.pitch(end);
-            x = linspace(-array_width/2,  array_width/2,  self.numd(1));
-            y = linspace(-array_height/2, array_height/2, self.numd(end));
+        function p = positions(xdc)
+            array_width  = (xdc.numd(1) - 1) * xdc.pitch(1);
+            array_height = (xdc.numd(end) - 1) * xdc.pitch(end);
+            x = linspace(-array_width/2,  array_width/2,  xdc.numd(1));
+            y = linspace(-array_height/2, array_height/2, xdc.numd(end));
             z = 0;
-            [x,y,z] = ndgrid(x,y,z);
-            p = cat(2, x(:), y(:), z(:));
-            if any(self.rot)
-                q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-                p = rotatepoint(q,p)';
-            end
-            p = p + self.offset + self.mux_offset;
-            % returns a 1 x N vector of the positions of the N elements with 0
-            % at the center
+            [x,y,z] = ndgrid(x,y,z); % make grid
+            p = xdc.transPos([x(:), y(:), z(:)]') + xdc.mux_offset;
         end
         
-        function [theta, phi, normal, width, height] = orientations(self)            
-            theta =  self.rot(1) + zeros([1, self.numel]);
-            phi   = -self.rot(2) + zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(xdc)            
+            theta =  xdc.rot(1) + zeros([1, xdc.numel]);
+            phi   = -xdc.rot(2) + zeros(size(theta));
             ZERO  = zeros(size(theta));
             normal     = [cosd(phi).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
             width      = [cosd(theta);            sind(ZERO); -cosd(ZERO).*sind(theta)];
@@ -217,7 +210,7 @@ classdef TransducerMatrix < Transducer
             probe = uff.matrix_array(...
                 'N_x', self.numd(1), ...
                 'N_y', self.numd(end), ...
-                'pitch_x', self.pitch(1), ...
+                'pitch_x', self.pitch( 1 ), ...
                 'pitch_y', self.pitch(end), ...
                 'element_width', self.width, ...
                 'element_height', self.height, ...
