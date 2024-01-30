@@ -1008,6 +1008,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             arguments
                 patch_args.?matlab.graphics.primitive.Patch
                 patch_args.DisplayName = 'Elements'
+                patch_args.FaceColor   = 'flat'
+                patch_args.EdgeColor   = 'black'
                 xdc_args.el_sub_div (1,2) double {mustBeInteger, mustBePositive} = [1 1];
             end
 
