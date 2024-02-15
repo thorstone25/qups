@@ -62,8 +62,7 @@ seq = Sequence('type', 'FSA', 'numPulse', xdc.numel);
 
 % setup a Hadamard encoded transmit
 % NOTE: array size N is supported only where N, N/12 or N/20 is a power of 2.
-seq = Sequence('type', 'FSA', 'numPulse', xdc.numel);
-seq.apodization_ = hadamard(xdc.numel); % set hidden apodization matrix
+seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'apd', hadamard(xdc.numel));
 
 % ---------- Plane Wave Sequences -------- %
 % setup a plane wave (PW) sequence
@@ -89,8 +88,7 @@ for i = 1 : Nv
     % get focal positions centered on the active aperture
     pf(:,i) = mean(pn(:, logical(apod(:,i))),2); 
 end
-seq = Sequence('type','FC','focus',pf);
-seq.apodization_ = apod; % set hidden apodization matrix
+seq = Sequence('type','FC','focus',pf, 'apd', apod);
 
 % setup a walking transmit aperture focused pulse (FC) for a curvilinear array
 xdc = TransducerConvex();
@@ -111,8 +109,8 @@ seq = SequenceRadial( ...
     'angles',tha, ...
     'ranges',norm(xdc.center) + rfocal, ...
     'apex',xdc.center ...
+    ,'apd', apod ...
     );
-seq.apodization_ = apod; % set hidden apodization matrix
 
 % --------- Arbitrary Delay Sequences ----------- %
 % Create an arbitrary-delay sequence

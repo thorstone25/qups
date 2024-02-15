@@ -47,16 +47,22 @@ if ~exist('UltrasoundSystem.m','file')
 
     % setup;  % add all the necessary paths
     % setup parallel; % start a parpool for faster CPU processing
-    setup CUDA cache; % setup CUDA paths & recompile and cache local mex/CUDA binaries
+    setup CUDA cache; % setup CUDA paths & recompile and cache local mex/CUDA binaries (ignore any warnings)
 end
+
+% if Matlab-OpenCL is installed, you can select an OpenCL device to
+% accelerate some functions
+if exist('oclDeviceCount', 'file') && oclDeviceCount()
+    oclDevice(1); % select the first OpenCL device
+end 
 %% Create a simple simulation
 % Create some Scatterers
 
-switch "array"
+switch "grid"
     case 'single'  
         target_depth = 1e-3 * 30;
         scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500); % simple point target
-    case 'array'  
+    case 'grid'  
         [~, px, py, pz] = ndgrid(0, -10:5:10, 0, 20:10:40); % grid in each axes
         ps = [px; py; pz]; % form a grid of point targets
         scat = Scatterers('pos', 1e-3 * ps(:,:), 'c0', 1500); % targets every 5mm
@@ -156,8 +162,6 @@ elseif isa(xdc, 'TransducerConvex')
         ); % R x A scan
 
 end
-%% 
-% 
 
 % create a distributed medium based on the point scatterers 
 % (this logic will later be implemented in a class)
@@ -190,7 +194,7 @@ figure; hold on; title('Geometry');
 imagesc(med, tscan, 'props', "c"); colorbar; % show the background medium for the simulation/imaging region
 
 % Construct an UltrasoundSystem object, combining all of these properties
-fs = single(ceil(2*us.xdc.bw(end)/1e6)*1e6);
+fs = single(ceil(2.5*xdc.bw(end)/1e6)*1e6);
 us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', fs, 'recompile', false);
 
 % plot the system
@@ -233,8 +237,8 @@ h = imagesc(chd0);
 colormap jet; colorbar; 
 cmax = gather(mod2db(max(chd0.data(:)))); % maximum power
 caxis([-80 0] + cmax); % plot up to 80 dB down
-animate(chd0.data, h, 'fs', 10, 'loop', false); % show all transmits
-% for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; pause(1/10); end % implement above manually for live editor
+% animate(chd0.data, h, 'fs', 10, 'loop', false); % show all transmits
+for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; pause(1/10); end % implement above manually for live editor
 %% Create a B-mode Image
 
  
@@ -243,13 +247,14 @@ animate(chd0.data, h, 'fs', 10, 'loop', false); % show all transmits
 
 % Precondition the data
 chd = singleT(chd0); % convert to single precision to use less data
-if gpu, chd = gpuArray(chd); end % move data to GPU
+if gpu, chd = gpuArray(chd); end % move data onto a GPU if one is available
 
 % optionally apply a passband filter to retain only the bandwidth of the transducer
 D = chd.getPassbandFilter(xdc.bw, 25); % get a passband filter for the transducer bandwidth
 chd = filter(chd, D); % apply passband filter for transducer bandwidth
 
-if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
+% apply hilbert on real data to get the complex analog
+if isreal(chd.data), chd = hilbert(chd, 2^nextpow2(chd.T)); end 
 
 % optionally demodulate and downsample the data
 demod = false;
@@ -265,21 +270,31 @@ if demod
     chd = downmix(chd, fmod); % downmix - this reduces the central frequency of the data    
     chd = downsample(chd, floor(chd.fs / fmod)); % now we can downsample without losing information
 else
-    fmod = 0;
-end % demodulate and downsample (by any whole number)
+    fmod = 0; % no modulation
+end
 
-% Choose how to scale apodization: laterally or angularly
+% Choose how to scale apodization, laterally or angularly
 switch class(xdc)
-    case 'TransducerArray' , scl = xdc.pitch;         % Definitions in elements
-    case 'TransducerConvex', scl = xdc.angular_pitch; % Definitions in degrees
-    case 'TransducerMatrix', scl = min(xdc.pitch);    % Definitions in elements
+    case 'TransducerArray' , scl = xdc.pitch;           % Definitions in elements
+    case 'TransducerConvex', scl = xdc.angular_pitch;   % Definitions in degrees
+    case 'TransducerMatrix', scl = min(abs(xdc.pitch)); % Definitions in elements
+    otherwise,               scl = us.lambda;           % unknown - default to 1 wavelength
+        warning("Unknown scaling for a "+class(xdc)+": defaulting to 1 wavelength.");
 end
 
 % Choose the apodization (beamforming weights)
 
 %% 
-% Choose (an) apodization scheme(s) suitable for the transmit sequence. Some 
-% of these can be combined. 
+% Choose apodization scheme(s) suitable for the transmit sequence.
+% 
+% Scanline / Multiline <- Use either of these with focused or diverging sequences 
+% (FC / DV) to emulate a traditional "scan-line" beamformer
+% 
+% Translating Aperture <- Use this with focused or diverging sequences (FC / 
+% DV) to restrict the number of active elements per transmit
+% 
+% Aperture Growth / Acceptance Angle <- Use either of these with any sequence 
+% to improve SNR throughtou the image
 
 apod = 1;
 if false, apod = apod .* apMultiline(us); end
@@ -298,6 +313,9 @@ switch "DAS"
         b = DAS(      us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
     case "DAS"
         b = bfDAS(    us, chd, bf_args{:}); % use a generic delay-and-sum beamformer
+    case "DASLUT"
+        [~, tau_rx, tau_tx] = bfDAS(us, chd, 'delay_only', true); % pre-compute delays
+        b = bfDASLUT( us, chd, tau_rx, tau_tx, bf_args{:}); % use a look-up table with pre-computed delays
     case "Adjoint"
         b = bfAdjoint(us, chd, bf_args{:}, 'fthresh', -20); % use an adjoint matrix method, top 20dB frequencies only
     case "Eikonal"
