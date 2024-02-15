@@ -1012,6 +1012,13 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         function set.origin(self, o), self.offset = -o; end
     end
 
+    % heterogeneous support
+    methods (Static,Sealed,Access = protected)
+        function xdc = getDefaultScalarElement()
+            xdc = TransducerGeneric(); % default heterogeneous instance
+        end
+    end
+
     % plot functions
     methods
         function hp = patch(self, varargin, patch_args, xdc_args)
