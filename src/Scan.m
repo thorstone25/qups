@@ -184,14 +184,11 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         % See also: GETIMAGINGGRID
     end
 
-    % mixin support
+    % heterogeneous support
     methods (Static,Sealed,Access = protected)
         function scan = getDefaultScalarElement()
             scan = ScanCartesian(); % default heterogeneous instance
         end
-    end
-    methods(Sealed, Access=protected)
-
     end
 
     % object display

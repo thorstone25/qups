@@ -343,8 +343,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % 
             % % Create a focused Sequence at a range of 50mm
             % pf = xdc.focActive(apd, 50e-3);
-            % seq = SequenceRadial('type','FC', 'focus',pf, 'apex',xdc.center); 
-            % seq.apodization_ = apd; % set apodization
+            % seq = SequenceRadial( ...
+            %     'type','FC', 'focus',pf, 'apd',apd, 'apex',xdc.center ...
+            % ); 
             % 
             % % Create and plot the system
             % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
@@ -964,11 +965,11 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
     methods
         function impulse = ultrasoundTransducerImpulse(xdc)
             % ULTRASOUNDTRANSDUCERIMPULSE - create an impulse response Waveform
-            % 
+            %
             % impulse = ULTRASOUNDTRANSDUCERIMPULSE(xdc) creates a gaussian
             % pulse Waveform with the bandwidth and fractional bandwidth of
             % the Transducer xdc.
-            % 
+            %
             % See also WAVEFORM.DELTA()
 
             % defaults

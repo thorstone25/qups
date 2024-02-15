@@ -532,7 +532,6 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
             % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
 
-
             % defaults
             if nargin < 3, N = 25; end
 
@@ -540,7 +539,7 @@ classdef ChannelData < matlab.mixin.Copyable
             D = designfilt('bandpassfir', ...
                 'SampleRate',chd.fs, ...
                 'FilterOrder', N, ...
-                'CutoffFrequency1', bw(1), ...
+                'CutoffFrequency1', bw( 1 ), ...
                 'CutoffFrequency2', bw(end), ...
                 'DesignMethod', 'window' ...
                 );
@@ -557,7 +556,6 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
             % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
-
 
             % defaults
             if nargin < 3, N = 25; end

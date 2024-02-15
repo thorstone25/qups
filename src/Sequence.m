@@ -19,9 +19,9 @@
 % For types 'FC' (focused), 'DV' (diverging), the foci are spatial
 % positions and time 0 is when the wavefront passes through the foci.
 % 
-% Use type 'FSA' and set the hidden `delays_` and/or `apodization_`
-% properties to use custom transmit delays and apodization. These will be
-% compatible with all simulation methods.
+% Use type 'FSA' and set the `del` and/or `apd` properties to use custom 
+% transmit delays and apodization. These will be compatible with all
+% simulation methods.
 % 
 % 
 % See also: SEQUENCERADIAL SEQUENCEGENERIC WAVEFORM
@@ -592,7 +592,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 if ismux,   api = ap(:, TX(i).aperture); 
                 else,       api = ap(logical(ap)); 
                 end %       selected aperture
-                j = logical(api); % active elements
+                j = logical(api); % active elements (indexed different on TX than RX ?!?)
                 apdtx(j,i) = apd(i,:); % apodization
                 tautx(j,i) = tau(i,:); % delays
             end
@@ -673,7 +673,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                         "QUPS:Verasonics:overrideSequenceApodization", ...
                         "Overriding QUPS apodization with Vantage defined values." ...
                         );
-                    seq.apodization_ = apdtx;
+                    seq.apd = apdtx;
             end
 
             % validate the delays
@@ -695,7 +695,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                     "QUPS:Verasonics:overrideSequenceDelays", ...
                     "Overriding QUPS delays with Vantage defined values." ...
                     );
-                seq.delays_ = tautx;
+                seq.del = tautx;
             end
 
             % import waveform
@@ -734,8 +734,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % pf  = xdc.focActive(apd, zf);
             % 
             % % Create a focused Sequence
-            % seq = Sequence('type','FC', 'focus',pf);
-            % seq.apodization_ = apd;  % set apodization
+            % seq = Sequence('type','FC', 'focus',pf, 'apd', apd);
             % 
             % % Create and plot the system
             % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
@@ -851,13 +850,8 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % apd = abs(xn - xf) <= 32/2; % (N x S) array
             % 
             % % construct the Sequence
-            % seq = Sequence(...
-            % 'type', 'FC', ...
-            % 'focus', [0;0;30e-3] + xf .* [1;0;0] ...
-            % );
-            % 
-            % % Define the apodization
-            % seq.apodization_ = apd; % set the hidden property
+            % pf = [0;0;30e-3] + xf .* [1;0;0];
+            % seq = Sequence('type','FC', 'focus',pf, 'apd',apd);
             % 
             % See also DELAYS
             arguments
