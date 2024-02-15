@@ -11,7 +11,7 @@
 % 
 % See also SCANCARTESIAN SCANPOLAR
 
-classdef Scan < matlab.mixin.Copyable
+classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixin.CustomDisplay
     properties(Abstract)
         % ORDER - ordering of the dimension of the imaging grid
         %
@@ -167,6 +167,7 @@ classdef Scan < matlab.mixin.Copyable
         scale(scan, kwargs)
     end
 
+    % positions
     methods
         function  p = positions(scan), p = scan.getImagingGrid("vector", true); end
         % POSITIONS - get the multi-dimensional grid positions
@@ -181,7 +182,57 @@ classdef Scan < matlab.mixin.Copyable
         % 'order' property of the Scan.
         %
         % See also: GETIMAGINGGRID
+    end
+
+    % mixin support
+    methods (Static,Sealed,Access = protected)
+        function scan = getDefaultScalarElement()
+            scan = ScanCartesian(); % default heterogeneous instance
+        end
+    end
+    methods(Sealed, Access=protected)
+
+    end
+
+    % object display
+    methods (Sealed, Access = protected)
+        function header = getHeader(obj)
+            header = getHeader@matlab.mixin.CustomDisplay(obj);
+        end
+
+        function groups = getPropertyGroups(scan)
+            if ~isscalar(scan)
+                groups = getPropertyGroups@matlab.mixin.CustomDisplay(scan);
+            else % scan is scalar - show info in groups
+                axs = arrayfun(@string, lower(scan.order)); % axes (in order)
+                ax = matlab.mixin.util.PropertyGroup(["order", axs], "Axes");
+                sz = matlab.mixin.util.PropertyGroup(["size", "nPix", "n"+axs], "Shape");
+                rs = matlab.mixin.util.PropertyGroup(["d"+axs], "Resolution");
+                bd = matlab.mixin.util.PropertyGroup([axs+"b"], "Bounds (min/max)");
+                lb = matlab.mixin.util.PropertyGroup([axs+"label"],"Labels");
+                groups = ([ax,rs,sz,bd,lb]);
+            end
+        end
+
+        function footer = getFooter(obj)
+            footer = getFooter@matlab.mixin.CustomDisplay(obj);
+        end
         
+        function displayNonScalarObject(obj)
+            displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
+        end
+
+        % function displayScalarObject(obj)
+        % Do not override this method: a 'Scan' is Abstract and therefore
+        % cannot be instanstiated. 
+
+        function displayEmptyObject(obj)
+            displayEmptyObject@matlab.mixin.CustomDisplay(obj);
+        end
+
+        function displayScalarHandleToDeletedObject(obj)
+            displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
+        end
     end
 
     % conversion
@@ -501,8 +552,6 @@ classdef Scan < matlab.mixin.Copyable
                 axis(ax, 'tight')
             end
         end
-
-    
     end
 
     % Dependent properties

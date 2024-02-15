@@ -48,22 +48,25 @@
 % 
 % See also CHANNELDATA TRANSDUCER SEQUENCE SCAN SCATTERERS MEDIUM 
 
-classdef UltrasoundSystem < matlab.mixin.Copyable
+classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     
     % objects
+    properties(Dependent)
+        xdc Transducer % Transducer object (if receive and transmit are identical)
+    end
     properties
-        tx Transducer = TransducerArray() % Transducer object (transmit)
-        rx Transducer = TransducerArray() % Transducer object (receive)
-        seq Sequence = Sequence()    % Sequence object
-        scan Scan = ScanCartesian() % Scan object
+        tx (1,1) Transducer = TransducerArray() % Transducer object (transmit)
+        rx (1,1) Transducer = TransducerArray() % Transducer object (receive)
+        seq (1,1) Sequence = Sequence() % Sequence object
+        scan (1,1) Scan = ScanCartesian() % Scan object
     end
     
     % parameters
     properties
         % FS - Simulation sampling frequency 
         %
-        % ULTRASOUNDSYSTEM.FS sets the sampling frequency for simulation
-        % routines.
+        % ULTRASOUNDSYSTEM.FS sets the sampling frequency and data
+        % precision for simulation routines.
         %
         % Example:
         %
@@ -75,8 +78,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     
     properties(Dependent)
         fc  {mustBeNumeric} % central operating frequency(ies)
-        xdc Transducer      % Transducer object (if receive and transmit are identical)
-        pulse Waveform      % Waveform object (from the Sequence)
         lambda {mustBeNumeric} % wavelength at the central frequency(ies)
     end
     
@@ -366,6 +367,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             grid(ax, 'on'); 
             grid(ax, 'minor')
             ax.NextPlot = hstate;
+        end
+    end
+
+    % object display
+    methods(Access = protected)
+        function propgrp = getPropertyGroups(us)
+            if ~isscalar(us)
+                propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(us);
+            else
+                p = string(properties(us)); % get public properties
+                p(end+1) = "tmp_folder";% + hidden temp folder
+                if us.rx == us.tx
+                    p(ismember(p, ["rx","tx"])) = []; % only display 'xdc'
+                else 
+                    p(ismember(p, ["xdc"])) = []; % display 'tx' and 'rx'
+                end
+                propgrp = matlab.mixin.util.PropertyGroup(p);
+            end
         end
     end
 
@@ -4375,8 +4394,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
         end
         function set.xdc(self, xdc), [self.tx, self.rx] = deal(xdc); end
-        function c = get.pulse(self), c = self.seq.pulse; end
-        function set.pulse(self, c), self.seq.pulse = c; end
         function s = get.sequence(self), warning("QUPS:UltrasoundSystem:syntaxDeprecated","UltrasoundSystem.sequence is deprecated. Use the .seq property instead."); s = self.seq; end
         function set.sequence(self, s), warning("QUPS:UltrasoundSystem:syntaxDeprecated","UltrasoundSystem.sequence is deprecated. Use the .seq property instead."); self.seq = s; end
     end

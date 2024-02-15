@@ -9,7 +9,7 @@
 %
 % See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERMATRIX
 
-classdef (Abstract) Transducer < matlab.mixin.Copyable
+classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogeneous
     properties
         fc (1,1) double = 5e6        % center frequency
         bw (1,2) double = [3.5e6 6.5e6] % bandwidth

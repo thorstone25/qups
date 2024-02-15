@@ -25,7 +25,7 @@
 % 
 % 
 % See also: SEQUENCERADIAL SEQUENCEGENERIC WAVEFORM
-classdef Sequence < matlab.mixin.Copyable    
+classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixin.CustomDisplay
     properties
         % TYPE - Type of pulse sequence definition
         %
@@ -968,6 +968,21 @@ classdef Sequence < matlab.mixin.Copyable
                 otherwise
                     % plot the positions with the options given in the inputs
                     h = plot(hax, self.focus(1,:), self.focus(3,:), varargin{:}, plot_args{:});
+            end
+        end
+    end
+
+    % object display
+    methods(Access = protected)
+        function propgrp = getPropertyGroups(seq)
+            if ~isscalar(seq)
+                propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(seq);
+            else
+                p = string(properties(seq)); % get public properties
+                for f = ["apd", "del"] % fields to remove if empty
+                if isprop(seq, f) && isempty(seq.(f)), p(p == f) = []; end
+                end
+                propgrp = matlab.mixin.util.PropertyGroup(p);
             end
         end
     end
