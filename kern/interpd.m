@@ -1,4 +1,4 @@
-function [y, k] = interpd(x, t, dim, interp, extrapval)
+function [y, k, ord] = interpd(x, t, dim, interp, extrapval)
 % INTERPD GPU-enabled interpolation in one dimension
 %
 % y = INTERPD(x, t) interpolates the data x at the indices t. It uses the
@@ -123,6 +123,7 @@ if use_gdev || use_odev
     if use_gdev
         % grab the kernel reference
         k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'interpd' + suffix);
+        d = gpuDevice();
         
         % set constants
         k.setConstantMemory('QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_N', uint64(N), 'QUPS_M', uint64(M), 'QUPS_F', uint64(F));
@@ -130,6 +131,7 @@ if use_gdev || use_odev
     elseif use_odev
         % get the kernel reference
         k = oclKernel(which('interpd.cl'), 'interpd');
+        d = k.Device;
 
         % set the data types
         switch prc, case 16, tp = 'uint16'; case 32, tp = 'single'; case 64, tp = 'double'; end
@@ -144,8 +146,10 @@ if use_gdev || use_odev
     end
     
     % kernel sizing
-    k.ThreadBlockSize(1) = min(k.MaxThreadsPerBlock,M*I); % I and M are indexed together
-    k.GridSize = [ceil(I*M ./ k.ThreadBlockSize(1)), N, 1];
+    K = d.MaxGridSize(2);
+    L = min(k.MaxThreadsPerBlock, ceil(N / K));
+    k.ThreadBlockSize = [min(I*M,floor(k.MaxThreadsPerBlock / L)), L, 1]; % I and M are indexed together
+    k.GridSize = ceil([I*M, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize);
     
     % sample
     y_ = k.feval(y_, x_, t_, flagnum); % compute

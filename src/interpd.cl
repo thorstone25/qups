@@ -16,7 +16,7 @@ kernel void interpd(global T2 * y, global const T2 * x, global const U * tau, co
     
     // get sampling index
     const size_t tid = get_global_id(0);
-    const size_t n   = get_global_id(1);
+    const size_t n   = get_global_id(1) + get_global_size(1) * get_global_id(2); // index y/z dims together (sensitive to offsets in dim y!)
     // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     
     // rename for readability
@@ -183,7 +183,7 @@ kernel void wsinterpd(volatile global T2 * y,
 
     // get sampling index
     const ulong i = get_global_id(0);
-    const ulong n = get_global_id(1);
+    const ulong n = get_global_id(1) + get_global_size(1) * get_global_id(2);
     
     // rename for readability
     const ulong I = QUPS_I, N = QUPS_N, F = QUPS_F, S = QUPS_S, T = QUPS_T; // , M = QUPS_M
@@ -245,7 +245,7 @@ kernel void wsinterpd2(volatile global T2 * y,
 
     // get sampling index
     const size_t i = get_global_id(0);
-    const size_t n = get_global_id(1);
+    const size_t n = get_global_id(1) + get_global_size(1) * get_global_id(2);
     
     // rename for readability
     const size_t I = QUPS_I,N = QUPS_N, F = QUPS_F, S = QUPS_S, T = QUPS_T; // , M = QUPS_M

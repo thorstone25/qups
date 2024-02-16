@@ -170,6 +170,7 @@ if use_gdev || use_odev
 
     if use_gdev
         % grab the kernel reference
+        d = gpuDevice();
         k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'wsinterpd2' + suffix);
         k.setConstantMemory( ...
             'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
@@ -179,6 +180,7 @@ if use_gdev || use_odev
     elseif use_odev
         % get the kernel reference
         k = oclKernel(which('interpd.cl'), 'wsinterpd2');
+        d = k.Device;
 
         % set the data types
         switch prc, case 16, t = 'uint16'; case 32, t = 'single'; case 64, t = 'double'; end
@@ -194,8 +196,10 @@ if use_gdev || use_odev
     end
 
     % kernel sizing
-    k.ThreadBlockSize(1) = min(k.MaxThreadsPerBlock,I); % I and M are indexed together
-    k.GridSize = [ceil(I ./ k.ThreadBlockSize(1)), min(N, 2^15), ceil(N/2^15)];
+    K = d.MaxGridSize(2);
+    L = min(k.MaxThreadsPerBlock, ceil(N / K));
+    k.ThreadBlockSize = [min(I,floor(k.MaxThreadsPerBlock / L)), L, 1]; % local group size
+    k.GridSize = ceil([I, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize);
 
     % index label flags
     iflags = zeros([1 maxdims], 'uint8'); % increase index i
