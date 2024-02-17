@@ -587,16 +587,24 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             tau = cat(1,TX.Delay ) ./ fc; % tx delays (s)
 
             % build the full delay/apodization matrix
-            [apdtx, tautx] = deal(zeros(Trans.numelements, numel(TX))); % pre-allocate
-            for i = 1 : numel(TX) % for each transmit
-                if ismux,   api = ap(:, TX(i).aperture); 
-                else,       api = ap(logical(ap)); 
-                end %       selected aperture
-                j = logical(api); % active elements (indexed different on TX than RX ?!?)
-                apdtx(j,i) = apd(i,:); % apodization
-                tautx(j,i) = tau(i,:); % delays
-            end
+            xsz = [numel(TX), Trans.numelements]; % full size
+            if all([size(apd); size(tau)] == xsz) % already built in newer versions of Vantage 
+                apdtx = apd';
+                tautx = tau';
+            else
+                % older version of Vantage
+                [apdtx, tautx] = deal(zeros(xsz)); % pre-allocate
+                for i = 1 : numel(TX) % for each transmit
+                    if ismux,   api = ap(:, TX(i).aperture);
+                    else,       api = ap(logical(ap));
+                    end %       selected aperture
+                    j = logical(api); % active elements (indexed different on TX than RX ?!?)
 
+                    apdtx(j,i) = apd(i,:); % apodization
+                    tautx(j,i) = tau(i,:); % delays
+                end
+            end
+            
             % attempt to import the Transducer
             xdc = kwargs.xdc;
             if isempty(xdc)
@@ -612,7 +620,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 );
 
             % create the corresponding Sequence
-            if isfield(TX, "FocalPt") % focal points -> VS
+            if isfield(TX, "FocalPt") && all(~cellfun(@isempty, {TX.FocalPt})) % focal points -> VS
                 pf = cat(1, TX.FocalPt)' .* lambda; % focal points
                 % attempt to infer focused or diverging wave
                 if     isa(class(xdc), "TransducerArray" ) ...
