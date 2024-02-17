@@ -1296,7 +1296,7 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.t0 = t0_;
             chd.fs = fs_;
         end
-        function t = get.time(chd), t = cast(chd.t0 + shiftdim((0 : chd.T - 1)', 1-chd.tdim) ./ chd.fs, 'like', real(chd.data)); end % match data type, except always real
+        function t = get.time(chd), t = cast(chd.t0 + shiftdim((0 : chd.T - 1)', 1-chd.tdim) ./ chd.fs, 'like', real(chd.data([]))); end % match data type, except always real
         function T = get.T(chd), T = gather(size(chd.data,chd.tdim)); end
         function N = get.N(chd), N = gather(size(chd.data,chd.ndim)); end
         function M = get.M(chd), M = gather(size(chd.data,chd.mdim)); end
