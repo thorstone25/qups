@@ -221,7 +221,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also SEQUENCE.VERASONICS WAVEFORM.VERASONICS
             arguments
                 RcvData cell
-                Receive struct
+                Receive struct {mustBeNonempty}
                 Trans struct {mustBeScalarOrEmpty} = struct.empty
                 kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
                 kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
@@ -287,8 +287,25 @@ classdef ChannelData < matlab.mixin.Copyable
                 j = unique([j{:}], 'stable'); % should be identical across acquisitions
 
                 % load data (time x acq x channel x frame)
-                x = RcvData{i}(j,:,fr); % only extract the filled portion
-                x = reshape(x, [], A, size(x,2), size(x,3)); % (T x A x Np x F)
+                if ~isempty(RcvData)
+                    x = RcvData{i}(j,:,fr); % only extract the filled portion
+                else
+                    % guess the number of channels this Vantage system has
+                    if isempty(Trans) 
+                        nch = max(cellfun(@nnz,{Rx.Apod})); % guess: max number of active rx channels
+                    else 
+                        nch = max(Trans.Connector); % guess: maximum connected index 
+                    end
+                    % validate: Vantage systems have either 64, 128, 256,
+                    % or 1024 channels, so if we get e.g. 90, assume 128
+                    npl = [64 128 256 1024]; % plausible number of channels
+                    nch = npl(find(nch < npl, 1, 'first')); % round up
+
+                    % make empty array
+                    sz = [numel(j), nch, numel(fr), 0]; % output data size
+                    x = zeros(sz, 'int16');
+                end
+                x = reshape(x, [size(x,1)/A, A, size(x,2:4)]); % (T x A x Np x F x [1|0])
 
                 % if Trans exists, make chd.N match Trans
                 if ~isempty(Trans)
