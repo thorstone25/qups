@@ -13,6 +13,10 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % ANIMATE(..., 'loop', false) plays through the animation once, rather than
 % looping until the figure is closed.
 %
+% ANIMATE(..., 'fn', true) appends the frame number for each frame to the
+% title. If 'loop' is false, the frame number is removed before the
+% function returns.
+% 
 % ANIMATE(..., 'fs', fs) updates the image at a rate fs.
 % 
 % mvf = ANIMATE(...) returns a cell matrix of movie frames mvf for each
@@ -72,6 +76,7 @@ arguments
     h (1,:) matlab.graphics.primitive.Image = inferHandles(x)
     kwargs.fs (1,1) {mustBePositive} = 20; % refresh rate (hertz)
     kwargs.loop (1,1) logical = true; % loop until cancelled
+    kwargs.fn (1,1) logical = false; % whether to add frame number
 end
 
 % place data in a cell if it isn't already
@@ -104,11 +109,13 @@ end
 F = numel(hf); % number of figures
 if nargout >= 2, mvh = cell([M,I]); else, mvh = cell.empty; end
 if nargout >= 1, mvf = cell([M,F]); else, mvf = cell.empty; end
+if kwargs.fn, ttls = arrayfun(@(h) string(h.Parent.Title.String), h); end
 
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
         for i = 1:I, if isreal(x{i}), h(i).CData(:) = x{i}(:,:,m); else, h(i).CData(:) = mod2db(x{i}(:,:,m)); end, end% update image
+        if kwargs.fn, for i = 1:I, h(i).Parent.Title.String = ttls(i) + " ("+m+")"; end, end% add index to the title
         % if isa(h, 'matlab.graphics.chart.primitive.Surface'), h(i).ZData(:) = h(i).CData(:); end % TODO: integrate surfaces
         if m == 1, drawnow; getframe(); end % toss a frame to avoid bug where the first frame has a different size
         drawnow limitrate; 
@@ -119,6 +126,7 @@ while(all(isvalid(h)))
     end
     if ~kwargs.loop, break; end
 end
+if kwargs.fn, for i = 1:I, h(i).Parent.Title.String = ttls(i); end, end % reset titles
 
 function him = inferHandles(x)
 % get the current figure
