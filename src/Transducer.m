@@ -73,7 +73,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
             % regardless of input, if impulse is empty, initialize it
             if isempty(xdc.impulse)
-                xdc.impulse = xdc.ultrasoundTransducerImpulse();
+                xdc.impulse = xdc.xdcImpulse();
             end
         end
     
@@ -963,7 +963,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % internal subroutines
     methods
-        function impulse = ultrasoundTransducerImpulse(xdc)
+        function impulse = xdcImpulse(xdc)
             % ULTRASOUNDTRANSDUCERIMPULSE - create an impulse response Waveform
             %
             % impulse = ULTRASOUNDTRANSDUCERIMPULSE(xdc) creates a gaussian
