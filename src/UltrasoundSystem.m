@@ -870,6 +870,89 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             if nargout >= 2, chd = ChannelData.UFF(uchannel_data, us.seq, us.xdc); end % data
         end
     end
+
+    % Verasonics interop
+    methods(Static)
+        function [us, chd] = Verasonics(Trans, TX, TW, kwargs)
+            % Verasonics - Import a Verasonics Vantage system and data
+            % 
+            % us = Verasonics(Trans, TX, TW) creates an UltrasoundSystem us
+            % with a Sequence and Transducer defined from the Verasonics 
+            % structs `Trans`, `TX`, and `TW`.
+            % 
+            % us = Verasonics(Trans, TX) or 
+            % us = Verasonics(Trans, TX, struct.empty) uses a
+            % Waveform.Delta as the excitation pulse function.
+            % 
+            % us = Verasonics(..., 'c0', c0) additionally specifies the
+            % sound speed in m/s. This should match the Verasonics property
+            % `Resource.Parameters.speedOfSound`. The default is 1540.
+            % 
+            % us = Verasonics(..., 'PData', PData) additionally defines a
+            % Scan from the Verasonics struct `PData`.
+            % 
+            % [us, chd] = Verasonics(..., 'Receive', Receive, 'RcvData', RcvData)
+            % additionally returns a ChannelData chd defined by the
+            % Verasonics `Receive` and `RcvData` structs.
+            % 
+            % If `RcvData` is omitted or empty, chd will contain data of
+            % size (time x acquisitions x receivers x frames x 0).
+            % 
+            % If `Receive` is omitted or empty, chd will contain data of
+            % size (0 x transmits x receivers x 0 x 0) and assumes a
+            % supported sampling frequency of approximately 4 * us.xdc.fc.
+            % 
+            % Example:
+            % 
+            % load('my_VSX_data.mat')
+            % c0 = Resource.Parameters.speedOfSound;
+            % us = UltrasoundSystem.Verasonics(Trans, TX, TW, 'c0', c0);
+            % 
+            % See also CHANNELDATA.VERASONICS TRANSDUCER.VERASONICS
+            % SEQUENCE.VERASONICS SCAN.VERASONICS
+            arguments
+                Trans (1,1) struct
+                TX struct
+                TW (1,:) struct = struct.empty
+                kwargs.PData struct {mustBeScalarOrEmpty} = struct.empty
+                kwargs.RcvData cell = {}
+                kwargs.Receive struct = struct.empty
+                kwargs.c0 (1,1) double = 1540
+            end
+            
+            % wavelength
+            lbda = kwargs.c0 / Trans.frequency / 1e6; 
+            
+            % create US
+            xdc = Transducer.Verasonics(Trans, kwargs.c0);
+            [seq, t0q] = Sequence.Verasonics(TX, Trans, TW, 'c0', kwargs.c0, 'xdc', xdc);
+            if isempty(kwargs.PData), scan_args = {};
+            else, scan_args = {'scan', Scan.Verasonics(kwargs.PData, lbda)};
+            end
+            us = UltrasoundSystem('seq', seq, 'xdc', xdc, scan_args{:}, 'recompile',false);
+            
+            
+            % construct ChannelData
+            if ~isempty(kwargs.Receive)
+                chd = ChannelData.Verasonics(kwargs.RcvData, kwargs.Receive, Trans);
+                us.fs = chd.fs;
+            else
+                fs = 250./(4:100); % supported frequencies
+                fs = fs(argmin(abs(4*Trans.frequency - fs))); % assume 200BW, closest frequency
+                sz = [0, numel(TX), Trans.numelements, 0, 0]; % output data sizing
+                chd = ChannelData('data', zeros(sz,'int16'), 'order','TMN', 'fs', fs);
+            end
+            
+            % refine t0
+            if isfield(Trans, 'lensCorrection')
+                t0x = 2*Trans.lensCorrection; else, t0x = 0;
+            end
+            if isfield(TW,'peak') && ~isempty(TW.peak)
+                t0p = TW.peak; else, t0p = 0;
+            end
+            chd.t0 = chd.t0 + swapdim(t0q,2,chd.mdim) - (t0p + t0x) / (Trans.frequency * 1e6);
+        end
+    end
     
     % Fullwave calls
     methods
