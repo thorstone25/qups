@@ -493,10 +493,11 @@ classdef Waveform < matlab.mixin.Copyable
             % identify tri-level field name
             fld = "TriLvlWvfm" + ["", "_Sim"]; % potential field names
             f = fld(isfield(TW, fld)); % find which one
-            if ~isscalar(f) % must have one or the other
-                error("QUPS:Verasonics:ambiguousProperty", ...
-                    "TW's properties must include exactly 1 of '" + join(fld, "' or '") + "'." ...
-                    ); 
+            if isempty(f) % must have one or the other
+                error("QUPS:Verasonics:missingProperty", ...
+                    "TW must include at least 1 of '" + join(fld, "' or '") + "'." ...
+                    );
+            elseif isvector(f), f = f(1); % choose first waveform
             end 
             
             % start time(s)
