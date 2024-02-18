@@ -147,7 +147,9 @@ classdef TransducerConvex < Transducer
             
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = cellfun(@(p)xdc_convex_array(p{:}), xdc_convex_params);
+            i = arrayfun(@(xdc) any(xdc.offset) || any(xdc.rot), xdc); % extra translation/rotation
+            aperture( i) = getFieldIIAperture@Transducer(xdc(i), sub_div, focus); % call superclass to make rectangles directly
+            aperture(~i) = cellfun(@(p)xdc_convex_array(p{:}), xdc_convex_params(~i));
         end
     end
     

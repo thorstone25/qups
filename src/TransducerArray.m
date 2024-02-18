@@ -136,9 +136,8 @@ classdef TransducerArray < Transducer
                 sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
             end
-            
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
-                        
+
             % Field II parameters
             xdc_lin_array_params = arrayfun(@(xdc){{ ...
                 xdc.numel, ...
@@ -149,11 +148,13 @@ classdef TransducerArray < Transducer
                 sub_div(2), ...
                 reshape(focus, 1, []),...
                 }}, xdc);
-            
+
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = cellfun(@(p)xdc_linear_array(p{:}), xdc_lin_array_params);
-        end        
+            i = arrayfun(@(xdc) any(xdc.offset) || any(xdc.rot), xdc); % extra translation/rotation
+            aperture( i) = getFieldIIAperture@Transducer(xdc(i), sub_div, focus); % call superclass to make rectangles directly
+            aperture(~i) = cellfun(@(p)xdc_linear_array(p{:}), xdc_lin_array_params(~i));
+        end
     end
     
     % USTB conversion function
