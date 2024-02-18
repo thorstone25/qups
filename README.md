@@ -1,6 +1,15 @@
 # QUPS: Quick Ultrasound Processing &amp; Simulation
+![Static Badge](https://img.shields.io/badge/matlab-R2020b%2B-orange)
+![GitHub License](https://img.shields.io/github/license/thorstone25/qups)
+![GitHub Tag](https://img.shields.io/github/v/tag/thorstone25/qups)
+![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/thorstone25/qups/testing.yml)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/thorstone25/qups)
+![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/thorstone25/qups)
+![GitHub Release Date](https://img.shields.io/github/release-date-pre/thorstone25/qups)
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/thorstone25/qups)
+
 ## Description
-QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyping pulse-echo ultrasound systems and algorithms. It provides a flexible, high-level representation of transducers, pulse sequences, imaging regions, and scattering media. It provides accelerated implementations of common signal processing functions for pulse-echo ultrasound data as well as cutting edge beamforming algorithms. QUPS can interface with multiple other Ultrasound simulation and processing tools including [k-Wave](http://www.k-wave.org/index.php), [MUST](https://www.biomecardio.com/MUST/documentation.html), [FieldII](https://www.field-ii.dk/) and [USTB](https://www.ustb.no/).
+QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyping pulse-echo ultrasound systems and algorithms. It provides a flexible, high-level representation of transducers, pulse sequences, imaging regions, and scattering media. It provides accelerated implementations of common signal processing functions for pulse-echo ultrasound data as well as cutting edge beamforming algorithms. QUPS can interface with multiple other Ultrasound simulation and processing tools including [k-Wave](http://www.k-wave.org/index.php), [MUST](https://www.biomecardio.com/MUST/), [FieldII](https://www.field-ii.dk/) and [USTB](https://www.ustb.no/).
 
 ## Features
 
@@ -11,7 +20,7 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
     - Arbitrary pixel locations and beamforming apodization
     
 - Performant:
-    - Hardware acceleartion via CUDA, OpenCL, and MATLAB parallel processing
+    - Hardware acceleration via CUDA, OpenCL, and MATLAB parallel processing
     - Memory efficient data types
     - Beamform a 1024 x 1024 image for 256 x 256 transmits/receives in < 2 seconds (RTX 3070)
     - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) or scale to a cluster via the [parallel server](https://www.mathworks.com/help/matlab-parallel-server/) toolbox
@@ -67,7 +76,7 @@ QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyp
 >> figure;
 >> h = imagesc(chd);
 >> colormap jet; colorbar;
->> animate(h, mod2db(chd.data), 'loop', false);
+>> animate(mod2db(chd.data), h, 'loop', false);
 ```
 ![](fig/README/channel_data.gif)
 
@@ -98,7 +107,7 @@ All extensions to QUPS are optional, but must be installed separately from their
 | ------ | ------ | ------ |
 | [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`|
 | k-Wave([base](http://www.k-wave.org/index.php), [extension](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources)) | distributed medium simulator | `addpath path/to/kWave, addpath path/to/kWaveArray` |
-| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST` (see issues[#2](https://github.com/thorstone25/qups/issues/2))|
+| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST` (see issues [#2](https://github.com/thorstone25/qups/issues/2))|
 | CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html),[Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | see [CUDA Extension](####CUDA-Extension) |
 | [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))|
 
@@ -139,5 +148,5 @@ delete(output_filename);
 ```
 
 #### [MUST](https://www.biomecardio.com/MUST/documentation.html)
-To enable the usage of a `parallel.ThreadPool` with `simus.m`, GUI and file I/O calls such as those used in `AdMessage` and `MUSTStat` must be removed from `pfield.m` and/or `pfield3.m`. It is safe to comment out the advertising and statistics functions.
+To enable the usage of a `parallel.ThreadPool` with `simus.m`, GUI and file I/O calls such as those used in the `AdMessage` and `MUSTStat` functions must be removed from `pfield.m` and/or `pfield3.m`. It is safe to comment out the advertising and statistics functions.
 
