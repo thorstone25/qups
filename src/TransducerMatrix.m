@@ -18,7 +18,7 @@ classdef TransducerMatrix < Transducer
         
     % constructor 
     methods(Access=public)
-        function self = TransducerMatrix(array_args, xdc_args)
+        function self = TransducerMatrix(kwargs)
             % TRANSDUCERMATRIX - TransducerMatrix constructor
             %
             % xdc = TRANSDUCERMATRIX(Name, Value, ...) constructs a
@@ -26,52 +26,62 @@ classdef TransducerMatrix < Transducer
             %
             % See also TRANSDUCERARRAY TRANSDUCERCONVEX
             arguments
-                array_args.pitch (1,2) double
-                array_args.numd (1,2) double
-                xdc_args.?Transducer
+                kwargs.?TransducerMatrix
+            end
+            
+            % if only width or height set, then make them match
+            if      isfield(kwargs,'width') && ~isfield(kwargs, 'height')
+                kwargs.height = kwargs.width;
+            elseif ~isfield(kwargs,'width') &&  isfield(kwargs, 'height')
+                kwargs.width  = kwargs.height;
             end
 
             % if width/height not set but pitch is, make it the pitch
-            if ~isfield(xdc_args, 'width') && isfield(array_args, 'pitch') 
-                xdc_args.width = array_args.pitch(1); 
+            if isfield(kwargs,'pitch')
+                if ~isfield(kwargs, 'width'), kwargs.width  = kwargs.pitch(1); end
+                if ~isfield(kwargs, 'height'),kwargs.height = kwargs.pitch(end); end
             end
-            if ~isfield(xdc_args, 'height') && isfield(array_args, 'pitch') 
-                xdc_args.height = array_args.pitch(end); 
-            end
+
+            % if width/height is greater than pitch
 
             % if numd set, make sure the number of elements 
             % corresponds to the number in each dimension by definition
-            if isfield(array_args, 'numd') 
-                if isfield(xdc_args, 'numel')
-                assert(xdc_args.numel == prod(array_args.numd), ...
-                    "The numd (" + (array_args.numd + ",") ...
+            if isfield(kwargs, 'numd') 
+                if isfield(kwargs, 'numel')
+                assert(kwargs.numel == prod(kwargs.numd), ...
+                    "The numd (" + (kwargs.numd + ",") ...
                     + ") must be factors of the number of elements (" ...
-                    + xdc_args.numel + ").");
+                    + kwargs.numel + ").");
                 else
-                    xdc_args.numel = prod(array_args.numd); % set numel to match dimension
+                    kwargs.numel = prod(kwargs.numd); % set numel to match dimension
                 end
             end
             
             % initialize the Transducer
-            xdc_args = struct2nvpair(xdc_args);
-            self@Transducer(xdc_args{:}) 
+            rmflds = intersect(fieldnames(kwargs), ["numd", "pitch"]);
+            args = struct2nvpair(rmfield(kwargs, rmflds));
+            self@Transducer(args{:}) 
             
-            % if numd not set, make it a resonably guessed breakdown
-            if ~isfield(array_args, 'numd')
+            % if numd was not set, make it a resonably guessed breakdown
+            if ~isfield(kwargs, 'numd')
                 % use product of every other factor -
                 % this is a heuristic breakdown that is guaranteed to be
                 % the square root if N has a square
                 f = factor(self.numel); % factors (sorted)
-                array_args.numd = [prod(f(1:2:end)), prod(f(2:2:end))];
+                kwargs.numd = [prod(f(1:2:end)), prod(f(2:2:end))]; % heuristic
+            end
+            self.numd = kwargs.numd;
+
+            % if neither width/height set, make width==height==the smaller of the two
+            if ~isfield(kwargs,'width') && ~isfield(kwargs,'height')
+                [self.width, self.height] = deal(min(self.width, self.height));
             end
 
-            % ensure width/height <= pitch
-            % self.width  = min(self.width , self.pitch(1));
-            % self.height = min(self.height, self.pitch(1));
-
-            % initialize the TransducerMatrix
-            for f = string(fieldnames(array_args))'
-                self.(f) = array_args.(f);
+            % if pitch was not set, ensure width/height <= pitch
+            if isfield(kwargs, 'pitch')
+                self.pitch = kwargs.pitch;
+            elseif ~isfield(kwargs, 'pitch') % && (isfield(kwargs, 'width') || isfield(kwargs, 'height'))
+                self.pitch = max(self.pitch, [self.width, self.height]);
             end
         end
     end
