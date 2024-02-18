@@ -954,8 +954,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         end
     end
     
-    % Fullwave calls
-    methods
+    % Fullwave calls (Hidden)
+    methods(Hidden)
         function conf = fullwaveConf(self, medium, sscan, kwargs)
             % FULLWAVECONF - Generate a Fullwave simulation configuration
             %
@@ -1200,7 +1200,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd = UltrasoundSystem.readFullwaveSim(kwargs.simdir);
         end
     end
-    methods(Static)
+    methods(Static,Hidden)
         function job = fullwaveJob(conf, clu, kwargs)
             % FULLWAVEJOB - Create a Fullwave simulation job.
             %
