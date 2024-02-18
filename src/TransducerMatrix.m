@@ -142,14 +142,15 @@ classdef TransducerMatrix < Transducer
     methods
         % MUST only supports linear arrays or curvilinear arrays
         function p = getSIMUSParam(self), 
-            pn = self.positions();
-            p = struct( ...
+            arguments, self TransducerMatrix, end
+            p = arrayfun(@(self) struct( ...
                 'fc', self.fc, ...
-                'elements', pn(1:2,:), ...
+                'elements', sub(self.positions(),1:2,1), ...
                 'width', self.width, ...
                 'height', self.height, ...
                 'bandwidth', 100*self.bw_frac ...
-                );
+                ), self);
+            if isempty(p), p = struct.empty; end
         end
     end
 
@@ -157,7 +158,7 @@ classdef TransducerMatrix < Transducer
     methods
         function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
-                xdc (1,1) TransducerMatrix
+                xdc TransducerMatrix
                 sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
             end
@@ -165,7 +166,7 @@ classdef TransducerMatrix < Transducer
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
 
             % Field II parameters
-            xdc_2d_array_params = { ...
+            xdc_2d_array_params = arrayfun(@(xdc) {{ ...
                 xdc.numd(1), ...
                 xdc.numd(end), ...
                 xdc.width, ...
@@ -176,38 +177,19 @@ classdef TransducerMatrix < Transducer
                 sub_div(1), ...
                 sub_div(end), ...
                 reshape(focus, 1, []),...
-                };
-            
-            % ensure double type
-            xdc_2d_array_params = cellfun(@double, xdc_2d_array_params, 'UniformOutput', false);
-            xdc_2d_array_params = cellfun(@gather, xdc_2d_array_params, 'UniformOutput', false);
+                }}, xdc);
             
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_2d_array(xdc_2d_array_params{:});
+            aperture = cellfun(@(p)xdc_2d_array(p{:}), xdc_2d_array_params);
         end  
-
-        % override
-        function p = getFieldIIPositions(xdc)
-            % GETFIELDIIPOSITIONS - get an array of element positions
-            %
-            % p = getFieldIIPositions(xdc) returns a 3 x N vector of the
-            % positions of the N elements as represented in FieldII.
-            %
-            % See also GETFIELDIIAPERTURE FIELD_INFO
-
-            ap = xdc.getFieldIIAperture();
-            data = xdc_get(ap, 'rect');
-            p = data([24 25 26], :) + xdc.offset;
-            xdc_free(ap);
-            % p = p(:,1:3:end); % data repeated 3 times for some reason?
-        end
     end
     
     % USTB conversion function
     methods
         function probe = QUPS2USTB(self)
-            probe = uff.matrix_array(...
+            arguments, self TransducerMatrix, end
+            probe = arrayfun(@(self) uff.matrix_array(...
                 'N_x', self.numd(1), ...
                 'N_y', self.numd(end), ...
                 'pitch_x', self.pitch( 1 ), ...
@@ -215,13 +197,9 @@ classdef TransducerMatrix < Transducer
                 'element_width', self.width, ...
                 'element_height', self.height, ...
                 'origin', uff.point('xyz', self.offset(:)') ...
-                );
+                ), self);
+            if isempty(probe), probe = reshape(uff.matrix_array.empty, size(probe)); end
         end
-    end
-
-    % Fullwave functions (unsupported)
-    methods
-        function xdc = getFullwaveTransducer(self, sscan), error("Not implemented."); end
     end
 
     methods
@@ -322,6 +300,5 @@ classdef TransducerMatrix < Transducer
                 "offset", - probe.origin.xyz ...
                 ), probe);
         end
-
     end
 end

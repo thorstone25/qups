@@ -380,7 +380,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
     end
 
     % toolbox conversion functions
-    methods (Abstract)
+    methods
         % GETFIELDIIAPERTURE - Create a FieldII aperture object
         %
         % ap = GETFIELDIIAPERTURE(xdc) creates a FieldII aperture ap
@@ -399,7 +399,39 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % realmax('single').
         %
         % See also ULTRASOUNDSYSTEM.CALC_SCAT_ALL, FIELD_INIT
-        aperture = getFieldIIAperture(xdc, sub_div, focus);
+        function aperture = getFieldIIAperture(xdc, sub_div, focus)
+            arguments
+                xdc Transducer
+                sub_div (1,2) double = [1,1]
+                focus (1,3) double = [0 0 realmax('single')]
+            end
+
+            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
+            sdiv = sub_div; % alias
+            aperture = arrayfun(@make_fieldII_aperture, xdc);
+            
+            function aperture = make_fieldII_aperture(xdc)
+                pch = xdc.patches(sdiv); % [Nel x Ndv] array with  {X / Y / Z / C} tuples
+                r = zeros([size(pch'),19]); % Ndv x Nel x 19
+                for i = 1 : size(pch,1) % each element
+                    for j = 1 : size(pch,2) % each subelement
+                        pchij = pch{i,j}; % get tuple
+                        p = reshape(permute(cat(3, pchij{1:3}), [3,1,2]), 3, 4); % get as 3 x 4 array
+                        p = p(:,[1,2,4,3]); % swap 4th<->3rd for clockwise ordering
+                        r(j,i,:) = [i, p(:)', 1, [xdc.width, xdc.height] ./ sdiv, mean(p,2)']; % get rectangle
+                    end
+                end
+
+                % reshape arguments
+                r = reshape(r, [numel(pch) 19]); %#ok<CPROPLC> % rectangles: [sdiv x element] x 19
+                c = double(gather(xdc.positions()')); % element centers
+
+                % Generate aperture for emission
+                try evalc('field_info'); catch, field_init(-1); end
+                aperture = xdc_rectangles(r, c, focus);
+            end
+        end
+
 
         % QUPS2USTB - Create a USTB compatible uff.probe object
         %
@@ -411,7 +443,21 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % probe = QUPS2USTB(TransducerArray.L12_3v());
         % 
         % See also UFF.PROBE
-        probe = QUPS2USTB(xdc); % get the USTB probe object
+        function probe = QUPS2USTB(xdc)
+            arguments, xdc Transducer, end
+            probe = arrayfun(@(xdc) uff.probe(...
+                'geometry', [ ...
+                xdc.positions(); ...
+                deg2rad(argn(1, @orientations, xdc)); ...
+                deg2rad(argn(1, @orientations, xdc)); ...
+                repmat([ ...
+                xdc.width; ...
+                xdc.height ...
+                ], [1, xdc.numel]) ...
+                ]', ...
+                'origin', uff.point('xyz', xdc.offset(:)') ...
+                ), xdc);
+        end
     end
 
     % Verasonics conversion functions
@@ -481,14 +527,24 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
     end
 
     % SIMUS functions
-    methods (Abstract)
+    methods
         % GETSIMUSPARAM - Create a MUST compatible parameter struct
         %
         % p = GETSIMUSPARAM(xdc) returns a structure with properties
         % for a call to simus().
         %
+        % Example:
+        % 
+        % xdc = TransducerArray();
+        % p = xdc.getSIMUSParam();
+        % 
         % See also ULTRASOUNDSYSTEM/SIMUS
-        p = getSIMUSParam(xdc)
+        function p = getSIMUSParam(xdc)
+            error( ...
+                "QUPS:Transducer:unsupportedTransducer", ...
+                "SIMUS does not support a " + class(xdc) + "." ...
+                );
+        end
     end
 
     % UFF constructor
@@ -501,7 +557,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             %
             % See also TRANSDUCER.QUPS2USTB
             arguments, probe uff.probe; end
-            switch class(probe)
+            switch class(probe) % dispatch
                 case 'uff.linear_array',     xdc = TransducerArray.UFF(probe);
                 case 'uff.curvilinear_array',xdc = TransducerConvex.UFF(probe);
                 case 'uff.matrix_array',     xdc = TransducerMatrix.UFF(probe);
@@ -875,7 +931,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
     end
 
     % fullwave functions
-    methods (Abstract)
+    methods(Hidden)
         % GETFULLWAVETRANSDUCER - define a Fullwave transducer structure
         %
         % xdc_fw = GETFULLWAVETRANSDUCER(xdc, scan) creates a fullwave
@@ -890,8 +946,16 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         %       - incoords      (x,y,1,el) coordinate pairs of the input pixels
         %       - outcoords     (x,y,1,el) coordinate pairs of the output pixels
         %
+        % Note: fullwave support is incomplete, and is subject to change or
+        % removal.
+        % 
         % See also ULTRASOUNDSYSTEM/FULLWAVESIM
-        xdc_fw = getFullwaveTransducer(xdc, scan)
+        function xdc_fw = getFullwaveTransducer(xdc, scan)
+            error( ...
+                "QUPS:Transducer:notImplemented", ...
+                "Fullwave support is not implemented for a " + class(xdc) + "." ...
+                );
+        end
     end
 
     % Field II calls - rely on being able to get a FieldII aperture
@@ -964,9 +1028,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
     % internal subroutines
     methods
         function impulse = xdcImpulse(xdc)
-            % ULTRASOUNDTRANSDUCERIMPULSE - create an impulse response Waveform
+            % XDCIMPULSE - create an impulse response Waveform
             %
-            % impulse = ULTRASOUNDTRANSDUCERIMPULSE(xdc) creates a gaussian
+            % impulse = XDCIMPULSE(xdc) creates a gaussian
             % pulse Waveform with the bandwidth and fractional bandwidth of
             % the Transducer xdc.
             %

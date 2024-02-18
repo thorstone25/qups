@@ -112,7 +112,8 @@ classdef TransducerArray < Transducer
     % SIMUS conversion functions
     methods
         function p = getSIMUSParam(self)
-            p = struct( ...
+            arguments, self TransducerArray, end
+            p = arrayfun(@(self) struct( ...
                 'fc', self.fc, ...
                 'pitch', self.pitch, ...
                 'width', self.width, ...
@@ -121,7 +122,8 @@ classdef TransducerArray < Transducer
                 'radius', inf, ...
                 'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in % 
                 'focus', self.el_focus ... elevation focus
-                );
+                ), self);
+            if isempty(p), p = struct.empty; end
             % TODO: error if origin not at 0.
         end
     end
@@ -130,7 +132,7 @@ classdef TransducerArray < Transducer
     methods
         function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
-                xdc (1,1) TransducerArray
+                xdc TransducerArray
                 sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
             end
@@ -138,7 +140,7 @@ classdef TransducerArray < Transducer
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
                         
             % Field II parameters
-            xdc_lin_array_params = { ...
+            xdc_lin_array_params = arrayfun(@(xdc){{ ...
                 xdc.numel, ...
                 xdc.width, ...
                 xdc.height,...
@@ -146,33 +148,31 @@ classdef TransducerArray < Transducer
                 sub_div(1), ...
                 sub_div(2), ...
                 reshape(focus, 1, []),...
-                };
-            
-            % ensure double type
-            xdc_lin_array_params = cellfun(@double, xdc_lin_array_params, 'UniformOutput', false);
-            xdc_lin_array_params = cellfun(@gather, xdc_lin_array_params, 'UniformOutput', false);
+                }}, xdc);
             
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_linear_array(xdc_lin_array_params{:});
+            aperture = cellfun(@(p)xdc_linear_array(p{:}), xdc_lin_array_params);
         end        
     end
     
     % USTB conversion function
     methods
         function probe = QUPS2USTB(self)
-            probe = uff.linear_array(...
+            arguments, self Transducer, end
+            probe = arrayfun(@(self) uff.linear_array(...
                 'N', self.numel, ...
                 'pitch', self.pitch, ...
                 'element_width', self.width, ...
                 'element_height', self.height, ...
                 'origin', uff.point('xyz', self.offset(:)') ...
-                );
+                ), self);
+            if isempty(probe), probe = reshape(uff.linear_array.empty, size(probe)); end
         end
     end
 
     % Fullwave functions
-    methods
+    methods(Hidden)
         function xdc = getFullwaveTransducer(self, sscan)
 
             [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size
