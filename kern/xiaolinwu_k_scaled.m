@@ -73,6 +73,10 @@ function [c1, x1, y1, c2, x2, y2] = xiaolinwu_k_scaled(xa, ya, xb, yb, k, dx, dy
 % assert(all(cellfun(@isfloat , {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be a floating point type.');
 %}
 
+% defaults
+if nargin < 6, dx = ones('like', xa); end
+if nargin < 7, dy = ones('like', dx); end
+
 % convert to 0-based indexing
 k = k - 1;
 
