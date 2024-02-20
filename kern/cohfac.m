@@ -13,21 +13,22 @@ function r = cohfac(b, dim)
 % 
 % Example:
 % % Define the setup - we'll use plane-waves
-% us = UltrasoundSystem(); % get a default system
-% us.sequence = SequenceRadial('type', 'PW', 'angles', -21 : 0.5 : 21);
+% seq = SequenceRadial('type', 'PW', 'angles', -21 : 0.5 : 21,'c0',1500);
+% us = UltrasoundSystem('seq', seq); % get a default system
 % us.fs = single(us.fs); % accelerate the processing
 % 
-% % set the imaging resolution
-% lambda = us.sequence.c0 / us.xdc.fc;
-% [us.scan.dz, us.scan.dx] = deal(lambda / 4);
-% 
 % % Generate Scatterers
-% N = 1e5;
-% pos = 1e-3*([0 0 1]' ...
-%   + [scan.xb(1); scan.yb(1); scan.zb(1)] ...
-%   + rand([3 N]) .* range([scan.xb; scan.yb; scan.zb],2)...
-% );
-% scat = Scatterers('pos', pos, 'amp', rand([1,N]), 'c0', us.sequence.c0);
+% spw = 10; % scatterers / wavelength
+% P = 5; % wavelengths in region
+% N = (spw * P) ^ 2; % total number of scatterers
+% dp = P .* [1 0 1] * us.lambda; % P x P wavelengths (lateral x axial)
+% p0 = [0 0 1e2*us.lambda] - dp/2; % offset to depth of 100 wavelengths
+% pos = p0' + dp' .* rand([3 N]); % scatterers through the grid
+% scat = Scatterers('pos', pos, 'amp', randn([1,N]), 'c0', us.seq.c0);
+% 
+% % set the imaging region via boundaries, then resolution
+% us.scan = ScanCartesian('xb', p0(1) + [0 dp(1)], 'zb', p0(3) + [0 dp(3)]);
+% [us.scan.dz, us.scan.dx] = deal(us.lambda / 8);
 % 
 % % Compute the image
 % chd = greens(us, scat); % compute the response

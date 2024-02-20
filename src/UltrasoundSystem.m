@@ -325,7 +325,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Create a default system using a focused transmit
             % xdc = TransducerArray();
             % us = UltrasoundSystem('xdc', xdc);
-            % us.seq.type = 'VS';
+            % us.seq.type = 'FC';
             % us.seq.focus = [0;0;30e-3] + ...
             % linspace(-xdc.numel/4, xdc.numel/4, xdc.numel/2+1) .* [xdc.pitch;0;0];
             %
@@ -2570,7 +2570,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
-            % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            % if isreal(chd) chd = hilbert(chd); end % complex analog
+            % chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
             % b = DAS(us, chd); % beamform the data
             % 
             % % Display the image
@@ -2842,7 +2843,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % us = UltrasoundSystem();
             % us.seq.c0 = c0;
             % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
-            % seqfc = SequenceRadial('type', 'VS', 'focus', [1;0;0].*(sub(us.xdc.positions,1,1)) + [0;0;20e-3], 'c0', c0);
+            % seqfc = SequenceRadial('type', 'FC', 'focus', [1;0;0].*(sub(us.xdc.positions,1,1)) + [0;0;20e-3], 'c0', c0);
             % scat = Scatterers('pos', [5e-3;0;30e-3], 'c0', seqpw.c0); % define a point target
             %
             % % Compute the image
@@ -2869,7 +2870,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % chdfsa2 = refocus(us, chdpw, seqpw);
             % bfsa2 = DAS(us, chdfsa2);
             %
-            % %% Display the channel data
+            % % Display the channel data
             % figure('Name', 'Channel Data');
             % tiledlayout('flow');
             % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
@@ -2881,7 +2882,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % end
             % linkaxes([himc.Parent]);
             %
-            % %% Display the images
+            % % Display the images
             % figure('Name', 'B-mode');
             % tiledlayout('flow');
             % bs = cat(4, b, b, bpw, bfsa1, bfc, bfsa2);
@@ -3032,7 +3033,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
-            % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            % chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            % if isreal(chd), chd = hilbert(chd); end % complex analog
             % b = bfAdjoint(us, chd); % beamform the data
             % 
             % % Display the image
@@ -4014,13 +4016,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
             %   apod = apScanline(us, dx);
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4084,13 +4086,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apMultiline(us);
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4188,13 +4191,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apTranslatingAperture(us, 64*us.xdc.pitch); % 64-element window
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4274,13 +4278,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apApertureGrowth(us, 2); % use a f# of 2
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4371,13 +4376,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apAcceptanceAngle(us, 25); % use a limit of 25   degrees
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4856,7 +4862,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % defs = UltrasoundSystem.genMexdefs("msfm2d");
             % us.recompileMex(defs);
             %
-            % SEE ALSO ULTRASOUNDSYSTEM.RECOMPILEMEX 
+            % See also ULTRASOUNDSYSTEM.RECOMPILEMEX 
             arguments
                 name (1,:) string {mustBeMember(name, ["all" , ...
                     "msfm2d", "msfm3d" ...

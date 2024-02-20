@@ -100,7 +100,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         %
         % Example:
         % % Create a hadamard encoding sequence
-        % seq = SequenceGeneric('type', 'FSA');
+        % seq = Sequence('type', 'FSA');
         % seq.apd = @(tx, seq) hadamard(tx.numel);
         % seq.del = @(tx, seq) zeros(tx.numel);
         %
@@ -135,7 +135,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         % Example:
         % % Create a random phase sequence
         % del = @(tx, seq) (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
-        % apd = @(tx, seq) ones(size(tx.numel));
+        % apd = @(tx, seq) ones(tx.numel);
         % seq = SequenceGeneric('del', del, 'apd', apd);
         %
         % % Get a default system and scatterers
@@ -143,6 +143,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         % scat = Scatterers('pos', [0;0;30e-3]);
         %
         % % get the ChannelData
+        % us.seq.numPulse = us.tx.numel; % set number of transmits
         % chdh = greens(us, scat);
         %
         % % decode the data via refocus
@@ -186,10 +187,11 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         % (N x S) matrix of weights where N is the number of elements and 
         % S is the number of pulses.
         %
+        % Note: This property is a hidden alias of the `apd` property.
+        % 
         % Example:
         % % Create a hadamard encoding sequence
-        % seq = Sequence('type', 'FSA');
-        % seq.apodization_ = @(tx, seq) hadamard(tx.numel);
+        % seq = Sequence('type', 'FSA', 'apd', @(tx, seq) hadamard(tx.numel));
         %
         % % Get a default system and scatterers
         % us = UltrasoundSystem('seq', seq);
@@ -201,11 +203,12 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.seq.apodization_ = []; % clear the encoding
+        % us.seq.apd = []; % clear the encoding
         % 
         % % beamform and display the image
         % figure; 
-        % imagesc(mod2db(DAS(us, chd)));
+        % b = DAS(us, chd);
+        % imagesc(us.scan, b);
         % caxis(max(caxis) + [-60 0]);
         % 
         % See also APODIZATION SEQUENCE.DELAYS_
@@ -221,12 +224,14 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         %
         % Example:
         % % Create a random phase sequence
-        % seq = Sequence('type', 'FSA');
-        % seq.delays_ = (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
+        % tx = TransducerArray('numel', 32);
+        % seq = Sequence(...
+        %     'type', 'FSA', 'numPulse', tx.numel, ...
+        %     'del' = (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc ...
+        %     );
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('seq', seq);
-        % us.seq.numPulse = us.tx.numel; % set the number of pulses
+        % us = UltrasoundSystem('seq', seq, 'xdc', tx);
         % scat = Scatterers('pos', [0;0;30e-3]);
         % 
         % % get the ChannelData
@@ -234,7 +239,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.seq.delays_ = []; % clear the encoding
+        % us.seq.del = []; % clear the encoding
         % 
         % % beamform and display the image
         % figure; 
@@ -313,7 +318,9 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % seq = obj2struct(seq)
             %
             arguments, seq Sequence {mustBeScalarOrEmpty}; end
-            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            wmsg = ["MATLAB:structOnObject", "QUPS:Sequence:DeprecatedProperty"];
+            W = warning(); % warning state
+            for w = wmsg, warning('off', w); end % squash warnings
             s = struct(seq); % convert self
             if ~isempty(s), s.pulse = obj2struct(s.pulse); end % convert pulse
             s.class = class(seq); % append class info
@@ -854,7 +861,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % xf = xdc.pitch * (-10:1:10); % (1 x S) focal x-positions
             % 
             % % define the walking aperture apodization: use only 32
-            % elements nearest to the focus.
+            % % elements nearest to the focus.
             % apd = abs(xn - xf) <= 32/2; % (N x S) array
             % 
             % % construct the Sequence

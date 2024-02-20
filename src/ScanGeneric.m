@@ -294,7 +294,7 @@ classdef ScanGeneric < Scan
             % scan.pos = rand([3 4 5 6]); 
             % isconsistent(scan) % returns true
             % 
-            % scan.pos = rand([2 4 5 6]); 
+            % scan.pos = rand([3 4 5 6]); 
             % isconsistent(scan) % returns false
             % 
             % scan.pos = rand([3 5 5 6]); 
@@ -306,7 +306,7 @@ classdef ScanGeneric < Scan
                 && (~scan.nu || size(scan.pos, 1+scan.udim) == scan.nu) ...
                 && (~scan.nv || size(scan.pos, 1+scan.vdim) == scan.nv) ...
                 && (~scan.nw || size(scan.pos, 1+scan.wdim) == scan.nw) ...
-            ; %#ok<CPROP> 
+            ;  
         end
 
         % image sizing

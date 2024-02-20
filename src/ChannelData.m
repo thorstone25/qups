@@ -140,8 +140,9 @@ classdef ChannelData < matlab.mixin.Copyable
             arguments
                 chd ChannelData
             end
-
-            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            wmsg = ["MATLAB:structOnObject", "QUPS:ChannelData:syntaxDeprecated"];
+            W = warning(); % warning state
+            for w = wmsg, warning('off', w); end % squash warnings
             s = struct(chd); % convert scan
             s.class = class(chd); % append class info
             warning(W); % restore warnings
@@ -504,12 +505,13 @@ classdef ChannelData < matlab.mixin.Copyable
             % us.tx = us.rx; % use the same transducer
             % targ = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = greens(us, targ); % simulate the ChannelData
+            % if isreal(chd), chd = hilbert(chd); end % positive freqs only
             % chd = zeropad(chd, 0, max(0, 2^10-chd.T)); % ensure at least 2^10 samples
             % 
             % % Downmix and downsample the data
             % fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency 
             % ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
-            % chdd = downmix(hilbert(chd), us.xdc.fc); % downmix
+            % chdd = downmix(chd, us.xdc.fc); % downmix
             % chdd = downsample(chdd, ratio); % downsample
             % 
             % % Image the data

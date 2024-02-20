@@ -32,7 +32,7 @@ function b = dmas(bn, dim, L)
 % [us.scan.dx, us.scan.dz] = deal(us.lambda / 8);
 % 
 % % Generate Scatterers
-% scat = Scatterers('pos', 1e-3*[0,0,30]', 'c0', us.sequence.c0);
+% scat = Scatterers('pos', 1e-3*[0,0,30]', 'c0', us.seq.c0);
 % 
 % % Compute the image
 % chd = greens(us, scat); % compute the response

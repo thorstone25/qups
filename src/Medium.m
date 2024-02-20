@@ -58,7 +58,7 @@ classdef Medium < matlab.mixin.Copyable
         %
         % med = Medium('pertreg', {reg1, reg2});
         % figure;
-        % imagesc(med, scan, ["c", "rho"]);
+        % imagesc(med, scan, "props", ["c", "rho"]);
         pertreg (1,:) cell = cell.empty([1,0]); % perturbation regions
     end
     properties(Hidden)
@@ -546,7 +546,7 @@ classdef Medium < matlab.mixin.Copyable
             % % Construct and image the Medium
             % med = Medium.Sampled(scan, c, rho);
             % figure;
-            % imagesc(med, scan, ["c", "rho"], 'linkaxs', true);
+            % imagesc(med, scan, "props", ["c", "rho"], 'linkaxs', true);
             % 
             % See also SCAN/IMAGESC IMAGESC LINKAXES
             arguments
@@ -596,7 +596,7 @@ classdef Medium < matlab.mixin.Copyable
             im_args = struct2nvpair(im_args);
             h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, varargin{:}, im_args{:}), x, axs);
 
-            if kwargs.linkaxs && N > 1, linkaxes(axs); end
+            if kwargs.linkaxs && N > 1, axs = [axs{:}]; linkaxes([axs{:}]); end
         end
     end
 end

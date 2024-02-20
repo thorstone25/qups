@@ -35,8 +35,7 @@ function [w, sf] = pcf(b, dim, gamma, kwargs)
 % th  = asind(linspace(sind(-35), sind(35), 192)); % linear spacing in sin(th)
 % rf  = xdc.radius + 50e-3; % 50mm focal depth (w.r.t. center of convex radius)
 % atx = abs(xdc.orientations()' - th) <= 30; % active aperture of +/- 30 degrees
-% seq = SequenceRadial('type', 'VS', 'ranges', rf, 'angles', th, 'apex', xdc.center);
-% seq.apodization_ = atx; % transmit apodoization 
+% seq = SequenceRadial('type', 'FC', 'ranges', rf, 'angles', th, 'apex', xdc.center, 'apd', atx);
 % 
 % % Create a sector scan imaging region
 % scan = ScanPolar('rb', xdc.radius + [0, rf], 'a', th, 'origin', xdc.center); % along the scan lines
