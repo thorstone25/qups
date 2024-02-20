@@ -520,8 +520,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments
                 kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
                 kwargs.tall (1,1) logical = false; % whether to use a tall type
-                kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = 1; % number of simulataneous scatterers
+                kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = max([1 self.seq.numPulse],[],'omitnan'); % number of simulataneous scatterers
                 kwargs.verbose (1,1) logical = false;
                 kwargs.fsk (1,1) {mustBePositive} = self.fs % input kernel sampling frequency
                 kwargs.R0 (1,1) double {mustBeNonnegative} = max(self.lambda) % minimum distance for divide by 0
@@ -529,16 +530,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             % get the centers of all the sub-elements
             if all(element_subdivisions == 1) % no sub-elements
-                ptc_tx = self.tx.positions();
-                ptc_rx = self.rx.positions();
+                pv = self.tx.positions();
+                pn = self.rx.positions();
             else % TODO: use xdc.patches
-                ptc_tx = self.tx.getBaryCenters(element_subdivisions);
-                ptc_rx = self.rx.getBaryCenters(element_subdivisions);
+                pv = self.tx.getBaryCenters(element_subdivisions);
+                pn = self.rx.getBaryCenters(element_subdivisions);
             end
 
             % cast dimensions to compute in parallel
-            ptc_rx = permute(ptc_rx, [6,1,2,4,3,5]); % 1 x 3 x N x 1 x En x 1
-            ptc_tx = permute(ptc_tx, [6,1,4,2,5,3]); % 1 x 3 x 1 x M x  1 x Em
+            pn = permute(pn, [6,1,2,4,3,5]); % 1 x 3 x N x 1 x En x 1
+            pv = permute(pv, [6,1,4,2,5,3]); % 1 x 3 x 1 x M x  1 x Em
 
             % get the boundaries of the transducer
             txb = self.tx.bounds();
@@ -598,9 +599,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % splice
             c0  = scat(f).c0;
-            pos = scat(f).pos; % 3 x S
-            amp = scat(f).amp; % 1 x S
+            ps = scat(f).pos; % 3 x S
+            as = scat(f).amp; % 1 x S
             fso = self.fs; % output channel data sampling frequency
+            if use_gdev, ps = gpuArray(ps); end
+
+            % compute the maximum distance for each scatterer
+            % sort points by geometric mean of minimum/maximum distance
+            [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
+            for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
+            for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+            for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1)); end % minimum scat time
+            for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+            [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+            [~, i] = sort((rmin .* rmax)); % get sorting
+
+            % sort points by geometric mean of minimum/maximum distance
+            [ps, as, rmin, rmax] = dealfun(@(x)sub(x,i,2), ps,as,rmin,rmax); % apply to all position variables
 
             if use_gdev || use_odev
                 % function to determine type
@@ -623,25 +638,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 end
 
                 % cast data / map inputs
-                [x, ps, as, pn, pv, kn, t0k, t0x, fso, cinv_] = dealfun(cfun, ...
-                    x, pos, amp, ptc_rx, ptc_tx, kern, t(1)/fso, wv.t0, fso, 1/c0 ...
+                [   x, ps, as, pn, pv, kn, t0k, t0x, fso, cinv_] = dealfun(cfun, ...
+                    x, ps, as, pn, pv, kern, t(1)/fso, wv.t0, fso, 1/c0 ...
                     );
 
                 % re-map sizing
                 [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
-
-                % compute the minimum and maximum distance for each scatterer
-                if use_gdev, ps = gpuArray(ps); end
-                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
-                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
-                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1)); end % minimum scat time
-                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1)); end % maximum scat time
-                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
-
-                % sort points by geometric mean of minimum/maximum distance
-                [~, i] = sort((rmin .* rmax)); % get sorting
-                [ps, as, rmin, rmax] = dealfun(@(x)sub(x,i,2), ps,as,rmin,rmax); % apply to all position variables
 
                 % get the index bounds for the output time axis
                 sb = ([rmin; rmax] ./ c0 + t0x - t0k) * fso + [0; QT];
@@ -684,115 +686,150 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fso, wv.fs/fso, cinv_, kwargs.R0], [E,E], flagnum);
                 
             else % operate in native MATLAB
-                % make time in dim 2
+                % parallel environment
+                penv = kwargs.penv;
+                if isempty(penv), penv = 0; end; % no parallel
+
+                % make time in dim 2, scats in dim 1
+                [ps, as] = deal(ps', as'); % transpose S x 3, S x 1
                 tvec = reshape(t,1,[]); % 1 x T full time vector
                 kern_ = reshape(kern,1,[]); % 1 x T' signal kernel
                 K = length(kern_); % kernel length in indices
 
+                % timing info
+                t0_ = gather(wv.t0); % 1 x 1
+                fs_ = self.fs;
+                fsr = wv.fs / fs_; % sampling frequency ratio
+
                 % TODO: set data types | cast to GPU/tall? | reset GPU?
-                if kwargs.device > 0, gpuDevice(kwargs.device); end
-                if kwargs.device && ~kwargs.tall,
-                                  [pos, ptc_rx, ptc_tx, tvec, kern_] = dealfun(...
-                        @gpuArray, pos, ptc_rx, ptc_tx, tvec, kern_ ...
+                if use_gdev, gpuDevice(kwargs.device); end
+                if use_gdev && ~kwargs.tall
+                    [ps, pn, pv, tvec, kern_] = dealfun(@gpuArray, ...
+                     ps, pn, pv, tvec, kern_ ...
                         );
                 elseif kwargs.tall
-                              [pos, ptc_rx, ptc_tx, tvec] = dealfun(...
-                        @tall, pos, ptc_rx, ptc_tx, tvec ...
-                        );
+                    [pn, pv] = dealfun(@tall, pn, pv);
                 end
 
-                % compute the maximum distance for each scatterer
-                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(pos - p, 2, 1)); end % minimum scat time
-                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(pos - p, 2, 1)); end % maximum scat time
-                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(pos - p, 2, 1)); end % minimum scat time
-                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(pos - p, 2, 1)); end % maximum scat time
-                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
-                [rmin, rmax] = gather(rmin, rmax);
-
-                % sort points by geometric mean of minimum/maximum distance
-                [~, i] = sort((rmin .* rmax)); % get sorting
-                [pos, amp] = deal(pos(:,i)', amp(:,i)'); % sort and transpose (S x 3) / (S x 1)
-                [rmin, rmax] = deal(rmin(i), rmax(i)); % sort
+                % parallel worker size
+                if isempty(p) % no pool -> 1
+                    P = 1; 
+                elseif isnumeric(penv) 
+                    if penv, P = penv; else, P = 1; end % 0 -> 1
+                else % pool
+                    P = penv.NumWorkers; 
+                end 
                 
-                % for each tx/rx pair, extra subelements ...
-                % TODO: parallelize where possible
-                svec = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:scat(f).numScat-1), 1);
-                svec{end} = svec{end}(svec{end} <= scat(f).numScat);
-                S = numel(svec); % number of scatterer blocks
+                % get block sizes: if less than M, go 1 scat at a time
+                [B, S] = deal(floor(kwargs.bsize), scat(f).numScat);
+                Bm = min(floor(B/P),floor(M/P)); % simulataneous transmits
+                Bs = max( 1, floor(B / Bm / P) ); % simulataneous scats
+                svec = num2cell( (1:Bs)'+(0:Bs:S-1), 1);
+                mvec = num2cell( (1:Bm)'+(0:Bm:M-1), 1);
+                svec{end} = svec{end}(svec{end} <= S);
+                mvec{end} = mvec{end}(mvec{end} <= M);
 
-                for sv = 1:S, s = svec{sv}; % vector of indices
-                    for em = 1:E
-                        for en = 1:E
-                            % compute time delays
-                            % TODO: do this via ray-path propagation through a medium
-                            % S x 1 x N x M x 1 x 1
-                            r_rx = vecnorm(sub(pos,s,1) - sub(ptc_rx, en, 5),2,2);
-                            r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
-                            tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
-                            tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
-                            if kwargs.R0 % propagation loss min distance
-                                r_rx = max(r_rx, kwargs.R0); % avoid div by 0
-                                r_tx = max(r_tx, kwargs.R0); % avoid div by 0
-                                att  = kwargs.R0^-2; % scale by max energy
-                            else
-                                [r_rx, r_tx, att] = deal(1); % no propagation loss
-                            end
-
-                            % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
-                            att = att .* sub(amp,s,1) ./ (r_rx .* r_tx); % propagation attenuation
-
-                            % get 0-based sample time delay
-                            % switch time and scatterer dimension
-                            % S x T x N x M x 1 x 1
-                            t0 = gather(wv.t0); % 1 x 1
-                            fsr = wv.fs / self.fs; % sampling frequency ratio 
-                            % - stretch factor from output to input time domains
-
-                            % convert time delays to indices
-                            tau_tx = tau_tx * self.fs;
-                            tau_rx = tau_rx * self.fs;
-                            t0     = t0     * self.fs;
-
-                            % S x T x N x M x 1 x 1
-                            if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
-                                % compute as a tall array  % S | T x N x M x 1 x 1
-                                tau = tvec - (tau_tx + tau_rx + t0); % create tall ND-array
-                                s_ = matlab.tall.transform( ...
-                                    @(tau, att) wsinterpd(kern_, fsr * tau, 2, att ./ fsr, 1, kwargs.interp, 0), ...
-                                    ... @(x) sum(x, 1, 'omitnan'), ... reduce
-                                    tau, att...
-                                    );
-                                
-                                % add contribution (1 x T x N X M)
-                                x = x + s_;
-
-                            else
-                                % compute natively
-                                % tau = (tau_tx + tau_rx + t0); % S x 1 x N x M x 1 x 1
-                                tmax = (t0 + self.fs * max(rmax(s)) / c0);
-                                tmin = (t0 + self.fs * min(rmin(s)) / c0);
-                                it = (tmin - K-1) <= tvec  & tvec <= (tmax + K+1); %(1 x T')
-
-                                % compute only for this range and sum as we go
-                                % (1 x T' x N X M)
-                                s_ = nan2zero(wsinterpd2(kern_, fsr * (tvec(it) - tau_rx - t0), - fsr * tau_tx, 2, att ./ fsr, 1, kwargs.interp, 0));
-
-                                % add contribution (1 x T x N X M)
-                                x(1,it,:,:,:,:) = x(1,it,:,:,:,:) + s_;
-                            end
-                            
-                            % update waitbar
-                            if kwargs.verbose && isvalid(hw), waitbar(sub2ind([E,E,S,F],en,em,sv,F-(f-1)) / (E*E*S*F), hw); end
-                        end
-                    end
+                % splice
+                [R0, terp, kvb] = deal(kwargs.R0, kwargs.interp, kwargs.verbose);
+                if kvb
+                    disp("Partitioning into " ...
+                        +numel(svec)+ " blocks of " ...
+                        +Bs+" scatterer(s) for " ...
+                        +numel(mvec)+" sets of " ...
+                        +Bm+" elements across "...
+                        +P+" worker(s)." ...
+                        );
+                    tt = tic;
                 end
+
+                x = cell(size(mvec));% zeros(xsz,'like',kern_); % init x = 0;
+                parfor(mv = 1:numel(mvec), penv)  % each transmit
+                    m = mvec{mv}; % vector of tx indices
+                    M_ = numel(m); % number of transmit this block
+
+                    % pre-allocate this transmit
+                    x_ = zeros([1,T,N,M_],'like',kern_);
+                    x{mv} = 0;
+                    
+                    for sv = 1:numel(svec) % each set of scatterers
+                    s = svec{sv}; % vector of scat indices
+                    
+                    for em = 1:E
+                    for en = 1:E
+                        % toc; % DEBUG
+                        % tic; % DEBUG
+
+                        % compute time delays
+                        % TODO: do this via ray-path propagation through a medium
+                        % S x 1 x N x /M x 1 x 1
+                        r_rx = vecnorm(sub(ps,s,1) - sub(pn,     en,      5 ),2,2);
+                        r_tx = vecnorm(sub(ps,s,1) - sub(pv, {m, em}, [4, 6]),2,2);
+                        tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
+                        tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
+
+                        % propagation loss
+                        if R0 % min distance - no loss if 0
+                            r_rx = max(r_rx, R0); % avoid div by 0
+                            r_tx = max(r_tx, R0); % avoid div by 0
+                            att  = R0^-2; % scale by max energy
+                        else
+                            [r_rx, r_tx, att] = deal(1); % no propagation loss
+                        end
+
+                        % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
+                        att = att .* sub(as,s,1) ./ (r_rx .* r_tx); % propagation attenuation
+
+                        % convert time delays to indices
+                        % S x T x N x M x 1 x 1
+                        tau_tx = tau_tx * fs_;
+                        tau_rx = tau_rx * fs_;
+                        t0     = t0_    * fs_;
+
+                        % Get min/max samplipng times for this set
+                        % compute only for this range and sum as we go
+                        % tau = (tau_tx + tau_rx + t0); % S x 1 x N x M x 1 x 1
+                        tmax = t0 + max(tau_tx + tau_rx,[],'all');
+                        tmin = t0 + min(tau_tx + tau_rx,[],'all');
+                        it = (tmin - K-1) <= tvec & tvec <= (tmax + K+1); %(1 x T')
+
+                        % S x T x N x M x 1 x 1
+                        if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
+                            % compute as a tall array  % S | T x N x M x 1 x 1
+                            it = gather(it);
+                            t1 = (tvec(it) - tau_tx - t0); % create tall ND-array
+                            t2 = - tau_rx;
+                            s_ = matlab.tall.reduce( ...
+                                @(t1, t2, att) wsinterpd2( ...
+                                kern_, fsr * t1, fsr * t2, 2, att ./ fsr, 1, terp, 0 ...
+                                ), ... map function
+                                @(x)sum(x,1,'omitnan','native'), ... reduce function over scatterers
+                                t1, t2, att...
+                                );
+                        else
+                            % compute natively
+                            % (1 x T' x N X M)
+                            s_ = nan2zero(wsinterpd2(kern_, fsr * (tvec(it) - tau_tx - t0), - fsr * tau_rx, 2, att ./ fsr, 1, terp, 0));
+                        end
+
+                        % add contribution (1 x T x N x M')
+                        x_(1,it,:,:) = x_(1,it,:,:) + s_; % (1 x T' x N x M')
+                    end
+                    end
+                    end
+                    x{mv} = x{mv} + x_; % accumulate
+                    if kvb, fprintf("."); end % update
+                end
+                
+                % unpack
+                if isscalar(x), x = x{1}; else, x = cat(4, x{:}); end
+
                 % compute for tall arrays
                 if istall(x), x = gather(x); end
 
                 % move back to GPU if requested
-                if kwargs.device, x = gpuArray(gather(x)); end
+                if use_gdev, x = gpuArray(gather(x)); end
             end
+            if kvb, disp("Done!"); toc(tt); end
             
             % make a channel data object (T x N x M)
             x = reshape(x, size(x,2:ndims(x))); % same as shiftdim(x,1), but without memory copies on GPU
@@ -804,16 +841,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             T_ = gather(find(cumsum(~iszero, 'reverse'), 1, 'last' ));
             chd(f) = subD(chd(f), n0:T_, chd(f).tdim);
 
-
             % synthesize linearly
-            [chd(f)] = self.focusTx(chd(f), self.seq, 'interp', kwargs.interp);
+            [chd(f)] = self.focusTx(chd(f), self.seq, 'interp', kwargs.interp, 'bsize', kwargs.bsize, 'verbose', kwargs.verbose);
             end
-
-            % close the waitbar if it (still) exists
-            % if kwargs.verbose && isvalid(hw), delete(hw); end
-
-            % send data (back) to CPU
-            % chd = gather(chd);
 
             % combine all frames
             chd = join(chd, 4);
@@ -2739,6 +2769,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.length string {mustBeScalarOrEmpty} = string.empty;
                 kwargs.buffer (1,1) {mustBeNumeric, mustBeInteger} = 0
                 kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,seq.numPulse)
+                kwargs.verbose (1,1) logical = false;
             end
 
             % Copy semantics
@@ -2783,12 +2814,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             assert(D > chd.mdim, "Transmit must be in the first 3 dimensions (" + chd.mdim + ").");
             tau  = swapdim(tau ,[1 2],[chd.mdim D]); % move data
             apod = swapdim(apod,[1 2],[chd.mdim D]); % move data
-            id   = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:seq.numPulse-1),1); % output sequence indices
+            B = max(1, floor(kwargs.bsize / self.tx.numel)); % simultaneous blocks of TxN, as best we can manage
+            id   = num2cell((1:B)' + (0:B:seq.numPulse-1),1); % output sequence indices
             id{end}(id{end} > seq.numPulse) = []; % delete OOB indices
+
+            if kwargs.verbose
+                disp("Focusing with "+numel(id)+" blocks of "+B+" transmit(s) each.")
+            end
 
             % sample and store
             for i = numel(id):-1:1
-                z{i} = chd.sample(chd.time - sub(tau,id{i},D), kwargs.interp, sub(apod,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
+                z{i} = chd.sample2sep(chd.time, - sub(tau,id{i},D), kwargs.interp, sub(apod,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
                 z{i} = swapdim(z{i}, chd.mdim, D); % replace transmit dimension (perm({T' x N} x M') x {F x ...})
             end
             z = cat(chd.mdim, z{:}); % unpack transmit dimension (perm(T' x N x M') x F x ...)
