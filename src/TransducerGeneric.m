@@ -42,6 +42,9 @@ classdef TransducerGeneric < Transducer
             if Ne == 1, gen_args.el = repmat(gen_args.el, [1 N]); end % if scalar, make vector
             assert(any(numel(gen_args.el) == N), 'The number of angles must be either scalar, or equal to the number of positions.');
 
+            % set numel if not set
+            if ~isfield(xdc_args, 'numel'), xdc_args.numel = N; end
+
             % initialize the Transducer
             xdc_args = struct2nvpair(xdc_args);
             xdc@Transducer(xdc_args{:}) 
