@@ -247,7 +247,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             s = struct(us); % convert self to a struct
             if isfield(s,'xdc'), s = rmfield(s,{'tx','rx'}); end % remove duplicate information
-            s = rmfield(s, {'fc', 'pulse', 'sequence', 'tmp_folder'}); % inferred / duplicate / private
+            s = rmfield(s, {'fc', 'sequence', 'tmp_folder'}); % inferred / duplicate / private
 
             % convert all sub-classes
             for f = intersect(string(fieldnames(s))', ["tx","rx","xdc","seq","scan"])
@@ -571,9 +571,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             if use_odev 
                 if kwargs.device > 0, oclDevice(kwargs.device); end % select device
                 dev = oclDevice(); % reference
-                use_odev = isUnderlyingType(kern, "single") ...
-                       || (isUnderlyingType(kern, "double") && dev.SupportsDouble) ...
-                       || (isUnderlyingType(kern, "half"  ) && dev.SupportsHalf);
+                use_odev = isscalar(dev) ...
+                    && (isUnderlyingType(kern, "single") ...
+                    || (isUnderlyingType(kern, "double") && dev.SupportsDouble) ...
+                    || (isUnderlyingType(kern, "half"  ) && dev.SupportsHalf));
             end
                 
             F = numel(scat);
@@ -1179,7 +1180,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim'); % simulation directory
                 kwargs.f0 (1,1) {mustBeNumeric} = self.tx.fc; % center frequency of the transmit / simulation
                 kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
-                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["disc", "cont", "terp"])} = 'terp'; % delay method
+                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["discrete", "continuous", "interpolate"])} = 'interpolate';
             end            
 
             % create the configuration
@@ -2737,7 +2738,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.length string {mustBeScalarOrEmpty} = string.empty;
                 kwargs.buffer (1,1) {mustBeNumeric, mustBeInteger} = 0
-                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = seq.numPulse
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,seq.numPulse)
             end
 
             % Copy semantics
@@ -4129,7 +4130,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
                 xdim = us.scan.adim; % dimension of change
-                xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
+                xi = swapdim(us.scan.a, 2, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
             end
 
