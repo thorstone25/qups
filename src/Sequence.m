@@ -299,6 +299,14 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 kwargs.del {mustBeA(kwargs.del, ["function_handle", "numeric"])}
             end
 
+            % deprecationg warning
+            if isfield(kwargs,'type') && kwargs.type == "VS"
+                warning( ...
+                    "QUPS:Sequence:DeprecatedValue", ...
+                    "The 'VS' value for the 'type' property is deprecated - use 'FC' or 'DV' instead." ...
+                    );
+            end
+
             % initialize
             for s = string(fieldnames(kwargs))', self.(s) = kwargs.(s); end
         end
