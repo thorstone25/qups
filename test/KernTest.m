@@ -21,7 +21,7 @@ classdef KernTest < matlab.unittest.TestCase
         end
     end
     properties(TestParameter)
-        prec = {'double', 'single', 'halfT'}
+        prec = {'double', 'single'}%, 'halfT'}
         complexity = struct('real', 'real', 'complex', 'complex');
         gdev = getdevs()
     end

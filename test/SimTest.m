@@ -17,7 +17,7 @@ classdef SimTest < matlab.unittest.TestCase
 
     properties(ClassSetupParameter)
         gpu   = getgpu()
-        clp = poolfilter({'none', 'threads', 'pool', 'background', 'default'}); % cluster: local has to create a temp cluster each time
+        clp = poolfilter({'pool', 'default','none' , 'threads', 'background'}); % cluster: local has to create a temp cluster each time
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
             'linpw', string({"L11-5V",'Plane-wave'}), ...
@@ -70,7 +70,7 @@ classdef SimTest < matlab.unittest.TestCase
             % create point target data with the configuration
 
             % simple point target 30 mm depth
-            target_depth = 30e-3;
+            target_depth = 15e-3;
             scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500);
             rho0 = 1000; % ambient density
             rho_scat = 2; % make density scatterers at 2x the density
@@ -101,8 +101,8 @@ classdef SimTest < matlab.unittest.TestCase
                             'ranges', 1, 'angles',  linspace(amin, amax, Na)); % Plane Wave (PW) sequence
                     case 'Focused'
                         [xmin, xmax, Nx] = deal( -10 ,  10 , 3 );
-                        seq = Sequence('type', 'VS', 'c0', scat.c0, ...
-                            'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
+                        seq = Sequence('type', 'FC', 'c0', scat.c0, ...
+                            'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + scat.pos ... % translating aperture: depth of 30mm, lateral stride of 2mm
                             ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
                             );
                 end
@@ -111,9 +111,9 @@ classdef SimTest < matlab.unittest.TestCase
                 switch seq_name
                     case 'sector'
                         [amin, amax, Na] = deal( -40 ,  40 , 3 );
-                        seq = SequenceRadial('type', 'VS', 'c0', scat.c0, ...
+                        seq = SequenceRadial('type', 'FC', 'c0', scat.c0, ...
                             'angles', linspace(amin, amax, Na), ...
-                            'ranges', norm(xdc.center) + target_depth, 'apex', xdc.center ...
+                            'ranges', norm(xdc.center - scat.pos), 'apex', xdc.center ...
                             ); % sector scan sequence
                     case 'FSA'
                         seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0 ...
@@ -154,8 +154,10 @@ classdef SimTest < matlab.unittest.TestCase
             
             % Choose the simulation region (eikonal)
             switch xdc_name
-                case "C5-2V", tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20*2^3), 'z', linspace(-2e-3, 43e-3, 1+45*2^3));
-                otherwise,    tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20*2^3), 'z', linspace(-5e-3, 45e-3, 1+50*2^3));
+                case "C5-2V",   tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+20*2^3), 'z', linspace(-2e-3, 23e-3, 50*2^3));
+                case "PO192O",  tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+20*2^3), 'z', linspace(-5e-3, 20e-3, 1+50*2^3));
+                                tscan.y = tscan.x;
+                otherwise,      tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+20*2^3), 'z', linspace(-5e-3, 20e-3, 1+50*2^3));
             end
 
             % create a distributed medium based on the point scatterers
@@ -169,9 +171,9 @@ classdef SimTest < matlab.unittest.TestCase
             us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 40e6);
 
             % Make the transducer impulse tighter
-            us.xdc.fc = us.fs / 8; % 5e6, with numeric precision w.r.t. us.fs
+            % us.xdc.fc = us.fs / 8; % 5e6, with numeric precision w.r.t. us.fs
             us.xdc.bw_frac = 0.2; % SIMUS errors above 0.2
-            us.xdc.impulse = us.xdc.ultrasoundTransducerImpulse(); 
+            us.xdc.impulse = us.xdc.xdcImpulse(); 
             % us.xdc.impulse = Waveform.Delta(); 
             % us.seq.pulse = Waveform.Delta(); % adding this may make the
             % length of the signal go to 0, causing problems for interpolators
@@ -197,6 +199,19 @@ classdef SimTest < matlab.unittest.TestCase
         sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
     end
     methods(TestMethodSetup)
+        function resetGPU(test)
+            if gpuDeviceCount()
+                reselectgpu();
+                if ~isempty(gcp('nocreate'))
+                    wait(parfevalOnAll(gcp(), @reselectgpu, 0));
+                end
+            end
+
+            % helper
+            function reselectgpu()
+                id = gpuDevice().Index; gpuDevice([]); gpuDevice(id); 
+            end
+        end
     end
 
     % Github test routine
@@ -239,7 +254,7 @@ classdef SimTest < matlab.unittest.TestCase
             switch sim_name
                 case {'FieldII', 'FieldII_multi'} 
                                 test.assumeTrue(logical(exist('field_init', 'file')));
-                case {'SIMUS'}, test.assumeTrue(logical(exist('pfield'    , 'file')));
+                case {'SIMUS'}, test.assumeTrue(logical(exist('pfield3'   , 'file')));
                 case {'kWave'}, test.assumeTrue(logical(exist('kWaveGrid' , 'file')));
             end
 
@@ -266,7 +281,7 @@ classdef SimTest < matlab.unittest.TestCase
             end
 
             % peak should be ~near~ 40us at the center elements for
-            % FSA and PW, ~near~ 20us (at the focus) for VS
+            % FSA and PW, ~near~ 20us (at the focus) for FC
 
             % truncate the data if we observed the transmit pulse
             if sim_name == "kWave",
@@ -293,10 +308,10 @@ classdef SimTest < matlab.unittest.TestCase
             ip = argmax(sub(chd.data, {n,m,1}, [2,3,4]), [], 1); % slice rx/tx/frames
             tau = gather(double(chd.time(ip,median(1:size(chd.time,2)), median(1:size(chd.time,3)), 1)));
 
-            % true peak time - exactly 20us travel time
+            % true peak time - exactly 10us travel time
             switch us.seq.type
-                case {'PW', 'FSA'}, t0 = 40e-6;
-                case {'VS'},        t0 = 20e-6;
+                case {'PW', 'FSA'}, t0 = 20e-6;
+                case {'FC'},        t0 = 10e-6;
                 otherwise, error("Unrecognized sequence type " + us.seq.type + ".");
             end
             switch sim_name
@@ -311,7 +326,7 @@ classdef SimTest < matlab.unittest.TestCase
 
             % temporal offset
             test.assertThat(tau, IsEqualTo(t0, 'Within', AbsoluteTolerance(tol)), sprintf(...
-                "Peak of the data (" + tau + "us) is offset from the true peak (" + t0 + "us)." ...
+                "Peak of the data (" + tau + "us) is offset by more than " + tol + "from the true peak (" + t0 + "us)." ...
                 ));
         end
     

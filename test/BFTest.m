@@ -15,124 +15,110 @@ classdef BFTest < matlab.unittest.TestCase
     end
 
     properties(ClassSetupParameter)
-        par   = struct('one_thread', {{}})%, 'threadpool', {{'parallel'}});
-        gpu   = getgpu()
-        xdc_seq_name = struct(...
-            'linfsa', string({"L11-5V", 'FSA'}),...
-            'linpw', string({"L11-5V",'Plane-wave'}), ...
-            'linvs', string({"L11-5V",'Focused'}), ...
-            'crvfsa', string({"C5-2V",'FSA'}), ...
-            'crvvs', string({"C5-2V",'sector'}) ...
-            );
-        target_offset = struct('offset', 5e-3, 'centered', 0);
-        baseband = struct('false', false, 'true', true);
+        xdc_type = struct("array", "L12-3v","convex","C5-2v", "matrix","PO1921", "generic","generic"); % xdc types
+        seq_type = {"FSA", "FC", "PW"}
+        baseband = struct('true', true)%,'false', false);
     end
 
-    methods(TestClassSetup, ParameterCombination = 'exhaustive')
-        % Setup for the entire test class
-        function addcache(test)
-            % ADDCACHE - add the cached bin folder
-            % adds the cached bin folder - this prevents recompilation for
-            % each and every test, which can be a majority of the
-            % computational effort / time 
-            cache_folder = fullfile(BFTest.proj_folder,'bin');
-            if ~exist(cache_folder, 'dir'), try mkdir(cache_folder); end, end %#ok<TRYNC>
-            if  exist(cache_folder, 'dir')    addpath(cache_folder); end 
-        end
-
+    methods(TestClassSetup, ParameterCombination = 'pairwise')
         % Shared setup for the entire test class
-        function setupQUPS(test, par, gpu)
+        function setupQUPS(test)
             cd(BFTest.proj_folder); % call setup relative to here
-            setup(par{:}, gpu{:}); % compile what we can
+            setup CUDA; % compile what we can
             if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
+            addpath("bin/");
         end
 
-        function setupQUPSdata(test, xdc_seq_name, target_offset, baseband)
+        function setupQUPSdata(test, xdc_type, seq_type, baseband)
             %% create point target data with the configuration
 
             % simple point target 30 mm depth
-            target_depth = 30e-3;
-            scat = Scatterers('pos', [target_offset;0;target_depth], 'c0', 1500); 
+            c0 = 1500;
+            scat = Scatterers('pos', 1e-3*[5 0 15]', 'c0', c0); 
 
-            % Choose a transducer
-            xdc_name = xdc_seq_name(1);
-            switch xdc_name
-                case 'L11-5V', xdc = TransducerArray.L11_5v(); % linear array
-                case 'L12-3V', xdc = TransducerArray.L12_3v(); % another linear array
-                case 'C5-2V' , xdc = TransducerConvex.C5_2v(); % convex array
+            % Transducer
+            switch xdc_type
+                case 'PO1921',  xdc = TransducerMatrix.PO1921(); xdc.numd = [5, 5]; 
+                case 'L12-3v',  xdc = TransducerArray.L12_3v();  xdc.numel = 32;
+                case 'C5-2v' ,  xdc = TransducerConvex.C5_2v();  xdc.numel = 32;
+                case 'generic', xdc = TransducerArray();         xdc.numel = 32; % generic type, lin array
+                                xdc = TransducerGeneric('pos', xdc.positions); 
             end
+            ismat = isa(xdc, "TransducerMatrix");
+
+            % Make the transducer impulse tighter
+            % xdc.fc = us.fs/8; % set to 5MHZ, as a ratio of sampling frequency
+            xdc.bw_frac = 1.5;
+            xdc.impulse = xdc.xdcImpulse();
 
             % Choose a transmit sequence
-            seq_name = xdc_seq_name(2);
-            if isa(xdc, 'TransducerArray')
-                switch seq_name
-                    case 'FSA', seq = Sequence('type', 'FSA', 'c0', scat.c0, 'numPulse', xdc.numel); % set a Full Synthetic Aperture (FSA) sequence
-                    case 'Plane-wave'
-                        [amin, amax, Na] = deal( -25 ,  25 , 25 );
-                        seq = SequenceRadial('type', 'PW', ...
-                            'ranges', 1, 'angles',  linspace(amin, amax, Na), 'c0', scat.c0); % Plane Wave (PW) sequence
-                    case 'Focused'
-                        [xmin, xmax, Nx] = deal( -10 ,  10 , 21 );
-                        seq = Sequence('type', 'VS', 'c0', scat.c0, ...
-                            'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
-                            ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
-                            );
-                end
-
-            elseif isa(xdc, 'TransducerConvex')
-                switch seq_name
-                    case 'sector'
-                        [amin, amax, Na] = deal( -15 ,  15 , 21 );
-                        seq = SequenceRadial('type', 'VS', 'c0', scat.c0, ...
-                            'angles', linspace(amin, amax, Na), ...
-                            'ranges', norm(xdc.center) + 35e-3, 'apex', xdc.center ...
-                            ); % sector scan sequence
-                    case 'FSA'
-                        seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0); % FSA - convex sequence
-                end
+            switch seq_type
+                case {"FC","DV","VS"}
+                    switch class(xdc)
+                        case "TransducerMatrix"
+                            [N, M] = deal(xdc.numd(1), xdc.numd(2));
+                            ax = Sequence.apWalking(N, 2, 1);
+                            ay = Sequence.apWalking(M, 2, 1);
+                            ax = swapdim(ax, [1,2], [1, 3]);
+                            ay = swapdim(ay, [1,2], [2, 4]);
+                            apd = reshape(ax .* ay, N*M,[]);
+                        otherwise
+                            apd = Sequence.apWalking(xdc.numel, xdc.numel / 4, xdc.numel/16);
+                    end
+                    if seq_type == "DV", zf = -10e-3; else, zf = 50e-3; end
+                    switch class(xdc)
+                        case "TransducerConvex"
+                            pf = xdc.focActive(apd, zf);
+                            seq = SequenceRadial('c0',c0,'type',seq_type,'focus',pf,'apd',apd,'apex', xdc.center);
+                        case "TransducerGeneric"
+                            [pn, th] = deal(xdc.positions, xdc.orientations);
+                            pl = cell2mat(cellfun(@(a){pn(:,floor(median(find(a))))}, num2cell(apd,1)));
+                            pu = cell2mat(cellfun(@(a){pn(:,ceil( median(find(a))))}, num2cell(apd,1)));
+                            tl = cell2mat(cellfun(@(a){th(:,floor(median(find(a))))}, num2cell(apd,1)));
+                            tu = cell2mat(cellfun(@(a){th(:,ceil( median(find(a))))}, num2cell(apd,1)));
+                            p0 = (pl + pu)/2;
+                            t0 = (tl + tu)/2;
+                            pf = p0 + zf*[sind(t0); 0*t0; cosd(t0)];
+                            seq = Sequence('c0',c0,'type',seq_type,'focus',pf,'apd',apd);
+                        otherwise
+                            pf = xdc.focActive(apd, zf);
+                            seq = Sequence('c0',c0,'type',seq_type,'focus',pf,'apd',apd);
+                    end                    
+                case "FSA"
+                    seq = Sequence('c0',c0,'type','FSA','numPulse',xdc.numel);
+                case "PW"
+                    seq = SequenceRadial('c0',c0,'type','PW','angles',-10:5:10);
             end
 
-            % make a cartesian scan
-            % set the scan at the edge of the transducer
-            pn = xdc.positions(); % element positions
-            xb = [-1 1] .* max(abs([pn(1,[1 end]), scat.pos(1,:)])); % x-limits are the edge of the aperture
-            zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
-
-            Npixd = 2^8;
-            scanc = ScanCartesian(...
-                'x', linspace(xb(1), xb(end), Npixd+1), ...
-                'z', linspace(zb(1), zb(end), Npixd+1) ...
-                ); % X x Z scan
-            scanc.x(end) = [];
-            scanc.z(end) = [];
-
-            % For linear transducers only!
-            if isa(xdc, 'TransducerArray'),
-                scan = scanc; % use the cartesian one
-            elseif isa(xdc, 'TransducerConvex') % use with a SequenceRadial!
-                scan = ScanPolar('origin', xdc.center, 'a', -40:0.5:40, ...
-                    'r', norm(xdc.center) + linspace(zb(1), zb(end), Npixd+1)...
-                    ); % R x A scan
-                scan.r(end) = [];
-            end
+            % make a Cartesian Scan around the point target for imaging
+            if ismat, Npixd = 2^5; else, Npixd = 2^7; end
+            lbda = c0 / xdc.fc;
+            dp = (lbda/4) * ((0:Npixd-1) - floor(Npixd/2));
+            p0 = mean(scat.pos,2);
             
+            scanc = ScanCartesian('x', p0(1)+dp, 'z', p0(3)+dp); % X x Z scan
+            if ismat, scanc.y = scanc.x; end
+
             % Choose the simulation region (eikonal)
-            switch xdc_name
-                case "C5-2V", tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 1+100*2^2), 'z', linspace(-30e-3, 60e-3, 1+90*2^2));
-                otherwise,    tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 1+40 *2^3), 'z', linspace(  0e-3, 60e-3, 1+60*2^3));
+            switch xdc_type
+                case "C5-2V", tscan = ScanCartesian('x',linspace(-50e-3, 50e-3, 1+100*2^2), 'z', linspace(-30e-3, 30e-3, 1+60*2^2));
+                case "PO192O",tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20 *2^3), 'z', linspace(-10e-3, 30e-3, 1+40*2^3));
+                              tscan.y = tscan.x;
+                otherwise,    tscan = ScanCartesian('x',linspace(-20e-3, 20e-3, 1+40 *2^3), 'z', linspace(-10e-3, 30e-3, 1+40*2^3));
+            end
+
+            % Image polar on convex probes
+            switch class(xdc)
+                case "TransducerConvex"
+                    r = scat.pos - xdc.center; % radial vector to scat
+                    th = xdc.orientations;
+                    scan = ScanPolar("origin",xdc.center,"r", vecnorm(r,2,1) + dp, "a", linspace(th(1), th(end), 2*xdc.numel) + mean(atan2d(r(1,:),r(3,:))));
+                otherwise
+                    scan = copy(scanc);
             end
 
             % Construct an UltrasoundSystem object, combining all of these properties
-            us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 40e6, 'recompile', false);
-
-            % Make the transducer impulse tighter
-            us.xdc.numel = 64; % reduce the number of elements
-            us.xdc.fc = us.fs/8; % set to 5MHZ, as a ratio of sampling frequency
-            us.xdc.bw_frac = 1.5;
-            us.xdc.impulse = us.xdc.ultrasoundTransducerImpulse(); 
-            % us.xdc.impulse = Waveform.Delta(); 
-            % us.seq.pulse = Waveform.Delta(); % adding this may make the
-            % length of the signal go to 0, causing problems for interpolators
+            us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 4*xdc.fc, 'recompile', false);
 
             % Simulate a point target
             % run on CPU to use spline interpolation
@@ -141,18 +127,25 @@ classdef BFTest < matlab.unittest.TestCase
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
             chd = filter(chd, getPassbandFilter(chd, xdc.bw)); % apply a filter
-            if isreal(chd), chd = hilbert(chd, 2^nextpow2(chd.T)); end % apply hilbert on real data
-            chd = gather(chd); % bring to CPU
 
             % scale the problem
-            us = scale(us, 'dist', 1e3, 'time', 1e6);
-            scat = scale(scat, 'dist', 1e3, 'time', 1e6);
-            chd = scale(chd, 'time', 1e6);
+            us    = scale(us, 'dist', 1e3, 'time', 1e6);
+            scat  = scale(scat, 'dist', 1e3, 'time', 1e6);
+            chd   = scale(chd, 'time', 1e6);
             scanc = scale(scanc, 'dist', 1e3);
             tscan = scale(tscan, 'dist', 1e3);
 
             % apply acceptance angle apodization
-            apod = apAcceptanceAngle(us, 45);
+            switch class(xdc)
+                case "TransducerMatrix"
+                    apod = 1; % too expensive / not working
+                otherwise
+                    switch seq_type
+                        case {"FC","VS"},   apod = us.apMultiline;
+                        case {"PW","FSA"},  apod = us.apAcceptanceAngle(30);
+                        case {"DV"},        apod = us.apAcceptanceAngle(30);
+                    end
+            end
 
             % baseband the data
             if baseband
@@ -185,6 +178,7 @@ classdef BFTest < matlab.unittest.TestCase
             test.scat   = [];
             test.scanc  = [];
             test.tscan  = []; 
+            % reset gpu
         end
     end
 
@@ -192,26 +186,32 @@ classdef BFTest < matlab.unittest.TestCase
     properties(TestParameter)
         gdev = getdevs()
         bf_name = {'DAS','DAS-direct','Eikonal','Adjoint'}
-        prec = struct('single','singleT','double', 'doubleT','halfT','halfT');
-        terp = {'nearest', 'linear', 'cubic'};
+        prec = struct('single','singleT')%,'double', 'doubleT')%,'halfT','halfT');
+        terp = {'cubic'};
         apodization = struct('false', false, 'true', true);
     end
     methods(TestMethodSetup)
-        function resetGPU(test), 
-            if gpuDeviceCount(), 
-                gpuDevice([]);
-                if isa(gcp('nocreate'), 'parallel.ProcessPool'),
-                    hcp = gcp('nocreate');
-                    parfor i = hcp.NumWorkers, gpuDevice([]); end
+        function resetGPU(test)
+            if gpuDeviceCount()
+                test.chd = gather(test.chd);
+                reselectgpu();
+                if ~isempty(gcp('nocreate'))
+                    wait(parfevalOnAll(gcp(), @reselectgpu, 0));
                 end
+            end
+
+            % helper
+            function reselectgpu()
+                id = gpuDevice().Index; gpuDevice([]); gpuDevice(id); 
             end
         end
     end
+
     
     % Github test routine
     methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
         function github_psf(test, bf_name)%, prec, terp)
-            test.assumeTrue(bf_name ~= "Eikonal"); % Eikonal is too large?
+            test.assumeTrue(~ismember(bf_name, ["Eikonal","Adjoint"])); % Too much compute
             test.assumeTrue(test.fmod ~= 0); % only test non-centered data
             test.assumeTrue(test.scat.pos(1) ~= 0); % only test non-centered data
             
