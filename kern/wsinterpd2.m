@@ -197,9 +197,9 @@ if use_gdev || use_odev
 
     % kernel sizing
     K = d.MaxGridSize(2);
-    L = min(k.MaxThreadsPerBlock, ceil(N / K));
+    L = max(1,min(k.MaxThreadsPerBlock, ceil(N / K)));
     k.ThreadBlockSize = [min(I,floor(k.MaxThreadsPerBlock / L)), L, 1]; % local group size
-    k.GridSize = ceil([I, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize);
+    k.GridSize = max(1,ceil([I, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize));
 
     % index label flags
     iflags = zeros([1 maxdims], 'uint8'); % increase index i

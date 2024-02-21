@@ -147,9 +147,9 @@ if use_gdev || use_odev
     
     % kernel sizing
     K = d.MaxGridSize(2);
-    L = min(k.MaxThreadsPerBlock, ceil(N / K));
+    L = max(1,min(k.MaxThreadsPerBlock, ceil(N / K)));
     k.ThreadBlockSize = [min(I*M,floor(k.MaxThreadsPerBlock / L)), L, 1]; % I and M are indexed together
-    k.GridSize = ceil([I*M, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize);
+    k.GridSize = max(1,ceil([I*M, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize));
     
     % sample
     y_ = k.feval(y_, x_, t_, flagnum); % compute
