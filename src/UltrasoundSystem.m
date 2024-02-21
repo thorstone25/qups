@@ -682,7 +682,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 ebk = cellfun(@(x)find(x,1,'last'), num2cell(diff(eblocks,1,2), 2)); % get transition point
                 
                 % call the kernel
-                if kwargs.verbose, fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
+                if kwargs.verbose, tt = tic; fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
                 x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fso, wv.fs/fso, cinv_, kwargs.R0], [E,E], flagnum);
                 
             else % operate in native MATLAB
@@ -829,7 +829,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 % move back to GPU if requested
                 if use_gdev, x = gpuArray(gather(x)); end
             end
-            if kvb, disp("Done!"); toc(tt); end
+            if kwargs.verbose, disp("Done!"); toc(tt); end
             
             % make a channel data object (T x N x M)
             x = reshape(x, size(x,2:ndims(x))); % same as shiftdim(x,1), but without memory copies on GPU
