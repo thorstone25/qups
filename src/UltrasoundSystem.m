@@ -3810,14 +3810,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             else, b = cat(chddim, b{:}); end % array
         end
         
-        function [b, bscan] = bfMigration(self, chd, c0, kwargs)
+        function [b, bscan] = bfMigration(self, chd, c0, Nfft, kwargs)
             % BFMIGRATION - Plane-Wave Stolt's f-k migration beamformer
             %
             % b = BFMIGRATION(self, chd) creates a b-mode image b from
             % the plane-wave ChannelData chd created from a TransducerArray
             % defined by self.xdc.
             %
-            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a
+            % b = BFMIGRATION(self, chd, c0) uses the sound speed c0. The
+            % default is us.seq.c0.
+            %
+            % b = BFMIGRATION(..., [F, K]) uses a F-point FFT in time and
+    	    % a K-point FFT laterally. If F < chd.T, the data is truncated temporally
+    	    % and if K < chd.N, the data is truncated laterally. The default is
+    	    % [chd.T, chd.N].
+    	    %
+            % [b, bscan] = BFMIGRATION(...) additionally returns a
     	    % ScanCartesian bscan on which the bmode image is naturally defined.
             %
             % [...] = BFMIGRATION(..., Name, Value, ...) passes additional Name/Value
@@ -3826,11 +3834,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % [...] = BFMIGRATION(..., 'keep_tx', true) preserves the
             % transmit dimension in the output image b.
             %
-            % [...] = BFMIGRATION(..., 'NFFT', [F, K]) uses a F-point FFT in time and
-    	    % a K-point FFT laterally. If F < chd.T, the data is truncated temporally
-    	    % and if K < chd.N, the data is truncated laterally. The default is
-    	    % [chd.T, chd.N].
-    	    %
     	    % [...] = BFMIGRATION(..., 'interp', method) specifies the method for
     	    % interpolation. The default is 'cubic'.
     	    %
@@ -3853,20 +3856,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % doi: <a href="matlab:web('https://doi.org/10.1109%2FTUFFC.2013.2771')">10.1109/TUFFC.2013.2771</a>. PMID: 24626107; PMCID: PMC3970982.
             %
             % Example:
-            % % Define the setup
-            % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', us.seq.c0); % define a point target
-            %
             % % A plane-wave transmission is required - migration works
             % % best for small angles
-            % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10);
-            % us.seq = seq;
+            % c0 = 1500;
+            % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10, 'c0', c0);
+            %
+            % % Define the setup
+            % us = UltrasoundSystem('seq', seq); % get a default system
+            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', c0); % define a point target
             %
             % % Compute the response
             % chd = greens(us, scat);
             %
             % % beamform the data, with implicit zero-padding
-            % [b, bscan] = bfMigration(us, chd, 'Nfft', [2*chd.T, 4*chd.N]);
+            % [b, bscan] = bfMigration(us, chd, c0, [2*chd.T, 4*chd.N]);
             %
             % % Display the image
             % bim = mod2db(b); % log-compression
@@ -3880,10 +3883,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 self (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
                 c0 (1,1) {mustBeNumeric} = self.seq.c0
+                Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
-                kwargs.Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
-                kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.T*chd.N*size(chd.data,4:max(4,ndims(chd.data))))))); % vector computation block size
+                kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(2^(30-4-2-2) / prod([Nfft,prod(size(chd.data,4:max(4,ndims(chd.data))))]))); % vector computation block size - defaults to ~ 1GB
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 % kwargs.verbose (1,1) logical = true
                 kwargs.jacobian (1,1) logical = true
@@ -3902,7 +3905,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             end
 
             % Choose the FFT size in time/frequency and laterally
-            [F, K] = deal(kwargs.Nfft(1), kwargs.Nfft(end));
+            [F, K] = deal(Nfft(1), Nfft(end));
 
             % Exploding Reflector Model velocity
             cs = c0/sqrt(2);
