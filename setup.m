@@ -17,10 +17,23 @@ function setup(opts)
 % 'VCToolsInstallDir' environmental variable is set, it will use that C/C++
 % compiler.
 %
+% SETUP disable-gpu - disables gpu support by shadowing `gpuDeviceCount` so
+% that it always returns 0. This prevents implicit gpu usage by some
+% functions.
+% 
+% SETUP enable-gpu undoes the effects of the above.
+% 
+% SETUP disable-ocl - disables gpu support by shadowing `oclDeviceCount` so
+% that it always returns 0, similar to the disable-gpu option. This 
+% prevents implicit oclDevice and oclKernel usage and checks, which may be
+% necessary to run some function with a parallel.ThreadPool.
+% 
+% SETUP enable-ocl undoes the effects of the above.
+% 
 % See also TEARDOWN
 
 arguments(Repeating)
-    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel"])}
+    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel", "disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl"])}
 end
 
 base_path = fileparts(mfilename('fullpath'));
@@ -120,6 +133,18 @@ while i <= nargin % go through arguments sequentially
             % teardown.m
             setenv('PATH', fullfile(getenv('PATH'), p));
             
+        case {"disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl"}
+            
+            dev = extractAfter(opts{i}, "able-"); % dev type
+            fl = fullfile(base_path,"utils",dev+"DeviceCount.m"); % file
+            switch extractBefore(opts{i}, "-")
+                case "disable"
+                    % shadow gpu/ocl support by setting the device count to 0
+                    writelines("function n = "+dev+"DeviceCount(), n = 0;", fl);
+                case "enable"
+                    % delete the shadowing file (if it exists)
+                    delete(fl);                    
+            end
         otherwise
             error("Unrecognized option " + opts{i} + ".");
     end
