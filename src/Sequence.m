@@ -638,12 +638,12 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             if isfield(TX, "FocalPt") && all(~cellfun(@isempty, {TX.FocalPt})) % focal points -> VS
                 pf = cat(1, TX.FocalPt)' .* lambda; % focal points
                 % attempt to infer focused or diverging wave
-                if     isa(class(xdc), "TransducerArray" ) ...
-                        || isa(class(xdc), "TransducerMatrix")
+                if     isa(xdc, "TransducerArray" ) ...
+                        || isa(xdc, "TransducerMatrix")
                     if     all(pf(3,:) < 0), styp = "DV";
                     elseif all(pf(3,:) > 0), styp = "FC";
                     end
-                elseif isa(class(xdc), "TransducerConvex")
+                elseif isa(xdc, "TransducerConvex")
                     r = vecnorm(pf - xdc.center,2,1);
                     if     all(r < xdc.radius), styp = "DV";
                     elseif all(r > xdc.radius), styp = "FC";
