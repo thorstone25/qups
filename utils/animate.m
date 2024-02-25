@@ -126,7 +126,7 @@ while(all(isvalid(h)))
     end
     if ~kwargs.loop, break; end
 end
-if kwargs.fn, for i = 1:I, h(i).Parent.Title.String = ttls(i); end, end % reset titles
+if kwargs.fn, for i = 1:I, if all(isvalid(h)), h(i).Parent.Title.String = ttls(i); end, end, end % reset titles
 
 function him = inferHandles(x)
 % get the current figure
