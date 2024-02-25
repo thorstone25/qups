@@ -717,7 +717,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 elseif isnumeric(penv) 
                     if penv, P = penv; else, P = 1; end % 0 -> 1
                 else % pool
-                    P = penv.NumWorkers; 
+                    P = max(1,penv.NumWorkers); % ???
                 end 
                 
                 % get block sizes: if less than M, go 1 scat at a time
@@ -771,7 +771,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                         if R0 % min distance - no loss if 0
                             r_rx = max(r_rx, R0); % avoid div by 0
                             r_tx = max(r_tx, R0); % avoid div by 0
-                            att  = R0^-2; % scale by max energy
+                            att  = 1; % R0^-2; % scale by max energy?
                         else
                             [r_rx, r_tx, att] = deal(1); % no propagation loss
                         end
