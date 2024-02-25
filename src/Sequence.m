@@ -326,7 +326,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % seq = obj2struct(seq)
             %
             arguments, seq Sequence {mustBeScalarOrEmpty}; end
-            wmsg = ["MATLAB:structOnObject", "QUPS:Sequence:DeprecatedProperty"];
+            wmsg = ["MATLAB:structOnObject", "QUPS:Sequence:DeprecatedProperty", "QUPS:Sequence:numPulseUnset"];
             W = warning(); % warning state
             for w = wmsg, warning('off', w); end % squash warnings
             s = struct(seq); % convert self
@@ -964,7 +964,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 switch self.type
                     case 'FSA'
                         v = self.FSA_n_tx;
-                        if isempty(v) || ~isfinite(v), warning("Number of pulses is unset."); end
+                        if isempty(v) || ~isfinite(v), warning("QUPS:Sequence:numPulseUnset", "Number of pulses is unset."); end
                     otherwise
                         v = size(self.focus, 2);
                 end
