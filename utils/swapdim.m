@@ -3,6 +3,9 @@ function [x, ord] = swapdim(x, i, o)
 %
 % y = SWAPDIM(x, i, o) swaps dimensions i and o in the array x. 
 %
+% y = SWAPDIM(x, i) swaps dimensions i with dimensions 1:numel(i). This is
+% equivalent to calling y = permute(x, i); 
+% 
 % [y, ord] = SWAPDIM(...) also returns the permution order ord.
 % 
 % SWAPDIM optimistically calls reshape when feasible to avoid an implicit
@@ -18,7 +21,7 @@ function [x, ord] = swapdim(x, i, o)
 arguments
     x
     i (1,:) {mustBeInteger}
-    o (1,:) {mustBeInteger}
+    o (1,:) {mustBeInteger} = 1:numel(i)
 end
 
 % make sure we swap the right dimensions
