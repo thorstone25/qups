@@ -55,8 +55,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         xdc Transducer % Transducer object (if receive and transmit are identical)
     end
     properties
-        tx (1,1) Transducer = TransducerArray() % Transducer object (transmit)
-        rx (1,1) Transducer = TransducerArray() % Transducer object (receive)
+        tx (1,1) Transducer = TransducerArray.P4_2v() % Transducer object (transmit)
+        rx (1,1) Transducer = TransducerArray.P4_2v() % Transducer object (receive)
         seq (1,1) Sequence = Sequence() % Sequence object
         scan (1,1) Scan = ScanCartesian() % Scan object
     end
