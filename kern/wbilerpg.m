@@ -81,7 +81,7 @@ end
 
 % parse device
 use_gdev = logical(gpuDeviceCount());
-use_odev = exist('oclDevice','file') && ~isempty(oclDevice());
+use_odev = exist('oclDeviceCount','file') && ~isempty(oclDeviceCount());
 
 % specify the kernel (must be on the path)
 if use_gdev
