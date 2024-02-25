@@ -19,12 +19,12 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % 
 % ANIMATE(..., 'fs', fs) updates the image at a rate fs.
 % 
-% mvf = ANIMATE(...) returns a cell matrix of movie frames mvf for each
+% mvf = ANIMATE(...) returns a struct matrix of movie frames mvf for each
 % unique figure. This can be used to construct a movie or gif of each
 % figure.
 % 
-% [mvf, mvh] = ANIMATE(...) returns a cell matrix of movie frames for each
-% axes. This can be used to construct a movie or gif of each axes.
+% [mvf, mvh] = ANIMATE(...) returns a struct matrix of movie frames for
+% each axes. This can be used to construct a movie or gif of each axes.
 % 
 % NOTE: MATLAB execution will continue indefinitely while the animation is playing.
 % Close the figure or press 'ctrl + c' in the command window to stop the
@@ -64,13 +64,13 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % mvf = animate({chd.data, b}, h, 'loop', false); % show once
 % 
 % % Create a movie
-% vobj = VideoWriter('tmp', 'Motion JPEG AVI');
-% vobj.FrameRate = 20; % set frame rate to 20 Hz
-% vobj.open();
-% vobj.writeVideo([mvf{:,1}]);
-% vobj.close();
+% vw = VideoWriter("tmp", 'Motion JPEG AVI');
+% vw.FrameRate = 10; % set frame rate to 10 Hz
+% vw.open();
+% vw.writeVideo(mvf);
+% vw.close();
 % 
-% See also IMAGESC FRAME2GIF
+% See also IMAGESC FRAME2GIF VIDEOWRITER
 arguments
     x {mustBeA(x, ["cell","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} % data
     h (1,:) matlab.graphics.primitive.Image = inferHandles(x)
@@ -81,17 +81,34 @@ end
 
 % place data in a cell if it isn't already
 if isnumeric(x) || islogical(x), x = {x}; end
+I = numel(h); % number of images
 
 % argument type checks - x must contain data that can be plotted
 % cellfun(@mustBeReal, x);
 
+% If necessary, attempt to permute the data to match the images
+for i = 1:I
+    hsz = size(h(i).CData); % images size
+    dsz = size(x{i}); % data size
+    dvec = 1:ndims(x{i}); % set of dimensions
+    mch = hsz' == dsz; % where dimensions match
+    c = find(mch(1,:), 1, 'first'); % first match is column dim
+    r = find(mch(2,:), 2, 'first'); % first 2, in case 1st == columns
+    if r(1) == c, r = r(2); else, r = r(1); end % extract row dim
+    if all([c r] == [1 2]), continue; end % already in order
+    ord = [c r, setdiff(dvec, [c,r])]; % permutation order - put '[c r]' first
+    warning("Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
+    x{i} = permute(x{i}, ord); % permute
+end
+
+
 % Get sizing info
-I = numel(h);
-Mi = cellfun(@(x) prod(size(x,3:max(3,ndims(x)))), x); % upper dimension sizing
+msz = cellfun(@(x) {(size(x,3:max(3,ndims(x))))}, x); % upper dimension sizing
+Mi = cellfun(@prod, msz); % total size
 M = unique(Mi);
 
 % validity checks
-assert(isscalar(M), "The number of images must be the same for all images (" + (Mi + ",") + ").");
+assert(isscalar(M), "The number of images must be the same for all images (" + join(string(Mi), " vs. ") + ").");
 assert(numel(h) == numel(x), "The number of image handles (" ...
     + numel(h) + ...
     ") must match the number of images (" ...
@@ -109,15 +126,15 @@ end
 F = numel(hf); % number of figures
 if nargout >= 2, mvh = cell([M,I]); else, mvh = cell.empty; end
 if nargout >= 1, mvf = cell([M,F]); else, mvf = cell.empty; end
-if kwargs.fn, ttls = arrayfun(@(h) string(h.Parent.Title.String), h); end
+if kwargs.fn, ttls = arrayfun(@(h) {string(h.Parent.Title.String)}, h); end
 
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
         for i = 1:I, if isreal(x{i}), h(i).CData(:) = x{i}(:,:,m); else, h(i).CData(:) = mod2db(x{i}(:,:,m)); end, end% update image
-        if kwargs.fn, for i = 1:I, h(i).Parent.Title.String = ttls(i) + " ("+m+")"; end, end% add index to the title
         % if isa(h, 'matlab.graphics.chart.primitive.Surface'), h(i).ZData(:) = h(i).CData(:); end % TODO: integrate surfaces
-        if m == 1, drawnow; getframe(); end % toss a frame to avoid bug where the first frame has a different size
+        if kwargs.fn, for i = 1:I, h(i).Parent.Title.String = ttls{i} + [repmat("",size(ttls{i})-[1 0]); " ("+frameSub(x,m,i)+")"]; end, end % add index(es) to the title
+        if m == 1, drawnow; arrayfun(@getframe, [h.Parent]); end % toss a frame to avoid bug where the first frame has a different size
         drawnow limitrate; 
         tic;
         if ~isempty(mvh), for i = 1:I, mvh{m,i} = getframe(h (i).Parent); end, end %  get the frames 
@@ -126,7 +143,11 @@ while(all(isvalid(h)))
     end
     if ~kwargs.loop, break; end
 end
-if kwargs.fn, for i = 1:I, if all(isvalid(h)), h(i).Parent.Title.String = ttls(i); end, end, end % reset titles
+if kwargs.fn, for i = 1:I, if isvalid(h(i)), h(i).Parent.Title.String = ttls{i}; end, end, end % reset titles
+
+% convert cells to structs
+mvh = reshape(cat(1, mvh{:}), size(mvh));
+mvf = reshape(cat(1, mvf{:}), size(mvf));
 
 function him = inferHandles(x)
 % get the current figure
@@ -167,3 +188,28 @@ him = cellfun(@(h) {h(arrayfun(@(h)isa(h, 'matlab.graphics.primitive.Image'),h))
 him = flip([him{:}]); % image handle array, in order of creation
 
 % TODO: check sizing of data versus image handles?
+
+function mi = frameSub(x,m,i)
+xsz = size(x{i}); % total size
+if nnz(xsz(3:end) > 1) > 1 % more than 1 frame dimension
+    D = length(xsz);
+    mi = cell(1,D-2);
+    [mi{:}] = ind2sub(xsz(3:D), m); % get all sub-indices
+    mi = [mi{:}]; % cell -> array
+else % linear indexing
+    mi = m;
+end
+mi = string(mi); % num -> string
+mi = join(mi, ", "); % 1, 2, 3, ...
+
+
+
+function txt = ith(i)
+arguments, i (1,1) {mustBeInteger, mustBePositive}, end
+if 11 <= mod(i,100) && mod(i,100) <= 13, txt = i+"th"; return; end % special case
+switch mod(i,10)
+    case 1,     txt = i+"st";
+    case 2,     txt = i+"nd";
+    case 3,     txt = i+"rd";
+    otherwise,  txt = i+"th";
+end
