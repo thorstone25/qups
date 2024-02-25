@@ -3201,7 +3201,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd_ord = [chd.ndim, chd.mdim, chd.tdim]; % permution order
             ichd_ord(chd_ord) = 1:3; % inverse permutation
 
-            if kwargs.verbose, tt = tic; fprintf("Beamforming for " + numel(k) + " frequency bands. Completed: ["); end
+            if kwargs.verbose, tt = tic; fprintf("Beamforming for " + numel(k) + " frequency bands "); end % . Completed: ["); end
             % DEBUG: plot
             % figure; h = imagesc(squeeze(zeros(self.scan.size))); colorbar; colormap jet;
 
@@ -3244,9 +3244,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 % DEBUG: update display
                 % h.CData(:) = mod2db(sum(y,3)); drawnow limitrate; 
             
-                if kvb, fprintf(string(ik) +","); end
+                % if kvb, fprintf(string(ik) +","); end
+                if kvb, fprintf("."); end
             end
-            if kwargs.verbose, fprintf("\b]\nDone! "); toc(tt), end
+            % if kvb, fprintf("\b]\nDone! "); toc(tt), end
+            if kvb, fprintf("\nDone! "); toc(tt), end
 
             % move to image dimensions ([I] x ... x perm([1|N] x [1|V] x 1)
             b = swapdim(b, [D+(1:3), 3+(1:D-3), ichd_ord], 1:D+3);
