@@ -722,7 +722,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 
                 % get block sizes: if less than M, go 1 scat at a time
                 [B, S] = deal(floor(kwargs.bsize), scat(f).numScat);
-                Bm = min(floor(B/P),floor(M/P)); % simulataneous transmits
+                Bm = max(1,min(floor(B/P),floor(M/P))); % simulataneous transmits
                 Bs = max( 1, floor(B / Bm / P) ); % simulataneous scats
                 svec = num2cell( (1:Bs)'+(0:Bs:S-1), 1);
                 mvec = num2cell( (1:Bm)'+(0:Bm:M-1), 1);
