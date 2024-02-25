@@ -28,8 +28,6 @@ function b = dmas(bn, dim, L)
 % Example:
 % % Define the system
 % us = UltrasoundSystem(); % get a default system
-% us.scan = ScanCartesian('x', (-20 : 20)*1e-3, 'z', (0 : 50) * 1e-3);
-% [us.scan.dx, us.scan.dz] = deal(us.lambda / 8);
 % 
 % % Generate Scatterers
 % scat = Scatterers('pos', 1e-3*[0,0,30]', 'c0', us.seq.c0);
@@ -37,7 +35,8 @@ function b = dmas(bn, dim, L)
 % % Compute the image
 % chd = greens(us, scat); % compute the response
 % fmod = us.xdc.fc; % baseband demodulation frequency
-% brx = DAS(us, downmix(chd,fmod), 'keep_rx', true, 'fmod', fmod); % beamform the data at baseband, keeping the receive dimension
+% chd = downmix(chd, fmod); % baseband the data
+% brx = DAS(us, chd, 'keep_rx', true, 'fmod', fmod); % beamform the data at baseband, keeping the receive dimension
 % ndim = ndims(brx); % get receive dimension
 % bdas = sum(brx, ndim); % DAS
 % bdmas = dmas(brx, ndim); % DMAS

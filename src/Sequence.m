@@ -227,7 +227,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         % tx = TransducerArray('numel', 32);
         % seq = Sequence(...
         %     'type', 'FSA', 'numPulse', tx.numel, ...
-        %     'del' = (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc ...
+        %     'del', (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc ...
         %     );
         %
         % % Get a default system and scatterers
@@ -320,7 +320,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % Example:
             %
             % % Create a Sequence
-            % seq = Sequence()
+            % seq = SequenceRadial('angles', -25:0.5:25);
             %
             % % convert to a MATLAB struct
             % seq = obj2struct(seq)

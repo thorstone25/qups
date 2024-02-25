@@ -2746,7 +2746,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Create plane-wave data by synthesizing the transmits with plane-wave delays
             % 
             % seq_pw = SequenceRadial('type', 'PW', 'c0', us.seq.c0, ...
-            %  'angles', -25:0.5:25, 'ranges', 1); % plane-wave sequence
+            %  'angles', -25:5:25, 'ranges', 1); % plane-wave sequence
             % chd_pw = focusTx(us, chd, seq_pw); % synthesize transmits
             %
             % % Beamform the plane-wave data
@@ -2878,10 +2878,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Define the setup - make plane waves
             % c0 = 1500;
             % us = UltrasoundSystem();
-            % us.seq.c0 = c0;
+            % seq = Sequence(        'type', 'FSA', 'numPulse', xdc.numel, 'c0', c0);
             % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
-            % seqfc = SequenceRadial('type', 'FC', 'focus', [1;0;0].*(sub(us.xdc.positions,1,1)) + [0;0;20e-3], 'c0', c0);
-            % scat = Scatterers('pos', [5e-3;0;30e-3], 'c0', seqpw.c0); % define a point target
+            % seqfc = SequenceRadial('type', 'FC', 'focus',[0 0 20]' + [1 0 0]'.*sub(us.xdc.positions,1,1), 'c0', c0);
+            % scat = Scatterers('pos', [5 0 30]'*1e-3, 'c0', seqpw.c0); % define a point target
             %
             % % Compute the image
             % chd = greens(us, scat); % compute the response
@@ -2922,10 +2922,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Display the images
             % figure('Name', 'B-mode');
             % tiledlayout('flow');
-            % bs = cat(4, b, b, bpw, bfsa1, bfc, bfsa2);
-            % bpow = gather(mod2db(max(bs,[],1:2)));
-            % for i = 1:size(bs,4)
-            %     himb(i) = imagesc(us.scan, sub(bs,i,4), nexttile(), bpow(i) + [-80 0]);
+            % bs = {b, b, bpw, bfsa1, bfc, bfsa2};
+            % bpow = gather(mod2db(cellfun(@(b)max(b,[],'all'), bs)));
+            % for i = 1:numel(bs)
+            %     himb(i) = imagesc(us.scan, bs{i}, nexttile(), bpow(i) + [-80 0]);
             %     colormap gray; colorbar; 
             %     title(tnms(i));
             % end
@@ -3070,7 +3070,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
-            % chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            % chd = zeropad(singleT(chd), 0, max(0, chd.T - 512)); % precondition the data
             % if isreal(chd), chd = hilbert(chd); end % complex analog
             % b = bfAdjoint(us, chd); % beamform the data
             % 
