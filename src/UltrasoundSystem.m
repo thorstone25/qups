@@ -3191,7 +3191,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % cast data type for efficency
             [w_tx, w_rx, w_steer, apod_tx] = dealfun(@(w) cast(w, 'like', real(x)), w_tx, w_rx, w_steer, apod_tx);
-            b = repmat(cast(0, 'like', x), [1, size(Pi,2:ndims(Pi))]);
+            b = zeros(1,'like', x);
 
             % splice data 
             k = gather(find(f_val)'); % skip unimportant frequencies
@@ -3199,6 +3199,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             k{end}(isnan(k{end})) = []; % delete invalid entries
             xk = cellfun(@(k) sub(x,k,chd.tdim), k, 'UniformOutput',false);
             chd_ord = [chd.ndim, chd.mdim, chd.tdim]; % permution order
+            ichd_ord(chd_ord) = 1:3; % inverse permutation
 
             if kwargs.verbose, tt = tic; fprintf("Beamforming for " + numel(k) + " frequency bands. Completed: ["); end
             % DEBUG: plot
@@ -3219,19 +3220,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 xk_ = permute(xk{ik}, [chd_ord, 4:D]);
                 
                 % compute the greens functions on transmit/receive
-                G_tx = w_tx.^(k_-1); % 1 x M x F x 1 x [I]
-                G_rx = w_rx.^(k_-1); % 1 x N x F x 1 x [I]
+                % G_tx = w_tx.^(k_-1); % 1 x M x F x 1 x [I]
+                % G_rx = w_rx.^(k_-1); % 1 x N x F x 1 x [I]
 
                 % compute the inverse steering vector on transmit
-                T_tx = apod_tx .* w_steer.^(k_-1); % M x V x F
-                A_tx = pagemtimes(G_tx, T_tx); % 1 x V x F x 1 x [I]
+                A_tx = apod_tx .* w_steer.^(k_-1); % M x V x F
+                A_tx = pagemtimes(w_tx.^(k_-1), A_tx); % 1 x V x F x 1 x [I]
                 Ainv_tx = pagetranspose(A_tx); % V x 1 x F x 1 x [I] % make a column vector
                 Ainv_tx = Ainv_tx ./ vecnorm(Ainv_tx, 2, 1); % normalize the power
                 
                 % apodize, delay, and sum the data for this frequency
                 % only 1 of the a_* will contain the apodization
-                if sumrx, yn = a_m .*      pagemtimes(a_n .* conj(G_rx)   , a_mn .* xk_); % 1 x V x F x 1 x [I]
-                else,     yn = a_m .* (pagectranspose(a_n .*     (G_rx)) .* a_mn .* xk_); % N x V x F x 1 x [I]
+                if sumrx, yn = a_m .*      pagemtimes(a_n .* conj(w_rx.^(k_-1))   , a_mn .* xk_); % 1 x V x F x 1 x [I]
+                else,     yn = a_m .* (pagectranspose(a_n .*     (w_rx.^(k_-1))) .* a_mn .* xk_); % N x V x F x 1 x [I]
                 end
                 if sumtx, y  = pagemtimes(yn,                 conj(Ainv_tx));  % [1|N] x 1 x F x 1 x [I]
                 else,     y  =           (yn .* pagectranspose(   (Ainv_tx))); % [1|N] x V x F x 1 x [I]
@@ -3248,7 +3249,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             if kwargs.verbose, fprintf("\b]\nDone! "); toc(tt), end
 
             % move to image dimensions ([I] x ... x perm([1|N] x [1|V] x 1)
-            b = swapdim(ipermute(b,[chd_ord, 4:(D+3)]), 1:3, D+(1:3));
+            b = swapdim(b, [D+(1:3), 3+(1:D-3), ichd_ord], 1:D+3);
 
             % set delays to proper output sizing
             if nargout >= 2
