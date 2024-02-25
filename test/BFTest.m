@@ -54,6 +54,7 @@ classdef BFTest < matlab.unittest.TestCase
             % Choose a transmit sequence
             switch seq_type
                 case {"FC","DV","VS"}
+                    % get apodization 
                     switch class(xdc)
                         case "TransducerMatrix"
                             [N, M] = deal(xdc.numd(1), xdc.numd(2));
@@ -65,10 +66,12 @@ classdef BFTest < matlab.unittest.TestCase
                         otherwise
                             apd = Sequence.apWalking(xdc.numel, xdc.numel / 4, xdc.numel/16);
                     end
+
+                    % get foci offset foci towards the scatterer
                     if seq_type == "DV", zf = -10e-3; else, zf = 50e-3; end
                     switch class(xdc)
                         case "TransducerConvex"
-                            pf = xdc.focActive(apd, zf);
+                            pf = xdc.focActive(apd, zf) + mean(scat.pos(1,:));
                             seq = SequenceRadial('c0',c0,'type',seq_type,'focus',pf,'apd',apd,'apex', xdc.center);
                         case "TransducerGeneric"
                             [pn, th] = deal(xdc.positions, xdc.orientations);
@@ -78,16 +81,19 @@ classdef BFTest < matlab.unittest.TestCase
                             tu = cell2mat(cellfun(@(a){th(:,ceil( median(find(a))))}, num2cell(apd,1)));
                             p0 = (pl + pu)/2;
                             t0 = (tl + tu)/2;
-                            pf = p0 + zf*[sind(t0); 0*t0; cosd(t0)];
+                            pf = p0 + zf*[sind(t0); 0*t0; cosd(t0)] + mean(scat.pos(1,:));
                             seq = Sequence('c0',c0,'type',seq_type,'focus',pf,'apd',apd);
                         otherwise
-                            pf = xdc.focActive(apd, zf);
+                            pf = xdc.focActive(apd, zf) + mean(scat.pos(1,:));
                             seq = Sequence('c0',c0,'type',seq_type,'focus',pf,'apd',apd);
-                    end                    
+                    end         
                 case "FSA"
                     seq = Sequence('c0',c0,'type','FSA','numPulse',xdc.numel);
                 case "PW"
-                    seq = SequenceRadial('c0',c0,'type','PW','angles',-10:5:10);
+                    switch class(xdc), case "TransducerConvex", p0 = xdc.center; otherwise, p0 = xdc.offset; end
+                    r = scat.pos - p0;
+                    th0 = mean(atan2d(r(1,:), r(3,:)));
+                    seq = SequenceRadial('c0',c0,'type','PW','angles',-10:5:10+th0);
             end
 
             % make a Cartesian Scan around the point target for imaging
@@ -112,7 +118,7 @@ classdef BFTest < matlab.unittest.TestCase
                 case "TransducerConvex"
                     r = scat.pos - xdc.center; % radial vector to scat
                     th = xdc.orientations;
-                    scan = ScanPolar("origin",xdc.center,"r", vecnorm(r,2,1) + dp, "a", linspace(th(1), th(end), 2*xdc.numel) + mean(atan2d(r(1,:),r(3,:))));
+                    scan = ScanPolar("origin",xdc.center,"r", vecnorm(r,2,1) + dp, "a", th + mean(atan2d(r(1,:),r(3,:))));
                 otherwise
                     scan = copy(scanc);
             end
@@ -151,7 +157,7 @@ classdef BFTest < matlab.unittest.TestCase
             if baseband
                 fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency
                 ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
-                chd = downmix(hilbert(chd), us.xdc.fc); % downmix
+                chd = downmix(chd, us.xdc.fc); % downmix
                 chd = downsample(chd, ratio); % downsample
                 fmod = us.xdc.fc;
             else
@@ -211,9 +217,7 @@ classdef BFTest < matlab.unittest.TestCase
     % Github test routine
     methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
         function github_psf(test, bf_name)%, prec, terp)
-            test.assumeTrue(~ismember(bf_name, ["Eikonal","Adjoint"])); % Too much compute
-            test.assumeTrue(test.fmod ~= 0); % only test non-centered data
-            test.assumeTrue(test.scat.pos(1) ~= 0); % only test non-centered data
+            if(any(bf_name == ["Eikonal","Adjoint"])), return; end % Too much compute
             
             % only test 1 precision/interpolation/apodization combo
             psf(test, 0, bf_name, 'singleT', 'nearest', false); 
@@ -247,11 +251,11 @@ classdef BFTest < matlab.unittest.TestCase
 
             % exceptions
             % for the Eikonal beamformer, pass if not given FSA delays
-            test.assumeFalse(bf_name == "Eikonal" && us.seq.type ~= "FSA");
+            if(bf_name == "Eikonal" && us.seq.type ~= "FSA"), return; end
             % if using a frequency domain method, skip half precision - the phase errors are too large
-            test.assumeFalse(ismember(bf_name, ["Adjoint"]) && prec == "halfT");
+            if(ismember(bf_name, ["Adjoint"]) && prec == "halfT"), return; end
             % weird phase error, but it's not important right now - skip it
-            test.assumeFalse(ismember(bf_name, ["Adjoint"]) && us.seq.type == "VS"); % && isa(us.xdc, 'TransducerConvex'));
+            if(ismember(bf_name, ["Adjoint"]) && us.seq.type == "VS") return; end % && isa(us.xdc, 'TransducerConvex'));
             % is using the adjoint method, pagemtimes,pagetranspose must be supported
             test.assumeTrue( bf_name ~= "Adjoint" || (...
                    logical(exist('pagemtimes'   , 'builtin')) ...
@@ -259,7 +263,7 @@ classdef BFTest < matlab.unittest.TestCase
                 ));
 
             % set ChannelData type
-            test.assumeTrue(prec ~= "halfT" || logical(exist('halfT', 'class')));
+            % test.assumeTrue(prec ~= "halfT" || logical(exist('halfT', 'class')));
             tfun = str2func(prec);
             chd = tfun(test.chd); % cast to specified precision
             

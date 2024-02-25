@@ -21,17 +21,18 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
     ("msfm" + ["","2d","3d"]), ...
     "setup", "teardown"
     ];
-        bl_fcn = [ ...
-    "getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords", ... % fullwave
-    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave
-    "QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern, ... USTB
-    "simus" + ["","3"], ... MUST
-    "recompile" + ["","Mex","CUDA"], ... compilation (optional, requires CUDA)
-    ] + "(";
         bl_var = [ ...
     "my_VSX_data.mat", "Trans", "RcvData", "Resource", ... Verasonics
     ] + (pnc() | whitespacePattern);
 
+        bl_fcn = [ ...
+            ... "bfAdjoint", ... QUPS (RAM)
+    "getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords", ... % fullwave
+    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave
+    "QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern, ... USTB
+    "simus", ... MUST
+    "recompile" + ["","Mex","CUDA"], ... compilation (optional, requires CUDA)
+    ] + "(";
     end
     
     % ------------------------------------------------------------ %
@@ -125,6 +126,9 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
             % name of the file
             [~, n] = fileparts(fls);
 
+            % files (kernel functions) that require CUDAKernel or oclKernel support
+            test.assumeTrue(~ismember(n, ["wbilerpg"]) || gpuDeviceCount || oclDeviceCount);
+
             % read in code
             txt = readlines(fls);
 
@@ -175,8 +179,8 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
                 % TODO: pass or filter based on Tag
                 % assume less than 25 scatterers with the greens function
                 S = check_num_scat(code); % number of scatterers
-                L = 25;
-                test.assumeTrue(S <= L, "Example uses " + S + " scatterers, exceeding the limit of "+L+".");
+                L = 1e4;
+                test.assumeTrue(S <= L, "Example uses " + S + " scatterers, exceeding the limit of " + L + ".");
 
                 % make into a function
                 fnm = join([n, blk{1}(k)],"_"); % function/file name
@@ -190,7 +194,7 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
                 if test.delete_file, test.addTeardown(@delete, ofl); end
 
                 % assert a clean run
-                test.assertWarningFree(str2func("@"+fnm))
+                test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
 
                 % mark at least 1 help file
                 h = true;

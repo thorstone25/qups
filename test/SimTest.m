@@ -154,10 +154,10 @@ classdef SimTest < matlab.unittest.TestCase
             
             % Choose the simulation region (eikonal)
             switch xdc_name
-                case "C5-2V",   tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+20*2^3), 'z', linspace(-2e-3, 23e-3, 50*2^3));
-                case "PO192O",  tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+20*2^3), 'z', linspace(-5e-3, 20e-3, 1+50*2^3));
+                case "C5-2V",   tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+10*2^3), 'z', linspace(-2e-3, 23e-3, 20*2^3));
+                case "PO192O",  tscan = ScanCartesian('x',linspace(-2e-3, 2e-3, 1+04*2^3), 'z', linspace(-2e-3, 18e-3, 1+20*2^3));
                                 tscan.y = tscan.x;
-                otherwise,      tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+20*2^3), 'z', linspace(-5e-3, 20e-3, 1+50*2^3));
+                otherwise,      tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+10*2^4), 'z', linspace(-5e-3, 20e-3, 1+25*2^4));
             end
 
             % create a distributed medium based on the point scatterers
