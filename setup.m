@@ -39,7 +39,7 @@ end
 base_path = string(fileparts(mfilename('fullpath')));
 prj = matlab.project.rootProject;
 nms = recursiveProjectName(prj); % get all open project names
-if ~ismember("no-path",opts) % don't modify paths if asked not to
+if ~any(cellfun(@(o) o=="no-path", opts)) % don't modify paths if asked not to
     if isempty(prj)
         openProject(fullfile(base_path, 'Qups.prj')); % open the project
     elseif ismember(nms, "qups") % qups already open
