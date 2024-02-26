@@ -24,8 +24,7 @@ classdef BFTest < matlab.unittest.TestCase
         % Shared setup for the entire test class
         function setupQUPS(test)
             cd(BFTest.proj_folder); % call setup relative to here
-            setup CUDA; % compile what we can
-            if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
+            if ~exist('bin', 'dir'), setup CUDA cache; end % recompile and make a cache
             addpath("bin/");
         end
 
@@ -216,7 +215,7 @@ classdef BFTest < matlab.unittest.TestCase
 
     
     % Github test routine
-    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Not-Github'})
         function github_psf(test, bf_name)%, prec, terp)
             if(any(bf_name == ["Eikonal","Adjoint"])), return; end % Too much compute
             

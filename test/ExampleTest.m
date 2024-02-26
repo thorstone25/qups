@@ -1,4 +1,4 @@
-classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
+classdef(TestTags = ["Not-Github", "full"]) ExampleTest < matlab.unittest.TestCase
 
     % files
     properties
@@ -101,7 +101,7 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
 
     % ---------------------------------------------- % 
    
-    methods (Test, TestTags={'Github', 'full'})
+    methods (Test, TestTags={'Not-Github', 'full'})
         % Test methods
         function run_examples(test, fls)
             % arguments

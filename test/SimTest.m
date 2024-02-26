@@ -32,8 +32,7 @@ classdef SimTest < matlab.unittest.TestCase
         % Shared setup for the entire test class
         function setupQUPS(test, gpu, clp, xdc_seq_name)
             cd(SimTest.proj_folder); % call setup relative to here
-            setup(gpu{:}); % compile what we can
-            if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
+            if ~exist('bin', 'dir'), setup('cache', gpu{:}); end % recompile and make a cache
 
             % ensure we can actually start these pools
             switch clp
@@ -216,7 +215,7 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     % Github test routine
-    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Not-Github'})
         function github_pscat(test)
             % only test Green's function
             % switch terp, case {'nearest','linear','cubic'}, otherwise, return; end
