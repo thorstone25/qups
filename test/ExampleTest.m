@@ -17,9 +17,9 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
     % blacklists
     properties
         bl_file = [ ...
-    "example_test_crawler", "import_verasonics_data", "run_QUPS_tests", "cheat_sheet", ...
+    "import_verasonics_data", "run_QUPS_tests", "cheat_sheet", ...
     ("msfm" + ["","2d","3d"]), ...
-    "setup", "teardown"
+    "setup", "teardown", ...
     ];
         bl_var = [ ...
     "my_VSX_data.mat", "Trans", "RcvData", "Resource", ... Verasonics
@@ -30,9 +30,13 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
     "getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords", ... % fullwave
     "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave
     "QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern, ... USTB
+    "calc_scat"+["","_all", "_multi"], ... FieldII
     "simus", ... MUST
     "recompile" + ["","Mex","CUDA"], ... compilation (optional, requires CUDA)
     ] + "(";
+        bl_gpu = [
+            "wbilerpg", ... CUDAKernel or oclKernel support required
+            ]
     end
     
     % ------------------------------------------------------------ %
@@ -127,7 +131,7 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
             [~, n] = fileparts(fls);
 
             % files (kernel functions) that require CUDAKernel or oclKernel support
-            test.assumeTrue(~ismember(n, ["wbilerpg"]) || gpuDeviceCount || oclDeviceCount);
+            test.assumeTrue(~ismember(n, test.bl_gpu) || gpuDeviceCount || (exist('oclDeviceCount', 'file') && oclDeviceCount));
 
             % read in code
             txt = readlines(fls);
