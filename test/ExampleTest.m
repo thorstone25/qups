@@ -221,9 +221,17 @@ if isempty(i), S = 0; return; end % 0 if greens not found
 if ~isscalar(i), i = i(1); warning("Multiple calls to greens: choosing the first."); end
 v = strip(extractBetween(code(i), pat, ("," | ")"))); % scat variable
 
-% run the code up to right before calling greens (assumes no loops/branches)
+% write code to a file
 fl = tempname + ".m";
-writelines(code(1:i-1), fl);
+if exist('writelines','file')
+    writelines(code(1:i-1), fl);
+else
+    fid = fopen(fl, 'w+');
+    fwrite(fid, join(code(1:i-1),newline));
+    fclose(fid);
+end
+
+% run the code up to right before calling greens (assumes no loops/branches)
 try run(fl);
     % evaluate number of scatterers
     S = eval(v+".numScat");
