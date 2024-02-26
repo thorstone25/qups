@@ -11,17 +11,17 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
         % Shared setup for the entire test class
-        function setupQUPS(test)
-            cd(InitTest.proj_folder); % setup relative to here
-            setup; % setup alone to add paths
-        end
+        % function setupQUPS(test)
+        %     cd(InitTest.proj_folder); % setup relative to here
+        %     setup; % setup alone to add paths
+        % end
     end
     methods(TestClassTeardown)
-        function teardownQUPS(test)
-            cd(InitTest.proj_folder); 
-            teardown; % basic teardown should run
-            try delete(gcp('nocreate')); end % undo parpool if exists
-        end
+        % function teardownQUPS(test)
+        %     cd(InitTest.proj_folder); 
+        %     teardown; % basic teardown should run
+        %     try delete(gcp('nocreate')); end % undo parpool if exists
+        % end
     end
 
     methods(TestMethodSetup)
@@ -30,7 +30,7 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
     methods(Test)
         function initQUPS(test, par, cache, gpu)
             cd(InitTest.proj_folder); % setup relative to here
-            setup(par{:}, gpu{:}, cache{:}); % setup with each option combo should work
+            setup(par{:}, gpu{:}, cache{:}, "no-path"); % setup with each option combo should work
         end
 
         function initxdc(test)

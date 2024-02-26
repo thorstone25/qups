@@ -32,7 +32,7 @@ classdef SimTest < matlab.unittest.TestCase
         % Shared setup for the entire test class
         function setupQUPS(test, gpu, clp, xdc_seq_name)
             cd(SimTest.proj_folder); % call setup relative to here
-            if ~exist('bin', 'dir'), setup('cache', gpu{:}); end % recompile and make a cache
+            setup('cache', "no-path", gpu{:}); % recompile and make a cache
 
             % ensure we can actually start these pools
             switch clp

@@ -22,11 +22,11 @@ classdef BFTest < matlab.unittest.TestCase
 
     methods(TestClassSetup, ParameterCombination = 'pairwise')
         % Shared setup for the entire test class
-        function setupQUPS(test)
-            cd(BFTest.proj_folder); % call setup relative to here
-            if ~exist('bin', 'dir'), setup CUDA cache; end % recompile and make a cache
-            addpath("bin/");
-        end
+        % function setupQUPS(test)
+        %     cd(BFTest.proj_folder); % call setup relative to here
+        %     if ~exist('bin', 'dir'), setup CUDA cache; end % recompile and make a cache
+        %     addpath("bin/");
+        % end
 
         function setupQUPSdata(test, xdc_type, seq_type, baseband)
             %% create point target data with the configuration

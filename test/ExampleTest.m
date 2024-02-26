@@ -1,4 +1,4 @@
-classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
+classdef ExampleTest < matlab.unittest.TestCase
 
     % files
     properties
@@ -75,13 +75,15 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
     methods(Static, TestParameterDefinition)
         function fls = get_proj_files()
             % project files
-            if ~isempty(matlab.project.rootProject) && (currentProject().Name == "qups")
-                prj = currentProject();
-            elseif exist("Qups.prj", "file")
-                prj = openProject(which("Qups.prj"));
-            else
-                prj = struct.empty;
-            end
+            % if ~isempty(matlab.project.rootProject) && (currentProject().Name == "qups")
+            %     prj = currentProject();
+            % elseif exist("Qups.prj", "file")
+            %     prj = openProject(which("Qups.prj"));
+            % else
+            %     prj = struct.empty;
+            % end
+            % TODO: access via project fixture?
+            prj = struct.empty;
 
             % get all the files in the repo
             if isempty(prj)
@@ -101,7 +103,7 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
 
     % ---------------------------------------------- % 
    
-    methods (Test, TestTags={'Github', 'full'})
+    methods (Test, TestTags=["Github", "full"])
         % Test methods
         function run_examples(test, fls)
             % arguments

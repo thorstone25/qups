@@ -11,14 +11,14 @@ classdef KernTest < matlab.unittest.TestCase
         % Shared setup for the entire test class
         function setupQUPS(test, gpu)
             cd(KernTest.proj_folder); % setup relative to here
-            setup(gpu{:}); % setup with/without GPU copmilation support: each option combo should work
+            setup(gpu{:}, "no-path"); % setup with/without GPU copmilation support: each option combo should work
         end
     end
     methods(TestClassTeardown)
-        function teardownQUPS(test)
-            cd(KernTest.proj_folder); 
-            teardown; % basic teardown should run
-        end
+        % function teardownQUPS(test)
+        %     cd(KernTest.proj_folder); 
+        %     teardown; % basic teardown should run
+        % end
     end
     properties(TestParameter)
         prec = {'double', 'single'}%, 'halfT'}
