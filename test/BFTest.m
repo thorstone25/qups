@@ -215,7 +215,7 @@ classdef BFTest < matlab.unittest.TestCase
 
     
     % Github test routine
-    methods(Test, ParameterCombination = 'sequential', TestTags={'Not-Github'})
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
         function github_psf(test, bf_name)%, prec, terp)
             if(any(bf_name == ["Eikonal","Adjoint"])), return; end % Too much compute
             
