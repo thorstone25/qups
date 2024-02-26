@@ -186,7 +186,15 @@ classdef ExampleTest < matlab.unittest.TestCase
                 % assume less than 25 scatterers with the greens function
                 S = check_num_scat(code); % number of scatterers
                 L = 1e4;
-                test.assumeTrue(S <= L, "Example uses " + S + " scatterers, exceeding the limit of " + L + ".");
+                if(S > L)
+                    warning( ...
+                        "Skipping example " + n + " <" + ...
+                        blk{1}(k(1)) + "-" + blk{1}(k(end)) + "> : " + ...
+                        S + " scatterers, exceeding the limit of " ...
+                        + L + "." ...
+                        ); 
+                    continue; 
+                end
 
                 % make into a function
                 fnm = join([n, blk{1}(k)],"_"); % function/file name
