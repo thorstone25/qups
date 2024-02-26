@@ -1,5 +1,5 @@
 name: Run MATLAB Tests on GitHub-Hosted Runner
-on: [pull_request]
+on: [pull_request, push]
 jobs:
   test:
     name: Run MATLAB Tests and Generate Artifacts
@@ -11,21 +11,21 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v3
-      - name: Set up MATLAB
-        uses: matlab-actions/setup-matlab@v2
-        with: 
-            release: ${{matrix.release}}
-            products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox Statistics_and_Machine_Learning_Toolbox
-      - name: Run tests and generate artifacts
-        uses: matlab-actions/run-tests@v2
-        with: 
-            select-by-folder: test
-            select-by-tag: Github
-            code-coverage-cobertura: coverage.xml
-      - name: Create orphan branch
-        uses: action-badges/create-orphan-branch@0.1.1
-        with:
-          branch-name: badges
+      # - name: Set up MATLAB
+      #   uses: matlab-actions/setup-matlab@v2
+      #   with: 
+      #       release: ${{matrix.release}}
+      #       products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox Statistics_and_Machine_Learning_Toolbox
+      # - name: Run tests and generate artifacts
+      #   uses: matlab-actions/run-tests@v2
+      #   with: 
+      #       select-by-folder: test
+      #       select-by-tag: Github
+      #       code-coverage-cobertura: coverage.xml
+      # - name: Create orphan branch
+      #   uses: action-badges/create-orphan-branch@0.1.1
+      #   with:
+      #     branch-name: badges
       - name: Make Coverage Badge
         uses: action-badges/cobertura-coverage-xml-badges@0.3.0
         with:
