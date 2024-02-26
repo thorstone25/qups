@@ -4,8 +4,8 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-latest] #, macos-latest, windows-latest]
-        release: [R2020b,R2021a,R2021b,R2022a,R2022b]
+        platform: [ubuntu-latest, windows-latest] #, macos-latest]
+        release: [R2020b,latest]
     name: Run MATLAB Tests and Generate Artifacts
     runs-on: ${{ matrix.platform }}
     steps:
@@ -16,9 +16,11 @@ jobs:
         with: 
             release: ${{matrix.release}}
       - name: Run tests and generate artifacts
-        uses: matlab-actions/run-tests@v1
+        uses: matlab-actions/run-tests@v2
         with: 
             select-by-folder: test
             select-by-tag: Github
-            
+            use-parallel: false
+            code-coverage-cobertura: ./coverage.xml
+
 
