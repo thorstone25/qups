@@ -3,6 +3,7 @@
 ![GitHub License](https://img.shields.io/github/license/thorstone25/qups)
 ![GitHub Tag](https://img.shields.io/github/v/tag/thorstone25/qups)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/thorstone25/qups/testing.yml)
+![Endpoint Badge](https://img.shields.io/endpoint?url=%22https%3A%2F%2Fgist.githubusercontent.com%2Fthorstone25%2Fa38004ac36b1dbdb87cb61852435ab3d%2Fraw%2F22f6eb757be4680e9f43e1275af3495eb8bab9c6%2Fqups-cobertura-coverage.json%22)
 ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/thorstone25/qups)
 ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues-pr/thorstone25/qups)
 ![GitHub Release Date](https://img.shields.io/github/release-date-pre/thorstone25/qups)
