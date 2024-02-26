@@ -5,8 +5,8 @@ jobs:
     name: Run MATLAB Tests and Generate Artifacts
     strategy:
       matrix:
-        platform: [ubuntu-latest] #, windows-latest] #, macos-latest]
-        release: [latest] # [R2020b,latest]
+        platform: [ubuntu-latest, windows-latest] #, macos-latest]
+        release: [R2021a, latest]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Check out repository
