@@ -1,0 +1,19 @@
+name: Make Coverage Badge
+on: [pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: action-badges/create-orphan-branch@0.1.1
+        with:
+          branch-name: badges
+
+      - name: Make Coverage Badge
+        uses: action-badges/cobertura-coverage-xml-badges@0.3.0
+        with:
+          file-name: coverage.svg
+          badge-branch: badges
+          github-token: '${{ secrets.GITHUB_TOKEN }}'
+          coverage-file-name: ./coverage.xml
