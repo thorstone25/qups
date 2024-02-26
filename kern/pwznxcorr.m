@@ -81,6 +81,34 @@ function y = pwznxcorr(x, lags, W, kwargs)
 % available, this introduces wrap-around artefacts, but prevents the need
 % to copy x, reducing the memory footprint slightly. The default is true.
 %
+% Example:
+% % Create correlated channels with gaussian phase noise
+% [T, N, P] = deal(512, 64, 10); % time, channels, samples-per-period
+% [fc, sig] = deal(2, 2); % frequency, phase noise
+% fs = P*fc;
+% tn = randi([-1 1]*floor(0.25*P), [1 N]); % random shift - differnce < 1/2 period
+% t  = ((0 : T-1)' + tn) ./ fs;
+% theta = fc * t;
+% eta = 1e-2*sig*randn(size(theta)); % std of 5%
+% x = sinpi(2*(theta + eta)); 
+% 
+% % Get correlation
+% L = floor(0.5*P); % max temporal lag - don't exceed more than 1/2 period
+% W = floor(5*P); % temporal window size (in samples)
+% y = pwznxcorr(x, L, W);
+% 
+% % The peak lag across channels should be identical to the random shift
+% [v, i] = max(y, [], 3);
+% lags = -L : L;
+% assert(isequal(lags(mode(i,1)), -diff(tn)));
+% 
+% % Show the peak lag
+% figure;
+% imagesc(v);
+% title('Peak Correlation');
+% xlabel('Channels (#)');
+% ylabel('Time Sample (#)');
+% 
 % See also CONVN XCORR
 
 arguments

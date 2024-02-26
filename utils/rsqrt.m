@@ -8,6 +8,10 @@ function x = rsqrt(x)
 % gpuArray types are cast to complex if x contains negative values. 
 % Integer types are upcast to double.
 %
+% Example:
+% assert(isalmostn(rsqrt((1 : 10) .^2), 1 ./ (1 : 10)))
+% 
+% 
 % See also: SQRT
 
 arguments, x {mustBeNumeric}, end

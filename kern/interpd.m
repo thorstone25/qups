@@ -26,8 +26,24 @@ function [y, k, ord] = interpd(x, t, dim, interp, extrapval)
 % y = INTERPD(x, t, dim, interp, extrapval) uses extrapval as the
 % extrapolation value when outside of the domain of t.
 %
+% Example:
+% % Create data
+% x = randn([4, 32, 2]);
+% t = (1 : 0.25 : 32); 
+% 
+% % Upsample in dim 2 via interp1
+% for i = 1:4,
+%     for j = 1:2
+%         y(i,:,j) = interp1(1:32, x(i,:,j), t, 'linear', 0);
+%     end
+% end
+% 
+% % Using interpd
+% y2 = interpd(x, t-1, 2, 'linear', 0);
+% 
+% assert(isalmostn(y, y2));
+% 
 % See also INTERPN INTERP1
-%
 
 %% validate dimensions
 if nargin < 5 || isempty(extrapval), extrapval = nan; end
