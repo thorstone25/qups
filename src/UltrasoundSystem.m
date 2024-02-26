@@ -121,14 +121,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % us = ULTRASOUNDSYSTEM(...,'fs', fs) sets the simulation 
             % sampling frequency to fs.
             %
-            % us = ULTRASOUNDSYSTEM(...,'recompile', false) avoids
-            % attempting to recompile mex and CUDA files when an
-            % UltrasoundSystem object is created.
+            % us = ULTRASOUNDSYSTEM(...,'recompile', true) attempts to
+            % recompile mex and CUDA files for the UltrasoundSystem object.
+            % The default is false.
             %
             % See also TRANSDUCER SEQUENCE SCAN
             arguments
                 kwargs.?UltrasoundSystem
-                opts.recompile (1,1) logical = true
+                opts.recompile (1,1) logical = false
             end
             
             % initailize via name-Value pairs
