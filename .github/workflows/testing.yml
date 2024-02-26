@@ -20,7 +20,6 @@ jobs:
         with: 
             select-by-folder: test
             select-by-tag: Github
-            use-parallel: false
             code-coverage-cobertura: ./coverage.xml
 
 
