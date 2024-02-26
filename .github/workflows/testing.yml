@@ -1,5 +1,5 @@
 name: Run MATLAB Tests on GitHub-Hosted Runner
-on: [pull_request, push]
+on: push # [pull_request, push]
 jobs:
   test:
     name: Run MATLAB Tests and Generate Artifacts
@@ -35,6 +35,6 @@ jobs:
         #   coverage-file-name: coverage.xml
         uses: gaelgirodon/ci-badges-action@v1
         with:
-          gist-id: qups-badge
+          gist-id: a38004ac36b1dbdb87cb61852435ab3d
           token: ${{ secrets.GIST_TOKEN }}
 
