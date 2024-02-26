@@ -194,7 +194,7 @@ classdef ExampleTest < matlab.unittest.TestCase
 
                 % copy into an (output) file
                 ofl = fullfile(test.meta_dir, fnm +".m");
-                writelines([header; code], ofl);
+                lwritelines([header; code], ofl);
 
                 % delete on cleanup
                 if test.delete_file, test.addTeardown(@delete, ofl); end
@@ -224,11 +224,8 @@ v = strip(extractBetween(code(i), pat, ("," | ")"))); % scat variable
 % write code to a file
 fl = tempname + ".m";
 if exist('writelines','file')
-    writelines(code(1:i-1), fl);
+    lwritelines(code(1:i-1), fl);
 else
-    fid = fopen(fl, 'w+');
-    fwrite(fid, join(code(1:i-1),newline));
-    fclose(fid);
 end
 
 % run the code up to right before calling greens (assumes no loops/branches)
@@ -244,3 +241,12 @@ catch ME % failed to run
 end
 end
 
+function fid = lwritelines(txt, fl)
+if exist('writelines','file') % 2022a+
+    writelines(txt, fl);
+else
+    fid = fopen(fl, 'w+');
+    fwrite(fid, join(txt,newline));
+    fclose(fid);
+end
+end
