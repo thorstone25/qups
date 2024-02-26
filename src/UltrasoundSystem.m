@@ -2878,7 +2878,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Define the setup - make plane waves
             % c0 = 1500;
             % us = UltrasoundSystem();
-            % seq = Sequence(        'type', 'FSA', 'numPulse', xdc.numel, 'c0', c0);
+            % seq = Sequence(        'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0);
             % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
             % seqfc = SequenceRadial('type', 'FC', 'focus',[0 0 20]' + [1 0 0]'.*sub(us.xdc.positions,1,1), 'c0', c0);
             % scat = Scatterers('pos', [5 0 30]'*1e-3, 'c0', seqpw.c0); % define a point target
@@ -2909,7 +2909,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % % Display the channel data
             % figure('Name', 'Channel Data');
-            % tiledlayout('flow');
+            % tiledlayout(3,2);
             % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
             % tnms = ["Original", "Original", "PW", "PW-REF", "FC", "FC-REF"];
             % for i = 1:numel(chds)
@@ -2921,7 +2921,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % % Display the images
             % figure('Name', 'B-mode');
-            % tiledlayout('flow');
+            % tiledlayout(3,2);
             % bs = {b, b, bpw, bfsa1, bfc, bfsa2};
             % bpow = gather(mod2db(cellfun(@(b)max(b,[],'all'), bs)));
             % for i = 1:numel(bs)
