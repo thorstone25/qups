@@ -27,10 +27,14 @@ jobs:
       #   with:
       #     branch-name: badges
       - name: Make Coverage Badge
-        uses: action-badges/cobertura-coverage-xml-badges@0.3.0
+        # uses: action-badges/cobertura-coverage-xml-badges@0.3.0
+        # with:
+        #   file-name: coverage.svg
+        #   # badge-branch: badges
+        #   github-token: '${{ secrets.GITHUB_TOKEN }}'
+        #   coverage-file-name: coverage.xml
+        uses: gaelgirodon/ci-badges-action@v1
         with:
-          # file-name: coverage.svg
-          # badge-branch: badges
-          github-token: '${{ secrets.GITHUB_TOKEN }}'
-          coverage-file-name: coverage.xml
+          gist-id: qups-badge
+          token: ${{ secrets.GIST_TOKEN }}
 
