@@ -111,7 +111,8 @@ classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
                 test.assumeTrue(logical(exist('halfT', 'class')));
             end
     	    if dev == "GPU"
-        		test.assumeTrue(gpuDeviceCount > 0);
+                has_device = gpuDeviceCount > 0 || exist('oclDeviceCount', 'file') && oclDeviceCount();
+        		test.assumeTrue(has_device);
     	    end
 
             % get sizing

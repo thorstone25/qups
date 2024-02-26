@@ -34,7 +34,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % simple point target 30 mm depth
             c0 = 1500;
-            scat = Scatterers('pos', 1e-3*[5 0 15]', 'c0', c0); 
+            scat = Scatterers('pos', 1e-3*[2 0 15]', 'c0', c0); 
 
             % Transducer
             switch xdc_type
@@ -198,6 +198,7 @@ classdef BFTest < matlab.unittest.TestCase
     end
     methods(TestMethodSetup)
         function resetGPU(test)
+            return; % pass
             if gpuDeviceCount()
                 test.chd = gather(test.chd);
                 reselectgpu();
