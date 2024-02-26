@@ -2,11 +2,11 @@ name: Run MATLAB Tests on GitHub-Hosted Runner
 on: [pull_request]
 jobs:
   test:
+    name: Run MATLAB Tests and Generate Artifacts
     strategy:
       matrix:
         platform: [ubuntu-latest] #, windows-latest] #, macos-latest]
         release: [latest] # [R2020b,latest]
-    name: Run MATLAB Tests and Generate Artifacts
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Check out repository
@@ -22,16 +22,10 @@ jobs:
             select-by-folder: test
             select-by-tag: Github
             code-coverage-cobertura: coverage.xml
-
-  badge:
-    needs: [test]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: action-badges/create-orphan-branch@0.1.1
+      - name: Create orphan branch
+        uses: action-badges/create-orphan-branch@0.1.1
         with:
           branch-name: badges
-
       - name: Make Coverage Badge
         uses: action-badges/cobertura-coverage-xml-badges@0.3.0
         with:
