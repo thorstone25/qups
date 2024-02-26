@@ -4,8 +4,8 @@ jobs:
   test:
     strategy:
       matrix:
-        platform: [ubuntu-latest, windows-latest] #, macos-latest]
-        release: [R2020b,latest]
+        platform: [ubuntu-latest] #, windows-latest] #, macos-latest]
+        release: [latest] # [R2020b,latest]
     name: Run MATLAB Tests and Generate Artifacts
     runs-on: ${{ matrix.platform }}
     steps:
@@ -15,6 +15,7 @@ jobs:
         uses: matlab-actions/setup-matlab@v2
         with: 
             release: ${{matrix.release}}
+            products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox Statistics_and_Machine_Learning_Toolbox
       - name: Run tests and generate artifacts
         uses: matlab-actions/run-tests@v2
         with: 
