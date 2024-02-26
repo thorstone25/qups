@@ -36,11 +36,20 @@ arguments(Repeating)
     opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel", "disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl"])}
 end
 
-base_path = fileparts(mfilename('fullpath'));
-rel_paths = {'.', 'kern', 'src', 'utils'};
-paths = cellfun(@(p)fullfile(base_path, p), rel_paths, 'UniformOutput', false);
-paths = paths(7 == cellfun(@exist, paths));
-addpath(paths{:});
+base_path = string(fileparts(mfilename('fullpath')));
+prj = matlab.project.rootProject;
+nms = recursiveProjectName(prj); % get all open project names
+if isempty(prj)
+    openProject(fullfile(base_path, 'Qups.prj')); % open the project
+elseif ismember(nms, "qups") % qups already open
+    % if no argumnets, this is likely a re-initialization
+    if isempty(opts), warning("QUPS:setup:AlreadyInitialized","QUPS is already initialized here: '" + prj.RootFolder + "'."), end
+else % addpaths manually, so as not to disturb open projects
+    rel_paths = [".", "kern", "src", "utils", "bin"];
+    paths = fullfile(base_path, rel_paths);
+    paths = paths(7 == arrayfun(@exist, paths));
+    addpath(paths{:});
+end
 
 i = 1;
 while i <= nargin % go through arguments sequentially
@@ -150,4 +159,16 @@ while i <= nargin % go through arguments sequentially
     end
     i = i + 1; % move to next argument
 end
+
+function nms = recursiveProjectName(prj)
+arguments 
+    prj matlab.project.Project
+end
+if isempty(prj)
+    nms = string.empty;
+else
+    nms = cellfun(@recursiveProjectName, {prj.ProjectReferences.Project});
+    nms = unique([prj.Name, nms]);
+end
+
 
