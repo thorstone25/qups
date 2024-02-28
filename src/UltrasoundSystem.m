@@ -2940,11 +2940,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
 
-            % dispatch pagenorm function based on MATLAB version
-            if verLessThan('matlab', '9.13')
+            % dispatch pagenorm function based on availability (MATLAB version)
+            if exist('pagenorm', 'file')
                 pagenorm2 = @(x) pagenorm(x,2);
+            elseif exist('pagesvd', 'builtin')
+                pagenorm2 = @(x) sub(pagesvd(x),{1,1},[1,2]);
             else
-                pagenorm2 = @(x) max(pagesvd(x),[],1:2);
+                pagenorm2 = @(x) cellfun(@(x)svds(x,1), num2cell(x,1:2));
             end
 
             % get the apodization / delays from the sequence
@@ -2955,7 +2957,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             f = gather(chd.fftaxis); % perm(... x T x ...)
 
             % construct the encoding matrix (M x V x T)
-            H = a .* exp(+2j*pi*shiftdim(f(:),-2).*tau);
+            H = a .* exp(+2j*pi*swapdim(f,chd.tdim,3).*tau);
 
             % compute the pagewise tikhonov-inversion inverse (V x M x T)
             % TODO: there are other options according to the paper - they
@@ -2978,7 +2980,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % move data to the frequency domain
             x = chd.data;
             x = fft(x,chd.T,chd.tdim); % get the fft in time
-            omega0 = exp(-2i*pi*f .* chd.t0); % time-alignment phase
+            omega0 = exp(-2i*pi*f.*chd.t0); % time-alignment phase
             x = x .* omega0; % phase shift to re-align time axis
             
             % apply to the data - this is really a tensor-times-matrix
