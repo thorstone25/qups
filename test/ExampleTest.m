@@ -83,10 +83,10 @@ classdef ExampleTest < matlab.unittest.TestCase
             %     prj = struct.empty;
             % end
             % TODO: access via project fixture?
-            prj = struct.empty;
+            prj = matlab.project.rootProject;
 
             % get all the files in the repo
-            if isempty(prj)
+            if isempty(prj) || prj.Name ~= "qups"
                 base_dir = fullfile(fileparts(mfilename('fullpath')), '..');
                 list = dir(fullfile(base_dir, '**','*.m'));
                 fls = fullfile(string({list.folder}), string({list.name}));
@@ -202,7 +202,7 @@ classdef ExampleTest < matlab.unittest.TestCase
 
                 % copy into an (output) file
                 ofl = fullfile(test.meta_dir, fnm +".m");
-                lwritelines([header; code], ofl);
+                localwritelines([header; code], ofl);
 
                 % delete on cleanup
                 if test.delete_file, test.addTeardown(@delete, ofl); end
@@ -231,10 +231,7 @@ v = strip(extractBetween(code(i), pat, ("," | ")"))); % scat variable
 
 % write code to a file
 fl = tempname + ".m";
-if exist('writelines','file')
-    lwritelines(code(1:i-1), fl);
-else
-end
+localwritelines(code(1:i-1), fl);
 
 % run the code up to right before calling greens (assumes no loops/branches)
 try run(fl);
@@ -249,7 +246,7 @@ catch ME % failed to run
 end
 end
 
-function fid = lwritelines(txt, fl)
+function fid = localwritelines(txt, fl)
 if exist('writelines','file') % 2022a+
     writelines(txt, fl);
 else
