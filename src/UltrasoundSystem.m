@@ -2951,7 +2951,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             if exist('pagemrdivide','builtin')
                 pagemrdivide_ = @pagemrdivide;
             else
-                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,x,y,'UniformOutput',false));
+                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,num2cell(x,1:2),num2cell(y,1:2),'UniformOutput',false));
             end
 
             % get the apodization / delays from the sequence
