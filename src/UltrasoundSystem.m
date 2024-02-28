@@ -2940,13 +2940,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
 
-            % dispatch pagenorm function based on MATLAB version
+            % dispatch pagenorm/pagemrdivide function based on MATLAB version
             if     exist('pagenorm', 'file')
                 pagenorm2 = @(x) pagenorm(x,2);
             elseif exist('pagesvd', 'builtin')
                 pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
                 pagenorm2 = @(x) cellfun(@(x)svds(x,1), num2cell(x,1:2));
+            end
+            if exist('pagemrdivide','builtin')
+                pagemrdivide_ = @pagemrdivide;
+            else
+                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,x,y,'UniformOutput',false));
             end
 
             % get the apodization / delays from the sequence
@@ -2967,7 +2972,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     % TODO: option to use pinv, as it is (slightly)
                     % different than matrix division
                     A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm2(gather(H)).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
-                    Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
+                    Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);
             end
 
