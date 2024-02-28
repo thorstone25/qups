@@ -170,8 +170,8 @@ end
 if isempty(prj)
     nms = string.empty;
 else
-    nms = cellfun(@recursiveProjectName, {prj.ProjectReferences.Project});
-    nms = unique([prj.Name, nms]);
+    nms = cellfun(@recursiveProjectName, {prj.ProjectReferences.Project}, 'UniformOutput', false);
+    nms = unique([prj.Name, nms{:}]);
 end
 
 
