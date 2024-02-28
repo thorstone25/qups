@@ -2940,17 +2940,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
 
-            % dispatch pagenorm function based on availability (MATLAB version)
-            if exist('pagenorm', 'file')
+            % dispatch pagenorm function based on MATLAB version
+            if     exist('pagenorm', 'file')
                 pagenorm2 = @(x) pagenorm(x,2);
             elseif exist('pagesvd', 'builtin')
-                pagenorm2 = @(x) sub(pagesvd(x),{1,1},[1,2]);
+                pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
                 pagenorm2 = @(x) cellfun(@(x)svds(x,1), num2cell(x,1:2));
             end
 
             % get the apodization / delays from the sequence
-            tau = -seq.delays(self.tx); % (M x V)
+            tau = -seq.delays(     self.tx); % (M x V)
             a   =  seq.apodization(self.tx); % (M x V)
 
             % get the frequency vectors
@@ -2992,7 +2992,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % move back to the time domain
             t0 = min(chd.t0,[],'all');
-            y = y .* exp(+2i*pi*f .* t0); % re-align time axes
+            y = y .* exp(+2i*pi*f.*t0); % re-align time axes
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
