@@ -1715,7 +1715,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd = self.focusTx(chd, self.seq, 'interp', kwargs.interp);
         end        
 
-        function chd = calc_scat_multi(self, scat, element_subdivisions, kwargs)
+        function [chd, rfun] = calc_scat_multi(self, scat, element_subdivisions, kwargs)
             % CALC_SCAT_MULTI - Simulate channel data via FieldII
             %
             % chd = CALC_SCAT_MULTI(self, scat) simulates the Scatterers 
@@ -1739,9 +1739,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % job = CALC_SCAT_MULTI(..., 'parenv', clu, 'job', true)
             % returns a job on the parcluster clu for each scatterer. The
-            % job can then be run with `submit(job)` and the ChannelData
-            % extracted with `fetchOutputs(job)` once the job has
-            % completed.
+            % job can then be run with `submit(job)`.
+            % 
+            % [job, rfun] = CALC_SCAT_MULTI(...) also returns a function
+            % rfun to read the output of the job into a ChannelData object
+            % once the job has been completed.
             % 
             % job = CALC_SCAT_MULTI(..., 'job', true) uses the default
             % cluster returned by parcluster().
@@ -1781,6 +1783,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % imagesc(real(chd));
             % colorbar;
             % 
+            % % Run on a parcluster instead
+            % clu = parcluster();
+            % [job, rfun] = calc_scat_multi(us, scat, 'job', true);
+            % 
+            % ... modify the job ...
+            % 
+            % % simulate data
+            % submit(job); % launch
+            % wait(job); % wait for the job to finish
+            % chd2 = rfun(job); % read data
+            % 
+            % isalmostn(chd.data, chd2.data)
+            % 
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
 
             arguments
@@ -1811,6 +1826,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                         case "Communicating"
                             job(s) = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool'); %#ok<AGROW>
                             job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', Inf), 1, {self, scat(s)}, 'CaptureDiary',true);
+
+                            % anonymous function to read in data
+                            rfun = @(jobs) join(arrayfun(@(job)job.Tasks(1).OutputArguments{1}, jobs), 4);
                         case "Independent"
                             seqs = splice(self.seq,1); % split up into individual sequences
                             job(s) = createJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true); %#ok<AGROW>
@@ -1819,6 +1837,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                                 us_.seq = seqs(m); % switch to next tx
                                 job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', 0), 1, {self, scat(s)}, 'CaptureDiary',true);
                             end
+
+                            % anonymous function to read in data
+                            rfun = @(jobs) ...
+                            join( arrayfun(@(job) ... for each job
+                                join( arrayfun(@(tsk) ... for each tsk
+                                tsk.OutputArguments{1}, ... extract data
+                                job.Tasks), 3), ... and join tasks (txs) in dim 3
+                                jobs), 4); % and join jobs (scats) in dim 4
+
                     end
                 end
                 chd = job;
