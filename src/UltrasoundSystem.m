@@ -1737,8 +1737,40 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % The default is the current pool returned by gcp.
             % 
-            % Example:
+            % job = CALC_SCAT_MULTI(..., 'parenv', clu, 'job', true)
+            % returns a job on the parcluster clu for each scatterer. The
+            % job can then be run with `submit(job)` and the ChannelData
+            % extracted with `fetchOutputs(job)` once the job has
+            % completed.
             % 
+            % job = CALC_SCAT_MULTI(..., 'job', true) uses the default
+            % cluster returned by parcluster().
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true, 'type', 'Independent')
+            % creates an independent job via `createJob`.
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true, 'type', 'Communicating')
+            % creates a communicating job via `createCommunicatingJob`.
+            % This is the default.
+            % 
+            % An independent job transfers and stores a separate set of
+            % data for each task, allowing each transmit to be simulated on
+            % a different worker which may exist on different nodes, but it
+            % requires a full copy of the inputs for each worker which may
+            % incur a heavy data transfer and storage cost.
+            % 
+            % A communicating job shares all resources defined by the
+            % parcluster across all workers, which reduces data transfer
+            % and storage costs, but may require the entire job to fit on a
+            % single node.
+            % 
+            % The parcluster should be configured according to the job. For
+            % a communicating job, the NumWorkers and any memory options
+            % should be configured for all transmits. For an independent
+            % job, the NumWorkers and any memory options should be
+            % allocated for an individual transmit.
+            % 
+            % Example:
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
@@ -1757,7 +1789,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
                 kwargs.job (1,1) logical = false
-                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Independent";
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Communicating";
             end
 
             % set default parenv
