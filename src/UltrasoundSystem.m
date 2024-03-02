@@ -1756,18 +1756,43 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
+                kwargs.job (1,1) logical = false
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Independent";
             end
 
             % set default parenv
             if ~isfield(kwargs, 'parenv')
                 hcp = gcp('nocreate');
-                if isa(hcp, 'parallel.ThreadPool')
+                if kwargs.job
+                    kwargs.parenv = parcluster(); % default cluster
+                elseif isa(hcp, 'parallel.ThreadPool')
                     kwargs.parenv = 0; % don't default to a thread pool
                 else
-                    kwargs.parenv = hcp;
+                    kwargs.parenv = hcp; % use the current pool
                 end
             end
             
+            % make a (communicating) job(s) instead
+            if kwargs.job
+                for s = 1:numel(scat) % for each Scatterers
+                    switch kwargs.type
+                        case "Communicating"
+                            job(s) = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool'); %#ok<AGROW>
+                            job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', Inf), 1, {self, scat(s)}, 'CaptureDiary',true);
+                        case "Independent"
+                            seqs = splice(self.seq,1); % split up into individual sequences
+                            job(s) = createJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true); %#ok<AGROW>
+                            us_ = copy(self); % copy semantics
+                            for m = 1:self.seq.numPulse % each tx
+                                us_.seq = seqs(m); % switch to next tx
+                                job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', 0), 1, {self, scat(s)}, 'CaptureDiary',true);
+                            end
+                    end
+                end
+                chd = job;
+                return;
+            end
+
             % helper function
             vec = @(x) x(:); % column-vector helper function
 
@@ -1815,8 +1840,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             end
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
+            [voltages, ts] = deal(cell(M,F)); % pre-allocate
+            for (f = 1:F) % each scat frame            
             parfor (m = 1:M, parenv) % each transmit pulse
-            for (f = F:-1:1) % each scat frame            
                 % (re)initialize field II
                 field_init(-1);
 
