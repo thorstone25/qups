@@ -223,7 +223,7 @@ else
     
     % identify cumulative permutation of the non-matching dimensions
     Dt = max(rdmst(find(esize(t1, rdmst) ~= 1 | esize(t2, rdmst) ~= 1,1,'last')), 1); if isempty(Dt), Dt = 1; end
-    % Dx = max(rdmsx(find(esize(x, rdmsx) ~= 1,1,'last')), 1); if isempty(Dx), Dx = 1; end    
+    Dx = max(rdmsx(find(esize(x, rdmsx) ~= 1,1,'last')), 1); if isempty(Dx), Dx = 1; end
 
     % identify outer dimensions for summing
     dsume = 1+ndims(xc)+max(ndims(t1c), ndims(t2c)); % add a scalar dimension - avoid sum over empty dims
@@ -250,7 +250,8 @@ else
 
     nsing = 1+find((size(t1,2:maxdims) == 1) & (size(t2,2:maxdims) == 1)); % where t singular in dims of x
 
-    parfor(i = 1:numel(xc), parenv)
+    % parfor(i = 1:numel(xc), parenv)
+    for i = numel(xc):-1:1
         % get 0-based sub indices
         inds = cell(1,maxdims);
         [inds{:}] = ind2sub(xsz, i);
@@ -260,12 +261,13 @@ else
         
         % index, sample, weight, sum
         tau = (t1c{jt1} + t2c{jt2}); %#ok<PFBNS> % time
+        osz = [esize(tau,1:Dt), esize(xc{i},2:Dx)]; % proper output sizing
         amp = wc{jwc}; %#ok<PFBNS> % weighting
-        amp = swapdim(amp, nsing, Dt+nsing-1); % move singleton dimensions into upper dimensions
-        yi = sum(exp(omega .* tau) .* amp .* interp1(xc{i},1+tau,interp,extrapval), dsumi, 'omitnan'); 
+        amp = swapdim(amp, nsing, Dt-1+nsing); % move singleton dimensions into upper dimensions
+        yi = sum(exp(omega .* tau) .* amp .* reshape(interp1(xc{i},1+tau,interp,extrapval), osz), dsumi, 'omitnan'); 
         
         % store output
-        yi = swapdim(yi, nsing, Dt+nsing-1); % move singleton dimensions into upper dimensions
+        yi = swapdim(yi, nsing, Dt-1+nsing); % move singleton dimensions into upper dimensions
         y{i} = yi;
     end
 

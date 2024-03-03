@@ -220,7 +220,7 @@ else
     
     % identify cumulative permutation of the non-matching dimensions
     Dt = max(rdmst(find(esize(t, rdmst) ~= 1,1,'last')), 1); if isempty(Dt), Dt = 1; end
-    % Dx = max(rdmsx(find(esize(x, rdmsx) ~= 1,1,'last')), 1); if isempty(Dx), Dx = 1; end    
+    Dx = max(rdmsx(find(esize(x, rdmsx) ~= 1,1,'last')), 1); if isempty(Dx), Dx = 1; end    
     nsing = 1+find(size(t,2:maxdims) == 1); % where t singular in dims of x
 
     % identify outer dimensions for summing
@@ -246,7 +246,8 @@ else
     parfor(i = 1:numel(xc), parenv)
         if wcscal, wci = w; else, wci = wc{i}; end
         wci = swapdim(wci, nsing, Dt+nsing-1);
-        y{i} = sum(exp(omega .* tc{i}) .* wci .* interp1(xc{i},1+tc{i},interp,extrapval), dsumi, 'omitnan'); 
+        osz = [esize(tc{i},1:Dt), esize(xc{i},2:Dx)]; % proper output sizing
+        y{i} = sum(exp(omega .* tc{i}) .* wci .* reshape(interp1(xc{i},1+tc{i},interp,extrapval),osz), dsumi, 'omitnan'); 
         y{i} = swapdim(y{i}, nsing, Dt+nsing-1);
     end
 
