@@ -403,6 +403,12 @@ classdef Waveform < matlab.mixin.Copyable
             % % Convolve with an intermediate upsampling frequency of 100Hz
             % wvc = conv(wv1, wv2, 100);
             %
+            % % Convolve with a Delta
+            % wvc = conv(wvc, Waveform.Delta());
+            % 
+            % % auto-correlate the rectangular waveform (identity)
+            % wvtri = conv(wv2)
+            % 
             % See also WAVEFORM/SAMPLE
 
             arguments
@@ -445,7 +451,10 @@ classdef Waveform < matlab.mixin.Copyable
             %
             % wv = WAVEFORM.DELTA() constructs a Delta function waveform
             %
+            % Example:
+            % wv = Waveform.Delta();
             % 
+            % See also SEQUENCE.PULSE TRANSDUCER.IMPULSE
             wv = Waveform('t0', 0, 'tend', 0, 'fun', @(t) t == 0);
         end
     
