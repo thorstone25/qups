@@ -634,7 +634,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 tautx = tau';
             else
                 % older version of Vantage
-                [apdtx, tautx] = deal(zeros(xsz)); % pre-allocate
+                [apdtx, tautx] = deal(zeros(xsz)'); % pre-allocate
                 for i = 1 : numel(TX) % for each transmit
                     if ismux,   api = ap(:, TX(i).aperture);
                     else,       api = ap(logical(ap));
