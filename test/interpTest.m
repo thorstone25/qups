@@ -7,19 +7,8 @@ classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
     end
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
-        % Shared setup for the entire test class
-        function setup(test), 
-            addpath(fullfile(interpTest.base_dir(), 'kern'));
-            addpath(fullfile(interpTest.base_dir(), 'src'));
-            addpath(fullfile(interpTest.base_dir(), 'utils'));
-        end
     end
     methods(TestClassTeardown)
-        function teardown(test), 
-            rmpath(fullfile(interpTest.base_dir(), 'kern'));
-            rmpath(fullfile(interpTest.base_dir(), 'src'));
-            rmpath(fullfile(interpTest.base_dir(), 'utils'));
-        end
     end
 
     methods(TestMethodSetup)

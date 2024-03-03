@@ -131,7 +131,7 @@ classdef BFTest < matlab.unittest.TestCase
 
             % Precondition the data
             chd.data = chd.data - mean(chd.data, 1, 'omitnan'); % remove DC
-            chd = filter(chd, getPassbandFilter(chd, xdc.bw)); % apply a filter
+            % chd = filter(chd, getPassbandFilter(chd, xdc.bw)); % apply a filter (not threadpool safe)
 
             % scale the problem
             us    = scale(us, 'dist', 1e3, 'time', 1e6);

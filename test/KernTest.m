@@ -10,7 +10,6 @@ classdef KernTest < matlab.unittest.TestCase
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
         % Shared setup for the entire test class
         function setupQUPS(test, gpu)
-            cd(KernTest.proj_folder); % setup relative to here
             setup(gpu{:}, "no-path"); % setup with/without GPU copmilation support: each option combo should work
         end
     end
