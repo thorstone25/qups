@@ -4107,6 +4107,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             elseif isa(us.scan, 'ScanPolar')
                 xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            else
+                error("QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "apMultiline does not support a " + class(us.scan) + " - please edit the code here." ...
+                    );
             end
             apod = abs(xi - xv) < tol; % create mask
         end
@@ -4178,6 +4182,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 xdim = us.scan.adim; % dimension of change
                 xi = swapdim(us.scan.a, 2, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            else
+                error("QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "apMultiline does not support a " + class(us.scan) + " - please edit the code here." ...
+                    );
             end
 
             % TODO: switch this to accept multiple transmits instead of
@@ -4459,7 +4467,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % element normals
 
             % get the image pixels
-            Pi = us.scan.positions(); % (3 x I1 x I2 x I3)
+            Pi = us.scan.positions(); % (3 x I1 x I2 x I3 x 1)
 
             % get the normalized difference vector (3 x I1 x I2 x I3 x N)
             r = Pi - Pn;
