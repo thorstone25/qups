@@ -94,6 +94,15 @@ classdef USTest < matlab.unittest.TestCase
             for ap = [tx, rx] % do for tx, rx
                 if isa(ap, 'TransducerGeneric') && func2str(simulator) == "simus", return; end % incompatible
             end
+            
+            % filter for identical transducer where required
+            if func2str(simulator) == "simus"
+                if string(class(tx)) ~= string(class(rx))
+                    return; % incompatible
+                else
+                    tx = rx; % enforce identical
+                end
+            end
 
             % construct each tx, rx, seq, scan
             us = UltrasoundSystem('tx', tx, 'rx', rx, 'seq', seq,'recompile',false,'fs',single(4*rx.fc));
