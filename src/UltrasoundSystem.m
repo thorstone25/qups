@@ -167,6 +167,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     [self.scan.dx, self.scan.dy, self.scan.dz] = deal(min(self.lambda) / 4);
                 end
             end
+
+            % no recompilation on a thread pool
+            if parallel.internal.pool.isPoolThreadWorker
+                if opts.recompile, warning("Cannot recompile on a thread worker!"); end
+                return;
+            end
             
             % shadow with the (newly created) temp folder for binaries and 
             % const-compiled code
