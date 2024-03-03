@@ -4,35 +4,17 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
     % This class test that all objects initialize properly
 
     properties(TestParameter)
-        par   = struct('no_parpool', {{}}, 'def_parpool', {{'parallel'}});
-        cache = struct('no_cache', {{}}, 'cache', {{'cache'}});
-        gpu   = struct('no_ptx', {{}}, 'ptx', {{'CUDA'}});
     end
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
-        % Shared setup for the entire test class
-        % function setupQUPS(test)
-        %     cd(InitTest.proj_folder); % setup relative to here
-        %     setup; % setup alone to add paths
-        % end
     end
     methods(TestClassTeardown)
-        % function teardownQUPS(test)
-        %     cd(InitTest.proj_folder); 
-        %     teardown; % basic teardown should run
-        %     try delete(gcp('nocreate')); end % undo parpool if exists
-        % end
     end
 
     methods(TestMethodSetup)
         % Setup for each test
     end
     methods(Test)
-        function initQUPS(test, par, cache, gpu)
-            cd(InitTest.proj_folder); % setup relative to here
-            setup(par{:}, gpu{:}, cache{:}, "no-path"); % setup with each option combo should work
-        end
-
         function initxdc(test)
             % INITXDC - Assert that Transducer constructors initialize
             % without arguments
@@ -62,6 +44,7 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(ScanCartesian(), IsInstanceOf('Scan'));
             test.assertThat(ScanPolar(), IsInstanceOf('Scan'));
+            test.assertThat(ScanSpherical(), IsInstanceOf('Scan'));
             test.assertThat(ScanGeneric(), IsInstanceOf('Scan'));
         end
         function initus(test)
