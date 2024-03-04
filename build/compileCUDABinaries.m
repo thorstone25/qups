@@ -1,22 +1,19 @@
-function compileCUDABinaries()
+function compileCUDABinaries(ofl)
+arguments
+    ofl (1,1) string = fullfile(fileparts(mfilename('fullpath')),"..","bin"+filesep)
+end
 % compileCUDABinaries - Compile CUDA binaries for the oldest supported CC.
 
 % architectures (last is oldest support)
 arch = "compute_" + [90 89 87 86 80 75 72 70 60];% 52 50];
 
-% set paths
-prj = matlab.project.rootProject;
-if isempty(prj) || prj.Name ~= "qups"
-    prj = openProject(which('Qups.prj'));
-end
-setup CUDA no-path;
-
 % compile
-us = UltrasoundSystem();
+us = UltrasoundSystem('recompile', false);
 defs = UltrasoundSystem.genCUDAdefs(); % definition structs
 com = us.recompileCUDA(defs, arch(end)); % compile
+fls = fullfile(us.tmp_folder, "*.ptx");
 
 % copy to bin folder
-copyfile(fullfile(us.tmp_folder, "*.ptx"), fullfile(fileparts(mfilename('fullpath')),"..","bin"+filesep));
+copyfile(fls, ofl);
 
 end
