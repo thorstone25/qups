@@ -13,7 +13,10 @@ function res = runProjectTests(tag, parenv, kwargs)
 % 
 % runProjectTests(tag, parenv) uses the given parallel environment.
 % 
-% 
+% runProjectTests(..., 0, 'report', true) creates a coverage report or 
+% runProjectTests(..., 0, 'cobertura', true) creates a cobertura format
+% coverage.xml file. These options and running in parallel together are
+% mutually exclusive.
 % 
 % res = runProjectTests(...) returns the test results array res.
 
