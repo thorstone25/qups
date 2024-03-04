@@ -23,7 +23,7 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             test.assertThat(TransducerConvex(), IsInstanceOf('Transducer'));
             test.assertThat(TransducerMatrix(), IsInstanceOf('Transducer'));
             test.assertThat(TransducerGeneric(), IsInstanceOf('Transducer'));
-        end
+       end
         function initchd(test)
             % INITCHD - Assert that a ChannelData constructor initializes
             % without arguments
@@ -56,10 +56,30 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
         function initmedscat(test)
             % INITMEDSCAT - Assert that a Scatterers and Mediums
             % initialize without arguments
-            
+
             import matlab.unittest.constraints.IsInstanceOf;
             test.assertThat(Scatterers(), IsInstanceOf('Scatterers'));
             test.assertThat(Medium(), IsInstanceOf('Medium'));
+        end
+        function staticTest(test)
+            % static constructors
+            cls = [
+                "Transducer" + ["Array","Convex", "Matrix", "Generic"], ...
+                "Sequence" + ["", "Radial", "Generic"], ...
+                "Scan" + ["Cartesian", "Polar", "Spherical", "Generic"], ...
+                "Scatterers", "Medium", "Waveform", ...
+                "UltrasoundSystem", "ChannelData", ...
+                ];
+
+            % all class escriptions
+            mc = arrayfun(@meta.class.fromName, cls);
+            for i = 1:numel(mc)
+                mthd = mc(i).MethodList([mc(i).MethodList.Static]);
+                n = arrayfun(@(m)length(m.InputNames), mthd);
+                mthd = mthd(n == 0 & {mthd.Access}' == "public"); % 0 inputs only TODO: handle varargin?
+                com = "@()"+cls(i) + "." + {mthd.Name}' + "()";
+                arrayfun(@(s) test.assertWarningFree(str2func(s)), com);
+            end 
         end
     end
 
