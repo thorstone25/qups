@@ -56,16 +56,15 @@ plan("coverage") = TestTask( ...
 % Add a task to run brief tests
 plan("test") = TestTask( ...
     "Tag","Github","SourceFiles",src ...
-    ,CodeCoverageResults=fullfile("build","code-coverage-github",["coverage.xml" "html/index.html"]) ...
-    ,TestResults="build/test-results-github/report.html" ...
+    ,CodeCoverageResults=fullfile("build","code-coverage-brief",["coverage.xml" "html/index.html"]) ...
+    ,TestResults="build/test-results-brief/report.html" ...
     );
 
 %% Add compilation dependencies
 
 % Make the "compile" task dependent on the "check and "test" tasks
-% plan("compile").Dependencies = ["test", "check"];0
+% plan("compile").Dependencies = ["test", "check"];
 
-% make dummy compile mex task
 mfls = dir(fullfile(base, "src", "**", "msfm*.c"));
 [mfls, nms] = deal(string(fullfile({mfls.folder}, {mfls.name})), string({mfls.name}));
 ofls = replace(fullfile(base, "bin", nms), '.c', "."+mexext());
@@ -77,6 +76,7 @@ for i = 1:numel(mfls)
     plan(tnm(i)).Outputs = ofls(i);
 end
 
+% make dummy compile mex task
 plan("compile_mex") = matlab.buildtool.Task( ...
     "Description","Compile mex kernels.", ...
     "Dependencies", tnm ...
@@ -108,6 +108,11 @@ plan("release") = matlab.buildtool.Task( ...
     "Dependencies", ["check", "compile", "coverage"] ...
     );
 
+plan("all") = matlab.buildtool.Task( ...
+    "Description", "Install all extensions, check code, compile kernels, and report full coverage", ...
+    "Dependencies", ["install", "release"] ...
+    );
+
 end
 
 function archiveTask(~)
@@ -120,8 +125,16 @@ end
 function compile_CUDATask(context, arch)
 arguments
     context
-    arch = "compute_" + [90 89 87 86 80 75 72 70 60];% 52 50]; % CC values we support
+    arch (1,1) string = "compute_"+60; % + ;
 end
+% validate
+supp = "compute_"+[90 89 87 86 80 75 72 70 60];  % supported CC values
+if ~ismember(arch, supp)
+    warning("QUPS:build:compileCUDA:unsupportedArchitecture", ...
+        "Expected the architecture to be one of: "+newline+join("'"+supp+"'",newline));
+end
+
+
 % Compile CUDA kernels
 setup CUDA no-path; % add CUDA and US to path
 
@@ -249,11 +262,11 @@ if isempty(dir(fullfile(fld, "*"+ext+"*.prj"))) ... % proper project file and fo
     end
 
     % make a project
-    eprj = matlab.project.createProject("Folder",pth,"Name",ext);
-    arrayfun(@(p) eprj.addPath(fullfile(pth, p)), pflds); % add project folders
+    eprj = matlab.project.createProject("Folder",fld,"Name",ext);
+    arrayfun(@(p) eprj.addPath(fullfile(fld, p)), pflds); % add project folders
 
 else % project should already exist
-    eprj = matlab.project.loadProject(pth);
+    eprj = matlab.project.loadProject(fld);
 end
 
 % add as a QUPS reference
