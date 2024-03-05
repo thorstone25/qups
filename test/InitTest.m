@@ -82,9 +82,4 @@ classdef (TestTags = ["Github", "full"])InitTest < matlab.unittest.TestCase
             end 
         end
     end
-
-    methods(Static)
-        % PROJ_FOLDER - Identifies the base folder for the project
-        function f = proj_folder(), f = fullfile(fileparts(mfilename('fullpath')), '..'); end
-    end
 end

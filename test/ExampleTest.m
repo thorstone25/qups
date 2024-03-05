@@ -4,20 +4,12 @@ classdef ExampleTest < matlab.unittest.TestCase
     properties
         run_file (1,1) logical  = true; % set false to only write to file
         delete_file (1,1) logical = true; % whether to delete the file after running
-        meta_path (1,1) string = "test/meta"; % path for example scripts (relative to proj)
-        base_dir  (1,1) string = fullfile(fileparts(mfilename('fullpath')), '..')
-    end
-    properties(Dependent)
-        meta_dir (1,1) string
-    end
-    methods
-        function m = get.meta_dir(test), m = fullfile(test.base_dir, test.meta_path); end
     end
     
     % blacklists
     properties
         bl_file = [ ...
-    "import_verasonics_data", "run_QUPS_tests", "cheat_sheet", ...
+    "import_verasonics_data", "cheat_sheet", ...
     ("msfm" + ["","2d","3d"]), ...
     "setup", "teardown", ...
     ];
@@ -42,18 +34,22 @@ classdef ExampleTest < matlab.unittest.TestCase
     % ------------------------------------------------------------ %
     
     methods (TestClassSetup)
-        function setup_metadir(test)
+        function setup_metadir(testCase)
             % folder for temp files
-            if ~exist(test.meta_dir,'dir'), mkdir(test.meta_dir); end
-            addpath(test.meta_dir);
+            import matlab.unittest.fixtures.TemporaryFolderFixture;
+            import matlab.unittest.fixtures.CurrentFolderFixture;
+
+            % Create a temporary folder and make it the current working folder.
+            tempFolder = testCase.applyFixture(TemporaryFolderFixture);
+            testCase.applyFixture(CurrentFolderFixture(tempFolder.Folder));
+
+            % turn off figures during these tests
+            state = get(0, 'defaultFigureVisible');
+            testCase.addTeardown(@()set(0, 'defaultFigureVisible', state))
+            set(0, 'defaultFigureVisible', 'off');
         end
     end
     methods (TestClassTeardown)
-        function teardown_metadir(test)
-            % delete folder for temp files
-            rmpath(test.meta_dir);
-            if test.delete_file, try rmdir(test.meta_dir); end, end %#ok<TRYNC> % don't force deletion
-        end
     end
 
     % ---------------------------------------------- % 
@@ -74,7 +70,8 @@ classdef ExampleTest < matlab.unittest.TestCase
 
     methods(Static, TestParameterDefinition)
         function fls = get_proj_files()
-            % project files
+             prj = matlab.project.rootProject; % assume the project is loaded
+           % project files
             % if ~isempty(matlab.project.rootProject) && (currentProject().Name == "qups")
             %     prj = currentProject();
             % elseif exist("Qups.prj", "file")
@@ -83,7 +80,6 @@ classdef ExampleTest < matlab.unittest.TestCase
             %     prj = struct.empty;
             % end
             % TODO: access via project fixture?
-            prj = matlab.project.rootProject;
 
             % get all the files in the repo
             if isempty(prj) || prj.Name ~= "qups"
@@ -113,7 +109,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             fls = string(fls);
 
             % assume it's not on the blacklist or the meta_path
-            blf = [test.bl_file, test.meta_path + wildcardPattern];
+            blf = [test.bl_file];%, test.meta_path + wildcardPattern];
             if(endsWith(fls,blf + optionalPattern(".m"))) % pass any blacklisted files
                 warning("[blacklist] Skipping " + fls); return; 
             end 
@@ -201,11 +197,11 @@ classdef ExampleTest < matlab.unittest.TestCase
                 header = "function " + fnm + "()";
 
                 % copy into an (output) file
-                ofl = fullfile(test.meta_dir, fnm +".m");
+                ofl = fnm + ".m";
                 localwritelines([header; code], ofl);
 
                 % delete on cleanup
-                if test.delete_file, test.addTeardown(@delete, ofl); end
+                if test.delete_file, test.addTeardown(@delete, fullfile(pwd, ofl)); end
 
                 % assert a clean run
                 test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
