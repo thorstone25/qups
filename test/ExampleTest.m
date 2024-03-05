@@ -17,10 +17,11 @@ classdef ExampleTest < matlab.unittest.TestCase
     "my_VSX_data.mat", "Trans", "RcvData", "Resource", ... Verasonics
     ] + (pnc() | whitespacePattern);
 
+        % TODO: filter if package unavailable
         bl_fcn = [ ...
             ... "bfAdjoint", ... QUPS (RAM)
     "getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords", ... % fullwave
-    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave
+    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave (still too large)
     "QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern, ... USTB
     "calc_scat"+["","_all", "_multi"], ... FieldII
     "simus", ... MUST
@@ -34,7 +35,7 @@ classdef ExampleTest < matlab.unittest.TestCase
     % ------------------------------------------------------------ %
     
     methods (TestClassSetup)
-        function setup_metadir(testCase)
+        function move2TmpFolder(testCase)
             % folder for temp files
             import matlab.unittest.fixtures.TemporaryFolderFixture;
             import matlab.unittest.fixtures.CurrentFolderFixture;
@@ -42,11 +43,17 @@ classdef ExampleTest < matlab.unittest.TestCase
             % Create a temporary folder and make it the current working folder.
             tempFolder = testCase.applyFixture(TemporaryFolderFixture);
             testCase.applyFixture(CurrentFolderFixture(tempFolder.Folder));
-
+        end
+        function hideFigures(testCase)
             % turn off figures during these tests
             state = get(0, 'defaultFigureVisible');
             testCase.addTeardown(@()set(0, 'defaultFigureVisible', state))
             set(0, 'defaultFigureVisible', 'off');
+        end
+        function silenceAcceptableWarnings(testCase)
+            W = warning(); % get current state
+            testCase.addTeardown(@() warning(W)); % restore on exit
+            warning('off', 'MATLAB:ver:ProductNameDeprecated'); % in k-Wave
         end
     end
     methods (TestClassTeardown)
@@ -70,8 +77,8 @@ classdef ExampleTest < matlab.unittest.TestCase
 
     methods(Static, TestParameterDefinition)
         function fls = get_proj_files()
-             prj = matlab.project.rootProject; % assume the project is loaded
-           % project files
+            prj = matlab.project.rootProject; % assume the project is loaded
+            % project files
             % if ~isempty(matlab.project.rootProject) && (currentProject().Name == "qups")
             %     prj = currentProject();
             % elseif exist("Qups.prj", "file")
