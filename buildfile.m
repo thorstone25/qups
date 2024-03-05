@@ -23,9 +23,13 @@ plan("uninstall_OpenCL" ).Inputs  = plan("install_OpenCL" ).Outputs;
 plan("uninstall_MUST"   ).Inputs  = plan("install_MUST"   ).Outputs;
 plan("uninstall_USTB"   ).Inputs  = plan("install_USTB"   ).Outputs;
 
+plan("patch_MUST" ).Inputs = plan("install_MUST"   ).Outputs;
+plan("patch_kWave").Inputs = plan("install_kWave"  ).Outputs;
+
 for nm = ext_nms, plan(  "install_"+nm).Description = "Download and install " + nm; end
 for nm = ext_nms, plan("uninstall_"+nm).Description = "Uninstall " + nm; end
 
+% aggregate
 plan("install") = matlab.buildtool.Task( ...
     "Description", "Download and install all extensions", ...
     "Dependencies", "install_"+ext_nms ...
@@ -35,6 +39,12 @@ plan("uninstall") = matlab.buildtool.Task( ...
     "Description", "Uninstall all extensions", ...
     "Dependencies", "uninstall_"+ext_nms ...
     );
+
+plan("patch") = matlab.buildtool.Task( ...
+    "Description", "Patch extensions", ...
+    "Dependencies", "patch_"+ext_nms([2 4]) ...
+    );
+
 
 %% Testing and Artifacts
 % source files (folders)
@@ -104,13 +114,14 @@ plan.DefaultTasks = "compile";
 
 % Full release, without fresh install
 plan("release") = matlab.buildtool.Task( ...
-    "Description", "Check code, compile kernels, and report coverage", ...
+    "Description", "Check code, compile kernels, full test and report coverage", ...
     "Dependencies", ["check", "compile", "coverage"] ...
     );
 
+% all the things (not the default!)
 plan("all") = matlab.buildtool.Task( ...
-    "Description", "Install all extensions, check code, compile kernels, and report full coverage", ...
-    "Dependencies", ["install", "release"] ...
+    "Description", "Install and patch all extensions, check code, compile kernels, full test and report coverage", ...
+    "Dependencies", ["install", "patch", "release"] ...
     );
 
 end
@@ -276,4 +287,41 @@ if ~any(eprj == [prj.ProjectReferences.Project]) % check if already installed
 else
     warning(ext + " already installed.");
 end
+end
+
+function patch_MUSTTask(context)
+% Patch MUST to remove GUI calls and enable ThreadPools
+fld = context.Task.Inputs.Path; % output folder for the project (relative)
+fls = (dir(fullfile(fld, '**', 'pfield*.m')));
+fls = string(fullfile({fls.folder}, {fls.name}));
+
+% shadow problematic functions
+shdw = ["AdMessage", "MUSTstat"]; % to shadow
+for fl = fls
+    munlock(fl); clear(fl); % refresh
+    txt = string(readlines(fl));
+    for s = shdw
+        j = find(contains(txt, s) & ~contains(txt, "function"));
+        txt(j) = replace(txt(j),s, s+"=@(varargin)deal([]); "+s);
+    end
+    writelines(txt,fl); % save modified file
+end
+
+end
+
+function patch_kWaveTask(context)
+% Patch k-Wave to avoid race conditions and enable parallel simulations
+fld = context.Task.Inputs.Path; % output folder for the project (relative)
+fl = (dir(fullfile(fld, '**', 'kspaceFirstOrder3DC.m')));
+fl = string(fullfile({fl.folder}, {fl.name}));
+
+% replace tempdir with new tempname folder
+txt = string(readlines(fl));
+pat = ["data_path = tempdir;", "delete(output_filename);"];
+rep = ["data_path = tempname; mkdir(data_path);", pat(2) + " rmdir(data_path);"];
+for i = 1:2
+    txt = replace(txt, pat(i), rep(i)); % find & replace
+end
+writelines(txt, fl); % save modified file
+
 end
