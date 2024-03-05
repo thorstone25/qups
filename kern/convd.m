@@ -28,6 +28,10 @@ function [C, lags] = convd(x, y, dim, shape, kwargs)
 % computation.
 % 
 % Example:
+% % correlate an integer sequence
+% y = convd([1 -2 3 -4 5], [5 -4 3 -2 1])
+% isalmostn(y, xcorr([1 -2 3 -4 5]))
+% 
 % % Create two 16 x 4 exponential sequences
 % n = (1:16)-1;
 % m = (1:4)'-1;
