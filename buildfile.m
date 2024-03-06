@@ -234,7 +234,7 @@ if dwnld
             % create a git repo
             repo = gitinit(fld, "InitialBranch", "main");
             repo.add(fld); % add all files
-            repo.commit(Message="Initial commit - " + string(datetime()))
+            repo.commit(Message="Initial commit - " + string(datetime()));
 
         case "kWave"
             url = "https://github.com/ucl-bug/k-wave.git";
@@ -269,7 +269,7 @@ if isempty(dir(fullfile(fld, "*"+ext+"*.prj"))) ... % proper project file and fo
     % project folders to add to path, w.r.t. base path (`pth`)
     switch ext
         case "kWave", pflds = fullfile("k-Wave",[".", "binaries"]);
-        otherwise, pflds = ["."]; % only the base directory
+        otherwise, pflds = "."; % only the base directory
     end
 
     % make a project
