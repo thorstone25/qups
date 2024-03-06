@@ -158,11 +158,11 @@ classdef ExampleTest < matlab.unittest.TestCase
     properties (TestParameter)
         fls (1,:) cell
         lns (1,:) cell
-        blk (1,:) cell
+        % blk (1,:) cell
     end
 
     methods(Static, TestParameterDefinition)    
-        function [fls, lns, blk] = findExamples()
+        function [fls, lns] = findExamples()
             % et files
             fls_ = string(ExampleTest.get_proj_files());
 
@@ -219,12 +219,16 @@ classdef ExampleTest < matlab.unittest.TestCase
                     % save
                     % code(end+1) = {code_(k(1):k(2))};
                     fls(end+1) = cellstr(fls_(m));
-                    lns(end+1) = {join(string(i{n}(k)),"-")};
+                    lns(end+1) = {join(string(i{n}(k)),"-")}; % for labelling
                     blk(end+1) = {i{n}(k(1):k(end))};
                     h = true;
                 end
 
-                if ~h, warning("No examples found in file " + fls_(m) + "."); end
+                if ~h,
+                    fls(end+1) = cellstr(fls_(m));
+                    lns(end+1) = {join(string([1 0]),"-")}; % for labelling
+                    blk(end+1) = {[1 0]};
+                end
 
             end
         end
@@ -234,7 +238,7 @@ classdef ExampleTest < matlab.unittest.TestCase
 
     methods (Test, ParameterCombination="sequential", TestTags=["Github", "full", "build"])
         % Test methods
-        function run_examples(test, blk, fls, lns)
+        function run_examples(test, fls, lns)
             % arguments
             %     test matlab.unittest.TestCase
             %     fls (1,1) string
@@ -246,8 +250,14 @@ classdef ExampleTest < matlab.unittest.TestCase
 
             % get the code snippet
             lns = double(split(lns,"-"));
+            blk = lns(1):lns(end);
             txt = readlines(fls);
             code = txt(blk);
+
+            % if it's empty, there's nothing there ...
+            test.assumeNotEmpty(code, ...
+                "No examples found in file " + fls + "." ...
+                );
 
             % strip the (first) comment character
             ws0 = whitespacePattern(0,Inf); % alias
