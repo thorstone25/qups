@@ -139,6 +139,15 @@ classdef ExampleTest < matlab.unittest.TestCase
                 test.scat_lim = 1e4; else, test.scat_lim = 1e2;
             end
         end
+        function startThreadPool(test)
+            hcp = gcp('nocreate');
+            if isempty(hcp)
+                try  %#ok<TRYNC>
+                    parpool("Threads"); 
+                    test.addTeardown(@()delete(hcp(isvalid(hcp))));
+                end
+            end
+        end
     end
     methods (TestClassTeardown)
     end
@@ -150,7 +159,7 @@ classdef ExampleTest < matlab.unittest.TestCase
     end
     methods(TestMethodTeardown)
         function cleanup_test(test)
-            if test.run_file, try, gpuDevice([]); end, end % clear the gpu if there
+            if test.run_file, try gpuDevice([]); end, end %#ok<TRYNC> % clear the gpu if there
             close all; % close all figures
         end
     end
