@@ -364,7 +364,65 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             s = rmfield(s, [fds(ids), "FSA_n_tx"]); % remove empty, hidden & redundant props
             warning(W); % restore warnings
         end
-        
+
+        function [seqs, i] = splice(seq, bsize)
+            % SPLICE - Split the Sequence into an array of Seqeunces
+            %
+            % seqs = SPLICE(seq) returns an array of Sequence objects seqs
+            % where each element of seqs contains a single transmit pulse.
+            %
+            % seqs = SPLICE(chd, bsize) uses a maximum block size of bsize
+            % to partition the transmits objects. The default is 1.
+            %
+            % [seqs, i] = SPLICE(...) also returns the indices for each
+            % transmit. For example, if seq contains 5 transmits and is
+            % spliced with a block size of 2, i = {[1 2], [3 4], [5]}.
+            %
+            % Example:
+            %
+            % % Splice a Sequence of 5 plane waves
+            % seq = SequenceRadial('type', 'PW', 'angles', [-10 -5 0 5 10]);
+            % seqs = splice(seq, 2)
+            % isequal(seq.focus, [seqs.focus])
+            % 
+            % See also SUB SEQUENCE.DEL SEQUENCE.APD
+            arguments
+                seq (1,1) Sequence
+                bsize (1,1) {mustBeInteger, mustBePositive} = 1
+            end
+            % copy semantics
+            seq = copy(seq);
+
+            % special case - if implicit FSA, set apodization/focus first!
+            if seq.type == "FSA"
+                if isempty(seq.apd), seq.apd = eye(seq.numPulse); end
+            end
+
+            % make new Sequence objects
+            S = seq.numPulse; % number of pulses
+            i = num2cell((0:bsize:S-1) + (1:bsize)',1); % list of indices
+            i{end}(i{end} > S) = []; % restrict to max size
+            seqs = copy(repmat(seq, [1,numel(i)])); % new Sequence objects
+
+            % sub-index the properties
+            for j = 1:numel(seqs)
+                sq = seqs(j); % refernce jth sequence
+                if size(sq.focus,2) > 1
+                    sq.focus = sq.focus(:,i{j});
+                end
+                if size(sq.apd,2) > 1
+                    sq.apd = sq.apd(:,i{j});
+                elseif isa(sq.apd, 'function_handle')
+                    sq.apd = @(tx,xdc) sub(sq.apd(tx,xdc), i{j}, 2);
+                end
+                if size(sq.del,2) > 1
+                    sq.del = sq.del(:,i{j});
+                elseif isa(sq.del, 'function_handle')
+                    sq.del = @(tx,xdc) sub(sq.del(tx,xdc), i{j}, 2);
+                end
+            end
+        end
+
         % scaling
         function self = scale(self, kwargs)
             % SCALE - Scale units

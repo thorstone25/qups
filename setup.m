@@ -80,12 +80,11 @@ while i <= nargin % go through arguments sequentially
             if isunix
                 p = getenv('CUDA_PATH'); % use env. var if set
                 if isfolder(p)
-                    p = fullfile(p, 'bin'); % bin should have nvcc
+                    p = fullfile(p, "bin"); % bin should have nvcc
                 else
                     p = "/usr/local/cuda/bin"; % linux default nvcc path
                 end                
                 if ~exist(fullfile(p, 'nvcc')), warning("nvcc not found at " + p); end
-                p = pathsep + p; % prepend path separator here
             
             elseif ispc
                 % get all the windows drives, from A to Z
@@ -133,16 +132,18 @@ while i <= nargin % go through arguments sequentially
                 p2 = string(p2); % enforce string type for casting/sizing
                 
                 % join nvcc and CUDA paths (if they exist)
-                p = strjoin([(pathsep + p1), (pathsep + p2)],'');                
+                p = strjoin([p1, p2],pathsep);
                 
             else 
-                error('CUDA compilation paths undefined if not unix or pc.');
+                warning('CUDA compilation paths undefined if not unix or pc.');
+                i = i + 1;
+                continue;
             end
             
             % add them to the system path
             % TODO: keep track of this so that we can remove it during
             % teardown.m
-            setenv('PATH', fullfile(getenv('PATH'), p));
+            setenv('PATH', join([p, string(getenv('PATH'))],pathsep));
             
         case {"disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl"}
             

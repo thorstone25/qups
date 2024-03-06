@@ -1731,7 +1731,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd = self.focusTx(chd, self.seq, 'interp', kwargs.interp);
         end        
 
-        function chd = calc_scat_multi(self, scat, element_subdivisions, kwargs)
+        function [chd, rfun] = calc_scat_multi(self, scat, element_subdivisions, kwargs)
             % CALC_SCAT_MULTI - Simulate channel data via FieldII
             %
             % chd = CALC_SCAT_MULTI(self, scat) simulates the Scatterers 
@@ -1753,6 +1753,41 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % The default is the current pool returned by gcp.
             % 
+            % job = CALC_SCAT_MULTI(..., 'parenv', clu, 'job', true)
+            % returns a job on the parcluster clu for each scatterer. The
+            % job can then be run with `submit(job)`.
+            % 
+            % [job, rfun] = CALC_SCAT_MULTI(...) also returns a function
+            % rfun to read the output of the job into a ChannelData object
+            % once the job has been completed.
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true) uses the default
+            % cluster returned by parcluster().
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true, 'type', 'Independent')
+            % creates an independent job via `createJob`.
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true, 'type', 'Communicating')
+            % creates a communicating job via `createCommunicatingJob`.
+            % This is the default.
+            % 
+            % An independent job transfers and stores a separate set of
+            % data for each task, allowing each transmit to be simulated on
+            % a different worker which may exist on different nodes, but it
+            % requires a full copy of the inputs for each worker which may
+            % incur a heavy data transfer and storage cost.
+            % 
+            % A communicating job shares all resources defined by the
+            % parcluster across all workers, which reduces data transfer
+            % and storage costs, but may require the entire job to fit on a
+            % single node.
+            % 
+            % The parcluster should be configured according to the job. For
+            % a communicating job, the NumWorkers and any memory options
+            % should be configured for all transmits. For an independent
+            % job, the NumWorkers and any memory options should be
+            % allocated for an individual transmit.
+            % 
             % Example:
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
@@ -1764,6 +1799,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % imagesc(real(chd));
             % colorbar;
             % 
+            % % Run on a parcluster instead
+            % clu = parcluster();
+            % [job, rfun] = calc_scat_multi(us, scat, 'job', true);
+            % 
+            % ... modify the job ...
+            % 
+            % % simulate data
+            % submit(job); % launch
+            % wait(job); % wait for the job to finish
+            % chd2 = rfun(job); % read data
+            % 
+            % isalmostn(chd.data, chd2.data)
+            % 
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
 
             arguments
@@ -1771,18 +1819,55 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
+                kwargs.job (1,1) logical = false
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Communicating";
             end
 
             % set default parenv
             if ~isfield(kwargs, 'parenv')
                 hcp = gcp('nocreate');
-                if isa(hcp, 'parallel.ThreadPool')
+                if kwargs.job
+                    kwargs.parenv = parcluster(); % default cluster
+                elseif isa(hcp, 'parallel.ThreadPool')
                     kwargs.parenv = 0; % don't default to a thread pool
                 else
-                    kwargs.parenv = hcp;
+                    kwargs.parenv = hcp; % use the current pool
                 end
             end
             
+            % make a (communicating) job(s) instead
+            if kwargs.job
+                for s = 1:numel(scat) % for each Scatterers
+                    switch kwargs.type
+                        case "Communicating"
+                            job(s) = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool'); %#ok<AGROW>
+                            job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', Inf), 1, {self, scat(s)}, 'CaptureDiary',true);
+
+                            % anonymous function to read in data
+                            rfun = @(jobs) join(arrayfun(@(job)job.Tasks(1).OutputArguments{1}, jobs), 4);
+                        case "Independent"
+                            seqs = splice(self.seq,1); % split up into individual sequences
+                            job(s) = createJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true); %#ok<AGROW>
+                            us_ = copy(self); % copy semantics
+                            for m = 1:self.seq.numPulse % each tx
+                                us_.seq = seqs(m); % switch to next tx
+                                job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', 0), 1, {self, scat(s)}, 'CaptureDiary',true);
+                            end
+
+                            % anonymous function to read in data
+                            rfun = @(jobs) ...
+                            join( arrayfun(@(job) ... for each job
+                                join( arrayfun(@(tsk) ... for each tsk
+                                tsk.OutputArguments{1}, ... extract data
+                                job.Tasks), 3), ... and join tasks (txs) in dim 3
+                                jobs), 4); % and join jobs (scats) in dim 4
+
+                    end
+                end
+                chd = job;
+                return;
+            end
+
             % helper function
             vec = @(x) x(:); % column-vector helper function
 
@@ -1830,8 +1915,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             end
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
 
+            [voltages, ts] = deal(cell(M,F)); % pre-allocate
+            for (f = 1:F) % each scat frame            
             parfor (m = 1:M, parenv) % each transmit pulse
-            for (f = F:-1:1) % each scat frame            
                 % (re)initialize field II
                 field_init(-1);
 
