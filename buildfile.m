@@ -323,9 +323,24 @@ fl = string(fullfile({fl.folder}, {fl.name}));
 txt = string(readlines(fl));
 pat = ["data_path = tempdir;", "delete(output_filename);"];
 rep = ["data_path = tempname; mkdir(data_path);", pat(2) + " rmdir(data_path);"];
-for i = 1:2
+for i = 1:length(pat)
     txt = replace(txt, pat(i), rep(i)); % find & replace
 end
 writelines(txt, fl); % save modified file
+
+fls = (dir(fullfile(fld, '**', 'kspaceFirstOrder_*nput*.m'))); % private input checking files
+fls = string(fullfile({fls.folder}, {fls.name}));
+
+% replace calls to 'ver' or 'verLessThan' - QUPS requires parallel
+% computing anyway, and this prevents ThreadPools
+pat = ["v = ver;" "ismember('Parallel Computing Toolbox',"+wildcardPattern()+")", "verLessThan("+wildcardPattern()+")"];
+rep = ["v = false;","true(1)", "false(1)"];
+for fl = fls
+    txt = string(readlines(fl));
+    for i = 1:length(pat)
+        txt = replace(txt, pat(i), rep(i)); % find & replace
+    end
+    writelines(txt, fl); % save modified file
+end
 
 end
