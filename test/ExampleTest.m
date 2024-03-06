@@ -44,26 +44,43 @@ classdef ExampleTest < matlab.unittest.TestCase
             end
 
             % filter through the file blacklist
-            fls = fls(~contains(fls, filesep + "test" + filesep + "*.m")); % exclude test folder m-files
+            fls = fls(~contains(fls, filesep + ("test"|"build")  + filesep + wildcardPattern() + ".m")); % exclude test,build folder m-files
             fls = fls(~endsWith(fls,ExampleTest.generateBlacklistFiles() + optionalPattern(".m"))); % exclude blacklist
             fls = cellstr(fls);
         end
-
         function bl_fcn = generateBlacklistFunctions()
             bl_fcn = reshape({ ...
                 ... "bfAdjoint", ... QUPS (RAM)
-                'kWave',    ["kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D")], ... k-Wave (still too large)
+                'kWave',    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave (still too large)
                 'USTB',     ["QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern], ... USTB
-                'FieldII',  ["calc_scat"+["","_all", "_multi"]], ... FieldII
-                'MUST',     ["simus"], ... MUST
+                'FieldII',  "calc_scat"+["","_all", "_multi"], ... FieldII
+                'MUST',     "simus", ... MUST
                 'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
-                'bin',      ["bfEikonal", "recompile" + ["","Mex","CUDA"]], ... compilation (optional, requires CUDA)
-                'gpu',      [      "wbilerpg"], ... CUDAKernel or oclKernel support required
+                'mex',      ["bfEikonal", "msfm"+["","2d","3d"]], ... mex binaries required ... compilation (optional, requires CUDA)
+                'gpu',            "wbilerpg", ... CUDAKernel or oclKernel support required
+                'comp',     ("recompile" + ["","Mex","CUDA"]) ... compilations setup required
                 }, 2, [])'; % + "(";
             
+            % filter by installed projects
             prj = matlab.project.rootProject;
             i = ismember(string(bl_fcn(:,1)), [cat(2,prj.ProjectReferences.Project).Name]);
             bl_fcn(i,:) = []; % Remove from blacklist if the project is installed.
+
+            % filter by available binaries
+            kerns = ("wbilerp")+".ptx"; % require GPU binaries
+            if all(arrayfun(@(k) exist(fullfile(prj.RootFolder, "bin", k), 'file'), kerns))
+                bl_fcn(bl_fcn(:,1) == "gpu",:) = []; 
+            end
+            kerns = ["msfm2d", "msfm3d"]+"."+mexext; % require mex binaries
+            if all(arrayfun(@(k) exist(fullfile(prj.RootFolder, "bin", k), 'file'), kerns))
+                bl_fcn(bl_fcn(:,1) == "mex",:) = []; 
+            end
+
+            % filter by gpu compiler availability
+            % (not quite working - seems the environment changes?)
+            if ~isempty(argn(2, @system, "which nvcc"))
+                % bl_fcn(bl_fcn(:,1) == "comp",:) = [];
+            end
         end
         function bl_file = generateBlacklistFiles()
             bl_file = [ ...
