@@ -871,6 +871,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % [uchannel_data, uscan] = QUPS2USTB(...) additionally returns
             % a USTB compatible uff.scan.
             %
+            % Example:
+            % % Create an UltrasoundSystem and ChannelData
+            % xdc = TransducerArray.L12_3v();
+            % seq = SequenceRadial('type','PW','angles',-10 : 10);
+            % us = UltrasoundSystem('seq', seq, 'xdc', xdc);
+            % chd = ChannelData('data',zeros([128,xdc.numel,seq.numPulse]));
+            % 
+            % % Convert to USTB
+            % uchannel_data = QUPS2USTB(us, chd);
+            % 
             % See also ULTRASOUNDSYSTEM.UFF
             arguments
                 us (1,1) UltrasoundSystem
