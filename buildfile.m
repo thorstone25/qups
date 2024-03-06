@@ -296,13 +296,17 @@ fls = (dir(fullfile(fld, '**', 'pfield*.m')));
 fls = string(fullfile({fls.folder}, {fls.name}));
 
 % shadow problematic functions
+pnc_dsp = whitespacePattern(0,Inf) + ("," | "%" | lineBoundary("end")); % implicit display call punctuation
+cll = optionalPattern("("+wildcardPattern+")") + whitespacePattern(0,Inf) + (";" | "," | "%" | lineBoundary("end"));
 shdw = ["AdMessage", "MUSTstat"]; % to shadow
 for fl = fls
     munlock(fl); clear(fl); % refresh
     txt = string(readlines(fl));
     for s = shdw
-        j = find(contains(txt, s) & ~contains(txt, "function"));
-        txt(j) = replace(txt(j),s, s+"=@(varargin)deal([]); "+s);
+        j = find(contains(txt,   s + cll) & ~contains(txt, "function")); % find the line with the call
+        fcn    = extract(txt(j), s + cll); % extract function call
+        fcn    = replace(fcn, pnc_dsp, ";"); % silence the output
+        txt(j) = replace(txt(j), s + cll, s+"=@(varargin)deal([]); "+fcn); % replace call
     end
     writelines(txt,fl); % save modified file
 end
