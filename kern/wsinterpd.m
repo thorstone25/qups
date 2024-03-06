@@ -246,7 +246,7 @@ else
     parfor(i = 1:numel(xc), parenv)
         if wcscal, wci = w; else, wci = wc{i}; end
         wci = swapdim(wci, nsing, Dt+nsing-1);
-        osz = [esize(tc{i},1:Dt), esize(xc{i},2:Dx)]; % proper output sizing
+        osz = [esize(tc{i},1:Dt), esize(xc{i},2:Dx),1,1]; % proper output sizing
         y{i} = sum(exp(omega .* tc{i}) .* wci .* reshape(interp1(xc{i},1+tc{i},interp,extrapval),osz), dsumi, 'omitnan'); 
         y{i} = swapdim(y{i}, nsing, Dt+nsing-1);
     end
