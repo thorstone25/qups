@@ -43,20 +43,20 @@ end
 
 % run all the tests
 if isempty(parenv) || (parenv == 0)
-    suite = matlab.unittest.TestSuite.fromProject(which("Qups.prj"), "Tag", tag);
+    suite = matlab.unittest.TestSuite.fromProject(fileparts(which("Qups.prj")), "Tag", tag);
     res = runner.run(suite); % no parallel
 elseif isnumeric(parenv) % make tmp pool
     hcp = parpool(parenv);
-    suite = matlab.unittest.TestSuite.fromProject(which("Qups.prj"), "Tag", tag);
+    suite = matlab.unittest.TestSuite.fromProject(fileparts(which("Qups.prj")), "Tag", tag);
     res = runner.runInParallel(suite); % proc
     delete(hcp);
 
 elseif isa(parenv, "parallel.ProcessPool")
-    suite = matlab.unittest.TestSuite.fromProject(which("Qups.prj"), "Tag", tag);
+    suite = matlab.unittest.TestSuite.fromProject(fileparts(which("Qups.prj")), "Tag", tag);
     res = runner.runInParallel(suite); % proc
 
 elseif isa(parenv, "parallel.ThreadPool")   
-    prj = openProject(which("Qups.prj"));
+    prj = openProject(fileparts(which("Qups.prj")));
     fls = [prj.Files.Path]; % all paths
     clnms = argn(2, @fileparts, fls(endsWith(fls, '.m'))); % filenames
     clnms = clnms(logical(arrayfun(@(n) exist(n,'class'), clnms))); % class files
