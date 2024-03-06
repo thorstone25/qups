@@ -1744,7 +1744,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % The default is the current pool returned by gcp.
             % 
             % Example:
-            % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
@@ -1994,26 +1993,26 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Example:
             % 
             % % Setup a system
-            % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
-            % );
             % xdc = TransducerArray();
+            % grid = ScanCartesian( ...
+            %     'x', 1e-3*(-10 : 0.1 : 10), ...
+            %     'z', 1e-3*(  0 : 0.1 : 30) ...
+            % );
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'fs', single(16*xdc.fc));
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % [Xg, ~, Zg] = grid.getImagingGrid();
+            % rho(Xg == 0 & Zg == 10e-3) = 1000*2; % double the density
+            % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % chd = kspaceFirstOrder(us, med, sscan);
+            % chd = kspaceFirstOrder(us, med, grid);
             % 
             % % Display the ChannelData
             % figure;
-            % imagesc(real(chd));
+            % imagesc(hilbert(chd));
             % 
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM PARALLEL.JOB/FETCHOUTPUTS
             arguments % required arguments
@@ -2101,7 +2100,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             cfl_ratio = dt_cfl_max / dt_us;
         
             if cfl_ratio < 1
-                warning('Upsampling the kWave time step for an acceptable CFL.');
+                warning("QUPS:kspaceFirstOrder:upsampling",'Upsampling the kWave time step for an acceptable CFL.');
                 time_step_ratio = ceil(inv(cfl_ratio));            
             else
                 % TODO: do (or don't) downsample? Could be set for temporal reasons
