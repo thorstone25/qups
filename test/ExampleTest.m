@@ -127,9 +127,16 @@ classdef ExampleTest < matlab.unittest.TestCase
         end
         function silenceAcceptableWarnings(testCase)
             W = warning(); % get current state
-            testCase.addTeardown(@() warning(W)); % restore on exit
-            warning('off', 'MATLAB:ver:ProductNameDeprecated'); % in k-Wave
-            warning('off', "QUPS:kspaceFirstOrder:upsampling"); % in US
+            testCase.addTeardown(@() warning(W)); % restore on exit if executing locally
+            lids = [...
+                "QUPS:kspaceFirstOrder:upsampling", ...% in k-Wave
+                "MATLAB:ver:ProductNameDeprecated" ... % in US
+                ];
+            if isempty(gcp('nocreate')) % no pool
+                     arrayfun(@(l)                warning(    'off', l), lids);
+            else % any pool - execute on each worker
+                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids));
+            end            
         end
         function limitSims(test)
             if gpuDeviceCount()
