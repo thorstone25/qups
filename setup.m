@@ -33,14 +33,25 @@ function setup(opts)
 % See also TEARDOWN
 
 arguments(Repeating)
-    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel", "disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl"])}
+    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel", "disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl", "no-path"])}
 end
 
-base_path = fileparts(mfilename('fullpath'));
-rel_paths = {'.', 'kern', 'src', 'utils'};
-paths = cellfun(@(p)fullfile(base_path, p), rel_paths, 'UniformOutput', false);
-paths = paths(7 == cellfun(@exist, paths));
-addpath(paths{:});
+base_path = string(fileparts(mfilename('fullpath')));
+prj = matlab.project.rootProject;
+nms = recursiveProjectName(prj); % get all open project names
+if ~any(cellfun(@(o) o=="no-path", opts)) % don't modify paths if asked not to
+    if isempty(prj)
+        openProject(fullfile(base_path, 'Qups.prj')); % open the project
+    elseif ismember(nms, "qups") % qups already open
+        % if no argumnets, this is likely a re-initialization
+        if isempty(opts), warning("QUPS:setup:AlreadyInitialized","QUPS is already initialized here: '" + prj.RootFolder + "'."), end
+    else % addpaths manually, so as not to disturb open projects
+        rel_paths = [".", "kern", "src", "utils", "bin"];
+        paths = fullfile(base_path, rel_paths);
+        paths = paths(7 == arrayfun(@exist, paths));
+        addpath(paths{:});
+    end
+end
 
 i = 1;
 while i <= nargin % go through arguments sequentially
@@ -61,7 +72,7 @@ while i <= nargin % go through arguments sequentially
             us = UltrasoundSystem('recompile', false); % needs paths to have been added already
             us.recompile(); % attempt to recompile code
             copyfile(us.tmp_folder, fullfile(base_path, "bin")); % copy it
-            addpath(fullfile(base_path, 'bin')); % add new cache path
+            % addpath(fullfile(base_path, 'bin')); % add new cache path
         
         case 'CUDA' % add CUDA to the path
             
@@ -146,9 +157,22 @@ while i <= nargin % go through arguments sequentially
                     % delete the shadowing file (if it exists)
                     delete(fl);                    
             end
+        case "no-path" % pass
         otherwise
             error("Unrecognized option " + opts{i} + ".");
     end
     i = i + 1; % move to next argument
 end
+
+function nms = recursiveProjectName(prj)
+arguments 
+    prj matlab.project.Project
+end
+if isempty(prj)
+    nms = string.empty;
+else
+    nms = cellfun(@recursiveProjectName, {prj.ProjectReferences.Project}, 'UniformOutput', false);
+    nms = unique([prj.Name, nms{:}]);
+end
+
 

@@ -1,26 +1,49 @@
 name: Run MATLAB Tests on GitHub-Hosted Runner
 on: [pull_request]
 jobs:
-  test:
+  legacy:
+    name: Run MATLAB Tests and Generate Artifacts on oldest supported system
     strategy:
       matrix:
-        platform: [ubuntu-latest, windows-latest] #, macos-latest]
-        release: [R2020b,latest]
-    name: Run MATLAB Tests and Generate Artifacts
+        platform: [ubuntu-latest, windows-latest, macos-latest]
+        release: [R2021a]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Set up MATLAB
-        uses: matlab-actions/setup-matlab@v1
+        uses: matlab-actions/setup-matlab@v2
         with: 
             release: ${{matrix.release}}
+            products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox Statistics_and_Machine_Learning_Toolbox
       - name: Run tests and generate artifacts
         uses: matlab-actions/run-tests@v2
         with: 
             select-by-folder: test
             select-by-tag: Github
-            use-parallel: false
-            code-coverage-cobertura: ./coverage.xml
 
-
+  test:
+    name: Run MATLAB Tests and Generate Artifacts and Code Coverage
+    strategy:
+      matrix:
+        platform: [ubuntu-latest]
+        release: [latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with: 
+            release: ${{matrix.release}}
+            products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox Statistics_and_Machine_Learning_Toolbox
+      - name: Run complete build and generate code coverage
+        uses: matlab-actions/run-build@v2
+        with:
+            build-options: -continueOnFailure -skip compile_CUDA -skip install_OpenCL
+            tasks: install patch check compile test
+      - name: Make Coverage Badge
+        uses: gaelgirodon/ci-badges-action@v1
+        with:
+          gist-id: a38004ac36b1dbdb87cb61852435ab3d
+          token: ${{ secrets.GIST_TOKEN }}

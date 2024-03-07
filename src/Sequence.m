@@ -133,31 +133,57 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
         % is the number of pulses.
         %
         % Example:
-        % % Create a random phase sequence
-        % del = @(tx, seq) (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
-        % apd = @(tx, seq) ones(tx.numel);
-        % seq = SequenceGeneric('del', del, 'apd', apd);
-        %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('seq', seq);
-        % scat = Scatterers('pos', [0;0;30e-3]);
+        % p0 = [0 0 30]' * 1e-3; % scatterer position
+        % scat = Scatterers('pos', p0);
+        % us = UltrasoundSystem();
+        % N = us.xdc.numel;
         %
-        % % get the ChannelData
-        % us.seq.numPulse = us.tx.numel; % set number of transmits
+        % % Create a random phasor sequence
+        % apd = randn(N,N);
+        % del = randn(N,N) * 2 / us.xdc.fc; % std. of 2 wavelengths
+        % seqf = Sequence('numPulse', N); % FSA
+        % seqg = Sequence('numPulse', N, 'del', del, 'apd', apd); % random
+        %
+        % % simulate ChannelData from the random phasor sequence
+        % us.seq = seqg;
         % chdh = greens(us, scat);
         %
-        % % decode the data via refocus
-        % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.seq.del = zeros(chd.N); % set as a FSA sequence
-        % us.seq.apd =   eye(chd.N); % set as a FSA sequence
+        % % decode the data into an FSA sequence via refocus
+        % chdr = refocus(us, chdh);
+        % us.seq = seqf; % now it's an FSA sequence
         %
-        % % beamform and display the image
+        % % simulate the ideal data (with a true FSA sequence)
+        % chd = greens(us, scat);
+        %
+        % % beamform and display the images
+        % us.scan = ScanCartesian( ...
+        %     'xb', p0(1) + [-5 5]*1e-3, ...
+        %     'zb', p0(3) + [-5 5]*1e-3 ...
+        %     ); % image boundaries
+        % [us.scan.dx, us.scan.dz] = deal(us.lambda / 8); % image resolution
+        %
+        % % beamform
+        % chds = cat(3, chd, chdh, chdr); % combine ChannelData for efficiency
+        % b = DAS(us, chds);
+        % bmax = gather(mod2db(max(b,[],1:2))); % max power
+        % 
+        % % display images
+        % ttls = ["Ideal FSA","Random Phasor","Refocused FSA"];
         % figure;
-        % b = DAS(us, chd);
-        % imagesc(us.scan, b);
-        % caxis(max(caxis) + [-60 0]);
+        % tiledlayout('flow');
+        % clear ax;
+        % for i = 1:3
+        %     ax(i) = nexttile(i);
+        %     imagesc(us.scan, b(:,:,i), ax(i));
+        %     title(ax(i), ttls(i));
+        %     colormap gray;
+        %     colorbar;
+        %     caxis(bmax(i) + [-60 0]);
+        % end
+        % linkaxes(ax);
         %
-        % See also DELAYS SEQUENCE.APD
+        % See also DELAYS SEQUENCE.APD ULTRASOUNDSYSTEM.REFOCUS ULTRASOUNDSYSTEM.FOCUSTX
         del   {mustBeA(del,  ["function_handle", "numeric"])}
     end
 
@@ -666,7 +692,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 tautx = tau';
             else
                 % older version of Vantage
-                [apdtx, tautx] = deal(zeros(xsz)); % pre-allocate
+                [apdtx, tautx] = deal(zeros(xsz)'); % pre-allocate
                 for i = 1 : numel(TX) % for each transmit
                     if ismux,   api = ap(:, TX(i).aperture);
                     else,       api = ap(logical(ap));

@@ -39,7 +39,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
     
     // temp vars
     // const float ts = s + s0*fs; // compute the time index for this thread
-    const T2 zero_v = {0, 0}, fpow = {fsr, fsr}; // OOB value, power scaling
+    const T2 zero_v = {0, 0}; // OOB value, power scaling
     // const U A0 = (R0) ? 1 / (R0 * R0) : 1; // max power scaling
     U r1, r2, tau; // length, time (tmp values)
     T2 val = zero_v; // accumulator
@@ -79,8 +79,8 @@ __device__ void greens_temp(T2 * __restrict__ y,
         }
         
         // output signal when all scatterers and sub-apertures are sampled
-        // normalize by the discrete length of the signal
-        y[s + n*S + m*N*S] = val / fpow;
+        // normalize by the discrete length of the signal, and the upsampling factor
+        y[s + n*S + m*N*S] =  val / (R0*R0*fsr);
     }
 }
 

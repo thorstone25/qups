@@ -9,7 +9,12 @@ function x = rsqrt(x)
 % Integer types are upcast to double.
 %
 % Example:
-% assert(isalmostn(rsqrt((1 : 10) .^2), 1 ./ (1 : 10)))
+% a = rsqrt(int16(64));
+% 
+% b = single(1 : 10) .^ 2;
+% assert(isalmostn(rsqrt(b), 1 ./ (1 : 10)))
+%  
+% c = rsqrt(-4);
 % 
 % 
 % See also: SQRT

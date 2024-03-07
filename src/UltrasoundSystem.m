@@ -121,14 +121,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % us = ULTRASOUNDSYSTEM(...,'fs', fs) sets the simulation 
             % sampling frequency to fs.
             %
-            % us = ULTRASOUNDSYSTEM(...,'recompile', false) avoids
-            % attempting to recompile mex and CUDA files when an
-            % UltrasoundSystem object is created.
+            % us = ULTRASOUNDSYSTEM(...,'recompile', true) attempts to
+            % recompile mex and CUDA files for the UltrasoundSystem object.
+            % The default is false.
             %
             % See also TRANSDUCER SEQUENCE SCAN
             arguments
                 kwargs.?UltrasoundSystem
-                opts.recompile (1,1) logical = true
+                opts.recompile (1,1) logical = false
             end
             
             % initailize via name-Value pairs
@@ -166,6 +166,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     self.scan = ScanCartesian();
                     [self.scan.dx, self.scan.dy, self.scan.dz] = deal(min(self.lambda) / 4);
                 end
+            end
+
+            % no recompilation on a thread pool
+            if parallel.internal.pool.isPoolThreadWorker
+                if opts.recompile, warning("Cannot recompile on a thread worker!"); end
+                return;
             end
             
             % shadow with the (newly created) temp folder for binaries and 
@@ -865,6 +871,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % [uchannel_data, uscan] = QUPS2USTB(...) additionally returns
             % a USTB compatible uff.scan.
             %
+            % Example:
+            % % Create an UltrasoundSystem and ChannelData
+            % xdc = TransducerArray.L12_3v();
+            % seq = SequenceRadial('type','PW','angles',-10 : 10);
+            % us = UltrasoundSystem('seq', seq, 'xdc', xdc);
+            % chd = ChannelData('data',zeros([128,xdc.numel,seq.numPulse]));
+            % 
+            % % Convert to USTB
+            % uchannel_data = QUPS2USTB(us, chd);
+            % 
             % See also ULTRASOUNDSYSTEM.UFF
             arguments
                 us (1,1) UltrasoundSystem
@@ -2073,26 +2089,26 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Example:
             % 
             % % Setup a system
-            % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
-            % );
             % xdc = TransducerArray();
+            % grid = ScanCartesian( ...
+            %     'x', 1e-3*(-10 : 0.1 : 10), ...
+            %     'z', 1e-3*(  0 : 0.1 : 30) ...
+            % );
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'fs', single(16*xdc.fc));
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % [Xg, ~, Zg] = grid.getImagingGrid();
+            % rho(Xg == 0 & Zg == 10e-3) = 1000*2; % double the density
+            % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % chd = kspaceFirstOrder(us, med, sscan);
+            % chd = kspaceFirstOrder(us, med, grid);
             % 
             % % Display the ChannelData
             % figure;
-            % imagesc(real(chd));
+            % imagesc(hilbert(chd));
             % 
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM PARALLEL.JOB/FETCHOUTPUTS
             arguments % required arguments
@@ -2180,7 +2196,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             cfl_ratio = dt_cfl_max / dt_us;
         
             if cfl_ratio < 1
-                warning('Upsampling the kWave time step for an acceptable CFL.');
+                warning("QUPS:kspaceFirstOrder:upsampling",'Upsampling the kWave time step for an acceptable CFL.');
                 time_step_ratio = ceil(inv(cfl_ratio));            
             else
                 % TODO: do (or don't) downsample? Could be set for temporal reasons
@@ -2963,7 +2979,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Define the setup - make plane waves
             % c0 = 1500;
             % us = UltrasoundSystem();
-            % seq = Sequence(        'type', 'FSA', 'numPulse', xdc.numel, 'c0', c0);
+            % seq = Sequence(        'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0);
             % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
             % seqfc = SequenceRadial('type', 'FC', 'focus',[0 0 20]' + [1 0 0]'.*sub(us.xdc.positions,1,1), 'c0', c0);
             % scat = Scatterers('pos', [5 0 30]'*1e-3, 'c0', seqpw.c0); % define a point target
@@ -2994,7 +3010,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % % Display the channel data
             % figure('Name', 'Channel Data');
-            % tiledlayout('flow');
+            % tiledlayout(3,2);
             % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
             % tnms = ["Original", "Original", "PW", "PW-REF", "FC", "FC-REF"];
             % for i = 1:numel(chds)
@@ -3006,7 +3022,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % % Display the images
             % figure('Name', 'B-mode');
-            % tiledlayout('flow');
+            % tiledlayout(3,2);
             % bs = {b, b, bpw, bfsa1, bfc, bfsa2};
             % bpow = gather(mod2db(cellfun(@(b)max(b,[],'all'), bs)));
             % for i = 1:numel(bs)
@@ -3025,22 +3041,29 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
 
-            % dispatch pagenorm function based on MATLAB version
-            if verLessThan('matlab', '9.13')
+            % dispatch pagenorm/pagemrdivide function based on MATLAB version
+            if     exist('pagenorm', 'file')
                 pagenorm2 = @(x) pagenorm(x,2);
+            elseif exist('pagesvd', 'builtin')
+                pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
-                pagenorm2 = @(x) max(pagesvd(x),[],1:2);
+                pagenorm2 = @(x) cellfun(@(x)svds(x,1), num2cell(x,1:2));
+            end
+            if exist('pagemrdivide','builtin')
+                pagemrdivide_ = @pagemrdivide;
+            else
+                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,num2cell(x,1:2),num2cell(y,1:2),'UniformOutput',false));
             end
 
             % get the apodization / delays from the sequence
-            tau = -seq.delays(self.tx); % (M x V)
+            tau = -seq.delays(     self.tx); % (M x V)
             a   =  seq.apodization(self.tx); % (M x V)
 
             % get the frequency vectors
             f = gather(chd.fftaxis); % perm(... x T x ...)
 
             % construct the encoding matrix (M x V x T)
-            H = a .* exp(+2j*pi*shiftdim(f(:),-2).*tau);
+            H = a .* exp(+2j*pi*swapdim(f,chd.tdim,3).*tau);
 
             % compute the pagewise tikhonov-inversion inverse (V x M x T)
             % TODO: there are other options according to the paper - they
@@ -3050,7 +3073,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     % TODO: option to use pinv, as it is (slightly)
                     % different than matrix division
                     A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm2(gather(H)).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
-                    Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
+                    Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);
             end
 
@@ -3063,7 +3086,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % move data to the frequency domain
             x = chd.data;
             x = fft(x,chd.T,chd.tdim); % get the fft in time
-            omega0 = exp(-2i*pi*f .* chd.t0); % time-alignment phase
+            omega0 = exp(-2i*pi*f.*chd.t0); % time-alignment phase
             x = x .* omega0; % phase shift to re-align time axis
             
             % apply to the data - this is really a tensor-times-matrix
@@ -3075,7 +3098,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % move back to the time domain
             t0 = min(chd.t0,[],'all');
-            y = y .* exp(+2i*pi*f .* t0); % re-align time axes
+            y = y .* exp(+2i*pi*f.*t0); % re-align time axes
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
@@ -4185,6 +4208,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             elseif isa(us.scan, 'ScanPolar')
                 xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            else
+                error("QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "apMultiline does not support a " + class(us.scan) + " - please edit the code here." ...
+                    );
             end
             apod = abs(xi - xv) < tol; % create mask
         end
@@ -4256,6 +4283,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 xdim = us.scan.adim; % dimension of change
                 xi = swapdim(us.scan.a, 2, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            else
+                error("QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "apMultiline does not support a " + class(us.scan) + " - please edit the code here." ...
+                    );
             end
 
             % TODO: switch this to accept multiple transmits instead of
@@ -4537,7 +4568,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % element normals
 
             % get the image pixels
-            Pi = us.scan.positions(); % (3 x I1 x I2 x I3)
+            Pi = us.scan.positions(); % (3 x I1 x I2 x I3 x 1)
 
             % get the normalized difference vector (3 x I1 x I2 x I3 x N)
             r = Pi - Pn;

@@ -1,86 +1,40 @@
-classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
+classdef ExampleTest < matlab.unittest.TestCase
 
     % files
     properties
         run_file (1,1) logical  = true; % set false to only write to file
         delete_file (1,1) logical = true; % whether to delete the file after running
-        meta_path (1,1) string = "test/meta"; % path for example scripts (relative to proj)
-        base_dir  (1,1) string = fullfile(fileparts(mfilename('fullpath')), '..')
-    end
-    properties(Dependent)
-        meta_dir (1,1) string
-    end
-    methods
-        function m = get.meta_dir(test), m = fullfile(test.base_dir, test.meta_path); end
+        scat_lim (1,1) double % limit of scatterers
+        pulse_lim (1,1) double % max number of pulses to sim in k-Wave
     end
     
     % blacklists
     properties
-        bl_file = [ ...
-    "example_test_crawler", "import_verasonics_data", "run_QUPS_tests", "cheat_sheet", ...
-    ("msfm" + ["","2d","3d"]), ...
-    "setup", "teardown"
-    ];
+        bl_file = ExampleTest.generateBlacklistFiles()
         bl_var = [ ...
     "my_VSX_data.mat", "Trans", "RcvData", "Resource", ... Verasonics
     ] + (pnc() | whitespacePattern);
 
-        bl_fcn = [ ...
-            ... "bfAdjoint", ... QUPS (RAM)
-    "getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords", ... % fullwave
-    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave
-    "QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern, ... USTB
-    "simus", ... MUST
-    "recompile" + ["","Mex","CUDA"], ... compilation (optional, requires CUDA)
-    ] + "(";
+        % TODO: filter if package unavailable
+        bl_fcn = ExampleTest.generateBlacklistFunctions()
     end
-    
+
     % ------------------------------------------------------------ %
-    
-    methods (TestClassSetup)
-        function setup_metadir(test)
-            % folder for temp files
-            if ~exist(test.meta_dir,'dir'), mkdir(test.meta_dir); end
-            addpath(test.meta_dir);
-        end
-    end
-    methods (TestClassTeardown)
-        function teardown_metadir(test)
-            % delete folder for temp files
-            rmpath(test.meta_dir);
-            if test.delete_file, try rmdir(test.meta_dir); end, end %#ok<TRYNC> % don't force deletion
-        end
-    end
-
-    % ---------------------------------------------- % 
-    
-    methods (TestMethodSetup)
-        % Setup for each test
-    end
-    methods(TestMethodTeardown)
-        function cleanup_test(test)
-            if test.run_file, try, gpuDevice([]); end, end % clear the gpu if there
-            close all; % close all figures
-        end
-    end
-
-    properties (TestParameter)
-        fls (1,:) cell 
-    end
-
-    methods(Static, TestParameterDefinition)
+    methods(Static)
         function fls = get_proj_files()
+            prj = matlab.project.rootProject; % assume the project is loaded
             % project files
-            if ~isempty(matlab.project.rootProject) && (currentProject().Name == "qups")
-                prj = currentProject();
-            elseif exist("Qups.prj", "file")
-                prj = openProject(which("Qups.prj"));
-            else
-                prj = struct.empty;
-            end
+            % if ~isempty(matlab.project.rootProject) && (currentProject().Name == "qups")
+            %     prj = currentProject();
+            % elseif exist("Qups.prj", "file")
+            %     prj = openProject(which("Qups.prj"));
+            % else
+            %     prj = struct.empty;
+            % end
+            % TODO: access via project fixture?
 
             % get all the files in the repo
-            if isempty(prj)
+            if isempty(prj) || prj.Name ~= "qups"
                 base_dir = fullfile(fileparts(mfilename('fullpath')), '..');
                 list = dir(fullfile(base_dir, '**','*.m'));
                 fls = fullfile(string({list.folder}), string({list.name}));
@@ -90,143 +44,368 @@ classdef(TestTags = ["Github", "full"]) ExampleTest < matlab.unittest.TestCase
             end
 
             % filter through the file blacklist
-            fls = fls(~contains(fls, filesep + "test" + filesep + "*.m")); % exclude test folder m-files
+            fls = fls(~contains(fls, filesep + ("test"|"build")  + filesep + wildcardPattern() + ".m")); % exclude test,build folder m-files
+            fls = fls(~endsWith(fls,ExampleTest.generateBlacklistFiles() + optionalPattern(".m"))); % exclude blacklist
             fls = cellstr(fls);
         end
+        function bl_fcn = generateBlacklistFunctions()
+            bl_fcn = reshape({ ...
+                ... "bfAdjoint", ... QUPS (RAM)
+                'kWave',    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave (still too large)
+                'USTB',     ["QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern], ... USTB
+                'FieldII',  "calc_scat"+["","_all", "_multi"], ... FieldII
+                'MUST',     "simus", ... MUST
+                'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
+                'mex',      ["bfEikonal", "msfm"+["","2d","3d"]], ... mex binaries required ... compilation (optional, requires CUDA)
+                'gpu',            "wbilerpg", ... CUDAKernel or oclKernel support required
+                'comp',     ("recompile" + ["","Mex","CUDA"]) ... compilations setup required
+                }, 2, [])'; % + "(";
+            
+            % reference or load Qups.prj if not loaded
+            prj_rt = fullfile(mfilename("fullpath"),".."); % Qups directory
+            try
+                prj = matlab.project.rootProject; % should be current project
+                if isempty(prj), prj = matlab.project.loadProject(prj_rt); end % force load
+                prj_nms =  [cat(2,prj.ProjectReferences.Project).Name]; % referenced
+                prj_rt = prj.RootFolder; % base folder
+            catch % guess if the project interface ~still~ doesn't work 
+                % assume everything is installed in adjacent folders
+                prj_nms = dir(fullfile(prj_rt, '..'));
+                prj_nms(~[prj_nms.isdir]) = []; % delete non-directories
+                prj_nms(any({prj_nms.name} == ["..",".","qups"]',1)) = []; % delete up/here references
+                prj_nms = string({prj_nms.name}); % get project names
+                
+                % aliases
+                aliases = ["k-wave", "kWave"; "ustb", "USTB"];
+                for i = 1:size(aliases,1)
+                    prj_nms = replace(prj_nms, aliases(i,1), aliases(i,2));
+                end
+            end
+
+            % filter by installed projects
+            i = ismember(string(bl_fcn(:,1)), prj_nms);
+            bl_fcn(i,:) = []; % Remove from blacklist if the project is installed.
+
+            % filter by available binaries
+            kerns = ("wbilerp")+".ptx"; % require GPU binaries
+            if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
+                bl_fcn(bl_fcn(:,1) == "gpu",:) = []; 
+            end
+            kerns = ["msfm2d", "msfm3d"]+"."+mexext; % require mex binaries
+            if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
+                bl_fcn(bl_fcn(:,1) == "mex",:) = []; 
+            end
+
+            % filter by gpu compiler availability (system not available on thread pools)
+            % (not quite working - seems the environment changes?)
+            % if ~isempty(argn(2, @system, "which nvcc"))
+                % bl_fcn(bl_fcn(:,1) == "comp",:) = [];
+            % end
+        end
+        function bl_file = generateBlacklistFiles()
+            bl_file = [ ...
+                "import_verasonics_data", "cheat_sheet", ...
+                ("msfm" + ["","2d","3d"]), ...
+                "setup", "teardown", ...
+                ];
+        end
+    end
+    methods
+        function filterBlacklist(test, code, blk, fls)
+            % check for blacklisted variables or functions
+            for i = length(test.bl_fcn(:,1)):-1:1
+                m(:,i) = contains(code, test.bl_fcn{i,2} + "("); % lines x pcks
+            end
+            m   = [m    , contains(code, test.bl_var)]; % lines x (pcks+1)
+            pkg = [string(test.bl_fcn(:,1))', "var"]; % packages
+            l = any(m,2); % matching lines
+            p = any(m,1); % matching packages
+            test.assumeFalse(any(m,'all'), ...
+                join(rmmissing([ ...
+                "[blacklist] Filtering lines " + join(string(blk([1 end])),"-") + " in file " + fls + "." ...
+                ,"Matching line(s):" + newline + join(code(l), newline) ...
+                ,"Matching packages: " + join(string(pkg(p)), ", ") ...
+                ]), newline));
+        end
+        function silenceAcceptableWarnings(testCase)
+            lids = [...
+                "QUPS:kspaceFirstOrder:upsampling", ...% in k-Wave
+                "MATLAB:ver:ProductNameDeprecated" ... % in US
+                ];
+            if isempty(gcp('nocreate')) % no pool
+                W = warning(); % get current state
+                arrayfun(@(l)                warning(    'off', l), lids); % silence
+                testCase.addTeardown(@() warning(W)); % restore on exit
+            else % any pool - execute on each worker
+                ws = parfevalOnAll(@warning, 1); wait(ws);% current state
+                ws = fetchOutputs(ws); % retrieve
+                [~, i] = unique(string({ws.identifier}), 'stable');
+                ws = ws(i); % select first unique set (assumer identical)
+                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
+                testCase.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+            end
+        end
+        function txt = truncateJobs(test, txt, kwargs)
+            arguments
+                test
+                txt
+                kwargs.filter = false
+            end
+            ast = wildcardPattern();
+            pat = ast + "job" + ast + "="; % job creation
+            i = contains(txt, pat); % search
+            if any(i) % oops - we have a job - are we in a job?
+                if kwargs.filter, test.assumeEmpty(gcp('nocreate')); end
+                if ~isempty(gcp)
+                    test.log(3, "Truncating to the first " + i + " lines.");
+                    txt = txt(1:i);
+                else
+                end
+            end
+        end
+    end
+    methods (TestClassSetup)
+        function move2TmpFolder(testCase)
+            % folder for temp files
+            import matlab.unittest.fixtures.TemporaryFolderFixture;
+            import matlab.unittest.fixtures.CurrentFolderFixture;
+
+            % Create a temporary folder and make it the current working folder.
+            tempFolder = testCase.applyFixture(TemporaryFolderFixture);
+            testCase.applyFixture(CurrentFolderFixture(tempFolder.Folder));
+        end
+        function hideFigures(testCase)
+            % turn off figures during these tests
+            state = get(0, 'defaultFigureVisible');
+            testCase.addTeardown(@()set(0, 'defaultFigureVisible', state))
+            set(0, 'defaultFigureVisible', 'off');
+        end
+        function limitSims(test)
+            if gpuDeviceCount()
+                test.pulse_lim = 25; else, test.pulse_lim = 3; 
+            end
+            if gpuDeviceCount() || (exist('oclDeviceCount', 'file') && oclDeviceCount())
+                test.scat_lim = 1e4; else, test.scat_lim = 1e2;
+            end
+        end
+        function startThreadPool(test)
+            hcp = gcp('nocreate');
+            if isempty(hcp)
+                try  %#ok<TRYNC>
+                    parpool("Threads"); 
+                    test.addTeardown(@()delete(hcp(isvalid(hcp))));
+                    return
+                end
+                try  %#ok<TRYNC>
+                    parpool("local"); 
+                    test.addTeardown(@()delete(hcp(isvalid(hcp))));
+                    return
+                end
+                test.log(3, "Unable to create a local pool.");
+            end
+        end
+    end
+    methods (TestClassTeardown)
     end
 
     % ---------------------------------------------- % 
-   
-    methods (Test, TestTags={'Github', 'full'})
-        % Test methods
-        function run_examples(test, fls)
-            % arguments
-            %     test matlab.unittest.TestCase
-            %     fls (1,1) string
-            % end
-            fls = string(fls);
+    
+    methods (TestMethodSetup)
+        % Setup for each test
+    end
+    methods(TestMethodTeardown)
+        function cleanup_test(test)
+            if test.run_file, try gpuDevice([]); end, end %#ok<TRYNC> % clear the gpu if there
+            close all; % close all figures
+        end
+    end
 
-            % assume it's not on the blacklist or the meta_path
-            blf = [test.bl_file, test.meta_path + wildcardPattern];
-            if(endsWith(fls,blf + optionalPattern(".m"))) % pass any blacklisted files
-                warning("[blacklist] Skipping " + fls); return; 
-            end 
+    properties (TestParameter)
+        fls (1,:) cell
+        lns (1,:) cell
+        % blk (1,:) cell
+    end
+
+    methods(Static, TestParameterDefinition)    
+        function [fls, lns] = findExamples()
+            % et files
+            fls_ = string(ExampleTest.get_proj_files());
 
             % extract any and all examples from each file
             ws0 = whitespacePattern(0,Inf); % alias
-            
+
             % start/end pattern
             spat = optionalPattern("%")+ws0+"Example"+ws0+digitsPattern(0,Inf)+ws0+optionalPattern(":") + ws0 + lineBoundary; % starting pat
             epat = "See also" + optionalPattern(":") + ws0; % (optional) ending pat
-            pt = [spat epat]; 
+            pt = [spat epat];
 
             % comment block pattern
             cpat = ws0 + "%" + wildcardPattern;% + lineBoundary('end');
 
+            % init
+            [blk, lns, fls] = deal(cell(1,0));
+
+            for m = 1 : numel(fls_)
+                h = false;
+
+                % read in code
+                txt = readlines(fls_(m));
+
+                % split into continuous comment blocks
+                cb = matches(txt, cpat);
+                s = cb; s(2:end  ) = ~s(1:end-1) &  s(2:end); s = find(s);
+                e = cb; e(1:end-1) =  e(1:end-1) & ~e(2:end); e = find(e);
+                i = arrayfun(@colon, s, e, 'UniformOutput',false);
+                i = i(cellfun(@length, i) > 1); % must be more than a one-line comment at least ...
+
+                % for each comment block
+                for n = 1:numel(i)
+                    code_ = txt(i{n}); % block of text
+
+                    % extract an example if it exists
+                    ord = ["first", "last"];
+                    for j = 1:2
+                        bdln = find(contains(code_, pt(j),'IgnoreCase',false));
+                        if isempty(bdln)
+                            bdln = nan;
+                        elseif ~isscalar(bdln)
+                            warning("Multiple lines match " + string(pt(j)) + " in file " + fls_(m) + ": choosing the "+ord(j)+".");
+                            switch j, case 1, bdln = bdln(1); case 2, bdln = bdln(end); end
+                        end
+                        k(j) = bdln; %#ok<AGROW>
+                    end
+                    k = k + [1, -1]; % go after/before matching start/end
+                    if isnan(k(1))
+                        % warning("No example found for lines "+join(string(blk{:}([1 end])),"-")+" in file "+f+".");
+                        continue;
+                    end
+                    if isnan(k(2)), k(2) = length(code_); end % can't find an ending - assume it's okay
+
+                    % save
+                    % code(end+1) = {code_(k(1):k(2))};
+                    fls(end+1) = cellstr(fls_(m));
+                    lns(end+1) = {join(string(i{n}(k)),"-")}; % for labelling
+                    blk(end+1) = {i{n}(k(1):k(end))};
+                    h = true;
+                end
+
+                if ~h,
+                    fls(end+1) = cellstr(fls_(m));
+                    lns(end+1) = {join(string([1 0]),"-")}; % for labelling
+                    blk(end+1) = {[1 0]};
+                end
+
+            end
+        end
+    end
+
+    % ---------------------------------------------- % 
+
+    methods (Test, ParameterCombination="sequential", TestTags=["Github", "full", "build"])
+        % Test methods
+        function run_examples(test, fls, lns)
+            % arguments
+            %     test matlab.unittest.TestCase
+            %     fls (1,1) string
+            % end
+
             % name of the file
+            fls = string(fls);
             [~, n] = fileparts(fls);
 
-            % files (kernel functions) that require CUDAKernel or oclKernel support
-            test.assumeTrue(~ismember(n, ["wbilerpg"]) || gpuDeviceCount || oclDeviceCount);
-
-            % read in code
+            % get the code snippet
+            lns = double(split(lns,"-"));
+            blk = lns(1):lns(end);
             txt = readlines(fls);
+            code = txt(blk);
 
-            % split into continuous comment blocks
-            cb = matches(txt, cpat);
-            s = cb; s(2:end  ) = ~s(1:end-1) &  s(2:end); s = find(s);
-            e = cb; e(1:end-1) =  e(1:end-1) & ~e(2:end); e = find(e);
-            i = arrayfun(@colon, s, e, 'UniformOutput',false);
-            i = i(cellfun(@length, i) > 1); % must be more than a one-line comment at least ...
+            % if it's empty, there's nothing there ...
+            test.assumeNotEmpty(code, ...
+                "No examples found in file " + fls + "." ...
+                );
 
-            % for each comment block
-            h = false;
-            for blk = i(:)'
-                code = txt(blk{:}); % block of text
+            % strip the (first) comment character
+            ws0 = whitespacePattern(0,Inf); % alias
+            code = extractAfter(code, lineBoundary('start')+ws0+"%");
 
-                % extract an example if it exists
-                ord = ["first", "last"];
-                for j = 1:2
-                    bdln = find(contains(code, pt(j),'IgnoreCase',false));
-                    if isempty(bdln)
-                        bdln = nan;
-                    elseif ~isscalar(bdln)
-                        warning("Multiple lines match " + string(pt(j)) + " in file " + fls + ": choosing the "+ord(j)+".");
-                        switch j, case 1, bdln = bdln(1); case 2, bdln = bdln(end); end
-                    end
-                    k(j) = bdln; %#ok<AGROW>
-                end
-                k = k + [1, -1]; % go after/before matching start/end
-                if isnan(k(1))
-                    % warning("No example found for lines "+join(string(blk{:}([1 end])),"-")+" in file "+f+".");
-                    continue;
-                end
-                if isnan(k(2)), k(2) = length(code); end % can't find an ending - assume it's okay
-                code = code(k(1):k(2));
+            % check for blacklisted variables or functions
+            filterBlacklist(test, code, blk, fls);
 
-                % strip the (first) comment character
-                code = extractAfter(code, lineBoundary('start')+ws0+"%");
-
-                % check for blacklisted variables or functions
-                l = contains(code, test.bl_var);
-                m = contains(code, test.bl_fcn);
-                if any(l) || any(m)
-                    warning("[blacklist] Filtering lines "+join(string(blk{:}([1 end])),"-")+" in file "+fls+"."...
-                        +newline+" Matching line(s):" + newline + join(code(l | m), newline));
-                    continue;
-                end
-
-                % TODO: pass or filter based on Tag
-                % assume less than 25 scatterers with the greens function
-                S = check_num_scat(code); % number of scatterers
-                L = 1e4;
-                test.assumeTrue(S <= L, "Example uses " + S + " scatterers, exceeding the limit of " + L + ".");
-
-                % make into a function
-                fnm = join([n, blk{1}(k)],"_"); % function/file name
-                header = "function " + fnm + "()";
-
-                % copy into an (output) file
-                ofl = fullfile(test.meta_dir, fnm +".m");
-                writelines([header; code], ofl);
-
-                % delete on cleanup
-                if test.delete_file, test.addTeardown(@delete, ofl); end
-
-                % assert a clean run
-                test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
-
-                % mark at least 1 help file
-                h = true;
+            % assume less than a limit with simulator functions
+            args = { 2, "numScat","greens";  1, "seq.numPulse","kspaceFirstOrder"};
+            L = [test.scat_lim, test.pulse_lim];
+            for l = 1:size(args,1)
+                S = check_num_prop(code, args{l,:}); % size
+                test.assumeLessThanOrEqual(S, L(l), ...
+                    "Skipping example " + n + " <" ...
+                    + blk((1)) + "-" + blk((end)) + "> : " +args{l,2}+"=" ...
+                    + S + " exceeds the limit of " ...
+                    + L(l) + "." ...
+                    );
             end
-            if ~h, warning("No examples found in file " + fls + "."); end
+            
+            % assume no job, otherwise truncate
+            code = test.truncateJobs(code, 'filter', false); 
+
+            % make into a function
+            fnm = join([n, blk([1 end])],"_"); % function/file name
+            header = "function " + fnm + "()";
+
+            % copy into an (output) file
+            ofl = fnm + ".m";
+            localwritelines([header; code], ofl);
+
+            % delete on cleanup
+            if test.delete_file, test.addTeardown(@delete, fullfile(pwd, ofl)); end
+
+            % assert a clean run
+            test.silenceAcceptableWarnings();
+            test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
+
         end
+    end
+    methods
     end
 end
 
 function p = pnc(), p = ("." | "(" | ")" | "{" | "}" | "," | "=" | "*" | "+"); end % punctuation
 
-function S = check_num_scat(code)
+function V = check_num_prop(code, arg, prp, fnm)
 % check that less than N scatterers
-pat = "greens(" + alphanumericsPattern() + ",";
-i = find(contains(code,pat)); % lines with call to greens
+% arg = 1; % is us
+% prp = "numPulse"; % property
+% fnm = "kspaceFirstOrder";
+pat = fnm + "(" + asManyOfPattern(alphanumericsPattern() + ",", arg(1)-1,arg(end)-1);
+i = find(contains(code,pat)); % lines with call to kspaceFirstOrder
 
-if isempty(i), S = 0; return; end % 0 if greens not found
-if ~isscalar(i), i = i(1); warning("Multiple calls to greens: choosing the first."); end
-v = strip(extractBetween(code(i), pat, ("," | ")"))); % scat variable
+if isempty(i), V = 0; return; end % 0 if greens not found
+if ~isscalar(i), i = i(1); warning("Multiple calls to "+fnm+"(): choosing the first."); end
+v = strip(extractBetween(code(i), pat, ("," | ")"))); % us variable
+
+% write code to a file
+fl = tempname + ".m";
+localwritelines(code(1:i-1), fl);
 
 % run the code up to right before calling greens (assumes no loops/branches)
-fl = tempname + ".m";
-writelines(code(1:i-1), fl);
 try run(fl);
     % evaluate number of scatterers
-    S = eval(v+".numScat");
+    V = eval(v+"."+prp);
     delete(fl); % cleanup
 
 catch ME % failed to run
     disp(ME);
     delete(fl); % cleanup
-    S = Inf; %
+    V = Inf; %
 end
 end
 
+
+function fid = localwritelines(txt, fl)
+if exist('writelines','file') % 2022a+
+    writelines(txt, fl);
+else
+    fid = fopen(fl, 'w+');
+    fwrite(fid, join(txt,newline));
+    fclose(fid);
+end
+end

@@ -407,7 +407,7 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
             % default axis setting
             if isa(scan, 'ScanCartesian')
                 axis(ax, 'image');
-            elseif isa (scan, 'ScanPolar') || isa(scan, 'ScanGeneric')
+            elseif any(arrayfun(@(s)isa(scan,s), ["ScanPolar", "ScanGeneric", "ScanSpherical"]))
                 axis(ax, 'tight')
             else
                 warning('QUPS:Scan:UnrecognizedScan', "Unrecognized Scan of class " + class(scan) + ".");

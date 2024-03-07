@@ -202,7 +202,6 @@ classdef Scatterers < matlab.mixin.Copyable
             % of it's properties into native MATLAB structs.
             %
             % Example:
-            %
             % % Create a Scatterers
             % scat = Scatterers()
             %
@@ -236,6 +235,11 @@ classdef Scatterers < matlab.mixin.Copyable
             % h = PLOT(...) returns the handle to the plot.
             % 
             % Plots only the x-z slice.
+            % 
+            % Example:
+            % scat = Scatterers('pos', (-5 : 5) .* [1 0 0]' + [0 0 30]');
+            % figure;
+            % plot(scat, 'r.');
             % 
             % See also MEDIUM/IMAGESC
             arguments
@@ -289,8 +293,12 @@ classdef Scatterers < matlab.mixin.Copyable
             % the Scatterers scat_rhs to create a new Scatterers out. The
             % Scatterers must have matching medium properties i.e. c0 and
             % alpha0 must match.
-            %
-            %
+            % 
+            % Example:
+            % left_scat  = Scatterers('pos', [-5 0 30]');
+            % right_scat = Scatterers('pos', [+5 0 30]');
+            % both_scats = left_scat + right_scat;
+            % 
             arguments
                 a Scatterers
                 b Scatterers

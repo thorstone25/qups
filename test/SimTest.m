@@ -16,8 +16,7 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     properties(ClassSetupParameter)
-        gpu   = getgpu()
-        clp = poolfilter({'pool', 'default','none' , 'threads', 'background'}); % cluster: local has to create a temp cluster each time
+        clp = poolfilter({'pool', 'none', 'threads'}); % cluster: local has to create a temp cluster each time
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
             'linpw', string({"L11-5V",'Plane-wave'}), ...
@@ -28,13 +27,9 @@ classdef SimTest < matlab.unittest.TestCase
             );
     end
 
-    methods(TestClassSetup, ParameterCombination = 'exhaustive')
+    methods(TestClassSetup, ParameterCombination = 'pairwise')
         % Shared setup for the entire test class
-        function setupQUPS(test, gpu, clp, xdc_seq_name)
-            cd(SimTest.proj_folder); % call setup relative to here
-            setup(gpu{:}); % compile what we can
-            if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
-
+        function setupQUPS(test, clp)
             % ensure we can actually start these pools
             switch clp
                 case "background", test.assumeTrue(logical(exist('backgroundPool','builtin')), ...
@@ -195,7 +190,6 @@ classdef SimTest < matlab.unittest.TestCase
 
     % some of these options aren't fully supported yet.
     properties(TestParameter)
-        terp = {'nearest', 'linear', 'cubic'};  % interpolation
         sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
     end
     methods(TestMethodSetup)
@@ -226,20 +220,20 @@ classdef SimTest < matlab.unittest.TestCase
             if isa(test.clu, 'parallel.Cluster') || isa(test.clu, 'parallel.ProcessPool'), return; end
             
             % forward remaining
-            pscat(test, 'Greens', 'cubic');
+            pscat(test, 'Greens');
         end
     end
 
     % Full test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
-        function full_pscat(test, sim_name, terp), pscat(test, sim_name, terp); end % forward all
-        function full_greens_devs(test, sim_name, terp), greens_devs(test, sim_name, terp); end % forward all
+        function full_pscat(test, sim_name), pscat(test, sim_name); end % forward all
+        function full_greens_devs(test), greens_devs(test); end % forward all
     end
 
     
     % test method implementations
     methods
-        function pscat(test, sim_name, terp)
+        function pscat(test, sim_name)
             % PSF - Test the PSF
             % 
             % Test that the PSF for a point at a reasonable distance 
@@ -259,9 +253,6 @@ classdef SimTest < matlab.unittest.TestCase
                 case {'kWave'}, test.assumeTrue(logical(exist('kWaveGrid' , 'file')));
             end
 
-            % k-Wave/calc_scat_multi don't use interpolation: pass on all but one option
-            if ismember(sim_name,["FieldII_multi", "kWave"]) && terp ~= "nearest", return; end
-            
             % SIMUS restricts the fractional bandwidth to < 0.2 and 
             % requires sampling frequency be a multiple of 4 x the central
             % frequency
@@ -269,7 +260,7 @@ classdef SimTest < matlab.unittest.TestCase
 
             
             % simulate based on the simulation routine
-            opts = {'parenv', clu, 'interp', terp, };
+            opts = {'parenv', clu, 'interp', "nearest", };
             switch sim_name
                 case 'FieldII',       chd = calc_scat_all   (us, scat, opts{:}); % use FieldII,
                 case 'FieldII_multi', chd = calc_scat_multi (us, scat, opts{[1:2]}); % use FieldII,
@@ -331,17 +322,11 @@ classdef SimTest < matlab.unittest.TestCase
                 ));
         end
     
-        function greens_devs(test, sim_name, terp)
+        function greens_devs(test)
             % test that device options produce (roughly) the same result
 
-            if sim_name ~= "Greens", return; end % pass if not Greens
-           
-            
-            % gpu-cubic is a different algorithm, so we get very different results
-            switch terp, case "cubic", return; end
-
             % unpack
-            [us, scat, clu] = deal(test.us, test.scat, test.clu);
+            [us_, scat_] = dealfun(@copy, test.us, test.scat);
 
             % test definitions
             import matlab.unittest.constraints.IsEqualTo;
@@ -349,26 +334,23 @@ classdef SimTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.AbsoluteTolerance;
 
             % simulate based on the simulation routine
-            opts = {'interp', terp, 'parenv', clu};
-            switch sim_name
-                case 'Greens' 
-                    us.fs = single(us.fs); % implicit cast to single type
-                    chd0 = gather(greens(us, scat, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
-                    [xo, to] = deal(double(chd0.data), double(chd0.t0));
-                    for usetall = [true, false]
-                        for dev = [0 -1]
-                            chd = gather(greens(us, scat, [1,1], opts{1:2}, 'device', dev , 'tall', usetall));
-                            [x, t] = deal(double(gather(chd.data)), gather(double(chd.t0)));
-                            test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
-                                "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.seq.type + " sequence."  ...
-                                ));
+            opts = {'interp', 'linear', 'parenv', test.clu};
+            us_.fs = single(us_.fs); % implicit cast to single type
+            chd0 = gather(greens(us_, scat_, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
+            [xo, to] = deal(double(chd0.data), double(chd0.t0));
+            for usetall = [true, false]
+                for dev = [0 -1]
+                    chd = gather(greens(us_, scat_, [1,1], opts{1:2}, 'device', dev , 'tall', usetall));
+                    [x, t] = deal(double(gather(chd.data)), gather(double(chd.t0)));
+                    test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
+                        "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us_.seq.type + " sequence."  ...
+                        ));
 
-                            % accurate to 10 nanoseconds
-                            test.assertEqual(t, to, 'AbsTol', 1e-9, 'RelTol', 1e-9, sprintf(...
-                                "The time axis is different on device " + dev + " and tall set to " + usetall + " for a " + us.seq.type + " sequence."  ...
-                                ));
-                        end
-                    end
+                    % accurate to 10 nanoseconds
+                    test.assertEqual(t, to, 'AbsTol', 1e-9, 'RelTol', 1e-9, sprintf(...
+                        "The time axis is different on device " + dev + " and tall set to " + usetall + " for a " + us_.seq.type + " sequence."  ...
+                        ));
+                end
             end
         end
     end

@@ -32,10 +32,9 @@ function [mvf, mvh] = animate(x, h, kwargs)
 %
 % Example:
 % % Simulate some data
-% us = UltrasoundSystem(); % get a default system
-% us.fs = single(us.fs); % use single precision for speed
-% us.seq = SequenceRadial('type', 'PW', 'angles', -21:0.5:21);
-% scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
+% seq = SequenceRadial('type', 'PW', 'angles', -21:0.5:21); % plane waves
+% us = UltrasoundSystem('seq', seq, 'fs', single(40e6)); % create a system
+% scat = Scatterers('pos', [0 0 30e-3]', 'c0', us.seq.c0); % define a point target
 % chd = greens(us, scat); % simulate the ChannelData
 % 
 % % Configure the image of the Channel Data
@@ -43,11 +42,13 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % nexttile();
 % h = imagesc(chd); % initialize the image
 % caxis(max(caxis) + [-60 0]); % 60 dB dynamic range
-% colorbar;
+% colorbar; colormap jet; 
 % title('Channel Data per Transmit');
+% ylabel('Time (s)')
+% xlabel('Receive Elements (#)');
 % 
 % % Animate the data across transmits 
-% animate(chd.data, h, 'loop', false); % show once
+% animate(chd.data, 'loop', false); % show once
 %
 % % Beamform the data
 % b = DAS(us, chd, 'keep_tx', true); % B-mode images per tx
@@ -61,11 +62,11 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % title('B-mode per Transmit');
 %  
 % % Animate both images across transmits
-% mvf = animate({chd.data, b}, h, 'loop', false); % show once
+% mvf = animate({chd.data, b}, h, 'loop', false, 'fn', true); % show once
 % 
 % % Create a movie
 % vw = VideoWriter("tmp", 'Motion JPEG AVI');
-% vw.FrameRate = 10; % set frame rate to 10 Hz
+% vw.FrameRate = 10; % set frame rate to 10 frames-per-second (FPS)
 % vw.open();
 % vw.writeVideo(mvf);
 % vw.close();
