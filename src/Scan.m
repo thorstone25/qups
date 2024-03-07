@@ -29,20 +29,24 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         size        % size of each dimension of the generated pixels
         nPix        % total number of pixels
     end
-    
+
     % USTB interop
-    methods(Abstract)
+    methods
         % QUPS2USTB - Convert a Scan to a USTB/UFF compatible uff.scan
         %
         % uscan = QUPS2USTB(scan) returns a uff.scan object.
         %
         % Example:
         % uscan = QUPS2USTB(ScanCartesian());
-        % 
+        %
         % See also UFF.SCAN
-        uscan = QUPS2USTB(scan)
+        % USTB interface methods
+        function uscan = QUPS2USTB(scan)
+            uscan = uff.scan('xyz', scan.pos(:,:)');
+        end
+
     end
-        
+
     % UFF constructor
     methods(Static)
         function scan = UFF(uscan)
@@ -147,7 +151,9 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         %
         % See also: SCAN/POSITIONS
         [X, Y, Z] = getImagingGrid(scan)
-        
+    end
+    methods
+
         % SCALE - Scale units
         %
         % scan = SCALE(scan, 'dist', factor) scales the distance of the
@@ -164,7 +170,19 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         % scan.xb
         %
         % 
-        scale(scan, kwargs)
+        function scan = scale(scan, kwargs)
+            arguments
+                scan ScanGeneric
+                kwargs.dist (1,1) double
+            end
+            if kwargs.dist ~= 1
+                warning("QUPS:Scan:noOverride", ...
+                    "You used 'scale' by " + kwargs.dist + " on a " + class(scan) + "!" ...
+                    +newline+"It's not very effective ..." ...
+                    );
+            end
+            scan = copy(scan);
+        end
     end
 
     % positions

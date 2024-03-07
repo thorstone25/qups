@@ -192,13 +192,6 @@ classdef ScanGeneric < Scan
         end
     end
 
-    % USTB interface methods
-    methods
-        function uscan = QUPS2USTB(scan)
-            uscan = uff.scan('xyz', scan.pos(:,:)');
-        end
-    end
-
     methods(Static)
         function scan = UFF(uscan)
             arguments, uscan uff.scan; end
