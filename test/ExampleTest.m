@@ -4,8 +4,8 @@ classdef ExampleTest < matlab.unittest.TestCase
     properties
         run_file (1,1) logical  = true; % set false to only write to file
         delete_file (1,1) logical = true; % whether to delete the file after running
-        scat_lim (1,1) double = 1e1; % limit of scatterers
-        pulse_lim (1,1) double = 1; % max number of pulses to sim in k-Wave
+        scat_lim (1,1) double % limit of scatterers
+        pulse_lim (1,1) double % max number of pulses to sim in k-Wave
     end
     
     % blacklists
@@ -61,26 +61,46 @@ classdef ExampleTest < matlab.unittest.TestCase
                 'comp',     ("recompile" + ["","Mex","CUDA"]) ... compilations setup required
                 }, 2, [])'; % + "(";
             
+            % reference or load Qups.prj if not loaded
+            prj_rt = fullfile(mfilename("fullpath"),".."); % Qups directory
+            try
+                prj = matlab.project.rootProject; % should be current project
+                if isempty(prj), prj = matlab.project.loadProject(prj_rt); end % force load
+                prj_nms =  [cat(2,prj.ProjectReferences.Project).Name]; % referenced
+                prj_rt = prj.RootFolder; % base folder
+            catch % guess if the project interface ~still~ doesn't work 
+                % assume everything is installed in adjacent folders
+                prj_nms = dir(fullfile(prj_rt, '..'));
+                prj_nms(~[prj_nms.isdir]) = []; % delete non-directories
+                prj_nms(any({prj_nms.name} == ["..",".","qups"]',1)) = []; % delete up/here references
+                prj_nms = string({prj_nms.name}); % get project names
+                
+                % aliases
+                aliases = ["k-wave", "kWave"; "ustb", "USTB"];
+                for i = 1:size(aliases,1)
+                    prj_nms = replace(prj_nms, aliases(i,1), aliases(i,2));
+                end
+            end
+
             % filter by installed projects
-            prj = matlab.project.rootProject;
-            i = ismember(string(bl_fcn(:,1)), [cat(2,prj.ProjectReferences.Project).Name]);
+            i = ismember(string(bl_fcn(:,1)), prj_nms);
             bl_fcn(i,:) = []; % Remove from blacklist if the project is installed.
 
             % filter by available binaries
             kerns = ("wbilerp")+".ptx"; % require GPU binaries
-            if all(arrayfun(@(k) exist(fullfile(prj.RootFolder, "bin", k), 'file'), kerns))
+            if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "gpu",:) = []; 
             end
             kerns = ["msfm2d", "msfm3d"]+"."+mexext; % require mex binaries
-            if all(arrayfun(@(k) exist(fullfile(prj.RootFolder, "bin", k), 'file'), kerns))
+            if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "mex",:) = []; 
             end
 
-            % filter by gpu compiler availability
+            % filter by gpu compiler availability (system not available on thread pools)
             % (not quite working - seems the environment changes?)
-            if ~isempty(argn(2, @system, "which nvcc"))
+            % if ~isempty(argn(2, @system, "which nvcc"))
                 % bl_fcn(bl_fcn(:,1) == "comp",:) = [];
-            end
+            % end
         end
         function bl_file = generateBlacklistFiles()
             bl_file = [ ...
@@ -93,20 +113,37 @@ classdef ExampleTest < matlab.unittest.TestCase
     end
     methods
         function filterBlacklist(test, code, blk, fls)
-                % check for blacklisted variables or functions
-                for i = length(test.bl_fcn(:,1)):-1:1
-                    m(:,i) = contains(code, test.bl_fcn{i,2} + "("); % lines x pcks
-                end
-                m   = [m    , contains(code, test.bl_var)]; % lines x (pcks+1)
-                pkg = [string(test.bl_fcn(:,1))', "var"]; % packages
-                l = any(m,2); % matching lines
-                p = any(m,1); % matching packages
-                test.assumeFalse(any(m,'all'), ...
-                    join(rmmissing([ ...
-                    "[blacklist] Filtering lines " + join(string(blk([1 end])),"-") + " in file " + fls + "." ...
-                        ,"Matching line(s):" + newline + join(code(l), newline) ...
-                        ,"Matching packages: " + join(string(pkg(p)), ", ") ...
-                    ]), newline));
+            % check for blacklisted variables or functions
+            for i = length(test.bl_fcn(:,1)):-1:1
+                m(:,i) = contains(code, test.bl_fcn{i,2} + "("); % lines x pcks
+            end
+            m   = [m    , contains(code, test.bl_var)]; % lines x (pcks+1)
+            pkg = [string(test.bl_fcn(:,1))', "var"]; % packages
+            l = any(m,2); % matching lines
+            p = any(m,1); % matching packages
+            test.assumeFalse(any(m,'all'), ...
+                join(rmmissing([ ...
+                "[blacklist] Filtering lines " + join(string(blk([1 end])),"-") + " in file " + fls + "." ...
+                ,"Matching line(s):" + newline + join(code(l), newline) ...
+                ,"Matching packages: " + join(string(pkg(p)), ", ") ...
+                ]), newline));
+        end
+        function silenceAcceptableWarnings(testCase)
+            lids = [...
+                "QUPS:kspaceFirstOrder:upsampling", ...% in k-Wave
+                "MATLAB:ver:ProductNameDeprecated" ... % in US
+                ];
+            if isempty(gcp('nocreate')) % no pool
+                W = warning(); % get current state
+                arrayfun(@(l)                warning(    'off', l), lids); % silence
+                testCase.addTeardown(@() warning(W)); % restore on exit
+            else % any pool - execute on each worker
+                ws = parfevalOnAll(@warning, 1); wait(ws);% current state
+                ws = reshape(fetchOutputs(ws), [], gcp().NumWorkers); % unpack
+                ws = ws(:,1); % select first (assumer identical)
+                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
+                testCase.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+            end
         end
     end
     methods (TestClassSetup)
@@ -125,19 +162,6 @@ classdef ExampleTest < matlab.unittest.TestCase
             testCase.addTeardown(@()set(0, 'defaultFigureVisible', state))
             set(0, 'defaultFigureVisible', 'off');
         end
-        function silenceAcceptableWarnings(testCase)
-            W = warning(); % get current state
-            testCase.addTeardown(@() warning(W)); % restore on exit if executing locally
-            lids = [...
-                "QUPS:kspaceFirstOrder:upsampling", ...% in k-Wave
-                "MATLAB:ver:ProductNameDeprecated" ... % in US
-                ];
-            if isempty(gcp('nocreate')) % no pool
-                     arrayfun(@(l)                warning(    'off', l), lids);
-            else % any pool - execute on each worker
-                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids));
-            end            
-        end
         function limitSims(test)
             if gpuDeviceCount()
                 test.pulse_lim = 25; else, test.pulse_lim = 3; 
@@ -152,7 +176,14 @@ classdef ExampleTest < matlab.unittest.TestCase
                 try  %#ok<TRYNC>
                     parpool("Threads"); 
                     test.addTeardown(@()delete(hcp(isvalid(hcp))));
+                    return
                 end
+                try  %#ok<TRYNC>
+                    parpool("local"); 
+                    test.addTeardown(@()delete(hcp(isvalid(hcp))));
+                    return
+                end
+                test.log(3, "Unable to create a local pool.");
             end
         end
     end
@@ -307,6 +338,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             if test.delete_file, test.addTeardown(@delete, fullfile(pwd, ofl)); end
 
             % assert a clean run
+            test.silenceAcceptableWarnings();
             test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
 
         end
