@@ -11,11 +11,14 @@ function setup(opts)
 %
 % SETUP CUDA - adds the default CUDA installation paths to the system
 % environmental variable PATH so that nvcc can be called. The function will
-% attempt to find an installation of CUDA. On Windows, it will also attempt
-% to find an installation of MSVC C/C++. If the 'CUDA_PATH' environmental
-% variable is set, it will use that version of CUDA first. If the
-% 'VCToolsInstallDir' environmental variable is set, it will use that C/C++
-% compiler.
+% attempt to find an installation of CUDA with nvcc and add it to the
+% system PATH. On Windows, it will also attempt to find an installation of
+% MSVC C/C++. If the 'MW_NVCC_PATH' environment variable is set, it will
+% use that version of CUDA first. On Windows, if the 'VCToolsInstallDir'
+% environmental variable is set, it will use that C/C++ compiler.
+%
+% Note: In MATLAB R2023a+ ptx compilation in provided via mexcuda, which
+% will also use the 'MW_NVCC_PATH' environment variable if set.
 %
 % SETUP disable-gpu - disables gpu support by shadowing `gpuDeviceCount` so
 % that it always returns 0. This prevents implicit gpu usage by some
@@ -78,10 +81,8 @@ while i <= nargin % go through arguments sequentially
             
             % get the nvcc executable path
             if isunix
-                p = getenv('CUDA_PATH'); % use env. var if set
-                if isfolder(p)
-                    p = fullfile(p, "bin"); % bin should have nvcc
-                else
+                p = getenv('MW_NVCC_PATH'); % use env. var if set
+                if ~isfolder(p) % bin should have nvcc
                     p = "/usr/local/cuda/bin"; % linux default nvcc path
                 end                
                 if ~exist(fullfile(p, 'nvcc')), warning("nvcc not found at " + p); end
@@ -94,10 +95,8 @@ while i <= nargin % go through arguments sequentially
 
                 % get the nvcc path
                 % find the windows (default) nvcc paths
-                p1 = getenv('CUDA_PATH'); % use env. var if set
-                if isfolder(p1)
-                    p1 = fullfile(p1, 'bin'); % bin should have nvcc
-                else
+                p1 = getenv('MW_NVCC_PATH'); % use env. var if set
+                if ~isfolder(p1) % should have nvcc
                     l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files\NVIDIA GPU Computing Toolkit\CUDA","**","nvcc*"))}, wdrvs); % search for nvcc
                     l = cat(1, l{:});
                     if ~isempty(l) % we found at least one
