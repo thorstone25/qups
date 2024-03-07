@@ -317,7 +317,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             end
         end
         
-        function pf = focActive(xdc, apd, r)
+        function [pf, nf] = focActive(xdc, apd, r)
             % focActive - Create foci for the active apertures
             %
             % pf = focActive(xdc, apd, r) creates an array of foci pf at a
@@ -331,6 +331,10 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % range r normal to the surface of the transducer from the beam
             % origins. The range r can be a scalar or a (1 x S) array of
             % ranges per transmit pulse.
+            % 
+            % [pf, nf] = focActive(...) additionaly returns the normal
+            % vector from center of the active aperture to the focal
+            % points.
             % 
             % Note: a negative value of r will define a diverging wave.
             % 
@@ -355,7 +359,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             arguments
                 xdc (1,1) Transducer
                 apd (:,:) {mustBeNumericOrLogical} % apodization (N x S)
-                r (1,:) {mustBeReal, mustBeFinite}
+                r (1,:) {mustBeReal, mustBeFinite} = 0
             end
 
             % central element of active apertures
@@ -364,14 +368,15 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % compute beams based on transducer geometry
             if any(arrayfun(@(s)isa(xdc,s),["TransducerArray", "TransducerMatrix"])) % linear interpolation
                 pn = xdc.positions(); % element position (3 x N)
-                [~,~,nn] = xdc.orientations(); % element angles/normals (1xN)/(3xN)
+                [~,~,nn] = xdc.orientations(); % element normals (3xN)
                 pnc = (pn(:,floor(ic)) + pn(:,ceil(ic))) ./ 2; % mean position
-                nnc = (nn(:,floor(ic)) + nn(:,ceil(ic))) ./ 2; % mean normal
-                pf = pnc + r .* nnc; % create focal positions
+                nf = (nn(:,floor(ic)) + nn(:,ceil(ic))) ./ 2; % mean normal
+                pf = pnc + r .* nf; % create focal positions
             elseif isa(xdc,"TransducerConvex") % angular interpolation
-                th = xdc.orientations(); % element angles/normals (1xN)/(3xN)
+                th = xdc.orientations(); % element angles (1xN)
                 thc = (th(:,floor(ic)) + th(:,ceil(ic))) ./ 2; % mean angle (1 x S)
-                pf = (xdc.radius + r) * [sind(thc); 0*thc; cosd(thc)] + xdc.center; % extend radius from beam origins
+                nf = [sind(thc); 0*thc; cosd(thc)]; % normal vectors
+                pf = (xdc.radius + r) * nf + xdc.center; % extend radius from beam origins
             else
                 error("Sequence:focActive:unsupportedTransducer", ...
                     "A "+class(xdc)+" is not supported.");
