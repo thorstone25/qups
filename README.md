@@ -89,6 +89,11 @@ Note: The "prj" file in USTB is a [_Toolbox_](https://www.mathworks.com/help/mat
 
 4. (optional) Apply [patches](###parallel-processing-with-external-packages) to enable further parallel processing.
 
+5. (optional) Run tests via the `runProjectTests()` function in the build directory.
+```
+addpath build; runProjectTests('Github', 'verbosity', 'Concise');
+```
+
 ## Extensions
 All extensions to QUPS are optional, but must be installed separately from their respective sources.
 
