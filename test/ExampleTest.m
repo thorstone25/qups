@@ -109,7 +109,6 @@ classdef ExampleTest < matlab.unittest.TestCase
                 "setup", "teardown", ...
                 ];
         end
-
     end
     methods
         function filterBlacklist(test, code, blk, fls)
@@ -139,10 +138,29 @@ classdef ExampleTest < matlab.unittest.TestCase
                 testCase.addTeardown(@() warning(W)); % restore on exit
             else % any pool - execute on each worker
                 ws = parfevalOnAll(@warning, 1); wait(ws);% current state
-                ws = reshape(fetchOutputs(ws), [], gcp().NumWorkers); % unpack
-                ws = ws(:,1); % select first (assumer identical)
+                ws = fetchOutputs(ws); % retrieve
+                [~, i] = unique(string({ws.identifier}), 'stable');
+                ws = ws(i); % select first unique set (assumer identical)
                 wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
                 testCase.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+            end
+        end
+        function txt = truncateJobs(test, txt, kwargs)
+            arguments
+                test
+                txt
+                kwargs.filter = false
+            end
+            ast = wildcardPattern();
+            pat = ast + "job" + ast + "="; % job creation
+            i = contains(txt, pat); % search
+            if any(i) % oops - we have a job - are we in a job?
+                if kwargs.filter, test.assumeEmpty(gcp('nocreate')); end
+                if ~isempty(gcp)
+                    test.log(3, "Truncating to the first " + i + " lines.");
+                    txt = txt(1:i);
+                else
+                end
             end
         end
     end
@@ -325,6 +343,9 @@ classdef ExampleTest < matlab.unittest.TestCase
                     + L(l) + "." ...
                     );
             end
+            
+            % assume no job, otherwise truncate
+            code = test.truncateJobs(code, 'filter', false); 
 
             % make into a function
             fnm = join([n, blk([1 end])],"_"); % function/file name
