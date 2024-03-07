@@ -367,14 +367,19 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % helper functions
     methods(Hidden)
-        function chd = applyFun2Props(chd, fun), 
+        function chd = applyFun2Props(chd, fun)
             chd = copy(chd);
-            [chd.t0, chd.fs, chd.data] = deal(fun(chd.t0), fun(chd.fs), fun(chd.data));
+            for i = 1 : numel(chd)
+                chd_ = chd(i); % reference for each
+                [chd_.t0, chd_.fs, chd_.data] = deal(fun(chd_.t0), fun(chd_.fs), fun(chd_.data));
+            end
         end
         function chd = applyFun2Data(chd, fun), chd = copy(chd); [chd.data] = dealfun(fun, chd.data); end
         function chd = applyFun2Dim(chd, fun, dim, varargin),
             chd = copy(chd); % copy semantics
-            chd.data = matlab.tall.transform(@dimfun, chd.data, varargin{:}); % apply function in dim 1; % set output data
+            for i = 1 : numel(chd) % per chd
+                chd(i).data = matlab.tall.transform(@dimfun, chd(i).data, varargin{:}); % apply function in dim 1; % set output data
+            end
 
             % dim1 mapping function: dim d gets sent to dim 1 and back.
             function x = dimfun(x, varargin)
@@ -602,7 +607,7 @@ classdef ChannelData < matlab.mixin.Copyable
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
 
             % defaults
-            if nargin < 3, dim = chd.tdim; end
+            if nargin < 3, dim = unique([chd.tdim]); end
 
             % filter: always applied in dim 1
             chd = applyFun2Dim(chd, @(x) filter(D, x), dim);
@@ -614,8 +619,10 @@ classdef ChannelData < matlab.mixin.Copyable
             end
 
             % adjust time axes
-            if dim == chd.tdim
-                chd.t0 = chd.t0 - L/chd.fs;
+            for i = 1 : numel(chd)
+                if dim == chd(i).tdim
+                    chd(i).t0 = chd(i).t0 - L/chd(i).fs;
+                end
             end
         end
         function chd = filtfilt(chd, D, dim)
