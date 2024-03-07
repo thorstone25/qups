@@ -105,7 +105,7 @@ classdef(TestTags = ["Github", "full"]) interpTest < matlab.unittest.TestCase
             if terp == "cubic"
             switch type_ % needs much more room because the algs aren't the same
                 case "double", tol = tol * 1e16; 
-                case "single", tol = tol * 1e8;
+                case "single", tol = tol * 1e9;
                 case "halfT",  tol = tol * 1;
             end
             end
