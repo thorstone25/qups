@@ -400,6 +400,8 @@ classdef ChannelData < matlab.mixin.Copyable
         % cast underlying type to tall
         function chd = sparse(chd)  , chd = applyFun2Data(chd, @sparse); end
         % cast underlying type to sparse
+        function chd = complex(chd) , chd = applyFun2Data(chd, @complex); end
+        % cast underlying type to complex
         function chd = doubleT(chd) , chd = applyFun2Data(chd, @double); end
         % cast underlying type to double
         function chd = singleT(chd) , chd = applyFun2Data(chd, @single); end
@@ -1151,7 +1153,7 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs] = deal(n0_, 1);
         end    
         function f = fftaxis(chd)
-            f = cast(shiftdim((0 : chd.T - 1)', 1-chd.tdim) .* chd.fs ./ chd.T, 'like', real(chd.data));
+            f = cast(swapdim((0 : chd.T - 1),2,chd.tdim) .* chd.fs ./ chd.T, 'like', real(chd.data([])));
         end
     end
 
@@ -1231,6 +1233,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % get the time axes for this frame
             t = gather(double(sub(chd.time, num2cell(it), fdims)));
+            t = sub(t, ceil(size(t,chd.ndim)/2),chd.ndim); % grab median rx
 
             % choose which dimensions to show
             if ~isfield(im_args, 'XData'), im_args.XData = 1:chd.N; end
@@ -1399,8 +1402,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % 
             % See also CHANNELDATA/JOIN SUB
             
-            assert(isscalar(dim), 'Dimension must be scalar!'); 
-            if nargin < 3, bsize = 1; end
+            arguments
+                chd ChannelData
+                dim (1,1) {mustBeInteger, mustBePositive} = max(arrayfun(@(chd)ndims(chd.data), chd))
+                bsize (1,1) {mustBeInteger, mustBePositive} = 1
+            end
 
             % S = gather(size(chd.data, dim)); % slices
             St = gather(size(chd.t0  ,dim)); % size in t
