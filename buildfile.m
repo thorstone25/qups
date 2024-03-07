@@ -319,10 +319,13 @@ fld = context.Task.Inputs.Path; % output folder for the project (relative)
 fl = (dir(fullfile(fld, '**', 'kspaceFirstOrder3DC.m')));
 fl = string(fullfile({fl.folder}, {fl.name}));
 
-% replace tempdir with new tempname folder
+% replace tempdir with new tempname folder, and truncate before deletion
 txt = string(readlines(fl));
-pat = ["data_path = tempdir;", "delete(output_filename);"];
-rep = ["data_path = tempname; mkdir(data_path);", pat(2) + " rmdir(data_path);"];
+pat = ["data_path = tempdir;", "delete(input_filename);", "delete(output_filename);"];
+rep = ["data_path = tempname;" + newline + " mkdir(data_path);", ...
+    "if isunix, system(""truncate -s 0 "" +  input_filename); end; " + pat(2) ...
+    "if isunix, system(""truncate -s 0 "" + output_filename); end; " + pat(3) + newline + " rmdir(data_path);" ...    
+    ];
 for i = 1:length(pat)
     txt = replace(txt, pat(i), rep(i)); % find & replace
 end
