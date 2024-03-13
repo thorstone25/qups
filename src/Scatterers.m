@@ -344,6 +344,92 @@ classdef Scatterers < matlab.mixin.Copyable
         end
     end
 
+    methods(Static)
+        function scat = Grid(sz, dp, p0, kwargs)
+            % GRID - Create a grid of scatterers
+            %
+            % scat = Scatterers.Grid([C P R]) creates a 3D grid of point
+            % scatterers with C columns (x), P pages (y), and R rows (z).
+            % 
+            % scat = Scatterers.Grid([C P R], [dx dy dz]) uses a spacing of
+            % dx, dy and dz in the x, y, and z dimensions. The default is
+            % [C P R] ./ 11.
+            % 
+            % scat = Scatterers.Grid([C P R], [dx dy dz], p0) uses an
+            % initial point p0 as the primary point. The default is 
+            % [0 0 0]'.
+            % 
+            % scat = Scatterers.Grid(..., Name, Value) sets other name
+            % value pairs for constructing a Scatterers. The 'pos' property
+            % will be overridden.
+            % 
+            % Example:
+            % us = UltrasoundSystem();
+            % scat = Scatterers.Grid([5 1 5]', 5*us.lambda, [0 0 10e-3]');
+            % 
+            % figure;
+            % plot(us);
+            % hold on;
+            % plot(scat, '.');
+            % 
+            % See also: SCATTERERS.DIFFUSE
+            arguments
+                sz (3,1) = [1 1 1]'
+                dp (3,1) = sz ./ 11
+                p0 (3,1) = [0 0 0]'
+                kwargs.?Scatterers   
+            end
+            
+            ax = arrayfun(@(x0, dx, n) {x0 + dx * ((0 : n-1) - ((n-1)/2))}, p0, dp, sz); % get axes
+            [ax{:}] = ndgrid(ax{:}); % make into a grid
+            [ax{:}] = dealfun(@(x)x(:), ax{:}); % vectorize
+            p = [ax{:}]'; % 3 x S
+            kwargs.pos = p; % set positions
+            args = namedargs2cell(kwargs); % non-position args
+            scat = Scatterers(args{:}); % set
+        end
+
+        function scat = Diffuse(grid, N, dB, kwargs)
+            % DIFFUSE - Construct Diffuse scatterers
+            %
+            % scat = Diffuse(grid, N) constructs a Scatterers scat with N
+            % point scatterers within the ScanCartesian grid.
+            %
+            % scat = Diffuse(grid) uses a default value of 
+            % N = 5^D * prod(grid.size); where D is the number of
+            % non-singular dimensions e.g. D = 2 if y = 0.
+            %
+            % scat = Diffuse(grid, N, dB) sets the (relative) scattering
+            % intensity in dB. The default is 0.
+            % 
+            % scat = Diffuse(..., 'c0', c0) sets the sound speed as c0.
+            % 
+            % scat = Diffuse(..., 'alpha0', alpha0) sets the attenuation
+            % coefficient.
+            % 
+            % Example:
+            % us = UltrasoundSystem();
+            % grid = copy(us.scan); % simulation region == imaging region
+            % N = 25 * prod(range([grid.xb; grid.zb],2) ./ us.lambda); % 25 scats / wavelength
+            % scat = Scatterers.Diffuse(grid, N),
+            % 
+            % See also: SCATTERERS.GRID
+            arguments
+                grid (1,1) ScanCartesian
+                N (1,1) {mustBePositive, mustBeInteger} = prod(5 * grid.size(grid.size > 1)); % default to 5x the grid resolution
+                dB (1,:) {mustBeReal} = 0 
+                kwargs.c0
+                kwargs.alpha0
+            end
+            pb = cat(1, grid.xb, grid.yb, grid.zb); % boundaires of the grid
+            [p0, dp] = deal(min(pb,[],2), range(pb, 2)); % offset / range
+            kwargs.pos = p0 + dp.*rand([3 N]); % uniform random positions
+            kwargs.amp = db2pow(dB) .* abs(randn([1 N])); % gaussian random amplitudes
+            args = namedargs2cell(kwargs); % get optional arguments
+            scat = Scatterers(args{:});
+        end
+    end
+
     
     % dependent variables
     methods
