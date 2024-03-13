@@ -9,7 +9,7 @@ classdef ScanPolar < Scan
         a (1,:) {mustBeVector} = linspace(-45,45,91)      % image angle values (deg)
         y (1,:) {mustBeVector} = 0                        % image elevation values
         order = 'RAY';                
-        origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
+        % origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
     
     % dependent parameters

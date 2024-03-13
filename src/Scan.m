@@ -23,6 +23,9 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         % each as a 3 x A x B x C ND-array.
         order (1,3) char  % dimension of change for the pixels
     end
+    properties
+        origin (3,1) double % Cartesian origin
+    end
     
     % dependent parameters
     properties(Dependent)
@@ -220,12 +223,19 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
                 groups = getPropertyGroups@matlab.mixin.CustomDisplay(scan);
             else % scan is scalar - show info in groups
                 axs = arrayfun(@string, lower(scan.order)); % axes (in order)
-                ax = matlab.mixin.util.PropertyGroup(["order", axs], "Axes");
-                sz = matlab.mixin.util.PropertyGroup(["size", "nPix", "n"+axs], "Shape");
-                rs = matlab.mixin.util.PropertyGroup(["d"+axs], "Resolution");
-                bd = matlab.mixin.util.PropertyGroup([axs+"b"], "Bounds (min/max)");
-                lb = matlab.mixin.util.PropertyGroup([axs+"label"],"Labels");
-                groups = ([ax,rs,sz,bd,lb]);
+                j = scan.size > 1; % filter to non-singular dimensions
+                ax = matlab.mixin.util.PropertyGroup(["order","size","origin",axs], "Axes");
+                % sz = matlab.mixin.util.PropertyGroup([ "nPix", "n"+axs], "Shape");
+                rs = matlab.mixin.util.PropertyGroup(["d"+axs(j)], "Resolution");
+                bd = matlab.mixin.util.PropertyGroup([axs(j)+"b"], "Bounds (min/max)");
+                lb = matlab.mixin.util.PropertyGroup([axs(j)+"label"],"Labels");
+                groups = [ax,rs,bd,lb];
+
+                other_props = setdiff(properties(scan), [groups.PropertyList, "nPix"]);
+                other_props = other_props(~contains(other_props, ("d" + axs | axs + ("b" | "label"))));
+                if ~isempty(other_props)
+                    groups(end+1) = matlab.mixin.util.PropertyGroup(other_props, "Other");
+                end
             end
         end
 

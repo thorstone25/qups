@@ -9,7 +9,7 @@ classdef ScanSpherical < Scan
         a (1,:) {mustBeVector} = linspace(-45,45,91)      % image azimuth angle values (deg)
         e (1,:) {mustBeVector} = 0                        % image elevation angle values (deg)
         order = 'RAE';                      % pixel order of change 
-        origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
+        % origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
     
     % dependent parameters
