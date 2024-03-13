@@ -34,15 +34,25 @@ classdef Scatterers < matlab.mixin.Copyable
         % the scatterers are defined.
         %
         % See also SCATTERERS/POS SCATTERERS/AMP SCATTERERS/ALPHA0
-        c0  (1,1) double = 1540; % sound speed of the Medium
+        c0  (1,1) double = 1540; % sound speed
 
         % ALPHA0 - ambient attenuation
         %
         % ALPHA0 defines an attenuation constant for simulation routines 
-        % that support one.
+        % that support one. If alpha0 is NaN, no attenuation is used.
         %
+        % To follow convention and maintain consistsency, this is in 
+        % dB/m/Hz by default e.g. for typical soft tissue attenuation 
+        %                       
+        %                       0.5   dB / cm / MHz  is equivalent to
+        % (0.5 / 1e-2 / 1e+6) = 50e-6 dB /  m /  Hz (SI units) or 
+        % (0.5 / 1e+1 / 1   ) = 0.05  dB / mm / MHz (mm / us / MHz)
+        % 
+        % Units must correspond between distance and time in order to 
+        % support the scale method.
+        % 
         % See also SCATTERERS/C0 SCATTERERS/POS SCATTERERS/AMP
-        alpha0 (1,1) double = nan; % sound speed of the Medium
+        alpha0 (1,1) double = nan; % attenuation
     end
 
     properties(Dependent, Hidden)
@@ -120,9 +130,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % See also MEDIUM
 
             arguments
-                kwargs.pos (3,:) double
-                kwargs.amp (1,:) double
-                kwargs.c0  (1,1) double
+                kwargs.?Scatterers
             end
             
             % Name/Value initialization
@@ -169,9 +177,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', 1500) % m, s
             %
             % % convert from meters to millimeters, seconds to microsecond
-            % scat = scale(scat, 'dist', 1e3, 'time', 1e6); % mm, us
-            % scat.pos
-            % scat.c0
+            % scat = scale(scat, 'dist', 1e3, 'time', 1e6) % mm, us
             %
             %
 
@@ -183,13 +189,14 @@ classdef Scatterers < matlab.mixin.Copyable
             self = copy(self); % copy semantics
             cscale = 1; % speed scaling
             if isfield(kwargs, 'dist') % scale distance (e.g. m -> mm)
-                self.pos = kwargs.dist .* self.pos;
-                cscale = cscale * kwargs.dist; % scale speed
+                self.pos    = self.pos    * kwargs.dist;
+                cscale      = cscale      * kwargs.dist; % scale speed
             end
             if isfield(kwargs, 'time')
                 cscale = cscale / kwargs.time; % scale speed
             end
-            self.c0 = self.c0 * cscale; % scale speed
+            self.c0     = self.c0     * cscale; % scale speed
+            self.alpha0 = self.alpha0 / cscale; % scale attenuation
         end
     end
 
@@ -280,7 +287,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % See also ULTRASOUNDSYSTEM/SIMUS 
 
             p = struct('c', scat.c0);
-            if ~isnan(scat.alpha0), p.attenuation = scat.alpha0; end
+            if ~isnan(scat.alpha0), p.attenuation = (1e6*1e-2) * scat.alpha0; end % convert to dB/cm/MHz
         end
     end
 
