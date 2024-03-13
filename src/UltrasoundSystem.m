@@ -1451,6 +1451,27 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % chd = SIMUS(...,Name, Value, ...) passes selected additional
             % Name/Value pairs to simus.m
             % 
+            % References:
+            % [1] Damien Garcia
+            % SIMUS: An open-source simulator for medical ultrasound imaging. 
+            % Part I: Theory & examples,
+            % Computer Methods and Programs in Biomedicine,
+            % Volume 218, 2022, 106726, ISSN 0169-2607,
+            % doi: <a href ="matlab:web('https://doi.org/10.1016/j.cmpb.2022.106726')">10.1016/j.cmpb.2022.106726</a>.
+            % 
+            % [2] Cigier A, Varray F, Garcia D. 
+            % SIMUS: An open-source simulator for medical ultrasound imaging. 
+            % Part II: Comparison with four simulators. 
+            % Comput Methods Programs Biomed. 2022 Jun;220:106774. 
+            % doi: <a href="matlab:web('10.1016/j.cmpb.2022.106774')">10.1016/j.cmpb.2022.106774</a>.
+            % Epub 2022 Mar 25. PMID: 35398580.
+            % 
+            % [3] D. Garcia, 
+            % "Make the most of MUST, an open-source Matlab UltraSound Toolbox," 
+            % 2021 IEEE International Ultrasonics Symposium (IUS), 
+            % Xi'an, China, 2021, pp. 1-4, 
+            % doi: <a href="matlab:web('10.1109/IUS52206.2021.9593605')">10.1109/IUS52206.2021.9593605</a>.
+            % 
             % Example:
             % 
             % % Simulate some data
@@ -1464,7 +1485,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % imagesc(real(chd));
             % colorbar;
             % 
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX SIMUS
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX GREENS
             
             arguments
                 self (1,1) UltrasoundSystem
@@ -1787,6 +1808,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % should be configured for all transmits. For an independent
             % job, the NumWorkers and any memory options should be
             % allocated for an individual transmit.
+            % 
+            % References:
+            % [1] Jensen, Jørgen Arendt.
+            % <a href="matlab.web('https://orbit.dtu.dk/en/publications/field-a-program-for-simulating-ultrasound-systems')">"Field: A program for simulating ultrasound systems."</a>
+            % Medical & Biological Engineering & Computing 
+            % 34.sup. 1 (1997): 351-353.
             % 
             % Example:
             % % Simulate some data
