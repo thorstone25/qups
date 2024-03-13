@@ -1845,9 +1845,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
+                kwargs.fc double {mustBeNonnegative} = mean([self.rx.fc, self.tx.fc]); % attenuation central frequency
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
                 kwargs.job (1,1) logical = false
                 kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Communicating";
+                kwargs.verbose (1,1) logical = false
+            end
+            % alias
+            [kvb, fcs] = deal(kwargs.verbose, kwargs.fc);
+
+            % validate inputs
+            if ~any(numel(kwargs.fc) == [1 numel(scat)])
+                error("QUPS:calc_scat_multi:vectorCentralFrequency", ...
+                    "The number of central frequencies ("+numel(kwargs.fc)...
+                    +") must be scalar or equivalent to the number of Scatterers (" ...
+                    +numel(scat)+")");
+            elseif isscalar(kwargs.fc)
+                kwargs.fc = repmat(kwargs.fc, size(scat)); % vectorize
             end
 
             % set default parenv
@@ -1861,37 +1875,44 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     kwargs.parenv = hcp; % use the current pool
                 end
             end
-            
+
             % make a (communicating) job(s) instead
             if kwargs.job
-                for s = 1:numel(scat) % for each Scatterers
-                    switch kwargs.type
-                        case "Communicating"
-                            job(s) = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool'); %#ok<AGROW>
-                            job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', Inf), 1, {self, scat(s)}, 'CaptureDiary',true);
+                switch kwargs.type
+                    case "Communicating"
+                        job = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool');
+                        job.createTask(@(us,scat) ...
+                            us.calc_scat_multi(scat, element_subdivisions ...
+                            , 'parenv', Inf, 'fc', fcs, 'verbose', kvb ...
+                            ), 1, {self, scat}, 'CaptureDiary',true);
 
-                            % anonymous function to read in data
-                            rfun = @(jobs) join(arrayfun(@(job)job.Tasks(1).OutputArguments{1}, jobs), 4);
-                        case "Independent"
+                        % anonymous function to read in data
+                        rfun = @(job) job.Tasks(1).OutputArguments{1};
+
+                    case "Independent"
+                        for s = 1:numel(scat) % for each Scatterers
                             seqs = splice(self.seq,1); % split up into individual sequences
                             job(s) = createJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true); %#ok<AGROW>
                             us_ = copy(self); % copy semantics
                             for m = 1:self.seq.numPulse % each tx
                                 us_.seq = seqs(m); % switch to next tx
-                                job(s).createTask(@(us,scat) us.calc_scat_multi(scat, 'parenv', 0), 1, {self, scat(s)}, 'CaptureDiary',true);
+                                job(s).createTask(@(us,scat,fc) ...
+                                    us.calc_scat_multi(scat, element_subdivisions ...
+                                    , 'parenv', 0, 'fc', fc, 'verbose', kvb ...
+                                    ), 1, {self, scat(s), fcs(s)}, 'CaptureDiary',true);
                             end
 
                             % anonymous function to read in data
                             rfun = @(jobs) ...
-                            join( arrayfun(@(job) ... for each job
+                                join( arrayfun(@(job) ... for each job
                                 join( arrayfun(@(tsk) ... for each tsk
                                 tsk.OutputArguments{1}, ... extract data
                                 job.Tasks), 3), ... and join tasks (txs) in dim 3
                                 jobs), 4); % and join jobs (scats) in dim 4
+                        end
 
-                    end
                 end
-                chd = job;
+                chd = job; % alias
                 return;
             end
 
@@ -1923,34 +1944,34 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % choose the parallel environment to operate on: avoid running on ThreadPools
             parenv = kwargs.parenv;
             if isempty(parenv), parenv = 0; end
-            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), 
-                warning('QUPS:InvalidParenv','calc_scat_multi cannot be run on a thread-based pool'); % Mex-files ...
+            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool')
+                warning("QUPS:calc_scat:invalidParalelEnvironment", ...
+                    "calc_scat_multi cannot be run on a "+class(parenv)+"."); % Mex-files ...
                 parenv = 0; 
             end
 
             % splice
             [M, F] = deal(size(tau_tx,2), numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(gather(self.fs), self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
+            [c0, att, pos, amp] = arrayfun(@(t)deal(t.c0, t.alpha0, {t.pos}, {t.amp}), scat); % splice
+            if ~isscalar(kwargs.fc), fc_ = kwargs.fc; else, fc_ = repmat(kwargs.fc, size(scat)); end
 
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool')
                 cfun = @parallel.pool.Constant;
+                tb = ticBytes(parenv);
             else
                 cfun = @(x)struct('Value', x);
                 [pos, amp] = deal({pos},{amp}); % for struct to work on cell arrays
             end
+                 
+            kvb = kwargs.verbose; % splice
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
-
             [voltages, ts] = deal(cell(M,F)); % pre-allocate
-            for (f = 1:F) % each scat frame            
             parfor (m = 1:M, parenv) % each transmit pulse
+                % for (m = 1:M) % each transmit pulse %%% DEBUG %%%
                 % (re)initialize field II
                 field_init(-1);
-
-                % set sound speed/sampling rate
-                set_field('fs', double(fs_));
-                set_field('c', c0(f)); %#ok<PFBNS> % this array is small
 
                 % get Tx/Rx apertures
                 p_focal = [0;0;0];
@@ -1969,12 +1990,30 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 % apodization
                 xdc_times_focus(Tx, 0, double(tau_tx(:,m)')); % set the delays
                 xdc_apodization(Tx, 0, double(apd_tx(:,m)')); % set the apodization
-                
-                % call the sim
-                [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
+
+                for (f = 1:F) %#ok<NO4LP> % each scat frame
+                    % set sound speed/sampling rate
+                    set_field('fs', double(fs_));
+                    set_field('c', c0(f)); %#ok<PFBNS> % this array is small
+
+                    % set the attenuation
+                    use_att = isfinite(att(f)) && isfinite(fc_(f)); %#ok<PFBNS> this array is small too
+                    if use_att % TODO: no need to branch?
+                        set_field('att',fc_(f)*att(f)); % attenuation, frequency independent
+                        set_field('freq_att',  att(f)); % attenuation, frequency   dependent
+                        set_field('att_f0'  ,  fc_(f)); % attenuation, central frequency
+                        set_field('use_att' , double(use_att)); % turn on attenuation modelling                        
+                    end
+                    if kvb, disp("Simulating pulse "+m+" of frame "+f+" "+sub(["without","with"],1+use_att) + " attenuation."); end
+
+
+                    % call the sim
+                    [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
+                end
             end
-            end
-            
+
+            if isa(parenv, 'parallel.Pool') && kwargs.verbose, tocBytes(parenv, tb); end
+
             % adjust start time based on signal time definitions
             t0 = ... cell2mat(ts) + ... % fieldII start time (1 x 1 x M x F)
                 (t_pl(1) + t_tx(1) + t_rx(1)) ... signal delays for impulse/excitation
