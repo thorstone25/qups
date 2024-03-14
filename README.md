@@ -15,65 +15,45 @@ QUPS can interface with multiple other Ultrasound acquisition, simulation and pr
 ## Compatibility
 QUPS targets MATLAB R2020b+ and is tested for R2021a+ on Ubuntu, Windows, and macOS (see [#27](github.com/thorstone25/qups/issues/27)). R2023b is currently the recommended version. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking in order to maximize flexibility, utility, and forward compatability.
 
-## Documentation
-QUPS is documented within MATLAB. To see all the available classes, use `help ./src` or `doc ./src` from within the QUPS folder. Use `help` or `doc` on any class or method with `help classname` or `help classname.methodname` e.g. `help UltrasoundSystem.DAS`.
-
-For syntax examples for each class, see [cheat_sheet.m](cheat_sheet.m).
-
-For a walk through of going from defining a simulation to a beamformed image, see [example.mlx](example.mlx) or [example_.m](example_.m).
-
-
-## Citation
-If you use this software, please cite this repository using the [citation file](CITATION.cff) or via the menu option in the "About" section of the [github page](github.com/thorstone25/qups).
-
-If you use any of the extensions, please see their citation policies:
-* [FieldII](https://www.field-ii.dk/?background.html)
-* [MUST](https://www.biomecardio.com/MUST/documentation.html)
-* [MatCL](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via Matlab-OpenCL)
-* [k-Wave](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)
-* [USTB](https://www.ustb.no/citation/)
-
 ## Features
 - Flexible:
     - 3D space implementation
     - Transducers: Arbitrary transducer positions and orientations
     - Sequences: Arbitrary transmit waveform, delays, and apodization
-    - Image Domain: Arbitrary pixel locations and beamforming apodization
+    - Scans (Image Domain): Arbitrary pixel locations and beamforming apodization
     
 - Performant:
     - Beamform a 1024 x 1024 image for 256 x 256 transmits/receives in < 2 seconds (RTX 3070)
     - Hardware acceleration via CUDA (Nvidia) or OpenCL (AMD, Apple, Intel, Nvidia), or natively via the [Parallel Computing Toolbox](https://www.mathworks.com/products/parallel-computing.html)
-    - Memory efficient classes and methods minimize computional load
-    - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) or scale to a cluster with the [MATLAB Parallel Server](https://www.mathworks.com/products/matlab-parallel-server.html?s_tid=srchtitle_site_search_6_parallel) (optional) toolbox.
+    - Memory efficient classes and methods minimize data storage and computional load
+    - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) or scale to a cluster with the [MATLAB Parallel Server](https://www.mathworks.com/products/matlab-parallel-server.html) (optional) toolbox.
 
 - Modular:
     - Transducer, pulse sequence, pulse waveform, scan region etc. each defined separately
+    - Optionally [overload classes](src/README.md) to customize behaviour
     - Easily compare sequence to sequence or transducer to transducer
-    - Switch between [MUST](https://www.biomecardio.com/MUST/documentation.html), [FieldII](https://www.field-ii.dk/), or [k-Wave](http://www.k-wave.org/index.php) without redefining most parameters
+    - Simulate with [MUST](https://www.biomecardio.com/MUST/documentation.html), [FieldII](https://www.field-ii.dk/), or [k-Wave](http://www.k-wave.org/index.php) without redefining most parameters
     - Export or import data between [USTB](https://www.ustb.no/) or [Verasonics](https://verasonics.com/vantage-advantage/) data structures
 
 - Intuitive:
     - Native MATLAB semantics with tab auto-completion
     - Overloaded `plot` and `imagesc` functions for data visualization
     - Documentation via `help` and `doc`
-    - Overload a method to create a [custom class](src/README.md)
 
-
-If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
 ## Installation 
 ### MATLAB R2023b+ & git
 Starting in MATLAB R2023b+, QUPS and most of it's extension packages can be installed within MATLAB via [buildtool](https://www.mathworks.com/help/matlab/ref/buildtool.html) if you have setup [git for MATLAB](https://www.mathworks.com/help/matlab/matlab_prog/set-up-git-source-control.html).
 1. Install qups
 ```
-gitclone("https://github.com/thorstone25/qups.git", "qups");
+gitclone("https://github.com/thorstone25/qups.git");
 cd qups;
 ```
-2. (optional) Install and patch [extension](##Extension) packages and compile mex and CUDA binaries 
+2. (optional) Install and patch [extension](##Extensions) packages and compile mex and CUDA binaries (failures can be safely ignored)
 ```
 buildtool install patch compile -continueOnFailure
 ```
-3. (optional) Run tests
+3. (optional) Run tests (~10 min)
 ```
 buildtool test
 ```
@@ -102,8 +82,8 @@ All extensions to QUPS are optional, but must be installed separately from their
 | [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`|
 | [k-Wave](http://www.k-wave.org/index.php), ([kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources)) | distributed medium simulator | `addpath path/to/kWave, addpath path/to/kWaveArray` |
 | [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST`|
+| [USTB](ustb.no) | Ultrasound signal processing library and toolbox | `addpath path/to/USTB` |
 | CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), [Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | (see [CUDA Extension](####CUDA-Extension)) |
-| [USTB](ustb.no) | Ultrasound signal processing library and toolbox | (see [website](https://www.ustb.no)) |
 | [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))|
 
 ## Quick Start
@@ -118,17 +98,16 @@ setup parallel CUDA cache; % setup the environment with any available accelerati
 
 3. Create an ultrasound system and point scatterer to simulate
 ```
-scat = Scatterers('pos', [0 0 30e-3]'); % a single point scatterer at 20mm depth
+scat = Scatterers('pos', 1e-3*[0 0 30]'); % a single point scatterer at 20mm depth
 xdc = TransducerArray.L11_5v(); % simulate a Verasonics L11-5v transducer
 seq = Sequence('type', 'FSA', 'numPulse', xdc.numel); % full synthetic-aperture pulse sequence
-scan = ScanCartesian('xb', [-10e-3, 10e-3], 'zb', [25e-3 35e-3]); % set the image boundaries - we'll set the resolution later
-us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan); % create a system description
+scan = ScanCartesian('x', 1e-3*[-10, 10], 'z', 1e-3*[25 35]); % set the image boundaries - we'll set the resolution later
+us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 4*xdc.fc); % create a system description
+[us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % set the image resolution based on the wavelength
 ```
 
 4. Display the geometry
 ```
-[us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % set the pixel resolution
-us.fs = 4 * us.xdc.fc; % set the simulation sampling frequency to 4x the central frequency
 figure; plot(us); hold on; plot(scat, 'cx'); % plot the ultrasound system and the point scatterers
 ```
 
@@ -137,16 +116,12 @@ figure; plot(us); hold on; plot(scat, 'cx'); % plot the ultrasound system and th
 5. Simulate channel data
 ```
 chd = greens(us, scat); % create channel data using a shifted Green's function (OpenCL-enabled)
-% chd = calc_scat_multi(us, scat); %  ... or in FieldII
-% chd = kspaceFirstOrder(us, scat); % ... or in k-Wave (CUDA-enabled)
-% chd = simus(us, scat); %            ... or in MUST   (CUDA-enabled)
+% chd = calc_scat_multi(us, scat); %  ... or with FieldII
+% chd = kspaceFirstOrder(us, scat); % ... or with k-Wave (CUDA-enabled)
+% chd = simus(us, scat); %            ... or with MUST   (CUDA-enabled)
 
 ```
-6. Beamform
-```
-b = DAS(us, hilbert(chd));
-```
-7. Display the channel data 
+6. Display the channel data 
 ```
 figure;
 imagesc(chd);
@@ -155,6 +130,10 @@ animate(chd.data);
 ```
 ![](fig/README/channel_data.gif)
 
+7. Beamform
+```
+b = DAS(us, hilbert(chd));
+```
 8. Display the B-mode image
 ```
 figure;
@@ -166,6 +145,28 @@ title('B-mode image');
 
 ![](fig/README/point-target.png)
 
+## Documentation
+QUPS is documented within MATLAB. To see all the available classes, use `help ./src` or `doc ./src` from within the QUPS folder. Use `help` or `doc` on any class or method with `help classname` or `help classname.methodname` e.g. `help UltrasoundSystem.DAS`.
+
+For a walk through of going from defining a simulation to a beamformed image, see [example.mlx](example.mlx) (or [example_.m](example_.m)).
+
+See the [examples](examples/) folder for examples of specific applications.
+
+For syntax examples for each class, see [cheat_sheet.m](cheat_sheet.m).
+
+For further documentation on customizing classes, see the class structure [README](src/README.md).
+
+If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
+
+## Citation
+If you use this software, please cite this repository using the [citation file](CITATION.cff) or via the menu option in the "About" section of the [github page](github.com/thorstone25/qups).
+
+If you use any of the extensions, please see their citation policies:
+* [FieldII](https://www.field-ii.dk/?background.html)
+* [MUST](https://www.biomecardio.com/MUST/documentation.html)
+* [MatCL](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via Matlab-OpenCL)
+* [k-Wave](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)
+* [USTB](https://www.ustb.no/citation/)
 
 ## Parallel Processing with External Packages
 Some QUPS methods, including most simulation and beamforming methods, can be parallelized natively by specifying a `parcluster` or launching a `parallel.ProcessPool` or a `parallel.ThreadPool`. However, restrictions apply. 
@@ -205,7 +206,7 @@ OpenCL support is provided via [Matlab-OpenCL](github.com/thorstone25/Matlab-Ope
 | `sudo apt install pocl-opencl-icd` | Portable CPU devices |
 | `sudo apt install intel-opencl-icd` | Intel Graphics devices |
 | `sudo apt install nvidia-driver-xxx` | Nvidia Graphics devices (included with the driver) |
-| `sudo apt install ./amdgpu-install_x.x.x-x_all.deb` | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html))|
+| `sudo apt install ./amdgpu-install_x.x.x-x_all.deb` | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html or [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/native-install/ubuntu.html)))|
 
 
 ### CUDA Support (Nvidia devices only)
@@ -214,9 +215,8 @@ Starting in R2023a, CUDA support is provided by default within MATLAB via [`mexc
 Otherwise, for CUDA to work, `nvcc` must succesfully run from the MATLAB environment. If a Nvidia GPU is available and `setup CUDA cache` completes with no warnings, you're all set! If you have difficulty getting nvcc to work in MATLAB, you may need to figure out which environment paths are required for _your_ CUDA installation. Running `setup CUDA` will attempt to do this for you, but may fail if you have a custom installation.
 
 #### Linux
-If you can run `nvcc` from a terminal or command-line interface per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), then set the `MW_NVCC_PATH` environmental variable within MATLAB by running `setenv('MW_NVCC_PATH', YOUR_NVCC_BIN_PATH);` prior to running `setup CUDA`. You can run `which nvcc` within a terminal to locate the installation directory. For example, if `which nvcc` returns `/opt/cuda/bin/nvcc`, then run `setenv('MW_NVCC_PATH', '/opt/cuda/bin');`. If this procedure does not work for you, please submit an [issue](https://github.com/thorstone25/qups/issues).
+If you can run `nvcc` from a terminal or command-line interface per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), then set the `MW_NVCC_PATH` environmental variable within MATLAB by running `setenv('MW_NVCC_PATH', YOUR_NVCC_BIN_PATH);` prior to running `setup CUDA`. You can run `which nvcc` within a terminal to locate the installation directory. For example, if `which nvcc` returns `/opt/cuda/bin/nvcc`, then run `setenv('MW_NVCC_PATH', '/opt/cuda/bin');`.
 
 #### Windows
-On Windows you must set the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. Then, in MATLAB, set these paths with `setenv('MW_NVCC_PATH', YOUR_CUDA_PATH\bin); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`. Finally, run `setup CUDA`. From here the proper paths should be added. If this procedure does not work for you, please submit an [issue](https://github.com/thorstone25/qups/issues).
-
+On Windows you must set the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. Then, in MATLAB, set these paths with `setenv('MW_NVCC_PATH', YOUR_CUDA_PATH\bin); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`. Finally, run `setup CUDA`. From here the proper paths should be added.
 
