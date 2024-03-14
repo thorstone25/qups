@@ -23,8 +23,10 @@ plan("uninstall_OpenCL" ).Inputs  = plan("install_OpenCL" ).Outputs;
 plan("uninstall_MUST"   ).Inputs  = plan("install_MUST"   ).Outputs;
 plan("uninstall_USTB"   ).Inputs  = plan("install_USTB"   ).Outputs;
 
-plan("patch_MUST" ).Inputs = plan("install_MUST"   ).Outputs;
-plan("patch_kWave").Inputs = plan("install_kWave"  ).Outputs;
+plan("patch_MUST"  ).Inputs = plan("install_MUST"   ).Outputs;
+plan("patch_kWave" ).Inputs = plan("install_kWave"  ).Outputs;
+plan("patch_OpenCL").Inputs = plan("install_OpenCL" ).Outputs;
+
 
 for nm = ext_nms, plan(  "install_"+nm).Description = "Download and install " + nm; end
 for nm = ext_nms, plan("uninstall_"+nm).Description = "Uninstall " + nm; end
@@ -42,7 +44,7 @@ plan("uninstall") = matlab.buildtool.Task( ...
 
 plan("patch") = matlab.buildtool.Task( ...
     "Description", "Patch extensions", ...
-    "Dependencies", "patch_"+ext_nms([2 4]) ...
+    "Dependencies", "patch_"+[ext_nms([2 4 3])] ...
     );
 
 
@@ -337,6 +339,22 @@ for fl = fls
         fcn    = replace(fcn, pnc_dsp, ";"); % silence the output
         txt(j) = replace(txt(j), s + cll, s+"=@(varargin)deal([]); "+fcn); % replace call
     end
+    writelines(txt,fl); % save modified file
+end
+
+end
+function patch_OpenCLTask(context)
+% Patch MatCL to silence annoying mexPrintF calls
+fld = context.Task.Inputs.Path; % output folder for the project (relative)
+fls = (dir(fullfile(fld,"sub","MatCL", '**', 'cl_*.*pp')));
+fls = string(fullfile({fls.folder}, {fls.name}));
+
+% shadow problematic functions
+pat = lineBoundary('start') + whitespacePattern + "mexPrintf";
+str = "// mexPrintf";
+for fl = fls
+    txt = string(readlines(fl));
+    txt = replace(txt, pat, str);
     writelines(txt,fl); % save modified file
 end
 
