@@ -5,6 +5,7 @@ classdef ParTest < matlab.unittest.TestCase
         md
         grd
         dif
+        wir
         cd
         sq
         tlimit = 60; % if expected to exceed this many seconds, don't continue
@@ -31,7 +32,8 @@ classdef ParTest < matlab.unittest.TestCase
             scat_1 = Scatterers('pos', mean(cat(1,grid.xb,grid.yb,grid.zb),2), 'c0', c0); % center of grid
             % vsz = prod(range([grid.xb; grid.zb],2) ./ us_.lambda); % voxel size (resolution)
             S = 2 .^ (0 : 3 : 27); % round(max(1,100*vsz))], % scale up to N scats per voxel
-            scat_d = arrayfun(@(S) Scatterers.Diffuse(grid, S, db_scat, 'c0', c0), S); 
+            scat_d = arrayfun(@(S) Scatterers.Diffuse(grid, S, db_scat, 'c0', c0), S);
+            scat_g = Scatterers.Grid([21 1 21], 1, [0 0 11]);
             ONE = ones(grid.size);
             c   =   c0 * ONE;
             rho = rho0 * ONE + db2mag(db_spek) * randn(grid.size);
@@ -55,6 +57,7 @@ classdef ParTest < matlab.unittest.TestCase
             test.grd = grid;
             test.sct = scat_1; % single
             test.dif = scat_d; % diffuse
+            test.wir = scat_g; % wire targets
             test.cd = chd; % data
             test.sq = seq; % alternate sequence
         end
@@ -222,7 +225,34 @@ classdef ParTest < matlab.unittest.TestCase
     end
 
     methods(Test, TestTags="benchmark",  ParameterCombination='sequential')
-        function greens_benchmark(tst, dev)
+        function DAS_dev_benchmark(tst, dev)
+            if ~isnumeric(dev) || dev ~= 0, tst.setDev(dev); else, return; end % pass on no dev
+            f = @DAS;
+            [us_, sct_] = deal(copy(tst.us), tst.wir);
+            [us_.seq, us_.scan, us_.xdc] = dealfun(@copy, us_.seq, us_.scan, us_.xdc);
+            us_.xdc.numel = 128; 
+            us_.seq.setPolar(1, linspace(-25, 25, 128));
+            us_.fs = 10 * single(us_.xdc.fc); % high sampling rate
+            % chd = greens(us_, sct_); % real sim
+            [T, F, N] = deal(1024, 10, 10); % time, frames, iterations of beamforming
+            chd = (ChannelData(...
+                'data', rand([T us_.xdc.numel us_.seq.numPulse F], 'like', us_.fs), ...
+                't0', 0, 'fs', us_.fs ...
+                )); % fake sim
+            S = 2 .^ ([6 7 8 9 10 11 12 log2(4096+[1024 2048]) Inf]); % pixel # rows/columns
+            for i = 1:numel(S)
+                [us_.scan.nx, us_.scan.nz] = deal(S(i)); % set number of pixels
+                tst.log("Benchmarking " + func2str(f) + " method on device " + dev.Name + " with " + us_.scan.nPix + " pixels ("+N+" trials).");
+                tt = tic(); for j = 1:N, b.data = f(us_, chd); end, tst.logTestCheck(b, tt); dur(i) = toc(tt); toc(tt)
+                if dur(i) * S(i+1)/S(i) > tst.tlimit, break; end % don't push it on the scaling ...
+            end
+            msg = "Method "+func2str(f)+" on "+string(class(dev))+": " ...
+                + dur(i)/N/F + " seconds / frame for " ...
+                + join(string(us_.scan.size(1:2))," x ") ...
+                + " image ("+F+" frames, "+N+" trials).";
+            disp(msg); tst.log(1, join(msg,newline));
+        end
+        function greens_dev_benchmark(tst, dev)
             if ~isnumeric(dev) || dev ~= 0, tst.setDev(dev); else, return; end % pass on no dev
             f = @greens;
             dur = nan(1,numel(tst.dif));
