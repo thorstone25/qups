@@ -27,6 +27,8 @@ plan("patch_MUST"  ).Inputs = plan("install_MUST"   ).Outputs;
 plan("patch_kWave" ).Inputs = plan("install_kWave"  ).Outputs;
 plan("patch_OpenCL").Inputs = plan("install_OpenCL" ).Outputs;
 
+plan("benchmark").Outputs   = fullfile(base, "build", "benchmark.log");
+
 
 for nm = ext_nms, plan(  "install_"+nm).Description = "Download and install " + nm; end
 for nm = ext_nms, plan("uninstall_"+nm).Description = "Uninstall " + nm; end
@@ -392,5 +394,17 @@ for fl = fls
     end
     writelines(txt, fl); % save modified file
 end
+
+end
+
+function benchmarkTask(context)
+arguments
+    context matlab.buildtool.TaskContext
+end
+
+ofl  = context.Task.Outputs.Path;
+res = runProjectTests("benchmark", 0);
+txt = string({cat(2,cat(2,res.Details).DiagnosticRecord).Report})';
+writelines(txt, ofl);
 
 end

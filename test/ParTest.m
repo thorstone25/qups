@@ -232,8 +232,8 @@ classdef ParTest < matlab.unittest.TestCase
                 tt = tic(); chd = f(tst.us, tst.dif(i), 'device', -1); tst.logTestCheck(chd, tt); dur(i) = toc(tt); toc(tt)
                 if dur(i) * S(i+1)/S(i) > tst.tlimit, break; end % don't push it on the scaling ...
             end
-            msg = "Average: " + 1e6*dur(i)/S(i) + " microseconds / scatterer ("+S(i)+").";
-            disp(msg); tst.log(join(msg,newline));
+            msg = "Method "+func2str(f)+" on "+string(class(dev))+": " + 1e6*dur(i)/S(i) + " microseconds / scatterer ("+S(i)+").";
+            disp(msg); tst.log(1, join(msg,newline));
         end
         function fieldII_benchmark(tst, par_prof)
             if ~contains(par_prof, ["Threads", "background"]), tst.setupPenv(par_prof); else, return; end
@@ -245,8 +245,8 @@ classdef ParTest < matlab.unittest.TestCase
                 tt = tic(); chd = f(tst.us, tst.dif(i), 'parenv', tst.getPenv(par_prof)); tst.logTestCheck(chd, tt); dur(i) = toc(tt); toc(tt)
                 if dur(i) * S(i+1)/S(i) > tst.tlimit, break; end % don't push it on the scaling ...
             end            
-            msg = "Average: " + 1e6*dur(i)/S(i) + " microseconds / scatterer ("+S(i)+").";
-            disp(msg); tst.log(msg);
+            msg = "Method "+ func2str(f) +" on profile "+par_prof+": " + 1e6*dur(i)/S(i) + " microseconds / scatterer ("+S(i)+").";
+            disp(msg); tst.log(1, msg);
         end
         function kWave_benchmark(tst, par_prof)
             if ~contains(par_prof, "background"), tst.setupPenv(par_prof); else, return; end
@@ -263,11 +263,11 @@ classdef ParTest < matlab.unittest.TestCase
                 dur = max(eps, dur - stp); % subtract pre-processing time
                 T = T * min(scl, tst.tlimit ./ dur); % increase time steps
             end
-            msg = "Average: " + 1e3*dur*us_.seq.numPulse/chd.T ...
+            msg = "Method "+ func2str(f) +" on profile "+par_prof+": " + 1e3*dur*us_.seq.numPulse/chd.T ...
                 + " milliseconds / time step (grid = ["...
                 + join(string([225 225 1]),",") + ...
             "]).";
-            disp(msg); tst.log(msg);
+            disp(msg); tst.log(1, msg);
         end
     end
 end
