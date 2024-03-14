@@ -1971,7 +1971,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool')
                 cfun = @parallel.pool.Constant;
-                tb = ticBytes(parenv);
+                if kwargs.verbose, tb = ticBytes(parenv); end
             else
                 cfun = @(x)struct('Value', x);
                 [pos, amp] = deal({pos},{amp}); % for struct to work on cell arrays
