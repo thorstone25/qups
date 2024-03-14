@@ -98,8 +98,8 @@ plan("compile_mex") = matlab.buildtool.Task( ...
 
 % get CUDA files
 fls = dir(fullfile(base, "src", "**", "*.cu")); % inputs
+fls(endsWith({fls.name}, "sizes.cu")) = []; % delete - no matching ptx output
 [fls, nms] = deal(string(fullfile({fls.folder}, {fls.name})), string({fls.name}));
-fls(endsWith(fls, "sizes.cu")) = []; % delete - no matching ptx output
 ofls = replace(fullfile(base, "bin", nms), '.cu', '.ptx'); % outputs
 
 % mark expected inputs/outputs
@@ -346,7 +346,7 @@ end
 
 end
 function patch_OpenCLTask(context)
-% Patch MatCL to silence annoying mexPrintF calls
+% Patch MatCL to silence mexPrintf debug statements
 fld = context.Task.Inputs.Path; % output folder for the project (relative)
 fls = (dir(fullfile(fld,"sub","MatCL", '**', 'cl_*.*pp')));
 fls = string(fullfile({fls.folder}, {fls.name}));
@@ -398,6 +398,7 @@ end
 end
 
 function benchmarkTask(context)
+% Benchmark simulation and beamforming routines
 arguments
     context matlab.buildtool.TaskContext
 end
