@@ -41,15 +41,13 @@ classdef Scatterers < matlab.mixin.Copyable
         % ALPHA0 defines an attenuation constant for simulation routines 
         % that support one. If alpha0 is NaN, no attenuation is used.
         %
-        % To follow convention and maintain consistsency, this is in 
-        % dB/m/Hz by default e.g. for typical soft tissue attenuation 
-        %                       
+        % To follow convention and maintain consistent units of distance
+        % and time, this value is in dB/m/Hz by default and supports
+        % scaling e.g. for typical soft tissue attenuation
+        %
         %                       0.5   dB / cm / MHz  is equivalent to
         % (0.5 / 1e-2 / 1e+6) = 50e-6 dB /  m /  Hz (SI units) or 
         % (0.5 / 1e+1 / 1   ) = 0.05  dB / mm / MHz (mm / us / MHz)
-        % 
-        % Units must correspond between distance and time in order to 
-        % support the scale method.
         % 
         % See also SCATTERERS/C0 SCATTERERS/POS SCATTERERS/AMP
         alpha0 (1,1) double = nan; % attenuation

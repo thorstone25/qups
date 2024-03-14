@@ -73,7 +73,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         % us = UltrasoundSystem('fs', 50e6); % 50MHz
         % 
         % See also GREENS SIMUS CALC_SCAT_MULTI KSPACEFIRSTORDER
-        fs (1,1) {mustBePositive} = 40e6   % simulation sampling frequency
+        fs (1,1) {mustBePositive} = single(40e6)   % simulation sampling frequency
     end
     
     properties(Dependent)
@@ -140,6 +140,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % if neither transmit nor receive provided, make them
             % equivalent for convenience.
             if ~isfield(kwargs, 'tx') && ~isfield(kwargs, 'rx'), self.tx = self.rx; end
+
+            % if sampling frequency not provided, set to Nyquist
+            if ~isfield(kwargs, 'fs')
+                self.fs = single(max([ ...
+                    2*self.tx.fc, self.tx.bw, 2*self.rx.fc, self.rx.bw ...
+                    ],[],'omitnan'));
+            end
             
             % create a default Sequence if none provided
             if ~isfield(kwargs, 'seq')
@@ -498,11 +505,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Note: The precision of the computation is determined by the
             % precision of the transmit pulse. Setting 
             %       `self.fs = single(self.fs);` 
-            % before calling greens or
-            %       `[...] = greens(..., 'fsk', single(fsk), ...);` 
-            % can dramatically accelerate computation time on consumer GPUs
-            % which may have a performance ratio of 32:1 or 64:1 for
-            % single:double types.
+            % before calling greens can dramatically accelerate computation
+            % time on consumer GPUs which may have a performance ratio of
+            % 32:1 or 64:1 for single:double precision.
+            % 
+            % About: This function provides a fast, low-fidelity simulation
+            % routine based on assuming isotropic radiation from a point
+            % source and simply applying a Green's function approximation.
+            % 
+            % 
             % 
             % Example:
             % % Simulate some data
@@ -516,7 +527,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % imagesc(real(chd));
             % colorbar;
             %
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI ULTRASOUNDSYSTEM/FOCUSTX CHANNELDATA/SAMPLE
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/KSPACEFIRSTORDER 
             
             arguments
                 self (1,1) UltrasoundSystem
@@ -802,11 +813,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                         if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
                             % compute as a tall array  % S | T x N x M x 1 x 1
                             it = gather(it);
-                            t1 = (tvec(it) - tau_tx - t0); % create tall ND-array
-                            t2 = - tau_rx;
+                            t1 = fsr * (tvec(it) - tau_tx - t0); % create tall ND-array
+                            t2 = - fsr * tau_rx;
                             s_ = matlab.tall.reduce( ...
                                 @(t1, t2, att) wsinterpd2( ...
-                                kern_, fsr * t1, fsr * t2, 2, att ./ fsr, 1, terp, 0 ...
+                                kern_, t1, t2, 2, att ./ fsr, 1, terp, 0 ...
                                 ), ... map function
                                 @(x)sum(x,1,'omitnan','native'), ... reduce function over scatterers
                                 t1, t2, att...
@@ -1644,7 +1655,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Example:
             % 
             % % Simulate some data
-            % us = UltrasoundSystem(); % get a default system
+            % us = UltrasoundSystem('fs', 50e6); % get a default system
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = calc_scat_all(us, scat); % simulate the ChannelData
             % 
@@ -1817,7 +1828,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % Example:
             % % Simulate some data
-            % us = UltrasoundSystem(); % get a default system
+            % us = UltrasoundSystem('fs', 50e6); % get a default system
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = calc_scat_multi(us, scat); % simulate the ChannelData
             % 
