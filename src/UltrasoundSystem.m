@@ -2191,7 +2191,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, % maximum cfl number (for stability)
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
-                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
+                kwargs.el_sub_div (1,2) double = max(self.tx.getLambdaSubDiv(med.c0), self.rx.getLambdaSubDiv(med.c0)), % element subdivisions (width x height)
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.seq.numPulse
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
                 kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim

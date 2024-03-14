@@ -1060,6 +1060,45 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % make a Waveform object
             impulse = Waveform('fun', impulse_fun, 't0', -tc, 'tend', tc);
         end
+    
+        function sub_div = getLambdaSubDiv(xdc, c0, p)
+            % GETLAMBDASUBDIV - Get subelement divisions w.r.t. wavelength
+            %
+            % sub_div = GETLAMBDASUBDIV(xdc, c0, p) returns the element
+            % subdivision sizes corresponding to a proportion p of the
+            % wavelength given sound speed c0 (m/s).
+            %
+            % sub_div = GETLAMBDASUBDIV(xdc, c0, [pw ph]) uses a proportion
+            % pw in the width dimension and ph in the height dimension.
+            %
+            % sub_div = GETLAMBDASUBDIV(xdc, c0) uses a default value of 
+            % [pw ph] == p == 0.1 (10%). 
+            %
+            % Example:
+            % % Get a system
+            % us = UltrasoundSystem(); % a system
+            % scat = Scatterers(); % a scaterrer
+            % 
+            % % Get subdivisions of rectangles of <= [lambda / 10, lambda]
+            % sub_div = us.xdc.getLambdaSubDiv(scat.c0, [1/10 1]),
+            % 
+            % % Simulate
+            % us.fs = single(us.fs); % reduce workload
+            % chd = greens(us, scat, sub_div);
+            % 
+            % See also
+            arguments
+                xdc (1,1) Transducer
+                c0 (1,1) {mustBePositive}
+                p (1,2) {mustBePositive} = 0.1
+            end
+
+            % make odd
+            plus2Odd = @(x) x + 1 - rem(x, 2); % odd -> odd, even -> odd
+
+            % get divisions
+            sub_div = plus2Odd(ceil([xdc.width, xdc.height] ./ (p .* c0 ./ xdc.fc)));
+        end
     end
 
     % dependent methods
