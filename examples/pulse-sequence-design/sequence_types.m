@@ -21,13 +21,13 @@ c0 = 1500; % ambient sound speed
 % make an array of different transducers
 xdcs = [ ...
     TransducerConvex.C5_2v(), ...
-    TransducerArray.L11_2v(), ...
+    TransducerArray.P4_2v(), ...
     TransducerArray.L12_3v(), ...
     TransducerArray.L12_5v(), ...
     ];
 
 % Transducer names (for plotting later)
-nmxdc = ["C5-2v", "L11-2v", "L12-3v", "L12-5v"];
+nmxdc = ["C5-2v", "P4-2v", "L12-3v", "L12-5v"];
 
 % Set sequence params
 th = -10 : 0.5 : 10; % PW angles
@@ -42,7 +42,7 @@ for i = numel(xdcs):-1:1
     xdc = xdcs(i);
 
     % get the walking aperture apodization
-    aptx = seq.apWalking(xdc.numel, M, S(i));
+    aptx = Sequence.apWalking(xdc.numel, M, S(i));
     
     % get the focused and diverging wave focal positions
     pf  = xdc.focActive(aptx, zf ); % focused
@@ -109,7 +109,12 @@ fnbr = 1; % set the acceptance angle with an f#
 for i = numel(us):-1:1
     tic, 
     % create the receive apodization matrix
-    a = us(i).apAcceptanceAngle(atand(0.5/fnbr));
+    switch us(i).seq.type
+        case {"FC","DV","VS"}
+            a = us(i).apMultiline();
+        otherwise
+            a = us(i).apAcceptanceAngle(atand(0.5/fnbr));
+    end
 
     % beamform
     bi{i} = DAS(us(i), chd(i), 'apod', a);
