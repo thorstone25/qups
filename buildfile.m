@@ -95,8 +95,8 @@ plan("compile_mex") = matlab.buildtool.Task( ...
 % get CUDA files
 fls = dir(fullfile(base, "src", "**", "*.cu")); % inputs
 [fls, nms] = deal(string(fullfile({fls.folder}, {fls.name})), string({fls.name}));
+fls(endsWith(fls, "sizes.cu")) = []; % delete - no matching ptx output
 ofls = replace(fullfile(base, "bin", nms), '.cu', '.ptx'); % outputs
-ofls(endsWith(ofls, "sizes.ptx")) = []; % delete - no matching ptx output
 
 % mark expected inputs/outputs
 plan("compile_CUDA").Inputs  = fullfile(fls);
@@ -135,7 +135,7 @@ end
 
 function compile_CUDATask(context, arch)
 arguments
-    context
+    context matlab.buildtool.TaskContext
     arch (1,1) string = "compute_"+60; % + ;
 end
 % validate
@@ -145,19 +145,48 @@ if ~ismember(arch, supp)
         "Expected the architecture to be one of: "+newline+join("'"+supp+"'",newline));
 end
 
+odirs = fileparts(string({context.Task.Outputs.Path}));
+ifls  = string({context.Task.Inputs.Path});
+defs = UltrasoundSystem.genCUDAdefs(); % matching definition structs
 
-% Compile CUDA kernels
-setup CUDA no-path; % add CUDA and US to path
+try % via mexcuda
+    for i = numel(defs):- 1:1
+        d = defs(i);
+        ifl = ifls(endsWith(ifls, d.Source));
+        com{i} = cat(1,...
+            ifl, ...
+            "-ptx",...
+            "-outdir", odirs(i), ...
+            ...join("--" + d.CompileOptions),...
+            join("-I" + d.IncludePath), ...
+            join("-L" + d.Libraries), ...
+            ...join("-W" + d.Warnings), ...
+            join("-D" + d.DefinedMacros)...
+            );
+    end
 
-% compile
-defs = UltrasoundSystem.genCUDAdefs(); % definition structs
-us = UltrasoundSystem('recompile', false);
-us.recompileCUDA(defs, arch(end)); % compile
+    args = cellfun(@cellstr, com, 'UniformOutput', false);
+    cellfun(@(args) mexcuda(args{:}), args);
 
-% copy files to bin
-fls = fullfile(us.tmp_folder, "*.ptx");
-ofl = fullfile(context.Plan.RootFolder,"bin"); % most back-compatible
-copyfile(fls, ofl);
+catch ME % via nvcc
+    warning("QUPS:build:"+ME.identifier, ...
+        join(["Unable to compile via mexcuda:",...
+        ME.message, ...
+        "Attempting command line compilation instead."...
+        ], newline));
+
+    % Compile CUDA kernels
+    setup CUDA no-path; % add CUDA and US to path
+
+    % compile
+    us = UltrasoundSystem('recompile', false);
+    us.recompileCUDA(defs, arch(end)); % compile
+
+    % copy files to bin
+    fls = fullfile(us.tmp_folder, "*.ptx");
+    ofl = fullfile(context.Plan.RootFolder,"bin"); % most back-compatible
+    copyfile(fls, ofl);
+end
 
 end
 
