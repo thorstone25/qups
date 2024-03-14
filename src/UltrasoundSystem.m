@@ -1488,13 +1488,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % us.rx = us.tx; % ensure the receiver and transmitter are identical
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
+            % us.fs = single(8 * us.xdc.fc); % must be multiple of 4 for MUST
+            % scat = Scatterers('pos', 1e-3*[0 0 30]', 'c0', us.seq.c0); % define a point target
             % chd = simus(us, scat); % simulate the ChannelData
             % 
             % % Display the data
             % figure;
-            % imagesc(real(chd));
+            % imagesc(chd);
             % colorbar;
             % 
             % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX GREENS
@@ -3530,12 +3530,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Setup a system
             % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            %   'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            %   'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
             % );
             % xdc = TransducerArray('numel', 16, 'fc', 3e6, 'bw', [1.5, 4.5]*1e6, 'pitch', 1.5e3/3e6);
             % seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', 1500);
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq, 'fs', 10*xdc.fc);
             % 
             % % Create a Medium to simulate
             % [c0, rho0] = deal(1.5e3, 1e3); 
@@ -3560,6 +3560,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
+            % us.fs = single(us.fs); % accelerate
             % chd = kspaceFirstOrder(us, med, sscan, 'CFL_max', 0.5);
             % 
             % % Beamform
