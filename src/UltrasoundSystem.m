@@ -983,6 +983,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             % create US
             xdc = Transducer.Verasonics(Trans, kwargs.c0);
+            if numel(TW) > 1, TW = TW(unique([TX.waveform])); end
             [seq, t0q] = Sequence.Verasonics(TX, Trans, TW, 'c0', kwargs.c0, 'xdc', xdc);
             if isempty(kwargs.PData), scan_args = {};
             else, scan_args = {'scan', Scan.Verasonics(kwargs.PData, lbda)};

@@ -784,7 +784,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             end
 
             % validate the delays
-            [t0, val] = deal(NaN, false); % no offset / unverified until proven successful
+            [t0, val] = deal(0, false); % no offset / unverified until proven successful
             if ~isempty(xdc) % transducer successfully imported
                 act  = logical(apdtx); % whether elements were active
                 tauq = seq.delays(xdc); % QUPS delays (N x S)
