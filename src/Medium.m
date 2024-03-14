@@ -466,7 +466,7 @@ classdef Medium < matlab.mixin.Copyable
             % % Construct the Medium
             % med = Medium.Sampled(sscan, c, rho, 'c0', c0, 'rho0', rho0);
             % 
-            % See also MEDIUM/MEDIUM
+            % See also MEDIUM/MEDIUM MEDIUM.DIFFUSE
 
             arguments
                 scan (1,1) ScanCartesian
@@ -536,6 +536,113 @@ classdef Medium < matlab.mixin.Copyable
 
             % add perterbation
             medium.pertreg = [{@(p) dealret(p, cfun, rfun, bfun, afun)}, medium.pertreg];
+        end
+    
+        function med = Diffuse(us, grid, kwargs)
+            % DIFFUSE - Generate a diffuse (density) scattering Medium
+            %
+            % med = DIFFUSE(us, grid) generates a diffuse scaterring Medium
+            % med on the ScanCartesian grid for the UltrasoundSystem us.
+            %
+            % rho = DIFFUSE(..., 'scat_per_cell', n) sets the number of
+            % scatterers per resolution voxel. A rule of thumb minimum is 12. The
+            % default is 25. 
+            % 
+            % Note: The grid must be sampled finely enough to produce
+            % sub-wavelength scattering characteristics. 
+            %
+            % rho = DIFFUSE(..., 'ampdB', amp) scales the
+            % intensity of the variation by amp in dB. The default is 0.
+            %
+            % med = DIFFUSE(..., Name, Value) sets additionally properties
+            % for the Medium med via name value pairs.
+            %
+            % Example:
+            % % Get a default UltrasoundSystem and Medium
+            % us = UltrasoundSystem();
+            % med = Medium();
+            %
+            % % Get a simulation region
+            % grid = copy(us.scan);
+            % [grid.dx, grid.dy, grid.dz] = deal(us.lambda / 8); % set grid resolution
+            %
+            % % Create a diffuse scattering distribution
+            % med = Medium.Diffuse(us, grid, 'c0', 1540);
+            %
+            % % display
+            % figure;
+            % him = imagesc(med, grid, "props", ["c",     "rho"    ]);
+            % arrayfun(@title,    [him.Parent], ["Speed", "Density"]);
+            % arrayfun(@colormap, [him.Parent], ["jet",   "parula" ]);
+            % 
+            % See also Medium.Sampled
+            arguments
+                us UltrasoundSystem
+                grid ScanCartesian
+                kwargs.rho0 (1,1) {mustBeFloat} = us.seq.c0 / 1.5 % heuristic
+                kwargs.c0 (1,1) {mustBeFloat} = us.seq.c0
+                kwargs.?Medium
+                kwargs.scat_per_cell (1,1) {mustBeInteger, mustBePositive} = 25;
+                kwargs.ampdB (1,1) {mustBeReal} = 1;
+            end
+
+            % alias
+            [rho0, c0] = deal(kwargs.rho0, kwargs.c0);
+
+            % archive
+            %{
+            % transmit signal properties
+            % ncycles = min(1/us.xdc.bw_frac, us.seq.pulse.duration * us.xdc.fc); % Number of Cycles as Function of Bandwidth
+            wv = conv(conv(us.tx.impulse, us.rx.impulse), us.seq.pulse); % total temporal impulse response
+            ncycles = wv.duration * us.xdc.fc;
+            ncycles = min(ncycles, 1/us.xdc.bw_frac); % Number of Cycles as Function of Bandwidth
+
+            % wavelength
+            lambda = c0 / us.xdc.fc;
+
+            % lower bound on the imaging resolution
+            % TODO: compute based on either arbitrary Transducer, or frequency alone
+            if isa(us.xdc, 'TransducerArray')
+                D = us.xdc.aperture_size;
+            else
+                warning('Expected a linear array - please check this formula.');
+                pn = us.xdc.positions;
+                D = norm(range(pn, 2)); % heuristic upper bound on aperture size
+            end
+            H = us.xdc.height;
+
+            % resolution cell size (minimum?)
+            res_cell = [ ...
+                (lambda / D) * (range(grid.xb) / grid.dx), ...
+                (lambda / H) * (range(grid.yb) / grid.dy), ...
+                (lambda / 2) * (    ncycles    / grid.dz) ...
+                ];
+
+            % total number of scatterers
+            S = round(kwargs.scat_per_cell * grid.nPix ./ prod(res_cell(res_cell > 0)));
+            
+            %}
+
+            % number of voxels per dim
+            wvl = range([grid.xb; grid.yb; grid.zb], 2) ./ us.lambda;
+            S = kwargs.scat_per_cell * prod(wvl(wvl > 0));
+
+            % generate uniform random positions and normally distributed amplitudes
+            N   = arrayfun(@(p) grid.("n"+p), lower(grid.order)); % size in each dimension
+            ind = arrayfun(@(N) {randi(N, [S,1], 'like', rho0([]))}, N); % position indices
+            as  =                rand(    [S,1], 'like', rho0([]));      % amplitude values
+
+            % assign perturbation
+            rho = zeros(grid.size, 'like', rho0);
+            rho(sub2ind(grid.size, ind{:})) = as;
+
+            % add to base
+            rho = rho0 + db2pow(kwargs.ampdB) * rho0 * rho;
+            c = c0 * ones(grid.size);
+
+            % sample the Medium on the grid
+            args = namedargs2cell(rmfield(kwargs, ["scat_per_cell","ampdB"]));
+            med = Medium.Sampled(grid, c, rho, args{:});
         end
     end
 
