@@ -1,5 +1,5 @@
 
-function res = runProjectTests(tag, parenv, kwargs)
+function [res, suite] = runProjectTests(tag, parenv, kwargs)
 % runProjectTests - Run tests for QUPS
 %
 % runProjectTests Runs the full suite of tests for QUPS. These
@@ -23,6 +23,8 @@ function res = runProjectTests(tag, parenv, kwargs)
 % 
 % res = runProjectTests(...) returns the test results array res.
 %
+% [res, suite] = runProjectTests(...) also returns tbe TestSuite suite.
+% 
 % See also matlab.unittest.Verbosity matlab.unittest.TestRunner matlab.unittest.plugins.codecoverage
 
 arguments
