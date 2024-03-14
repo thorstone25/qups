@@ -49,6 +49,36 @@ classdef Scatterers < matlab.mixin.Copyable
         % (0.5 / 1e-2 / 1e+6) = 50e-6 dB /  m /  Hz (SI units) or 
         % (0.5 / 1e+1 / 1   ) = 0.05  dB / mm / MHz (mm / us / MHz)
         % 
+        % Example:
+        % % FieldII required
+        % if ~exist('field_init','file')
+        %     error("This example requires FieldII");
+        % end
+        % 
+        % % Create a system to simulate
+        % us = UltrasoundSystem(); % default
+        % us.fs = 10*us.fs; % increase for FieldII discretization
+        % [us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % imaging resolution
+        % scat = Scatterers.Grid([11 1 11]',2e-3, 1e-3*[0 0 20]); % targets
+        % scat_att = copy(scat);
+        % scat_att.alpha0 = 3 * 50e-6; % 10x soft tissue attenuation
+        % 
+        % % Simulate
+        % chd = calc_scat_multi(us, [scat, scat_att]); % simulate
+        % chd = subD(hilbert(chd, 2*chd.T), 1:chd.T, chd.tdim);
+        % b = DAS(us, chd);
+        % 
+        % % Display the B-mode images
+        % figure; 
+        % him    = imagesc(us.scan, b(:,:,1), nexttile()); colorbar; 
+        % him(2) = imagesc(us.scan, b(:,:,2), nexttile()); colorbar;
+        % colormap gray;
+        % title(him(1).Parent,   "No Attenuation"); 
+        % title(him(2).Parent, "With Attenuation");
+        % linkaxes([him.Parent]);
+        % linkprop([him.Parent], "CLim");
+        % caxis([-60 0] + max(gather(mod2db(b(:)))));
+        % 
         % See also SCATTERERS/C0 SCATTERERS/POS SCATTERERS/AMP
         alpha0 (1,1) double = nan; % attenuation
     end
