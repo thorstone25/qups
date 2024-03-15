@@ -1,5 +1,5 @@
 function [cxy, ixo, iyo] = wbilerpg(x, y, xa, ya, xb, yb)
-% WBILERPG - Weighted bilinear interpolation weights (GPU/OpenCL-enabled)
+% WBILERPG - Weights for bilinear interpolation (GPU/OpenCL-enabled)
 %
 % [cxy, ixo, iyo] = WBILERPG(x, y, xa, ya, xb, yb) takes in a pair of grid
 % vectors x, y and an array of pairs of endpoints (xa,ya) to (xb,yb) and
