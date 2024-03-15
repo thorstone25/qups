@@ -133,7 +133,7 @@ for j = numel(js):-1:1
             [ixo, izo] = deal(zeros(josz, 'like', ix));
             iwo = zeros(josz, 'like', iw);
 
-            if kwargs.gpu && exist('wbilerp.cu', 'file') % call the GPU version
+            if kwargs.gpu && exist('wbilerp.ptx', 'file') % call the GPU version
                 [iwo(:), ixo(:), izo(:)] = wbilerpg(xg, zg, pax, paz, pbx, pbz);
             else % call the CPU version in parallel with defaults
                 parfor (jm = (1:numel(pax)))
