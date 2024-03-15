@@ -157,8 +157,8 @@ classdef ChannelData < matlab.mixin.Copyable
                 xdc Transducer {mustBeScalarOrEmpty} = Transducer.UFF(uchannel_data.probe); % only needed for FSA
             end
             
-            % get the start time in QUPS format
-            t0 = [uchannel_data.sequence.delay];
+            
+            t0 = [uchannel_data.sequence.delay]; % get the start time in QUPS format
             switch seq.type
                 case 'FSA', t0 = t0 - vecnorm(xdc.positions,2,1) ./ seq.c0; % delay transform from element to origin for FSA
                 case 'VS',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
