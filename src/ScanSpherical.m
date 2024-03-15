@@ -78,7 +78,7 @@ classdef ScanSpherical < Scan
     methods
         function uscan = QUPS2USTB(scan)
             arguments, scan ScanSpherical, end
-            uscan = arrayfun(@(scan) uff.scan('xyz', scan.pos(:,:)'), scan);
+            uscan = arrayfun(@(scan) uff.scan('xyz', reshape(scan.positions(),3,[])'), scan);
         end
     end
 
