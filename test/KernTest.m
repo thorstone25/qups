@@ -41,7 +41,7 @@ classdef KernTest < matlab.unittest.TestCase
     end
 
     % Full test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
+    methods(Test, ParameterCombination = 'exhaustive', TestTags={'full', 'build'})
         function full_convd(test, prec, complexity, gdev), runconvd(test, prec, complexity, gdev); end % forward all
         function full_interpd(test, prec, complexity, gdev), runinterpd(test, prec, complexity, gdev); end % forward all
     end

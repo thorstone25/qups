@@ -28,7 +28,7 @@ function [res, suite] = runProjectTests(tag, parenv, kwargs)
 % See also matlab.unittest.Verbosity matlab.unittest.TestRunner matlab.unittest.plugins.codecoverage
 
 arguments
-    tag (1,1) string {mustBeMember(tag, ["full", "Github", "benchmark"])} = "full"
+    tag (1,1) string {mustBeMember(tag, ["full", "Github", "build", "benchmark"])} = "full"
     parenv {mustBeScalarOrEmpty, mustBeA(parenv, ["double","parallel.Pool"])} = gcp('nocreate')
     kwargs.cobertura (1,1) logical = false
     kwargs.report (1,1) logical = false

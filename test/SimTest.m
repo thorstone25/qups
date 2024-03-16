@@ -225,7 +225,7 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     % Full test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
+    methods(Test, ParameterCombination = 'exhaustive', TestTags={'full', 'build'})
         function full_pscat(test, sim_name), pscat(test, sim_name); end % forward all
         function full_greens_devs(test), greens_devs(test); end % forward all
     end

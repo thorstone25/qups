@@ -1,4 +1,4 @@
-classdef ExampleTest < matlab.unittest.TestCase
+classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.TestCase
 
     % files
     properties
@@ -309,7 +309,7 @@ classdef ExampleTest < matlab.unittest.TestCase
 
     % ---------------------------------------------- % 
 
-    methods (Test, ParameterCombination="sequential", TestTags=["Github", "full", "build"])
+    methods (Test, ParameterCombination="sequential")
         % Test methods
         function run_examples(test, fls, lns)
             % arguments
