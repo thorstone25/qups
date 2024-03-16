@@ -10,9 +10,16 @@ function dbr(mode, rang)
 % For the 'phase' preset, the range is in degrees.
 % 
 % Example:
+% figure;
 % imagesc;
 % dbr phase 35
-%
+% 
+% pause(1);
+% dbr b-mode;
+% 
+% pause(1); 
+% dbr echo 30
+% 
 % See also: SCAN/IMAGESC CHANNELDATA/IMAGESC
 arguments
     mode (1,1) string {mustBeMember(mode, ["b-mode", "phase", "echo"])} = "b-mode"
