@@ -39,7 +39,10 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             test.assertWarning(@()setfield(seq,'apodization_',zeros(4)), "QUPS:Sequence:DeprecatedProperty")
             test.assertWarning(@()seq.delays_                          , "QUPS:Sequence:DeprecatedProperty")
             test.assertWarning(@()seq.apodization_                     , "QUPS:Sequence:DeprecatedProperty")
-
+            
+            % on construction only?
+            test.assertWarning(@()Sequence('type','VS')                , "QUPS:Sequence:DeprecatedValue"   )
+            
         end
         function initscan(test)
             % INITSCAN - Assert that Scan constructors initialize

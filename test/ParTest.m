@@ -186,7 +186,7 @@ classdef ParTest < matlab.unittest.TestCase
             tst.assertFalse(~logical(nnz(chd.data)), "All values are 0.");
         end
     end
-
+    % ---------------------------------------------- %
     methods (Test, TestTags=["full","build"], ParameterCombination='sequential')
         % test simulators can run on different devices
         function greens_das_dev(tst, dev)
@@ -224,6 +224,7 @@ classdef ParTest < matlab.unittest.TestCase
         end
     end
 
+    % ---------------------------------------------- %
     methods(Test, TestTags="benchmark",  ParameterCombination='sequential')
         function DAS_dev_benchmark(tst, dev)
             if ~isnumeric(dev) || dev ~= 0, tst.setDev(dev); else, return; end % pass on no dev
@@ -298,6 +299,14 @@ classdef ParTest < matlab.unittest.TestCase
                 + join(string([225 225 1]),",") + ...
             "]).";
             disp(msg); tst.log(1, msg);
+        end
+    end
+
+    methods(Test, TestTags=["full", "build"])
+        function constGreens(tst)
+            % test we can compile for constant data size
+            defs = [tst.us.getDASConstCudaDef(tst.cd), tst.us.getGreensConstCudaDef(tst.sct)];
+            tst.us.recompileCUDA(defs, "compute_60")
         end
     end
 end

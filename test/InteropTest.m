@@ -46,7 +46,7 @@ classdef(TestTags = ["full","Github","build"]) InteropTest < matlab.unittest.Tes
             tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this
             uscn = QUPS2USTB(scns);
             qscn = Scan.UFF(uscn);
-            tst.assertEqual(scns.positions(), qscn.positions());
+            tst.assertEqual(reshape(scns.positions(),3,[]), qscn.positions());
         end
         function ustb_seq(tst, seqs, xdcs)
             tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this
@@ -70,12 +70,15 @@ classdef(TestTags = ["full","Github","build"]) InteropTest < matlab.unittest.Tes
             chds = [chd, permuteD(chd,[1,3,2,4])]; % swap tx/rx
             for chd = chds 
                 [uchd, uscn] = QUPS2USTB(us, chd, 0);
-                [uso, chdo] = UltrasoundSystem.UFF(uchd, uscn);
+                [uso, chd1] = UltrasoundSystem.UFF(uchd, uscn);
+                chd2 = ChannelData.UFF(uchd);
+                for chdo = [chd1, chd2]
                 chdo.order(4) = 'F';
                 [~, ord] = ismember(chd.order, chdo.order);
                 chdo = permuteD(chdo, ord);
                 tst.assertThat(chdo.t0, IsEqualTo(chd.t0, "Within", AbsoluteTolerance(1e-3)));
                 tst.assertEqual(size(chdo.data), size(chd.data));
+                end
             end
         end
         function ustb_ext(tst) % test objects in USTB that don't have a direct QUPS analogy
