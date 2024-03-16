@@ -239,25 +239,26 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
             end
         end
 
-        function footer = getFooter(obj)
-            footer = getFooter@matlab.mixin.CustomDisplay(obj);
-        end
-        
-        function displayNonScalarObject(obj)
-            displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
-        end
-
+        % Hetergenous support functions (for further customization)
+        % function footer = getFooter(obj)
+        %     footer = getFooter@matlab.mixin.CustomDisplay(obj);
+        % end
+        %
+        % function displayNonScalarObject(obj)
+        %     displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
+        % end
+        %
         % function displayScalarObject(obj)
         % Do not override this method: a 'Scan' is Abstract and therefore
-        % cannot be instanstiated. 
-
-        function displayEmptyObject(obj)
-            displayEmptyObject@matlab.mixin.CustomDisplay(obj);
-        end
-
-        function displayScalarHandleToDeletedObject(obj)
-            displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
-        end
+        % cannot be instanstiated.
+        %
+        % function displayEmptyObject(obj)
+        %     displayEmptyObject@matlab.mixin.CustomDisplay(obj);
+        % end
+        %
+        % function displayScalarHandleToDeletedObject(obj)
+        %     displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
+        % end
     end
 
     % conversion
