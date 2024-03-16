@@ -802,29 +802,24 @@ classdef ChannelData < matlab.mixin.Copyable
             % RESAMPLE - Resample the data in time
             %
             % chd = RESAMPLE(chd, fs) resamples the data at sampling
-            % frequency fs. And returns a new ChannelData object.
+            % frequency fs. The data is resampled in double precision.
             %
-            % chd = RESAMPLE(chd, fs, ..., METHOD) specifies the method of 
-            % interpolation. The default is linear interpolation.  
-            % Available methods are:
-            %   'linear' - linear interpolation
-            %   'pchip'  - shape-preserving piecewise cubic interpolation
-            %   'spline' - piecewise cubic spline interpolation
+            % chd = RESAMPLE(chd, fs, arg1, arg2, ...) forwards all
+            % following arguments to MATLAB's RESAMPLE function.
             %
-            % chd = RESAMPLE(chd, fs, ..., arg1, arg2, ...) forwards 
-            % arguments to MATLAB's RESAMPLE function
-            %
+            % Example:
+            % chd = ChannelData('data', [1 2 3 4]', 'fs', 1);
+            % chd.resample(2, 'spline'); % double the sampling frequency
+            % chd.data
+            % 
             % See also RESAMPLE DOWNSAMPLE
 
             % save original data prototypes
-            [Tt, Tf, Td] = deal(chd.t0, chd.fs, cast(zeros([0,0]), 'like', chd.data));
+            [Tt, Tf, Td] = deal(chd.t0, chd.fs, cast(zeros(0), 'like', chd.data));
             
-            % Make new ChannelData (avoid modifying the original)
-            chd = copy(chd);
-
             % ensure numeric args are non-sparse, double
-            chd = (doubleT(chd)); % data is type double
-            fs = (double(fs)); % new frequency is type double
+            chd = doubleT(chd); % data is type double
+            fs  = double(fs); % new frequency is type double
             inum = cellfun(@isnumeric, varargin); % all numeric inputs are type double
             varargin(inum) = cellfun(@double, varargin(inum), 'UniformOutput', false);
 
@@ -862,6 +857,11 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % When using this function, the time axis is adjusted.
             % 
+            % Example:
+            % chd = ChannelData('data', cosd((0:30:360)'));
+            % chd = zeropad(chd, 4);
+            % chd.data'
+            % 
             % See also CIRCSHIFT
 
             if nargin < 2 || isempty(B), B = 0; end
@@ -888,8 +888,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % defined by the Waveform that was transmitted, the impulse
             % response of the Transducer(s), or the Transducer itself
             %
-            % See also TRANSDUCER WAVEFORM SEQUENCE
-            % TRANSDUCER/ULTRASOUNDTRANSDUCERIMPULSE
+            % See also TRANSDUCER WAVEFORM SEQUENCE TRANSDUCER/XDCIMPULSE
 
 
             f = chd.fs * ((0:chd.T-1)' ./ chd.T); % compute frequency axis
@@ -982,6 +981,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % lifted to (T x 1 x ... x 1 x N x M) where N and M are the 
             % receive and transmit aperture dimensions. The default is
             % [chd.ndim, chd.mdim]
+            % 
+            % Example:
+            % chd = ChannelData('data', randn([8 4 3 2]));
+            % tau = (2 : 1/4 : 4)' + swapdim(1 : 3, 2, 3);
+            % x = chd.sample(tau)
             % 
             % See also CHANNELDATA/SAMPLE2SEP INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 
@@ -1085,6 +1089,12 @@ classdef ChannelData < matlab.mixin.Copyable
             % When this argument is used, the dimension of the data are 
             % lifted to (T x 1 x ... x 1 x N x M [x F x G x ...]) where 
             % N and M are the receive and transmit aperture dimensions. 
+            % 
+            % Example:
+            % chd = ChannelData('data', randn([8 4 3 2]));
+            % tau1 = (2 : 1/4 : 4)';
+            % tau2 = swapdim(1 : 3, 2, 3);
+            % x = chd.sample2sep(tau1, tau2)
             % 
             % See also CHANNELDATA/SAMPLE INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 

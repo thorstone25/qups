@@ -62,6 +62,9 @@ classdef(TestTags = ["full", "Github", "build"]) ChdTest < matlab.unittest.TestC
                 filtfilt(chd, D)
                 fftfilt(chd, D)
             end
+
+            % sampling
+            downsample(downmix(resample(chd,5), 1/4), 2);
         end
 
         function arithmetic(tst)

@@ -37,10 +37,32 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             % INITSCAN - Assert that Scan constructors initialize
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            scns = [ScanCartesian(), ScanPolar(), ScanSpherical(),ScanGeneric()]; % init / hetero
+            scns = [ScanCartesian(), ScanPolar(), ScanSpherical(), ScanGeneric()]; % init / hetero
             arrayfun(@(scn) test.assertThat(scn, IsInstanceOf('Scan')), scns);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), scns, "UniformOutput",false); % can scale
-            scns(end+2) = scns(1); % implicit empty value            
+            scns(end+2) = scns(1); % implicit empty value
+
+            % test assigning / retrieving sizing
+            dvars = 'XYZRUVW'; % dist
+            avars = 'AE'; % ang
+            for scn = scns
+                ax = lower(scn.order);
+                for a = ax, scn.("n"+a) =   4; end % dist or ang
+                test.assertTrue(all(scn.size == 4), "Setting the scan size failed for a " + class(scn) + "!");
+                for a = ax, scn.("d"+a) = 1/2; end % dist or ang
+                test.assertTrue(all(arrayfun(@(c)scn.("d"+c),ax) == 1/2), "Setting the scan resolution failed for a " + class(scn) + "!");
+                for a = ax
+                    if a == 'r',                      bd = [  0 40]; % range
+                    elseif ismember(upper(a), dvars), bd = [-20 20]; % dist
+                    elseif ismember(upper(a), avars), bd = [ -5  5]; % ang
+                    else,                             bd = [ -5  5]; 
+                    end
+                    scn.(a+"b") = bd;
+                    test.assertTrue(isalmostn(scn.(a+"b"), bd));
+                end
+
+            end
+
         end
         function initchd(test)
             % INITCHD - Assert that a ChannelData constructor initializes
@@ -49,6 +71,7 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             chd = ChannelData();
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
+            [chd.tdim, chd.ndim, chd.mdim, chd.T, chd.N, chd.M]; % get
         end
         function initus(test)
             % INITUS - Assert that an UltrasoundSystem constructor
@@ -57,6 +80,11 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             us = UltrasoundSystem();
             test.assertThat(us, IsInstanceOf('UltrasoundSystem'));
             us = scale(us, "dist",1e3, "time",1e6);
+            fld = us.tmp_folder;
+            clear us; % destroy
+            test.assertFalse(logical(exist(fld,"dir")));
+            us = UltrasoundSystem('copybin',true);
+            us = UltrasoundSystem('recompile',true);
         end
         function initmedscat(test)
             % INITMEDSCAT - Assert that a Scatterers and Mediums
