@@ -72,24 +72,6 @@ classdef ScanSpherical < Scan
         end
     end
 
-    % USTB interface methods
-    % %{ 
-    % TODO: leave to abstract class
-    methods
-        function uscan = QUPS2USTB(scan)
-            arguments, scan ScanSpherical, end
-            uscan = arrayfun(@(scan) uff.scan('xyz', reshape(scan.positions(),3,[])'), scan);
-        end
-    end
-
-    methods(Static)
-        function scan = UFF(uscan)
-            arguments, uscan uff.scan; end
-            scan = arrayfun(@(u) ScanGeneric("pos",u.xyz','u',[],'v',[],'w',[]), uscan);
-        end
-    end
-    %}
-
     % imaging computations
     methods
         function [X, Y, Z] = getImagingGrid(self, kwargs)
