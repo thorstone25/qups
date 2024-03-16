@@ -1000,7 +1000,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             end
 
             % get the aperture
-            ap = xdc.getFieldIIAperture([0 0 0], el_sub_div);
+            ap = xdc.getFieldIIAperture(el_sub_div);
 
             % extract corners
             data = xdc_get(ap, 'rect');
