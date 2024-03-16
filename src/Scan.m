@@ -45,7 +45,7 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         % See also UFF.SCAN
         % USTB interface methods
         function uscan = QUPS2USTB(scan)
-            uscan = uff.scan('xyz', scan.pos(:,:)');
+            uscan = uff.scan('xyz', reshape(scan.positions(),3,[])');
         end
 
     end
