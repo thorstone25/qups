@@ -204,6 +204,14 @@ classdef ExampleTest < matlab.unittest.TestCase
                 test.log(3, "Unable to create a local pool.");
             end
         end
+        function selectOclDevice(~)
+            if oclDeviceCount()
+                devs = oclDeviceTable();
+                if isempty(devs), return; end % nothing to do
+                devs = sortrows(devs, ["Type", "MaxComputeUnits"], "ascend"); % prefer gpu, most CUs
+                oclDevice(devs{end,"Index"}); % select best device
+            end
+        end
     end
     methods (TestClassTeardown)
     end
@@ -243,7 +251,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             cpat = ws0 + "%" + wildcardPattern;% + lineBoundary('end');
 
             % init
-            [blk, lns, fls] = deal(cell(1,0));
+            [lns, fls] = deal(cell(1,0));
 
             for m = 1 : numel(fls_)
                 h = false;
@@ -283,16 +291,16 @@ classdef ExampleTest < matlab.unittest.TestCase
 
                     % save
                     % code(end+1) = {code_(k(1):k(2))};
-                    fls(end+1) = cellstr(fls_(m));
-                    lns(end+1) = {join(string(i{n}(k)),"-")}; % for labelling
-                    blk(end+1) = {i{n}(k(1):k(end))};
+                    fls(end+1) = cellstr(fls_(m)); %#ok<AGROW>
+                    lns(end+1) = {join(string(i{n}(k)),"-")}; %#ok<AGROW> % for labelling
+                    % blk(end+1) = {i{n}(k(1):k(end))};
                     h = true;
                 end
 
-                if ~h,
-                    fls(end+1) = cellstr(fls_(m));
-                    lns(end+1) = {join(string([1 0]),"-")}; % for labelling
-                    blk(end+1) = {[1 0]};
+                if ~h
+                    fls(end+1) = cellstr(fls_(m)); %#ok<AGROW>
+                    lns(end+1) = {join(string([1 0]),"-")}; %#ok<AGROW> % for labelling
+                    % blk(end+1) = {[1 0]};
                 end
 
             end
