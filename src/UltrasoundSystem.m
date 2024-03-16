@@ -81,8 +81,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         lambda {mustBeNumeric} % wavelength at the central frequency(ies)
     end
     
-    properties(Hidden,SetAccess=protected)
-        tmp_folder (1,1) string = mktempdir() % temporary folder for compiled binaries
+    properties(Hidden,NonCopyable,SetAccess=protected)
+        tmp_folder (1,1) string = tempname() % temporary folder for compiled binaries
     end
 
     % aliases
@@ -125,10 +125,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % recompile mex and CUDA files for the UltrasoundSystem object.
             % The default is false.
             %
+            % us = ULTRASOUNDSYSTEM(...,'copybin', true) attempts to find
+            % and copy any compiled binaries that exist on the path. If
+            % 'recompile' is also true, if any binaries are missing, all
+            % binaries will be recompiled. The default is false.
+            %
+            % Example:
+            % UltrasoundSystem('recompile', true)
+            % 
+            % 
             % See also TRANSDUCER SEQUENCE SCAN
             arguments
                 kwargs.?UltrasoundSystem
                 opts.recompile (1,1) logical = false
+                opts.copybin (1,1) logical = false
             end
             
             % initailize via name-Value pairs
@@ -175,70 +185,88 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 end
             end
 
+            % shadow with the (newly created) temp folder for binaries and 
+            % const-compiled code
+            self.tmp_folder = tempname;
+            mkdir(  self.tmp_folder);
+            addpath(self.tmp_folder);
+
             % no recompilation on a thread pool
             if parallel.internal.pool.isPoolThreadWorker
                 if opts.recompile, warning("Cannot recompile on a thread worker!"); end
                 return;
             end
-            
-            % shadow with the (newly created) temp folder for binaries and 
-            % const-compiled code
-            addpath(self.tmp_folder);
 
+            % short circuit if no binary action is requested
+            if ~opts.copybin && ~opts.recompile, return; end
+            
             % copy code or recompile it
             if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
                 defs = self.genCUDAdefs();
+                if opts.copybin
                 fls = arrayfun(@(d) string(strrep(d.Source, '.cu', '.ptx')), defs);
-                e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
-                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(~e)); % move there if not?
-                if opts.recompile && any(~s), self.recompileCUDA(); end % attempt to recompile code
+                e = logical(arrayfun(@(x)exist(x, 'file'), fls)); % already exists?
+                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(e)); % move there if not?
+                end
+                if opts.recompile && (~opts.copybin || any(~s)), self.recompileCUDA(); end % attempt to recompile code
             end
 
             % copy code or recompile it
             defs = self.genMexdefs();
+            if opts.copybin
             fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
-            e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
-            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(~e)); % move there if not?
-            if opts.recompile && any(~s), self.recompileMex(); end % attempt to recompile code
-
+            e = logical(arrayfun(@(x)exist(x, 'file'), fls)); % already exists?
+            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(e)); % move there if not?
+            end
+            if opts.recompile && (~opts.copybin || any(~s)), self.recompileMex(); end % attempt to recompile code
         end
+    end
 
-        % destructor
+    % destructor
+    methods(Access=protected)
         function delete(self)
             % DELETE - Destroy an UltrasoundSystem ... programatically.
             %
             % On object destruction, any temporary directories are removed.
             %
+            % Note: argument validation will invalidate this method as a
+            % destructor.
+            % 
             % See also HANDLE
-            arguments, self (1,1) UltrasoundSystem, end
 
             % if we made a temp folder, clean it up
-            if ~isempty(self.tmp_folder) && exist(self.tmp_folder, 'dir')
-                rmpath(self.tmp_folder) % remove from the path
-                list = dir(self.tmp_folder); % all files in the folder
+            tmp = self.tmp_folder;
+            if ~isempty(tmp) && exist(tmp, 'dir')
+                rmpath(tmp) % remove from the path
+                list = dir(tmp); % all files in the folder
                 nms = string({list.name}); % get the file names
+                
                 % check that it's only ptx and mex files we are deleting
                 assert(all(...
                     endsWith(nms, [".ptx", string(mexext())]) ...
                     | nms == ".." | nms == "." ...
                     ), ...
-                    "Call for deletion of " + self.tmp_folder + " failed due to unexpected files present." ...
-                    ); 
-                
-                % rmdir(self.tmp_folder, 's'); % recursive deletion - dangerous
-                
+                    "Call for deletion of " + tmp + " failed due to presence of unexpected files: "...
+                    + join(nms, ",") + "." ...
+                    );
+
+                % rmdir(tmp, 's'); % recursive deletion - dangerous
+
                 % safe: remove specific files first, then (attempt) the folder
-                rmdir(fullfile(self.tmp_folder, "*" + ".ptx")); % remove any ptx files
-                rmdir(fullfile(self.tmp_folder, "*" + string(mexext()))); % remove any mex files
-                rmdir(self.tmp_folder);
+                delete(fullfile(tmp, "*" + ".ptx")); % remove any ptx files
+                delete(fullfile(tmp, "*" + string(mexext()))); % remove any mex files
+                rmdir(tmp);
+                % disp("[DEBUG]: Deleted " + tmp);
             end
         end
-    
+    end
+
+    methods
         % convert to a structure to remove class info
         function s = obj2struct(us)
             % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
             %
-            % us = OBJ2STRUCT(us) converts the UltrasoundSystem us and all 
+            % us = OBJ2STRUCT(us) converts the UltrasoundSystem us and all
             % of it's properties into native MATLAB structs.
             %
             % Example:
@@ -279,11 +307,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     methods(Access=protected)
         % copy 
         function other = copyElement(self)
-            arguments, self (1,1) UltrasoundSystem, end
-            n = cellstr(["tx", "rx", "seq", "scan", "fs"]); % copy props
-            v = cellfun(@(n){self.(n)}, n);
-            nv = cat(1,n,v);
-            other = UltrasoundSystem(nv{:}, 'recompile', false);            
+            arguments, self (1,1) UltrasoundSystem, end % always scalar in            
+            other = copyElement@matlab.mixin.Copyable(self); % shallow copy handle
+            other.tmp_folder = tempname(); % new temp dir
+            copyfile(self.tmp_folder, other.tmp_folder); % copy binaries over
+            addpath(other.tmp_folder); % add to path
+            % disp("[DEBUG]: Adding path " + other.tmp_folder + " with " + (numel(dir(other.tmp_folder)) - 2) + " files.");
         end
     end
 
@@ -5098,18 +5127,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         end
     end
 end
-
-% defaults
-function tmp = mktempdir()
-tmp = tempname(); % new folder
-try
-    mkdir(tmp); % try to create it
-catch % cannot create new folder
-    tmp = cachedir(); % reference the cache folder
-end
-end
-
-function d = cachedir(), d = fullfile(fileparts(mfilename('fullpath')), 'bin'); end
 
 function arch = nvarch()
 % NVARCH - compute capability architecture string for the current gpu
