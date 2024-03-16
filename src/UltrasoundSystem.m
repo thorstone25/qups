@@ -4672,14 +4672,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 f = [self.tx.fc, self.rx.fc];
             end
         end
-        function set.fc(self, f)
-            if self.rx == self.tx
-                self.rx.setCentralFrequency(f);
-            else
-                self.tx.setCentralFrequency(f(1));
-                self.rx.setCentralFrequency(f(end));
-            end
-        end
         function l = get.lambda(self), l = self.seq.c0 ./ self.fc; end
         function x = get.xdc(self)
             if self.tx == self.rx
