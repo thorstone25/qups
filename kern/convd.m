@@ -56,7 +56,7 @@ arguments
     dim (1,1) {mustBePositive, mustBeInteger} = findSingletonDim(x, y)
     shape (1,1) string {mustBeMember(shape, ["full", "same", "valid"])} = 'full'
     kwargs.gpu (1,1) logical = isa(x, 'gpuArray') || isa(y, 'gpuArray')
-    kwargs.ocl (1,1) logical = exist('oclDevice', 'file') && ~isempty(oclDevice())
+    kwargs.ocl (1,1) logical = exist('oclDeviceCount', 'file') && oclDeviceCount() && ~isempty(oclDevice())
     kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate') % parallel environment
     kwargs.lowmem (1,1) logical = 16 * max(numel(x), numel(y)) > 16 * 2^30; % default true if complex double storage of either argument exceeds 16GB
 end
@@ -111,7 +111,7 @@ sizes = [xstr, M, ystr, N, zstr, L, C];
 
 % whether/how to operate with CUDA/OpenCL
 use_gdev = kwargs.gpu && exist('convd.ptx', 'file') && exist('convd.cu', 'file');
-use_odev = kwargs.ocl && exist('oclDevice', 'file') && ~isempty(oclDevice()) && exist('convd.cl', 'file');
+use_odev = kwargs.ocl && exist('oclDeviceCount', 'file') && oclDeviceCount() && ~isempty(oclDevice()) && exist('convd.cl', 'file');
 if use_odev % validate the device supports the type
     dev = oclDevice(); % get device
     switch dtype
