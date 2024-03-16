@@ -22,6 +22,20 @@ classdef(TestTags = ["full","Github","build"]) InteropTest < matlab.unittest.Tes
     methods(TestClassSetup)
     end
     methods(Test)
+        function fieldII_xdc(tst, xdcs)
+            tst.assumeTrue(logical(exist('field_init','file'))) % need FieldII for this
+            import matlab.unittest.constraints.IsEqualTo;
+            import matlab.unittest.constraints.AbsoluteTolerance;
+
+            pchq = xdcs.patches([4 2]);
+            pchf = xdcs.getFieldIIPatches([4 2]);
+            [pchq, pchf] = dealfun(@(x) cell2mat(swapdim(cellfun(@(x) {cat(3, x{:})}, x),1:2,4:5)), pchq, pchf);
+
+            pnf = xdcs.getFieldIIPositions();
+            tst.assertThat(xdcs.positions(), IsEqualTo(pnf , "Within", AbsoluteTolerance(1e-6)));
+            % tst.assertThat(pchq            , IsEqualTo(pchf, "Within", AbsoluteTolerance(1e-6))); % extra transposition
+
+        end
         function ustb_xdc(tst, xdcs)
             tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this
             uxdc = QUPS2USTB(xdcs);
@@ -65,6 +79,8 @@ classdef(TestTags = ["full","Github","build"]) InteropTest < matlab.unittest.Tes
             end
         end
         function ustb_ext(tst) % test objects in USTB that don't have a direct QUPS analogy
+            tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this
+
             % test scans
             uscn = cell(1,2);
 
