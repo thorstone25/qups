@@ -1,7 +1,7 @@
-function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
-% BEAMFORM Beamform data using a delay-and-sum approach
+function [y, k, pre_args, post_args] = das_spec(fun, Pi, Pr, Pv, Nv, x, t0, fs, c, varargin)
+% DAS_SPEC - Specialized delay-and-sum beamformer
 % 
-% y = BEAMFORM(fun, Pi, Pr, Pv, Nv, x, t0, fs, c) beamforms the given data
+% y = DAS_SPEC(fun, Pi, Pr, Pv, Nv, x, t0, fs, c) beamforms the given data
 % by computing and applying beamforming delays based on an assumed sound
 % speed, receiver positions, and (virtual) positions transmit positions. 
 % Optionally sum across the receive aperture and/or transmit aperture 
@@ -34,10 +34,10 @@ function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 % transmitter-receiver pair. The values for 'x', 't0', and 'fs' will be
 % ignored.
 % 
-% y = BEAMFORM(..., 'plane-waves', ...) uses a plane-wave delay model 
+% y = DAS_SPEC(..., 'plane-waves', ...) uses a plane-wave delay model 
 % instead of a virtual-source delay model (default).
 % 
-% y = BEAMFORM(..., 'diverging-waves', ...) specifies a diverging-wave 
+% y = DAS_SPEC(..., 'diverging-waves', ...) specifies a diverging-wave 
 % delay model, in which the time delay is always positive rather than
 % negative prior to reaching the virtual source in the virtual-source delay
 % model (default).
@@ -53,23 +53,23 @@ function [y, k, pre_args, post_args] = beamform(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 % used to determine whether the theoretical wavefront has reached the focal
 % point. For a diverging wave, Nv is ignored. 
 % 
-% y = BEAMFORM(..., 'apod', apod, ...) applies apodization across the image
+% y = DAS_SPEC(..., 'apod', apod, ...) applies apodization across the image
 % and data dimensions. apod must be able to broadcast to size 
 % I1 x I2 x I3 x N x M
 % 
-% y = BEAMFORM(..., 'device', device, ...) forces selection of a gpuDevice.
+% y = DAS_SPEC(..., 'device', device, ...) forces selection of a gpuDevice.
 % device can be one of {0, -1, +n}:
 %    0 - use native MATLAB calls to interp1
 %   -1 - use a CUDAKernel on the current GPU
 %   +n - reset gpuDevice n and use a CUDAKernel (caution: this will clear
 %        all of your gpuArray variables!
 % 
-% y = BEAMFORM(..., 'interp', method, ...) uses method for the underlying
+% y = DAS_SPEC(..., 'interp', method, ...) uses method for the underlying
 % intepolation. On the gpu, method can be one of 
 % {"nearest","linear"*,"cubic","lanczos3"}. In MATLAB, support is
 % determined by the interp1 function. 
 % 
-% [y, k, PRE_ARGS, POST_ARGS] = BEAMFORM(...) when the CUDA ptx is used returns
+% [y, k, PRE_ARGS, POST_ARGS] = DAS_SPEC(...) when the CUDA ptx is used returns
 % the parallel.gpu.CUDAKernel k as well as the arguments for calling the
 % data PRE_ARGS and POST_ARGS. The kernel can then be called per frame f as 
 %
@@ -194,7 +194,7 @@ if device && (gdev || odev)
         case "cubic",   flagnum = 2;
         case "lanczos3",flagnum = 3;
         otherwise
-            error('QUPS:beamform:UnrecognizedInput', "Unrecognized interpolation of type " ...
+            error('QUPS:das_spec:UnrecognizedInput', "Unrecognized interpolation of type " ...
                 + interp_type ...
                 + ": must be one of {'nearest', 'linear', 'cubic', 'lanczos3'}.");
     end

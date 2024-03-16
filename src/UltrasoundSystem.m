@@ -2835,7 +2835,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 if nargout > 1, ext_ret = cell(1,3); else, ext_ret = {}; end
 
                 % beamform the data (I1 x I2 x I3 x N x M x F x ...)
-                [b, ext_ret{:}] = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
+                [b, ext_ret{:}] = das_spec(fun, pos_args{:}, dat_args{:}, ext_args{:});
 
                 % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
                 b = permute(b, [1:3,6:(D+2),4:5]);
