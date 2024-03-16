@@ -80,7 +80,7 @@ switch uclass
 end
 
 % parse device
-use_gdev = logical(gpuDeviceCount());
+use_gdev = logical(gpuDeviceCount()) && exist('wbilerp.ptx', 'file');
 use_odev = exist('oclDeviceCount','file') && oclDeviceCount() && ~isempty(oclDevice());
 
 % specify the kernel (must be on the path)
