@@ -31,7 +31,15 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             seqs = [Sequence(), SequenceRadial(), SequenceGeneric()];
             arrayfun(@(seq) test.assertThat(seq, IsInstanceOf('Sequence')), seqs);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale
-            seqs(end+2) = seqs(1); % implicit empty value 
+            seqs(end+2) = seqs(1); % implicit empty value
+
+            % deprecation
+            seq = Sequence();
+            test.assertWarning(@()setfield(seq,'delays_',     zeros(4)), "QUPS:Sequence:DeprecatedProperty")
+            test.assertWarning(@()setfield(seq,'apodization_',zeros(4)), "QUPS:Sequence:DeprecatedProperty")
+            test.assertWarning(@()seq.delays_                          , "QUPS:Sequence:DeprecatedProperty")
+            test.assertWarning(@()seq.apodization_                     , "QUPS:Sequence:DeprecatedProperty")
+
         end
         function initscan(test)
             % INITSCAN - Assert that Scan constructors initialize
@@ -49,8 +57,6 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
                 ax = lower(scn.order);
                 for a = ax, scn.("n"+a) =   4; end % dist or ang
                 test.assertTrue(all(scn.size == 4), "Setting the scan size failed for a " + class(scn) + "!");
-                for a = ax, scn.("d"+a) = 1/2; end % dist or ang
-                test.assertTrue(all(arrayfun(@(c)scn.("d"+c),ax) == 1/2), "Setting the scan resolution failed for a " + class(scn) + "!");
                 for a = ax
                     if a == 'r',                      bd = [  0 40]; % range
                     elseif ismember(upper(a), dvars), bd = [-20 20]; % dist
@@ -58,10 +64,13 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
                     else,                             bd = [ -5  5]; 
                     end
                     scn.(a+"b") = bd;
-                    test.assertTrue(isalmostn(scn.(a+"b"), bd));
+                    test.assertTrue(isalmostn(scn.(a+"b"), bd), "Setting the scan boundaries failed for a " + class(scn) + "!");
                 end
-
+                for a = ax, scn.("d"+a) = 1/2; end % dist or ang
+                test.assertTrue(all(arrayfun(@(c) scn.("d"+c),ax) == 1/2), "Setting the scan resolution failed for a " + class(scn) + "!");
             end
+
+
 
         end
         function initchd(test)
@@ -72,6 +81,10 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
             [chd.tdim, chd.ndim, chd.mdim, chd.T, chd.N, chd.M]; % get
+
+            % deprecated properties
+            test.assertWarning(@()setfield(chd,'ord','TMN'), "QUPS:ChannelData:syntaxDeprecated")
+            test.assertWarning(@()chd.ord                  , "QUPS:ChannelData:syntaxDeprecated")
         end
         function initus(test)
             % INITUS - Assert that an UltrasoundSystem constructor
@@ -85,6 +98,11 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             test.assertFalse(logical(exist(fld,"dir")));
             us = UltrasoundSystem('copybin',true);
             us = UltrasoundSystem('recompile',true);
+
+            % deprecation
+            test.assertWarning(@()setfield(us,'sequence',Sequence()),"QUPS:UltrasoundSystem:syntaxDeprecated")
+            test.assertWarning(@()us.sequence                       ,"QUPS:UltrasoundSystem:syntaxDeprecated")
+
         end
         function initmedscat(test)
             % INITMEDSCAT - Assert that a Scatterers and Mediums
