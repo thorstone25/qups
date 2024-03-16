@@ -46,11 +46,11 @@ plugs = { ...
 % add coverage reporting
 flds = ["kern", "src", "utils"];
 if kwargs.cobertura
-    fmt = matlab.unittest.plugins.codecoverage.CoberturaFormat('build/coverage.xml');
+    fmt = matlab.unittest.plugins.codecoverage.CoberturaFormat(fullfile('build',tag,'coverage.xml'));
     plugs{end+1} = (matlab.unittest.plugins.CodeCoveragePlugin.forFolder(flds, "Producing", fmt));
 end
 if kwargs.report
-    fmt = matlab.unittest.plugins.codecoverage.CoverageReport('build/CoverageReport');
+    fmt = matlab.unittest.plugins.codecoverage.CoverageReport(fullfile('build',tag,'CoverageReport'));
     plugs{end+1} = (matlab.unittest.plugins.CodeCoveragePlugin.forFolder(flds, "Producing", fmt));
 end
 
