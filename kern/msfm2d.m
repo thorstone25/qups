@@ -1,10 +1,12 @@
 function [T,Y]=msfm2d(F, SourcePoints, usesecond, usecross)
+% MSFM - Multistencil Fast Marching Method
+% 
 % This function MSFM2D calculates the shortest distance from a list of
 % points to all other pixels in an image, using the  
 % Multistencil Fast Marching Method (MSFM). This method gives more accurate 
 % distances by using second order derivatives and cross neighbours.
 % 
-% T=msfm2d(F, SourcePoints, UseSecond, UseCross)
+% T = msfm2d(F, SourcePoints, UseSecond, UseCross)
 %
 % inputs,
 %   F: The speed image. The speed function must always be larger
@@ -25,7 +27,9 @@ function [T,Y]=msfm2d(F, SourcePoints, usesecond, usecross)
 %   Methods: A Highly Accurate Solution to the Eikonal Equation on
 %   Cartesian Domains
 %
-% Example,
+% Function is written by D.Kroon University of Twente (June 2009)
+% 
+% Example:
 %   SourcePoint = [51; 51];
 %   SpeedImage = ones([101 101]);
 %   [X Y] = ndgrid(1:101, 1:101);
@@ -48,13 +52,14 @@ function [T,Y]=msfm2d(F, SourcePoints, usesecond, usecross)
 %   fprintf('FMM2:   %9.5f %9.5f %9.5f\n', Results{3}(1), Results{3}(2), Results{3}(3));
 %   fprintf('MSFM2:  %9.5f %9.5f %9.5f\n', Results{4}(1), Results{4}(2), Results{4}(3));
 %
-% Example multiple starting points,
+% Example:
+% % multiple starting points,
 %   SourcePoint=rand(2,100)*255+1;
 %   SpeedImage = ones([256 256]);
 %   tic; T1_MSFM2 = msfm2d(SpeedImage, SourcePoint, true, true); toc;
 %   figure, imshow(T1_MSFM2,[]); colormap(hot(256));
 %
-% Function is written by D.Kroon University of Twente (June 2009)
+% See also MSFM3D
 
 % Distance image, also used to store the index of narrowband pixels 
 % during marching process
