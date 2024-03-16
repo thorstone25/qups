@@ -1,4 +1,4 @@
-classdef(TestTags = ["full", "Github", "benchmark"]) ChdTest < matlab.unittest.TestCase
+classdef(TestTags = ["full", "Github", "build"]) ChdTest < matlab.unittest.TestCase
      %#ok<*NASGU> The outputs will not be televised
 
     methods(Test)

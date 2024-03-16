@@ -15,6 +15,7 @@ classdef USTest < matlab.unittest.TestCase
         rx = struct('Array',TransducerArray('numel',9),'Convex',TransducerConvex('numel',9), 'Matrix', TransducerMatrix('numd',[3 3]), 'Generic', TransducerGeneric("pos", 0.5e-3*randn([3,9])));
         scan = struct("Cart", ScanCartesian, "Pol", ScanPolar, "Sphr", ScanSpherical, "Gen", ScanGeneric);
         simulator
+        apod
     end
 
     % beamform
@@ -52,6 +53,11 @@ classdef USTest < matlab.unittest.TestCase
             nms = typs+"_"+ extractAfter(arrayfun(@(s)string(class(s)), sqs), "Sequence");
             seq = cell2struct(seq(:), nms(:), 1);
         end
+        function apod = getScanApodFcns()
+            f = string(methods("UltrasoundSystem")); % all methods
+            f = f(startsWith(f, "ap"));
+            apod = cellstr(f);
+        end
     end
 
     % github settings
@@ -60,23 +66,30 @@ classdef USTest < matlab.unittest.TestCase
             simgeneric(       testCase, tx, rx, seq, simulator);
         end
         function bfusgeneric_github(testCase, tx, rx, seq, scan, beamformer)
-            bfusgeneric(testCase, tx, rx, seq, scan, beamformer);
+                 bfusgeneric(       testCase, tx, rx, seq, scan, beamformer);
         end
         function bfordgeneric_github(testCase, rx, scan, beamformer, scan_size, scan_order)
-            bfordgeneric(testCase, rx, scan, beamformer, scan_size, scan_order)
+                 bfordgeneric(       testCase, rx, scan, beamformer, scan_size, scan_order)
         end
+        % Not ready ...
+        % function apgen_github(testCase, rx, scan, seq, scan_size, scan_order, apod)
+        %          apgen(       testCase, rx, scan, seq, scan_size, scan_order, apod)
+        % end
     end
 
     % full settings
     methods(Test, ParameterCombination="exhaustive", TestTags = ["full", "build"])
         function simgeneric_full(testCase, tx, rx, seq, simulator)
-            simgeneric(       testCase, tx, rx, seq, simulator);
+                 simgeneric(     testCase, tx, rx, seq, simulator);
         end
         function bfusgeneric_full(testCase, tx, rx, seq, scan, beamformer)
-            bfusgeneric(testCase, tx, rx, seq, scan, beamformer);
+                 bfusgeneric(     testCase, tx, rx, seq, scan, beamformer);
         end
         function bfordgeneric_full(testCase, rx, scan, beamformer, scan_size, scan_order)
-            bfordgeneric(testCase, rx, scan, beamformer, scan_size, scan_order);
+                 bfordgeneric(     testCase, rx, scan, beamformer, scan_size, scan_order);
+        end
+        function apgen_full(testCase, rx, scan, seq, scan_size, scan_order, apod)
+                 apgen(     testCase, rx, scan, seq, scan_size, scan_order, apod)
         end
     end
 
@@ -248,6 +261,35 @@ classdef USTest < matlab.unittest.TestCase
                         b = beamformer(us,chd,'apod',a);
                     end
             end
+
+        end
+
+        function apgen(testCase, rx, scan, seq, scan_size, scan_order, apod)
+            
+            scan = copy(scan);
+            seq  = copy(seq);
+
+            % shrink image size
+            scan.size = scan_size;
+            scan.order = scan.order(scan_order);
+
+            % make system
+            if seq.type == "FSA", seq.numPulse = rx.numel; end
+            us = UltrasoundSystem('xdc', rx, 'seq', seq, 'scan', scan, 'fs',single(4*rx.fc));
+
+            % try to make apodization
+            f = str2func(apod);
+            try ap = f(us); % success!
+            catch ME % failure - QUPS should tell the user
+                warning(ME.identifier, '%s', ME.message);
+                testCase.assertTrue(ME.identifier == "QUPS:UltrasoundSystem:UnsupportedScan", "Caught " + ME.identifier + ":" + newline + ME.message);
+                return;
+            end
+
+            testCase.assertTrue(all(any(size(ap,1:5) == [[us.scan.size, us.xdc.numel, us.seq.numPulse]; ones(1,5)],1),2));
+
+            % TODO: apply
+
 
         end
     end
