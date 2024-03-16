@@ -286,36 +286,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             other = UltrasoundSystem(nv{:}, 'recompile', false);            
         end
     end
-    methods
-        function sub_div = getLambdaSubDiv(self, p, c, ap)
-            % GETLAMBDASUBDIV - Get subelement divisions w.r.t. wavelength
-            % 
-            % sub_div = GETLAMBDASUBDIV(self, p, c) returns the element 
-            % subdivision vector corresponding to a proportion p of the 
-            % wavelength given sound speed c (m/s).
-            % 
-            % sub_div = GETLAMBDASUBDIV(self, p, c, ap) specifies the
-            % aperture ap. Must be one of {'rx'*, 'tx', 'xdc'}
-            %
-            % 
-            
-            
-            if(nargin < 4), ap = 'rx'; end
-            if isa(c, 'Medium'), c = c.c0; end
-            
-            % get wavelength
-            lam = c / self.(ap).fc;
-            
-            % get length of proportion of lam
-            dp = lam * p;
-            
-            % get divisions
-            sub_div = ceil([self.(ap).width, self.(ap).height] ./ dp);
-            
-            % ensure number of divisions is odd
-            sub_div = sub_div + 1 - rem(sub_div, 2);
-        end
-    end
 
     % display
     methods
