@@ -157,9 +157,9 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
             if any(i) % oops - we have a job - are we in a job?
                 if kwargs.filter, test.assumeEmpty(gcp('nocreate')); end
                 if ~isempty(gcp)
-                    test.log(3, "Truncating to the first " + i + " lines.");
+                    i = find(i,1,'first');
+                    test.log(3, "Nested job detected - truncating to the first " + i + " lines.");
                     txt = txt(1:i);
-                else
                 end
             end
         end
