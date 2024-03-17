@@ -13,11 +13,9 @@ function [res, suite] = runProjectTests(tag, parenv, kwargs)
 % 
 % runProjectTests(tag, parenv) uses the given parallel environment parenv.
 % 
-% runProjectTests(..., 0, 'cobertura', true) creates a cobertura format
-% coverage.xml file. 
-% 
-% runProjectTests(..., 0, 'report', true) creates a coverage report. This
-% option and running in parallel are mutually exclusive.
+% runProjectTests(..., 0, 'report', reports) adds plugins to create
+% coverage or test reports in the corresponding format. These options and
+% running in parallel may be mutually exclusive.
 % 
 % runProjectTests(..., 0, 'verbosity', level) sets the verbosity level.
 % 
@@ -25,13 +23,16 @@ function [res, suite] = runProjectTests(tag, parenv, kwargs)
 %
 % [res, suite] = runProjectTests(...) also returns tbe TestSuite suite.
 % 
+% Example:
+% res = runProjectTests("Github", "report", ["test-html", "cov-report"], "verbosity", "Verbose");
+% 
+% 
 % See also matlab.unittest.Verbosity matlab.unittest.TestRunner matlab.unittest.plugins.codecoverage
 
 arguments
     tag (1,1) string {mustBeMember(tag, ["full", "Github", "build", "benchmark"])} = "full"
     parenv {mustBeScalarOrEmpty, mustBeA(parenv, ["double","parallel.Pool"])} = gcp('nocreate')
-    kwargs.cobertura (1,1) logical = false
-    kwargs.report (1,1) logical = false
+    kwargs.report (1,:) string {mustBeMember(kwargs.report,["test-html", "test-pdf", "cov-xml", "cov-report"])} = string.empty
     kwargs.verbosity (1,1) matlab.unittest.Verbosity = matlab.unittest.Verbosity.Concise
 end
 
@@ -45,14 +46,23 @@ plugs = { ...
 
 % add coverage reporting
 flds = ["kern", "src", "utils"];
-if kwargs.cobertura
+if ismember("cov-xml", kwargs.report)
     fmt = matlab.unittest.plugins.codecoverage.CoberturaFormat(fullfile('build','coverage-'+tag+'.xml'));
     plugs{end+1} = (matlab.unittest.plugins.CodeCoveragePlugin.forFolder(flds, "Producing", fmt));
 end
-if kwargs.report
+if ismember("cov-report", kwargs.report)
     fmt = matlab.unittest.plugins.codecoverage.CoverageReport(fullfile('build','CoverageReport'+"-"+tag));
     plugs{end+1} = (matlab.unittest.plugins.CodeCoveragePlugin.forFolder(flds, "Producing", fmt));
 end
+if ismember("test-html", kwargs.report)
+    plugs{end+1} = matlab.unittest.plugins.TestReportPlugin.producingHTML( ...
+        fullfile('build',"test-results-"+tag), 'LoggingLevel',kwargs.verbosity);
+end
+if ismember("test-pdf", kwargs.report)
+    plugs{end+1} = matlab.unittest.plugins.TestReportPlugin.producingPDF( ...
+        fullfile('build',"test-results-"+tag+".pdf"), 'LoggingLevel',kwargs.verbosity);
+end
+
 
 % filter plugs if running in parallel
 if ~isempty(parenv) || (isnumeric(parenv) && parenv > 0) % delete non-parallel plug-ins
