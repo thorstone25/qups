@@ -72,9 +72,6 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
                 for a = ax, scn.("d"+a) = 1/2; end % dist or ang
                 test.assertTrue(all(arrayfun(@(c) scn.("d"+c),ax) == 1/2), "Setting the scan resolution failed for a " + class(scn) + "!");
             end
-
-
-
         end
         function initchd(test)
             % INITCHD - Assert that a ChannelData constructor initializes

@@ -92,7 +92,7 @@ end
 
 % make dummy compile mex task
 plan("compile_mex") = matlab.buildtool.Task( ...
-    "Description","Compile mex kernels.", ...
+    "Description","Compile MEX kernels.", ...
     "Dependencies", tnm ...
     );
 
@@ -138,11 +138,11 @@ zip(filename,"*")
 end
 
 function compile_CUDATask(context, arch)
+% compile CUDA kernels
 arguments
     context matlab.buildtool.TaskContext
     arch (1,1) string = "compute_"+60; % + ;
 end
-% validate
 supp = "compute_"+[90 89 87 86 80 75 72 70 60];  % supported CC values
 if ~ismember(arch, supp)
     warning("QUPS:build:compileCUDA:unsupportedArchitecture", ...
