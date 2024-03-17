@@ -200,24 +200,24 @@ classdef ParTest < matlab.unittest.TestCase
             tst.logTestCheck(chd, tt);
         end
         function greens_penv(tst, par_prof) % test greens
-            tst.setup(par_prof);
+            tst.setupPenv(par_prof);
             tt = tic(); chd = greens(tst.us, tst.sct, 'parenv', tst.getPenv(par_prof));
             tst.logTestCheck(chd, tt);
         end
         function fieldII_penv(tst, par_prof) % test FieldII
-            tst.setup(par_prof);
+            tst.setupPenv(par_prof);
             penv = tst.getPenv(par_prof); % get penv for this profile
             if contains(par_prof, ["Threads", "background"]), return; end % incompatible
             tt = tic(); chd = calc_scat_multi(tst.us, tst.sct, 'parenv', penv);
             tst.logTestCheck(chd, tt);
         end
         function kwave_penv(tst, par_prof) % test k-Wave
-            tst.setup(par_prof);
+            tst.setupPenv(par_prof);
             tt = tic(); chd = kspaceFirstOrder(tst.us, tst.md, tst.grd, 'parenv', tst.getPenv(par_prof));
             tst.logTestCheck(chd, tt);
         end
         function simus_penv(tst, par_prof) % test simus
-            tst.setup(par_prof);
+            tst.setupPenv(par_prof);
             [us_, sct_] = dealfun(@(x) scale(x,'dist',1e-3,'time',1e-6), tst.us, tst.sct); % return to SI units - MUST is hard-coded
             tt = tic(); chd = simus(us_, sct_(1), 'parenv', tst.getPenv(par_prof), 'dims',2);
             tst.logTestCheck(chd, tt);
