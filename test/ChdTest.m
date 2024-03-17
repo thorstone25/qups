@@ -70,7 +70,7 @@ classdef(TestTags = ["full", "Github", "build"]) ChdTest < matlab.unittest.TestC
         function arithmetic(tst)
             [T,M,N,F] = deal(16,8,4,2);
             a = ChannelData('data', rand([T M N F]), 't0', randn([1 M 1 F]), 'order', 'TMNF');
-            b = ChannelData('data', rand([T M N F]), 't0', randn([1 M 1 F]), 'order', 'TMNF');
+            b = ChannelData('data', rand([T M N F]), 't0', a.t0            , 'order', 'TMNF');
 
             5 + a, 
             a + 5, 
