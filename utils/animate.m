@@ -2,36 +2,53 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % ANIMATE - Animate imagesc data
 %
 % ANIMATE(x, h) animates the multi-dimensional data x by looping through
-% the upper dimensions and iteratively updating the image handle h. The
-% data will be plotted until the figure is closed.
+% the upper dimensions of x and iteratively updating the image handle h.
+% The data will be plotted until the figure is closed. 
+% 
+% If x is complex, the magnitude in dB will be displayed.
+%
+% If the size of data x is a permutation of the size of the image referred
+% to by h, x will be permuted to a compatible dimension. For example, if x
+% is size [N x M x P] and the image referred to by h has size [N x P x M],
+% then `x = permute(x, [1 3 2]);` will be called so the data matches the
+% image.
 %
 % If h is an array of image handles and x is a corresponding cell array of
 % image data, each image h(i) will be updated by the data x{i}.
 %
-% If x or x{i} is complex, the magnitude in dB will be displayed.
-%
 % ANIMATE(..., 'loop', false) plays through the animation once, rather than
 % looping until the figure is closed.
 %
+% ANIMATE(..., 'title', ttl) sets the title for each image i and frame f to 
+% the string ttl(i,f). If ttl is singular in either the image or frame
+% dimension, the title is replicated across that dimension.
+% 
+% Note: To create a scalar string of multi-line text, use the following:
+%     `single_line_text = join(string(multi_line_text), newline);`
+% 
+% ANIMATE(..., 'fn', true) appends the frame number for each frame to the
+% title. If 'loop' is false, the frame number is removed before the
+% function returns.
+% 
 % ANIMATE(..., 'fs', fs) updates the image at a rate fs.
 % 
-% mvf = ANIMATE(...) returns a cell matrix of movie frames mvf for each
+% mvf = ANIMATE(...) returns a struct matrix of movie frames mvf for each
 % unique figure. This can be used to construct a movie or gif of each
 % figure.
 % 
-% [mvf, mvh] = ANIMATE(...) returns a cell matrix of movie frames for each
-% axes. This can be used to construct a movie or gif of each axes.
+% [mvf, mvh] = ANIMATE(...) returns a struct matrix of movie frames for
+% each axes. This can be used to construct a movie or gif of each axes.
 % 
-% NOTE: MATLAB execution will continue indefinitely while the animation is playing.
-% Close the figure or press 'ctrl + c' in the command window to stop the
-% animation.
+% NOTE: MATLAB execution will continue indefinitely while the animation is
+% playing and block any other commands from executing (unless 'loop' is
+% false). Close the figure or press 'ctrl + c' in the command window to
+% stop the animation.
 %
 % Example:
 % % Simulate some data
-% us = UltrasoundSystem(); % get a default system
-% us.fs = single(us.fs); % use single precision for speed
-% us.seq = SequenceRadial('type', 'PW', 'angles', -21:0.5:21);
-% scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
+% seq = SequenceRadial('type', 'PW', 'angles', -21:1.5:21); % plane waves
+% us = UltrasoundSystem('seq', seq, 'fs', single(20e6)); % create a system
+% scat = Scatterers('pos', [0 0 20e-3]', 'c0', us.seq.c0); % define a point target
 % chd = greens(us, scat); % simulate the ChannelData
 % 
 % % Configure the image of the Channel Data
@@ -39,11 +56,12 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % nexttile();
 % h = imagesc(chd); % initialize the image
 % caxis(max(caxis) + [-60 0]); % 60 dB dynamic range
-% colorbar;
-% title('Channel Data per Transmit');
+% colorbar; colormap jet; 
+% ylabel('Time (s)')
+% xlabel('Receive Elements (#)');
 % 
 % % Animate the data across transmits 
-% animate(chd.data, h, 'loop', false); % show once
+% animate(chd.data, 'loop', false, 'title', "Channel Data: Tx " + (1:chd.M)); % show once
 %
 % % Beamform the data
 % b = DAS(us, chd, 'keep_tx', true); % B-mode images per tx
@@ -51,42 +69,59 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % % Initialize the B-mode image
 % nexttile();
 % h(2) = imagesc(us.scan, b); % show the center tx
-% colormap(h(2).Parent, 'gray');
+% colorbar; colormap(h(2).Parent, 'gray');
 % caxis(max(caxis) + [-60 0]); % 60 dB dynamic range
-% colorbar;
 % title('B-mode per Transmit');
 %  
 % % Animate both images across transmits
-% mvf = animate({chd.data, b}, h, 'loop', false); % show once
+% mvf = animate({chd.data, b}, h, 'loop', false, 'fn', true); % show once
 % 
 % % Create a movie
-% vobj = VideoWriter('tmp', 'Motion JPEG AVI');
-% vobj.FrameRate = 20; % set frame rate to 20 Hz
-% vobj.open();
-% vobj.writeVideo([mvf{:,1}]);
-% vobj.close();
+% vw = VideoWriter("tmp", 'Motion JPEG AVI');
+% vw.FrameRate = 10; % set frame rate to 10 frames-per-second (FPS)
+% vw.open();
+% vw.writeVideo(mvf);
+% vw.close();
 % 
-% See also IMAGESC FRAME2GIF
+% See also IMAGESC FRAME2GIF VIDEOWRITER
 arguments
     x {mustBeA(x, ["cell","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} % data
     h (1,:) matlab.graphics.primitive.Image = inferHandles(x)
     kwargs.fs (1,1) {mustBePositive} = 20; % refresh rate (hertz)
     kwargs.loop (1,1) logical = true; % loop until cancelled
+    kwargs.title string = arrayfun(@(h) {join(string(strip(h.Parent.Title.String)), newline)}, h'); % array of titles (I x [1|M])
+    kwargs.fn (1,1) logical = false; % whether to add frame number
 end
 
 % place data in a cell if it isn't already
 if isnumeric(x) || islogical(x), x = {x}; end
+I = numel(h); % number of images
 
 % argument type checks - x must contain data that can be plotted
 % cellfun(@mustBeReal, x);
 
+% If necessary, attempt to permute the data to match the images
+for i = 1:I
+    hsz = size(h(i).CData); % images size
+    dsz = size(x{i}); % data size
+    dvec = 1:ndims(x{i}); % set of dimensions
+    mch = hsz' == dsz; % where dimensions match
+    c = find(mch(1,:), 1, 'first'); % first match is column dim
+    r = find(mch(2,:), 2, 'first'); % first 2, in case 1st == columns
+    if r(1) == c, r = r(2); else, r = r(1); end % extract row dim
+    if all([c r] == [1 2]), continue; end % already in order
+    ord = [c r, setdiff(dvec, [c,r])]; % permutation order - put '[c r]' first
+    warning("Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
+    x{i} = permute(x{i}, ord); % permute
+end
+
 % Get sizing info
-I = numel(h);
-Mi = cellfun(@(x) prod(size(x,3:max(3,ndims(x)))), x); % upper dimension sizing
+msz = cellfun(@(x) {(size(x,3:max(3,ndims(x))))}, x); % upper dimension sizing
+Mi = cellfun(@prod, msz); % total size
 M = unique(Mi);
 
 % validity checks
-assert(isscalar(M), "The number of images must be the same for all images (" + (Mi + ",") + ").");
+assert(isscalar(M), "The number of images must be the same for all images (" + join(string(Mi), " vs. ") + ").");
 assert(numel(h) == numel(x), "The number of image handles (" ...
     + numel(h) + ...
     ") must match the number of images (" ...
@@ -104,21 +139,61 @@ end
 F = numel(hf); % number of figures
 if nargout >= 2, mvh = cell([M,I]); else, mvh = cell.empty; end
 if nargout >= 1, mvf = cell([M,F]); else, mvf = cell.empty; end
+if ~isempty(kwargs.title)
+    tsz = size(kwargs.title);
+    if all(tsz == 1) % same title
+        kwargs.title = repmat(kwargs.title, [I,M]);
+    elseif tsz(1) == 1 && prod(tsz(2:end)) == M % per frame
+        kwargs.title = repmat(kwargs.title, [I,1]);
+    elseif tsz(1) == I && prod(tsz(2:end)) == M % per frame / image
+        kwargs.title = repmat(kwargs.title, [1,1]);
+    elseif tsz(1) == I && prod(tsz(2:end)) == 1 % per image, although why?
+        kwargs.title = repmat(kwargs.title, [1,M]);
+    elseif tsz(1) == M && prod(tsz(2:end)) == I % per frame/image transposed?
+        kwargs.title = repmat(kwargs.title', [1,1]);
+    elseif tsz(1) == M && prod(tsz(2:end)) == 1 % per frame transposed?
+        kwargs.title = repmat(kwargs.title', [I,1]);
+    elseif tsz(1) == 1 && prod(tsz(2:end)) == I % per image transposed?
+        kwargs.title = repmat(kwargs.title', [1,M]);
+    else
+        error( ...
+            "The given titles for "+tsz(1)...
+            +" image(s) for "+prod(tsz(2))...
+            +" frames of data doesn't match the data of " ...
+            +I+" images for "+M+" frames." ...
+            );
+    end
+end
+
+if kwargs.fn
+    [i_, m_] = ndgrid(1:I, 1:M); % vectorize
+    fttl = arrayfun(@(i,m) " (" + frameSub(x,m,i) + ")", i_, m_); % for each
+else
+    fttl = repmat("", [I M]);
+end
 
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
         for i = 1:I, if isreal(x{i}), h(i).CData(:) = x{i}(:,:,m); else, h(i).CData(:) = mod2db(x{i}(:,:,m)); end, end% update image
         % if isa(h, 'matlab.graphics.chart.primitive.Surface'), h(i).ZData(:) = h(i).CData(:); end % TODO: integrate surfaces
-        if m == 1, drawnow; getframe(); end % toss a frame to avoid bug where the first frame has a different size
-        drawnow limitrate; 
+        if ~isempty(kwargs.title)
+            for i = 1:I, h(i).Parent.Title.String = kwargs.title(i,m) + fttl(i,m); end
+        end
+        if m == 1, drawnow; arrayfun(@getframe, [h.Parent]); end % toss a frame to avoid bug where the first frame has a different size
+        drawnow limitrate;
         tic;
-        if ~isempty(mvh), for i = 1:I, mvh{m,i} = getframe(h (i).Parent); end, end %  get the frames 
-        if ~isempty(mvf), for f = 1:F, mvf{m,f} = getframe(hf(f)       ); end, end %  get the frames 
+        if ~isempty(mvh), for i = 1:I, mvh{m,i} = getframe(h (i).Parent); end, end %  get the frames per axes
+        if ~isempty(mvf), for f = 1:F, mvf{m,f} = getframe(hf(f)       ); end, end %  get the frames per figure
         pause(max(0, (1/kwargs.fs) - toc)); % pause for at least 0 sec, at most the framerate interval 
     end
     if ~kwargs.loop, break; end
 end
+if kwargs.fn, for i = 1:I, if isvalid(h(i)), h(i).Parent.Title.String = kwargs.title(i,1); end, end, end % reset titles
+
+% convert cells to structs
+mvh = reshape(cat(1, mvh{:}), size(mvh));
+mvf = reshape(cat(1, mvf{:}), size(mvf));
 
 function him = inferHandles(x)
 % get the current figure
@@ -159,3 +234,28 @@ him = cellfun(@(h) {h(arrayfun(@(h)isa(h, 'matlab.graphics.primitive.Image'),h))
 him = flip([him{:}]); % image handle array, in order of creation
 
 % TODO: check sizing of data versus image handles?
+
+function mi = frameSub(x,m,i)
+xsz = size(x{i}); % total size
+if nnz(xsz(3:end) > 1) > 1 % more than 1 frame dimension
+    D = length(xsz);
+    mi = cell(1,D-2);
+    [mi{:}] = ind2sub(xsz(3:D), m); % get all sub-indices
+    mi = [mi{:}]; % cell -> array
+else % linear indexing
+    mi = m;
+end
+mi = string(mi); % num -> string
+mi = join(mi, ", "); % 1, 2, 3, ...
+
+
+
+function txt = ith(i)
+arguments, i (1,1) {mustBeInteger, mustBePositive}, end
+if 11 <= mod(i,100) && mod(i,100) <= 13, txt = i+"th"; return; end % special case
+switch mod(i,10)
+    case 1,     txt = i+"st";
+    case 2,     txt = i+"nd";
+    case 3,     txt = i+"rd";
+    otherwise,  txt = i+"th";
+end

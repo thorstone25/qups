@@ -42,6 +42,9 @@ classdef TransducerGeneric < Transducer
             if Ne == 1, gen_args.el = repmat(gen_args.el, [1 N]); end % if scalar, make vector
             assert(any(numel(gen_args.el) == N), 'The number of angles must be either scalar, or equal to the number of positions.');
 
+            % set numel if not set
+            if ~isfield(xdc_args, 'numel'), xdc_args.numel = N; end
+
             % initialize the Transducer
             xdc_args = struct2nvpair(xdc_args);
             xdc@Transducer(xdc_args{:}) 
@@ -96,76 +99,13 @@ classdef TransducerGeneric < Transducer
     
     % define abstract methods
     methods
-        function p = positions(xdc), p = xdc.pos; end
+        function p = positions(xdc), p = xdc.transPos(xdc.pos); end
         function [theta, phi, normal, width, height] = orientations(xdc)
-            theta = xdc.az;
-            phi   = xdc.el;
-            normal     = [cosd(phi).*sind(theta); sind(phi);  cosd(phi).*cosd(theta)];
-            width      = [cosd(phi).*cosd(theta); sind(phi); -cosd(phi).*sind(theta)];
-            height     = [sind(phi).*sind(theta); cosd(phi);  sind(phi).*cosd(theta)];
-        end
-    end
-
-    % Fullwave functions
-    methods
-        function xdc = getFullwaveTransducer(self, sscan), error('Not implemented.'); end
-    end
-
-    % SIMUS conversion functions
-    methods
-        function p = getSIMUSParam(self)
-            error("SIMUS does not support a TransducerGeneric.");
-        end
-    end
-
-    % Field II conversion function
-    methods
-        function aperture = getFieldIIAperture(xdc, sub_div, focus)
-            arguments
-                xdc (1,1) Transducer
-                sub_div (1,2) double = [1,1]
-                focus (1,3) double = [0 0 realmax('single')]
-            end
-
-            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite        
-            sdiv = sub_div; % alias            
-            pch = patches(xdc, sdiv); % [Nel x Ndv] array with  {X / Y / Z / C} tuples
-            
-            r = zeros([size(pch'),19]); % Ndv x Nel x 19
-            for i = 1 : size(pch,1) % each element
-                for j = 1 : size(pch,2) % each subelement
-                    pchij = pch{i,j}; % get tuple
-                    p = reshape(permute(cat(3, pchij{1:3}), [3,1,2]), 3, 4); % get as 3 x 4 array
-                    p = p(:,[1,2,4,3]); % swap 4th<->3rd for clockwise ordering
-                    r(j,i,:) = [i, p(:)', 1, [xdc.width, xdc.height] ./ sdiv, mean(p,2)']; % get rectangle
-                end
-            end
-
-            % reshape arguments
-            r = reshape(r, [numel(pch) 19]); % rectangles: [sdiv x element] x 19
-            c = double(gather(xdc.pos')); % element centers
-
-            % Generate aperture for emission
-            try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_rectangles(r, c, focus);
-        end        
-    end
-    
-    % USTB conversion function
-    methods
-        function probe = QUPS2USTB(self)
-            probe = uff.probe(...
-                'geometry', [ ...
-                self.pos; ...
-                self.az; ...
-                self.el; ...
-                repmat([ ...
-                self.width; ...
-                self.height ...
-                ], [1, self.numel]) ...
-                ]', ...
-                'origin', uff.point('xyz', self.offset(:)') ...
-                );
+            theta = xdc.az + xdc.rot(1);
+            phi   = xdc.el + xdc.rot(2);
+            normal = [cosd(phi).*sind(theta); sind(phi);  cosd(phi).*cosd(theta)];
+            width  = [cosd(phi).*cosd(theta); sind(phi); -cosd(phi).*sind(theta)];
+            height = [sind(phi).*sind(theta); cosd(phi);  sind(phi).*cosd(theta)];
         end
     end
 

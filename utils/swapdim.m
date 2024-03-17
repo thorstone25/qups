@@ -3,19 +3,25 @@ function [x, ord] = swapdim(x, i, o)
 %
 % y = SWAPDIM(x, i, o) swaps dimensions i and o in the array x. 
 %
+% y = SWAPDIM(x, i) swaps dimensions i with dimensions 1:numel(i). This is
+% equivalent to calling y = permute(x, i); 
+% 
+% [y, ord] = SWAPDIM(...) also returns the permution order ord.
+% 
 % SWAPDIM optimistically calls reshape when feasible to avoid an implicit
 % copy and falls back to permute when required.
 % 
 % Example:
 %   x = rand([1,2,3,4,5]);
-%   y = swapdim(x,[2 3],[5 4]); % swap 2<->5, 3<->4
+%   [y, ord] = swapdim(x,[2 3],[5 4]); % swap 2<->5, 3<->4
 %   assert(isequal(size(y), [1,5,4,3,2]))
+%   assert(isequal(y, permute(x, ord)));
 %
 % See also SUB PERMUTE RESHAPE
 arguments
     x
     i (1,:) {mustBeInteger}
-    o (1,:) {mustBeInteger}
+    o (1,:) {mustBeInteger} = 1:numel(i)
 end
 
 % make sure we swap the right dimensions

@@ -34,15 +34,53 @@ classdef Scatterers < matlab.mixin.Copyable
         % the scatterers are defined.
         %
         % See also SCATTERERS/POS SCATTERERS/AMP SCATTERERS/ALPHA0
-        c0  (1,1) double = 1540; % sound speed of the Medium
+        c0  (1,1) double = 1540; % sound speed
 
         % ALPHA0 - ambient attenuation
         %
         % ALPHA0 defines an attenuation constant for simulation routines 
-        % that support one.
+        % that support one. If alpha0 is NaN, no attenuation is used.
         %
+        % To follow convention and maintain consistent units of distance
+        % and time, this value is in dB/m/Hz by default and supports
+        % scaling e.g. for typical soft tissue attenuation
+        %
+        %                       0.5   dB / cm / MHz  is equivalent to
+        % (0.5 / 1e-2 / 1e+6) = 50e-6 dB /  m /  Hz (SI units) or 
+        % (0.5 / 1e+1 / 1   ) = 0.05  dB / mm / MHz (mm / us / MHz)
+        % 
+        % Example:
+        % % FieldII required
+        % if ~exist('field_init','file')
+        %     error("This example requires FieldII");
+        % end
+        % 
+        % % Create a system to simulate
+        % us = UltrasoundSystem(); % default
+        % us.fs = 10*us.fs; % increase for FieldII discretization
+        % [us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % imaging resolution
+        % scat = Scatterers.Grid([11 1 11]',2e-3, 1e-3*[0 0 20]); % targets
+        % scat_att = copy(scat);
+        % scat_att.alpha0 = 3 * 50e-6; % 10x soft tissue attenuation
+        % 
+        % % Simulate
+        % chd = calc_scat_multi(us, [scat, scat_att]); % simulate
+        % chd = subD(hilbert(chd, 2*chd.T), 1:chd.T, chd.tdim);
+        % b = DAS(us, chd);
+        % 
+        % % Display the B-mode images
+        % figure; 
+        % him    = imagesc(us.scan, b(:,:,1), nexttile()); colorbar; 
+        % him(2) = imagesc(us.scan, b(:,:,2), nexttile()); colorbar;
+        % colormap gray;
+        % title(him(1).Parent,   "No Attenuation"); 
+        % title(him(2).Parent, "With Attenuation");
+        % linkaxes([him.Parent]);
+        % linkprop([him.Parent], "CLim");
+        % caxis([-60 0] + max(gather(mod2db(b(:)))));
+        % 
         % See also SCATTERERS/C0 SCATTERERS/POS SCATTERERS/AMP
-        alpha0 (1,1) double = nan; % sound speed of the Medium
+        alpha0 (1,1) double = nan; % attenuation
     end
 
     properties(Dependent, Hidden)
@@ -120,9 +158,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % See also MEDIUM
 
             arguments
-                kwargs.pos (3,:) double
-                kwargs.amp (1,:) double
-                kwargs.c0  (1,1) double
+                kwargs.?Scatterers
             end
             
             % Name/Value initialization
@@ -136,7 +172,12 @@ classdef Scatterers < matlab.mixin.Copyable
 
             % check/default amplitudes / positions
             if      Sp &&  Sa % both set: validate
-                if Np ~= Na, error('Number of scatterers must match!'); end 
+                if Np ~= Na
+                    if     Np == 1, self.pos = repmat(self.pos, [1,Na]);
+                    elseif Na == 1, self.amp = repmat(self.amp, [1,Np]);
+                    else,           error('Number of scatterers must match!');
+                    end
+                end 
             elseif  Sp && ~Sa % pos set: default amplitude
                 self.amp = ones([1,Np]);
             elseif ~Sp &&  Sa % amp set: default positions
@@ -164,9 +205,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', 1500) % m, s
             %
             % % convert from meters to millimeters, seconds to microsecond
-            % scat = scale(scat, 'dist', 1e3, 'time', 1e6); % mm, us
-            % scat.pos
-            % scat.c0
+            % scat = scale(scat, 'dist', 1e3, 'time', 1e6) % mm, us
             %
             %
 
@@ -178,13 +217,14 @@ classdef Scatterers < matlab.mixin.Copyable
             self = copy(self); % copy semantics
             cscale = 1; % speed scaling
             if isfield(kwargs, 'dist') % scale distance (e.g. m -> mm)
-                self.pos = kwargs.dist .* self.pos;
-                cscale = cscale * kwargs.dist; % scale speed
+                self.pos    = self.pos    * kwargs.dist;
+                cscale      = cscale      * kwargs.dist; % scale speed
             end
             if isfield(kwargs, 'time')
                 cscale = cscale / kwargs.time; % scale speed
             end
-            self.c0 = self.c0 * cscale; % scale speed
+            self.c0     = self.c0     * cscale; % scale speed
+            self.alpha0 = self.alpha0 / cscale; % scale attenuation
         end
     end
 
@@ -197,7 +237,6 @@ classdef Scatterers < matlab.mixin.Copyable
             % of it's properties into native MATLAB structs.
             %
             % Example:
-            %
             % % Create a Scatterers
             % scat = Scatterers()
             %
@@ -231,6 +270,11 @@ classdef Scatterers < matlab.mixin.Copyable
             % h = PLOT(...) returns the handle to the plot.
             % 
             % Plots only the x-z slice.
+            % 
+            % Example:
+            % scat = Scatterers('pos', (-5 : 5) .* [1 0 0]' + [0 0 30]');
+            % figure;
+            % plot(scat, 'r.');
             % 
             % See also MEDIUM/IMAGESC
             arguments
@@ -271,7 +315,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % See also ULTRASOUNDSYSTEM/SIMUS 
 
             p = struct('c', scat.c0);
-            if ~isnan(scat.alpha0), p.attenuation = scat.alpha0; end
+            if ~isnan(scat.alpha0), p.attenuation = (1e6*1e-2) * scat.alpha0; end % convert to dB/cm/MHz
         end
     end
 
@@ -284,8 +328,12 @@ classdef Scatterers < matlab.mixin.Copyable
             % the Scatterers scat_rhs to create a new Scatterers out. The
             % Scatterers must have matching medium properties i.e. c0 and
             % alpha0 must match.
-            %
-            %
+            % 
+            % Example:
+            % left_scat  = Scatterers('pos', [-5 0 30]');
+            % right_scat = Scatterers('pos', [+5 0 30]');
+            % both_scats = left_scat + right_scat;
+            % 
             arguments
                 a Scatterers
                 b Scatterers
@@ -328,6 +376,92 @@ classdef Scatterers < matlab.mixin.Copyable
 
             % require the alpha0 matches
             tf = tf && isequaln(self.alpha0, other.alpha0);
+        end
+    end
+
+    methods(Static)
+        function scat = Grid(sz, dp, p0, kwargs)
+            % GRID - Create a grid of scatterers
+            %
+            % scat = Scatterers.Grid([C P R]) creates a 3D grid of point
+            % scatterers with C columns (x), P pages (y), and R rows (z).
+            % 
+            % scat = Scatterers.Grid([C P R], [dx dy dz]) uses a spacing of
+            % dx, dy and dz in the x, y, and z dimensions. The default is
+            % [C P R] ./ 11.
+            % 
+            % scat = Scatterers.Grid([C P R], [dx dy dz], p0) uses an
+            % initial point p0 as the primary point. The default is 
+            % [0 0 0]'.
+            % 
+            % scat = Scatterers.Grid(..., Name, Value) sets other name
+            % value pairs for constructing a Scatterers. The 'pos' property
+            % will be overridden.
+            % 
+            % Example:
+            % us = UltrasoundSystem();
+            % scat = Scatterers.Grid([5 1 5]', 5*us.lambda, [0 0 10e-3]');
+            % 
+            % figure;
+            % plot(us);
+            % hold on;
+            % plot(scat, '.');
+            % 
+            % See also: SCATTERERS.DIFFUSE
+            arguments
+                sz (3,1) = [1 1 1]'
+                dp (3,1) = sz ./ 11
+                p0 (3,1) = [0 0 0]'
+                kwargs.?Scatterers   
+            end
+            
+            ax = arrayfun(@(x0, dx, n) {x0 + dx * ((0 : n-1) - ((n-1)/2))}, p0, dp, sz); % get axes
+            [ax{:}] = ndgrid(ax{:}); % make into a grid
+            [ax{:}] = dealfun(@(x)x(:), ax{:}); % vectorize
+            p = [ax{:}]'; % 3 x S
+            kwargs.pos = p; % set positions
+            args = namedargs2cell(kwargs); % non-position args
+            scat = Scatterers(args{:}); % set
+        end
+
+        function scat = Diffuse(grid, N, dB, kwargs)
+            % DIFFUSE - Construct Diffuse scatterers
+            %
+            % scat = Diffuse(grid, N) constructs a Scatterers scat with N
+            % point scatterers within the ScanCartesian grid.
+            %
+            % scat = Diffuse(grid) uses a default value of 
+            % N = 5^D * prod(grid.size); where D is the number of
+            % non-singular dimensions e.g. D = 2 if y = 0.
+            %
+            % scat = Diffuse(grid, N, dB) sets the (relative) scattering
+            % intensity in dB. The default is 0.
+            % 
+            % scat = Diffuse(..., 'c0', c0) sets the sound speed as c0.
+            % 
+            % scat = Diffuse(..., 'alpha0', alpha0) sets the attenuation
+            % coefficient.
+            % 
+            % Example:
+            % us = UltrasoundSystem();
+            % grid = copy(us.scan); % simulation region == imaging region
+            % N = 25 * prod(range([grid.xb; grid.zb],2) ./ us.lambda); % 25 scats / wavelength
+            % scat = Scatterers.Diffuse(grid, N),
+            % 
+            % See also: SCATTERERS.GRID
+            arguments
+                grid (1,1) ScanCartesian
+                N (1,1) {mustBePositive, mustBeInteger} = prod(5 * grid.size(grid.size > 1)); % default to 5x the grid resolution
+                dB (1,:) {mustBeReal} = 0 
+                kwargs.c0
+                kwargs.alpha0
+            end
+            pb = cat(1, grid.xb, grid.yb, grid.zb); % boundaires of the grid
+            [p0, dp] = deal(min(pb,[],2), range(pb, 2)); % offset / range
+            kwargs.pos = p0 + dp.*rand([3 N]); % uniform random positions
+            kwargs.amp = db2pow(dB) .* abs(randn([1 N])); % gaussian random amplitudes
+            args = namedargs2cell(kwargs); % get optional arguments
+            scat = Scatterers(args{:});
         end
     end
 

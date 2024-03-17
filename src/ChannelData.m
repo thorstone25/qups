@@ -140,8 +140,9 @@ classdef ChannelData < matlab.mixin.Copyable
             arguments
                 chd ChannelData
             end
-
-            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            wmsg = ["MATLAB:structOnObject", "QUPS:ChannelData:syntaxDeprecated"];
+            W = warning(); % warning state
+            for w = wmsg, warning('off', w); end % squash warnings
             s = struct(chd); % convert scan
             s.class = class(chd); % append class info
             warning(W); % restore warnings
@@ -156,8 +157,8 @@ classdef ChannelData < matlab.mixin.Copyable
                 xdc Transducer {mustBeScalarOrEmpty} = Transducer.UFF(uchannel_data.probe); % only needed for FSA
             end
             
-            % get the start time in QUPS format
-            t0 = [uchannel_data.sequence.delay];
+            
+            t0 = [uchannel_data.sequence.delay]; % get the start time in QUPS format
             switch seq.type
                 case 'FSA', t0 = t0 - vecnorm(xdc.positions,2,1) ./ seq.c0; % delay transform from element to origin for FSA
                 case 'VS',  t0 = t0 - vecnorm(seq.focus,    2,1) ./ seq.c0; % transform for focal point to origin
@@ -221,7 +222,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also SEQUENCE.VERASONICS WAVEFORM.VERASONICS
             arguments
                 RcvData cell
-                Receive struct
+                Receive struct {mustBeNonempty}
                 Trans struct {mustBeScalarOrEmpty} = struct.empty
                 kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
                 kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
@@ -287,8 +288,25 @@ classdef ChannelData < matlab.mixin.Copyable
                 j = unique([j{:}], 'stable'); % should be identical across acquisitions
 
                 % load data (time x acq x channel x frame)
-                x = RcvData{i}(j,:,fr); % only extract the filled portion
-                x = reshape(x, [], A, size(x,2), size(x,3)); % (T x A x Np x F)
+                if ~isempty(RcvData)
+                    x = RcvData{i}(j,:,fr); % only extract the filled portion
+                else
+                    % guess the number of channels this Vantage system has
+                    if isempty(Trans) 
+                        nch = max(cellfun(@nnz,{Rx.Apod})); % guess: max number of active rx channels
+                    else 
+                        nch = max(Trans.Connector); % guess: maximum connected index 
+                    end
+                    % validate: Vantage systems have either 64, 128, 256,
+                    % or 1024 channels, so if we get e.g. 90, assume 128
+                    npl = [64 128 256 1024]; % plausible number of channels
+                    nch = npl(find(nch < npl, 1, 'first')); % round up
+
+                    % make empty array
+                    sz = [numel(j), nch, numel(fr), 0]; % output data size
+                    x = zeros(sz, 'int16');
+                end
+                x = reshape(x, [size(x,1)/A, A, size(x,2:4)]); % (T x A x Np x F x [1|0])
 
                 % if Trans exists, make chd.N match Trans
                 if ~isempty(Trans)
@@ -306,12 +324,12 @@ classdef ChannelData < matlab.mixin.Copyable
                         as = as(:,1);
                     else
                         aps = Trans.ConnectorES;
-                        as = 1;
+                        as = ones(size(Rx) ./ [1 F]);
                     end
 
                     % pre-allocate output
                     ysz = size(x);
-                    ysz(2) = Trans.numelements;
+                    ysz(3) = Trans.numelements;
                     y = zeros(ysz, 'like', x);
 
                     % load into output
@@ -349,14 +367,19 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % helper functions
     methods(Hidden)
-        function chd = applyFun2Props(chd, fun), 
+        function chd = applyFun2Props(chd, fun)
             chd = copy(chd);
-            [chd.t0, chd.fs, chd.data] = deal(fun(chd.t0), fun(chd.fs), fun(chd.data));
+            for i = 1 : numel(chd)
+                chd_ = chd(i); % reference for each
+                [chd_.t0, chd_.fs, chd_.data] = deal(fun(chd_.t0), fun(chd_.fs), fun(chd_.data));
+            end
         end
         function chd = applyFun2Data(chd, fun), chd = copy(chd); [chd.data] = dealfun(fun, chd.data); end
         function chd = applyFun2Dim(chd, fun, dim, varargin),
             chd = copy(chd); % copy semantics
-            chd.data = matlab.tall.transform(@dimfun, chd.data, varargin{:}); % apply function in dim 1; % set output data
+            for i = 1 : numel(chd) % per chd
+                chd(i).data = matlab.tall.transform(@dimfun, chd(i).data, varargin{:}); % apply function in dim 1; % set output data
+            end
 
             % dim1 mapping function: dim d gets sent to dim 1 and back.
             function x = dimfun(x, varargin)
@@ -377,6 +400,8 @@ classdef ChannelData < matlab.mixin.Copyable
         % cast underlying type to tall
         function chd = sparse(chd)  , chd = applyFun2Data(chd, @sparse); end
         % cast underlying type to sparse
+        function chd = complex(chd) , chd = applyFun2Data(chd, @complex); end
+        % cast underlying type to complex
         function chd = doubleT(chd) , chd = applyFun2Data(chd, @double); end
         % cast underlying type to double
         function chd = singleT(chd) , chd = applyFun2Data(chd, @single); end
@@ -487,12 +512,13 @@ classdef ChannelData < matlab.mixin.Copyable
             % us.tx = us.rx; % use the same transducer
             % targ = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = greens(us, targ); % simulate the ChannelData
+            % if isreal(chd), chd = hilbert(chd); end % positive freqs only
             % chd = zeropad(chd, 0, max(0, 2^10-chd.T)); % ensure at least 2^10 samples
             % 
             % % Downmix and downsample the data
             % fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency 
             % ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
-            % chdd = downmix(hilbert(chd), us.xdc.fc); % downmix
+            % chdd = downmix(chd, us.xdc.fc); % downmix
             % chdd = downsample(chdd, ratio); % downsample
             % 
             % % Image the data
@@ -532,7 +558,6 @@ classdef ChannelData < matlab.mixin.Copyable
             % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
             % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
 
-
             % defaults
             if nargin < 3, N = 25; end
 
@@ -540,7 +565,7 @@ classdef ChannelData < matlab.mixin.Copyable
             D = designfilt('bandpassfir', ...
                 'SampleRate',chd.fs, ...
                 'FilterOrder', N, ...
-                'CutoffFrequency1', bw(1), ...
+                'CutoffFrequency1', bw( 1 ), ...
                 'CutoffFrequency2', bw(end), ...
                 'DesignMethod', 'window' ...
                 );
@@ -557,7 +582,6 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % See also DESIGNFILT DIGITALFILTER CHANNELDATA/FILTER
             % CHANNELDATA/FILTFILT CHANNELDATA/FFTFILT
-
 
             % defaults
             if nargin < 3, N = 25; end
@@ -585,7 +609,7 @@ classdef ChannelData < matlab.mixin.Copyable
             assert(isa(D, 'digitalFilter'), "Expected a 'digitalFilter' but got a " + class(D) + " instead.");
 
             % defaults
-            if nargin < 3, dim = chd.tdim; end
+            if nargin < 3, dim = unique([chd.tdim]); end
 
             % filter: always applied in dim 1
             chd = applyFun2Dim(chd, @(x) filter(D, x), dim);
@@ -597,8 +621,10 @@ classdef ChannelData < matlab.mixin.Copyable
             end
 
             % adjust time axes
-            if dim == chd.tdim
-                chd.t0 = chd.t0 - L/chd.fs;
+            for i = 1 : numel(chd)
+                if dim == chd(i).tdim
+                    chd(i).t0 = chd(i).t0 - L/chd(i).fs;
+                end
             end
         end
         function chd = filtfilt(chd, D, dim)
@@ -776,36 +802,32 @@ classdef ChannelData < matlab.mixin.Copyable
             % RESAMPLE - Resample the data in time
             %
             % chd = RESAMPLE(chd, fs) resamples the data at sampling
-            % frequency fs. And returns a new ChannelData object.
+            % frequency fs. The data is resampled in double precision.
             %
-            % chd = RESAMPLE(chd, fs, ..., METHOD) specifies the method of 
-            % interpolation. The default is linear interpolation.  
-            % Available methods are:
-            %   'linear' - linear interpolation
-            %   'pchip'  - shape-preserving piecewise cubic interpolation
-            %   'spline' - piecewise cubic spline interpolation
+            % chd = RESAMPLE(chd, fs, arg1, arg2, ...) forwards all
+            % following arguments to MATLAB's RESAMPLE function.
             %
-            % chd = RESAMPLE(chd, fs, ..., arg1, arg2, ...) forwards 
-            % arguments to MATLAB's RESAMPLE function
-            %
+            % Example:
+            % chd = ChannelData('data', [1 2 3 4]', 'fs', 1);
+            % chd.resample(2, 'spline'); % double the sampling frequency
+            % chd.data
+            % 
             % See also RESAMPLE DOWNSAMPLE
 
             % save original data prototypes
-            [Tt, Tf, Td] = deal(chd.t0, chd.fs, cast(zeros([0,0]), 'like', chd.data));
+            [Tt, Tf, Td] = deal(chd.t0, chd.fs, cast(zeros(0), 'like', chd.data));
             
-            % Make new ChannelData (avoid modifying the original)
-            chd = copy(chd);
-
             % ensure numeric args are non-sparse, double
-            chd = (doubleT(chd)); % data is type double
-            fs = (double(fs)); % new frequency is type double
+            chd = doubleT(chd); % data is type double
+            fs  = double(fs); % new frequency is type double
             inum = cellfun(@isnumeric, varargin); % all numeric inputs are type double
             varargin(inum) = cellfun(@double, varargin(inum), 'UniformOutput', false);
 
             % resample in time - no support for other dims: fs is required arg
             % [y, ty] = resample(chd.data, chd.time, fs, varargin{:}, 'Dimension', chd.tdim);
             % [chd.fs, chd.t0, chd.data] = deal(fs, ty(1), y);
-            y = matlab.tall.transform(@resample, chd.data, chd.time, fs, varargin{:}, 'Dimension', chd.tdim);
+            t = swapdim(1:chd.T,2,chd.tdim) ./ chd.fs; % time axes
+            y = matlab.tall.transform(@resample, chd.data, t, fs, varargin{:}, 'Dimension', chd.tdim);
             [chd.fs, chd.data] = deal(fs, y);
 
             % cast back to original type
@@ -836,6 +858,11 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % When using this function, the time axis is adjusted.
             % 
+            % Example:
+            % chd = ChannelData('data', cosd((0:30:360)'));
+            % chd = zeropad(chd, 4);
+            % chd.data'
+            % 
             % See also CIRCSHIFT
 
             if nargin < 2 || isempty(B), B = 0; end
@@ -862,8 +889,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % defined by the Waveform that was transmitted, the impulse
             % response of the Transducer(s), or the Transducer itself
             %
-            % See also TRANSDUCER WAVEFORM SEQUENCE
-            % TRANSDUCER/ULTRASOUNDTRANSDUCERIMPULSE
+            % See also TRANSDUCER WAVEFORM SEQUENCE TRANSDUCER/XDCIMPULSE
 
 
             f = chd.fs * ((0:chd.T-1)' ./ chd.T); % compute frequency axis
@@ -956,6 +982,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % lifted to (T x 1 x ... x 1 x N x M) where N and M are the 
             % receive and transmit aperture dimensions. The default is
             % [chd.ndim, chd.mdim]
+            % 
+            % Example:
+            % chd = ChannelData('data', randn([8 4 3 2]));
+            % tau = (2 : 1/4 : 4)' + swapdim(1 : 3, 2, 3);
+            % x = chd.sample(tau)
             % 
             % See also CHANNELDATA/SAMPLE2SEP INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 
@@ -1060,6 +1091,12 @@ classdef ChannelData < matlab.mixin.Copyable
             % lifted to (T x 1 x ... x 1 x N x M [x F x G x ...]) where 
             % N and M are the receive and transmit aperture dimensions. 
             % 
+            % Example:
+            % chd = ChannelData('data', randn([8 4 3 2]));
+            % tau1 = (2 : 1/4 : 4)';
+            % tau2 = swapdim(1 : 3, 2, 3);
+            % x = chd.sample2sep(tau1, tau2)
+            % 
             % See also CHANNELDATA/SAMPLE INTERP1 INTERPD INTERPF WSINTERPD CHANNELDATA/RECTIFYT0
 
             % defaults
@@ -1127,7 +1164,7 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs] = deal(n0_, 1);
         end    
         function f = fftaxis(chd)
-            f = cast(shiftdim((0 : chd.T - 1)', 1-chd.tdim) .* chd.fs ./ chd.T, 'like', real(chd.data));
+            f = cast(swapdim((0 : chd.T - 1),2,chd.tdim) .* chd.fs ./ chd.T, 'like', real(chd.data([])));
         end
     end
 
@@ -1207,6 +1244,7 @@ classdef ChannelData < matlab.mixin.Copyable
 
             % get the time axes for this frame
             t = gather(double(sub(chd.time, num2cell(it), fdims)));
+            t = sub(t, ceil(size(t,chd.ndim)/2),chd.ndim); % grab median rx
 
             % choose which dimensions to show
             if ~isfield(im_args, 'XData'), im_args.XData = 1:chd.N; end
@@ -1298,7 +1336,7 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.t0 = t0_;
             chd.fs = fs_;
         end
-        function t = get.time(chd), t = cast(chd.t0 + shiftdim((0 : chd.T - 1)', 1-chd.tdim) ./ chd.fs, 'like', real(chd.data)); end % match data type, except always real
+        function t = get.time(chd), t = cast(chd.t0 + shiftdim((0 : chd.T - 1)', 1-chd.tdim) ./ chd.fs, 'like', real(chd.data([]))); end % match data type, except always real
         function T = get.T(chd), T = gather(size(chd.data,chd.tdim)); end
         function N = get.N(chd), N = gather(size(chd.data,chd.ndim)); end
         function M = get.M(chd), M = gather(size(chd.data,chd.mdim)); end
@@ -1375,8 +1413,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % 
             % See also CHANNELDATA/JOIN SUB
             
-            assert(isscalar(dim), 'Dimension must be scalar!'); 
-            if nargin < 3, bsize = 1; end
+            arguments
+                chd ChannelData
+                dim (1,1) {mustBeInteger, mustBePositive} = max(arrayfun(@(chd)ndims(chd.data), chd))
+                bsize (1,1) {mustBeInteger, mustBePositive} = 1
+            end
 
             % S = gather(size(chd.data, dim)); % slices
             St = gather(size(chd.t0  ,dim)); % size in t

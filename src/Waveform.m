@@ -403,6 +403,12 @@ classdef Waveform < matlab.mixin.Copyable
             % % Convolve with an intermediate upsampling frequency of 100Hz
             % wvc = conv(wv1, wv2, 100);
             %
+            % % Convolve with a Delta
+            % wvc = conv(wvc, Waveform.Delta());
+            % 
+            % % auto-correlate the rectangular waveform (identity)
+            % wvtri = conv(wv2)
+            % 
             % See also WAVEFORM/SAMPLE
 
             arguments
@@ -445,7 +451,10 @@ classdef Waveform < matlab.mixin.Copyable
             %
             % wv = WAVEFORM.DELTA() constructs a Delta function waveform
             %
+            % Example:
+            % wv = Waveform.Delta();
             % 
+            % See also SEQUENCE.PULSE TRANSDUCER.IMPULSE
             wv = Waveform('t0', 0, 'tend', 0, 'fun', @(t) t == 0);
         end
     
@@ -493,10 +502,11 @@ classdef Waveform < matlab.mixin.Copyable
             % identify tri-level field name
             fld = "TriLvlWvfm" + ["", "_Sim"]; % potential field names
             f = fld(isfield(TW, fld)); % find which one
-            if ~isscalar(f) % must have one or the other
-                error("QUPS:Verasonics:ambiguousProperty", ...
-                    "TW's properties must include exactly 1 of '" + join(fld, "' or '") + "'." ...
-                    ); 
+            if isempty(f) % must have one or the other
+                error("QUPS:Verasonics:missingProperty", ...
+                    "TW must include at least 1 of '" + join(fld, "' or '") + "'." ...
+                    );
+            elseif isvector(f), f = f(1); % choose first waveform
             end 
             
             % start time(s)

@@ -18,7 +18,7 @@ classdef TransducerMatrix < Transducer
         
     % constructor 
     methods(Access=public)
-        function self = TransducerMatrix(array_args, xdc_args)
+        function self = TransducerMatrix(kwargs)
             % TRANSDUCERMATRIX - TransducerMatrix constructor
             %
             % xdc = TRANSDUCERMATRIX(Name, Value, ...) constructs a
@@ -26,52 +26,62 @@ classdef TransducerMatrix < Transducer
             %
             % See also TRANSDUCERARRAY TRANSDUCERCONVEX
             arguments
-                array_args.pitch (1,2) double
-                array_args.numd (1,2) double
-                xdc_args.?Transducer
+                kwargs.?TransducerMatrix
+            end
+            
+            % if only width or height set, then make them match
+            if      isfield(kwargs,'width') && ~isfield(kwargs, 'height')
+                kwargs.height = kwargs.width;
+            elseif ~isfield(kwargs,'width') &&  isfield(kwargs, 'height')
+                kwargs.width  = kwargs.height;
             end
 
             % if width/height not set but pitch is, make it the pitch
-            if ~isfield(xdc_args, 'width') && isfield(array_args, 'pitch') 
-                xdc_args.width = array_args.pitch(1); 
+            if isfield(kwargs,'pitch')
+                if ~isfield(kwargs, 'width'), kwargs.width  = kwargs.pitch(1); end
+                if ~isfield(kwargs, 'height'),kwargs.height = kwargs.pitch(end); end
             end
-            if ~isfield(xdc_args, 'height') && isfield(array_args, 'pitch') 
-                xdc_args.height = array_args.pitch(end); 
-            end
+
+            % if width/height is greater than pitch
 
             % if numd set, make sure the number of elements 
             % corresponds to the number in each dimension by definition
-            if isfield(array_args, 'numd') 
-                if isfield(xdc_args, 'numel')
-                assert(xdc_args.numel == prod(array_args.numd), ...
-                    "The numd (" + (array_args.numd + ",") ...
+            if isfield(kwargs, 'numd') 
+                if isfield(kwargs, 'numel')
+                assert(kwargs.numel == prod(kwargs.numd), ...
+                    "The numd (" + (kwargs.numd + ",") ...
                     + ") must be factors of the number of elements (" ...
-                    + xdc_args.numel + ").");
+                    + kwargs.numel + ").");
                 else
-                    xdc_args.numel = prod(array_args.numd); % set numel to match dimension
+                    kwargs.numel = prod(kwargs.numd); % set numel to match dimension
                 end
             end
             
             % initialize the Transducer
-            xdc_args = struct2nvpair(xdc_args);
-            self@Transducer(xdc_args{:}) 
+            rmflds = intersect(fieldnames(kwargs), ["numd", "pitch"]);
+            args = struct2nvpair(rmfield(kwargs, rmflds));
+            self@Transducer(args{:}) 
             
-            % if numd not set, make it a resonably guessed breakdown
-            if ~isfield(array_args, 'numd')
+            % if numd was not set, make it a resonably guessed breakdown
+            if ~isfield(kwargs, 'numd')
                 % use product of every other factor -
                 % this is a heuristic breakdown that is guaranteed to be
                 % the square root if N has a square
                 f = factor(self.numel); % factors (sorted)
-                array_args.numd = [prod(f(1:2:end)), prod(f(2:2:end))];
+                kwargs.numd = [prod(f(1:2:end)), prod(f(2:2:end))]; % heuristic
+            end
+            self.numd = kwargs.numd;
+
+            % if neither width/height set, make width==height==the smaller of the two
+            if ~isfield(kwargs,'width') && ~isfield(kwargs,'height')
+                [self.width, self.height] = deal(min(self.width, self.height));
             end
 
-            % ensure width/height <= pitch
-            % self.width  = min(self.width , self.pitch(1));
-            % self.height = min(self.height, self.pitch(1));
-
-            % initialize the TransducerMatrix
-            for f = string(fieldnames(array_args))'
-                self.(f) = array_args.(f);
+            % if pitch was not set, ensure width/height <= pitch
+            if isfield(kwargs, 'pitch')
+                self.pitch = kwargs.pitch;
+            elseif ~isfield(kwargs, 'pitch') % && (isfield(kwargs, 'width') || isfield(kwargs, 'height'))
+                self.pitch = max(self.pitch, [self.width, self.height]);
             end
         end
     end
@@ -117,22 +127,19 @@ classdef TransducerMatrix < Transducer
     % define position methods
     methods   
         % get methods
-        function p = positions(self)
-            array_width  = (self.numd(1) - 1) * self.pitch(1);
-            array_height = (self.numd(end) - 1) * self.pitch(end);
-            x = linspace(-array_width/2,  array_width/2,  self.numd(1));
-            y = linspace(-array_height/2, array_height/2, self.numd(end));
+        function p = positions(xdc)
+            array_width  = (xdc.numd(1) - 1) * xdc.pitch(1);
+            array_height = (xdc.numd(end) - 1) * xdc.pitch(end);
+            x = linspace(-array_width/2,  array_width/2,  xdc.numd(1));
+            y = linspace(-array_height/2, array_height/2, xdc.numd(end));
             z = 0;
-            [x,y,z] = ndgrid(x,y,z);
-            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-            p = rotatepoint(q,cat(2, x(:), y(:), z(:)))' + self.offset + self.mux_offset;
-            % returns a 1 x N vector of the positions of the N elements with 0
-            % at the center
+            [x,y,z] = ndgrid(x,y,z); % make grid
+            p = xdc.transPos([x(:), y(:), z(:)]') + xdc.mux_offset;
         end
         
-        function [theta, phi, normal, width, height] = orientations(self)            
-            theta =  self.rot(1) + zeros([1, self.numel]);
-            phi   = -self.rot(2) + zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(xdc)            
+            theta =  xdc.rot(1) + zeros([1, xdc.numel]);
+            phi   = -xdc.rot(2) + zeros(size(theta));
             ZERO  = zeros(size(theta));
             normal     = [cosd(phi).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
             width      = [cosd(theta);            sind(ZERO); -cosd(ZERO).*sind(theta)];
@@ -145,14 +152,15 @@ classdef TransducerMatrix < Transducer
     methods
         % MUST only supports linear arrays or curvilinear arrays
         function p = getSIMUSParam(self), 
-            pn = self.positions();
-            p = struct( ...
+            arguments, self TransducerMatrix, end
+            p = arrayfun(@(self) struct( ...
                 'fc', self.fc, ...
-                'elements', pn(1:2,:), ...
+                'elements', sub(self.positions(),1:2,1), ...
                 'width', self.width, ...
                 'height', self.height, ...
                 'bandwidth', 100*self.bw_frac ...
-                );
+                ), self);
+            if isempty(p), p = struct.empty; end
         end
     end
 
@@ -160,7 +168,7 @@ classdef TransducerMatrix < Transducer
     methods
         function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
-                xdc (1,1) TransducerMatrix
+                xdc TransducerMatrix
                 sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
             end
@@ -168,7 +176,7 @@ classdef TransducerMatrix < Transducer
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
 
             % Field II parameters
-            xdc_2d_array_params = { ...
+            xdc_2d_array_params = arrayfun(@(xdc) {{ ...
                 xdc.numd(1), ...
                 xdc.numd(end), ...
                 xdc.width, ...
@@ -179,52 +187,31 @@ classdef TransducerMatrix < Transducer
                 sub_div(1), ...
                 sub_div(end), ...
                 reshape(focus, 1, []),...
-                };
-            
-            % ensure double type
-            xdc_2d_array_params = cellfun(@double, xdc_2d_array_params, 'UniformOutput', false);
-            xdc_2d_array_params = cellfun(@gather, xdc_2d_array_params, 'UniformOutput', false);
+                }}, xdc);
             
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_2d_array(xdc_2d_array_params{:});
-        end  
-
-        % override
-        function p = getFieldIIPositions(xdc)
-            % GETFIELDIIPOSITIONS - get an array of element positions
-            %
-            % p = getFieldIIPositions(xdc) returns a 3 x N vector of the
-            % positions of the N elements as represented in FieldII.
-            %
-            % See also GETFIELDIIAPERTURE FIELD_INFO
-
-            ap = xdc.getFieldIIAperture();
-            data = xdc_get(ap, 'rect');
-            p = data([24 25 26], :) + xdc.offset;
-            xdc_free(ap);
-            % p = p(:,1:3:end); % data repeated 3 times for some reason?
+            i = arrayfun(@(xdc) any(xdc.offset) || any(xdc.rot), xdc); % extra translation/rotation
+            aperture( i) = getFieldIIAperture@Transducer(xdc(i), sub_div, focus); % call superclass to make rectangles directly
+            aperture(~i) = cellfun(@(p)xdc_2d_array(p{:}), xdc_2d_array_params(~i));
         end
     end
     
     % USTB conversion function
     methods
         function probe = QUPS2USTB(self)
-            probe = uff.matrix_array(...
+            arguments, self TransducerMatrix, end
+            probe = arrayfun(@(self) uff.matrix_array(...
                 'N_x', self.numd(1), ...
                 'N_y', self.numd(end), ...
-                'pitch_x', self.pitch(1), ...
+                'pitch_x', self.pitch( 1 ), ...
                 'pitch_y', self.pitch(end), ...
                 'element_width', self.width, ...
                 'element_height', self.height, ...
                 'origin', uff.point('xyz', self.offset(:)') ...
-                );
+                ), self);
+            if isempty(probe), probe = reshape(uff.matrix_array.empty, size(probe)); end
         end
-    end
-
-    % Fullwave functions (unsupported)
-    methods
-        function xdc = getFullwaveTransducer(self, sscan), error("Not implemented."); end
     end
 
     methods
@@ -325,6 +312,5 @@ classdef TransducerMatrix < Transducer
                 "offset", - probe.origin.xyz ...
                 ), probe);
         end
-
     end
 end

@@ -41,7 +41,6 @@ end
 j = 1:2:numel(dat.TX); % data has multiplexing, so we only need every other TX
 k = unique([dat.TX(j).waveform]); % select the appropriate transmit waveform
 [seq, t0q] = Sequence.Verasonics(dat.TX(j), dat.Trans, dat.TW(k), 'c0', c0); % import
-if isnan(t0q), t0q = 0; warning("Sequence import validation failed!"); end % validate the import
 
 % UltrasoundSystem
 us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan);

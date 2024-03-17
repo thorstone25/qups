@@ -48,40 +48,41 @@
 % 
 % See also CHANNELDATA TRANSDUCER SEQUENCE SCAN SCATTERERS MEDIUM 
 
-classdef UltrasoundSystem < matlab.mixin.Copyable
+classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     
     % objects
+    properties(Dependent)
+        xdc Transducer % Transducer object (if receive and transmit are identical)
+    end
     properties
-        tx Transducer = TransducerArray() % Transducer object (transmit)
-        rx Transducer = TransducerArray() % Transducer object (receive)
-        seq Sequence = Sequence()    % Sequence object
-        scan Scan = ScanCartesian() % Scan object
+        tx (1,1) Transducer = TransducerArray.P4_2v() % Transducer object (transmit)
+        rx (1,1) Transducer = TransducerArray.P4_2v() % Transducer object (receive)
+        seq (1,1) Sequence = Sequence() % Sequence object
+        scan (1,1) Scan = ScanCartesian() % Scan object
     end
     
     % parameters
     properties
         % FS - Simulation sampling frequency 
         %
-        % ULTRASOUNDSYSTEM.FS sets the sampling frequency for simulation
-        % routines.
+        % ULTRASOUNDSYSTEM.FS sets the sampling frequency and data
+        % precision for simulation routines.
         %
         % Example:
         %
         % us = UltrasoundSystem('fs', 50e6); % 50MHz
         % 
         % See also GREENS SIMUS CALC_SCAT_MULTI KSPACEFIRSTORDER
-        fs (1,1) {mustBeNumeric} = 40e6   % simulation sampling frequency
+        fs (1,1) {mustBePositive} = single(40e6)   % simulation sampling frequency
     end
     
     properties(Dependent)
         fc  {mustBeNumeric} % central operating frequency(ies)
-        xdc Transducer      % Transducer object (if receive and transmit are identical)
-        pulse Waveform      % Waveform object (from the Sequence)
         lambda {mustBeNumeric} % wavelength at the central frequency(ies)
     end
     
-    properties(Hidden,SetAccess=protected)
-        tmp_folder (1,1) string = mktempdir() % temporary folder for compiled binaries
+    properties(Hidden,NonCopyable,SetAccess=protected)
+        tmp_folder (1,1) string = tempname() % temporary folder for compiled binaries
     end
 
     % aliases
@@ -120,14 +121,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % us = ULTRASOUNDSYSTEM(...,'fs', fs) sets the simulation 
             % sampling frequency to fs.
             %
-            % us = ULTRASOUNDSYSTEM(...,'recompile', false) avoids
-            % attempting to recompile mex and CUDA files when an
-            % UltrasoundSystem object is created.
+            % us = ULTRASOUNDSYSTEM(...,'recompile', true) attempts to
+            % recompile mex and CUDA files for the UltrasoundSystem object.
+            % The default is false.
             %
+            % us = ULTRASOUNDSYSTEM(...,'copybin', true) attempts to find
+            % and copy any compiled binaries that exist on the path. If
+            % 'recompile' is also true, if any binaries are missing, all
+            % binaries will be recompiled. The default is false.
+            %
+            % Example:
+            % UltrasoundSystem('recompile', true)
+            % 
+            % 
             % See also TRANSDUCER SEQUENCE SCAN
             arguments
                 kwargs.?UltrasoundSystem
-                opts.recompile (1,1) logical = true
+                opts.recompile (1,1) logical = false
+                opts.copybin (1,1) logical = false
             end
             
             % initailize via name-Value pairs
@@ -139,6 +150,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % if neither transmit nor receive provided, make them
             % equivalent for convenience.
             if ~isfield(kwargs, 'tx') && ~isfield(kwargs, 'rx'), self.tx = self.rx; end
+
+            % if sampling frequency not provided, set to Nyquist
+            if ~isfield(kwargs, 'fs')
+                self.fs = single(max([ ...
+                    2*self.tx.fc, self.tx.bw, 2*self.rx.fc, self.rx.bw ...
+                    ],[],'omitnan'));
+            end
             
             % create a default Sequence if none provided
             if ~isfield(kwargs, 'seq')
@@ -155,76 +173,100 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if isa(self.rx, 'TransducerConvex')
                     self.scan = ScanPolar('origin', self.rx.center);
                     self.scan.r = self.scan.r + norm(self.rx.center);
-                    [self.scan.dr, self.scan.dy] = deal(self.lambda / 4);
+                    [self.scan.dr, self.scan.dy] = deal(min(self.lambda) / 4);
                     self.scan.da = 1; % every 1 degree
                 elseif isa(self.rx, 'TransducerMatrix')
                     self.scan = ScanCartesian();
                     self.scan.y = self.scan.x;
-                    [self.scan.dx, self.scan.dy, self.scan.dz] = deal(self.lambda / 4);
+                    [self.scan.dx, self.scan.dy, self.scan.dz] = deal(min(self.lambda) / 4);
                 else
                     self.scan = ScanCartesian();
-                    [self.scan.dx, self.scan.dy, self.scan.dz] = deal(self.lambda / 4);
+                    [self.scan.dx, self.scan.dy, self.scan.dz] = deal(min(self.lambda) / 4);
                 end
             end
-            
+
             % shadow with the (newly created) temp folder for binaries and 
             % const-compiled code
+            self.tmp_folder = tempname;
+            mkdir(  self.tmp_folder);
             addpath(self.tmp_folder);
 
+            % no recompilation on a thread pool
+            if parallel.internal.pool.isPoolThreadWorker
+                if opts.recompile, warning("Cannot recompile on a thread worker!"); end
+                return;
+            end
+
+            % short circuit if no binary action is requested
+            if ~opts.copybin && ~opts.recompile, return; end
+            
             % copy code or recompile it
             if gpuDeviceCount % only do CUDA stuff if there's a MATLAB-compatible GPU
                 defs = self.genCUDAdefs();
+                if opts.copybin
                 fls = arrayfun(@(d) string(strrep(d.Source, '.cu', '.ptx')), defs);
-                e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
-                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(~e)); % move there if not?
-                if opts.recompile && any(~s), self.recompileCUDA(); end % attempt to recompile code
+                e = logical(arrayfun(@(x)exist(x, 'file'), fls)); % already exists?
+                s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(e)); % move there if not?
+                end
+                if opts.recompile && (~opts.copybin || any(~s)), self.recompileCUDA(); end % attempt to recompile code
             end
 
             % copy code or recompile it
             defs = self.genMexdefs();
+            if opts.copybin
             fls = arrayfun(@(d) string(strrep(d.Source, 'c', mexext())), defs);
-            e = logical(arrayfun(@exist, fullfile(self.tmp_folder, fls))); % already exists?
-            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(~e)); % move there if not?
-            if opts.recompile && any(~s), self.recompileMex(); end % attempt to recompile code
-
+            e = logical(arrayfun(@(x)exist(x, 'file'), fls)); % already exists?
+            s = arrayfun(@(fl) copyfile(which(fl), fullfile(self.tmp_folder, fl)), fls(e)); % move there if not?
+            end
+            if opts.recompile && (~opts.copybin || any(~s)), self.recompileMex(); end % attempt to recompile code
         end
+    end
 
-        % destructor
+    % destructor
+    methods(Access=protected)
         function delete(self)
             % DELETE - Destroy an UltrasoundSystem ... programatically.
             %
             % On object destruction, any temporary directories are removed.
             %
+            % Note: argument validation will invalidate this method as a
+            % destructor.
+            % 
             % See also HANDLE
-            arguments, self (1,1) UltrasoundSystem, end
 
             % if we made a temp folder, clean it up
-            if ~isempty(self.tmp_folder) && exist(self.tmp_folder, 'dir')
-                rmpath(self.tmp_folder) % remove from the path
-                list = dir(self.tmp_folder); % all files in the folder
+            tmp = self.tmp_folder;
+            if ~isempty(tmp) && exist(tmp, 'dir')
+                rmpath(tmp) % remove from the path
+                list = dir(tmp); % all files in the folder
                 nms = string({list.name}); % get the file names
+                
                 % check that it's only ptx and mex files we are deleting
                 assert(all(...
                     endsWith(nms, [".ptx", string(mexext())]) ...
                     | nms == ".." | nms == "." ...
                     ), ...
-                    "Call for deletion of " + self.tmp_folder + " failed due to unexpected files present." ...
-                    ); 
-                
-                % rmdir(self.tmp_folder, 's'); % recursive deletion - dangerous
-                
+                    "Call for deletion of " + tmp + " failed due to presence of unexpected files: "...
+                    + join(nms, ",") + "." ...
+                    );
+
+                % rmdir(tmp, 's'); % recursive deletion - dangerous
+
                 % safe: remove specific files first, then (attempt) the folder
-                rmdir(fullfile(self.tmp_folder, "*" + ".ptx")); % remove any ptx files
-                rmdir(fullfile(self.tmp_folder, "*" + string(mexext()))); % remove any mex files
-                rmdir(self.tmp_folder);
+                delete(fullfile(tmp, "*" + ".ptx")); % remove any ptx files
+                delete(fullfile(tmp, "*" + string(mexext()))); % remove any mex files
+                rmdir(tmp);
+                % disp("[DEBUG]: Deleted " + tmp);
             end
         end
-    
+    end
+
+    methods
         % convert to a structure to remove class info
         function s = obj2struct(us)
             % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
             %
-            % us = OBJ2STRUCT(us) converts the UltrasoundSystem us and all 
+            % us = OBJ2STRUCT(us) converts the UltrasoundSystem us and all
             % of it's properties into native MATLAB structs.
             %
             % Example:
@@ -246,7 +288,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             
             s = struct(us); % convert self to a struct
             if isfield(s,'xdc'), s = rmfield(s,{'tx','rx'}); end % remove duplicate information
-            s = rmfield(s, {'fc', 'pulse', 'sequence', 'tmp_folder'}); % inferred / duplicate / private
+            s = rmfield(s, {'fc', 'sequence', 'tmp_folder'}); % inferred / duplicate / private
 
             % convert all sub-classes
             for f = intersect(string(fieldnames(s))', ["tx","rx","xdc","seq","scan"])
@@ -265,41 +307,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     methods(Access=protected)
         % copy 
         function other = copyElement(self)
-            arguments, self (1,1) UltrasoundSystem, end
-            n = cellstr(["tx", "rx", "seq", "scan", "fs"]); % copy props
-            v = cellfun(@(n){self.(n)}, n);
-            nv = cat(1,n,v);
-            other = UltrasoundSystem(nv{:}, 'recompile', false);            
-        end
-    end
-    methods
-        function sub_div = getLambdaSubDiv(self, p, c, ap)
-            % GETLAMBDASUBDIV - Get subelement divisions w.r.t. wavelength
-            % 
-            % sub_div = GETLAMBDASUBDIV(self, p, c) returns the element 
-            % subdivision vector corresponding to a proportion p of the 
-            % wavelength given sound speed c (m/s).
-            % 
-            % sub_div = GETLAMBDASUBDIV(self, p, c, ap) specifies the
-            % aperture ap. Must be one of {'rx'*, 'tx', 'xdc'}
-            %
-            % 
-            
-            
-            if(nargin < 4), ap = 'rx'; end
-            if isa(c, 'Medium'), c = c.c0; end
-            
-            % get wavelength
-            lam = c / self.(ap).fc;
-            
-            % get length of proportion of lam
-            dp = lam * p;
-            
-            % get divisions
-            sub_div = ceil([self.(ap).width, self.(ap).height] ./ dp);
-            
-            % ensure number of divisions is odd
-            sub_div = sub_div + 1 - rem(sub_div, 2);
+            arguments, self (1,1) UltrasoundSystem, end % always scalar in            
+            other = copyElement@matlab.mixin.Copyable(self); % shallow copy handle
+            other.tmp_folder = tempname(); % new temp dir
+            copyfile(self.tmp_folder, other.tmp_folder); % copy binaries over
+            addpath(other.tmp_folder); % add to path
+            % disp("[DEBUG]: Adding path " + other.tmp_folder + " with " + (numel(dir(other.tmp_folder)) - 2) + " files.");
         end
     end
 
@@ -324,7 +337,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Create a default system using a focused transmit
             % xdc = TransducerArray();
             % us = UltrasoundSystem('xdc', xdc);
-            % us.seq.type = 'VS';
+            % us.seq.type = 'FC';
             % us.seq.focus = [0;0;30e-3] + ...
             % linspace(-xdc.numel/4, xdc.numel/4, xdc.numel/2+1) .* [xdc.pitch;0;0];
             %
@@ -366,6 +379,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             grid(ax, 'on'); 
             grid(ax, 'minor')
             ax.NextPlot = hstate;
+        end
+    end
+
+    % object display
+    methods(Access = protected)
+        function propgrp = getPropertyGroups(us)
+            if ~isscalar(us)
+                propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(us);
+            else
+                p = string(properties(us)); % get public properties
+                p(end+1) = "tmp_folder";% + hidden temp folder
+                if us.rx == us.tx
+                    p(ismember(p, ["rx","tx"])) = []; % only display 'xdc'
+                else 
+                    p(ismember(p, ["xdc"])) = []; % display 'tx' and 'rx'
+                end
+                propgrp = matlab.mixin.util.PropertyGroup(p);
+            end
         end
     end
 
@@ -441,6 +472,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Setting the subdvisions to [1,1] avoids this behaviour. The
             % Default is [1,1].
             %
+            % chd = GREENS(..., 'R0', R0) sets the minimum distance for
+            % propagation loss. Setting R0 to 0 disables propagation loss.
+            % The default is us.lambda.
+            % 
             % [chd, wv] = GREENS(...) additionally returns the final
             % waveform convolved across the point scatterers and aperture.
             %
@@ -468,14 +503,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % Note: The precision of the computation is determined by the
             % precision of the transmit pulse. Setting 
-            % `self.fs = single(self.fs);` before calling greens or
-            % `[...] = greens(..., 'fsk', single(fsk), ...);` can
-            % dramatically accelerate computation time on consumer GPUs,
-            % which may have a performance ratio of 32:1 or 64:1 for
-            % single:double types.
+            %       `self.fs = single(self.fs);` 
+            % before calling greens can dramatically accelerate computation
+            % time on consumer GPUs which may have a performance ratio of
+            % 32:1 or 64:1 for single:double precision.
+            % 
+            % About: This function provides a fast, low-fidelity simulation
+            % routine based on assuming isotropic radiation from a point
+            % source and simply applying a Green's function approximation.
+            % 
+            % 
             % 
             % Example:
-            % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
             % us.fs = single(us.fs); % use single precision for speed
@@ -487,7 +526,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % imagesc(real(chd));
             % colorbar;
             %
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI ULTRASOUNDSYSTEM/FOCUSTX CHANNELDATA/SAMPLE
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_MULTI ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/KSPACEFIRSTORDER 
             
             arguments
                 self (1,1) UltrasoundSystem
@@ -495,26 +534,28 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
             end
             arguments
-                kwargs.device (1,1) {mustBeInteger} = -logical(gpuDeviceCount()); % gpu device
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
+                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
                 kwargs.tall (1,1) logical = false; % whether to use a tall type
-                kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = 1; % number of simulataneous scatterers
+                kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = max([1 self.seq.numPulse],[],'omitnan'); % number of simulataneous scatterers
                 kwargs.verbose (1,1) logical = false;
                 kwargs.fsk (1,1) {mustBePositive} = self.fs % input kernel sampling frequency
+                kwargs.R0 (1,1) double {mustBeNonnegative} = max(self.lambda) % minimum distance for divide by 0
             end
             
             % get the centers of all the sub-elements
             if all(element_subdivisions == 1) % no sub-elements
-                ptc_tx = self.tx.positions();
-                ptc_rx = self.rx.positions();
+                pv = self.tx.positions();
+                pn = self.rx.positions();
             else % TODO: use xdc.patches
-                ptc_tx = self.tx.getBaryCenters(element_subdivisions);
-                ptc_rx = self.rx.getBaryCenters(element_subdivisions);
+                pv = self.tx.getBaryCenters(element_subdivisions);
+                pn = self.rx.getBaryCenters(element_subdivisions);
             end
 
             % cast dimensions to compute in parallel
-            ptc_rx = permute(ptc_rx, [6,1,2,4,3,5]); % 1 x 3 x N x 1 x En x 1
-            ptc_tx = permute(ptc_tx, [6,1,4,2,5,3]); % 1 x 3 x 1 x M x  1 x Em
+            pn = permute(pn, [6,1,2,4,3,5]); % 1 x 3 x N x 1 x En x 1
+            pv = permute(pv, [6,1,4,2,5,3]); % 1 x 3 x 1 x M x  1 x Em
 
             % get the boundaries of the transducer
             txb = self.tx.bounds();
@@ -540,6 +581,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             wv.fs = kwargs.fsk;
             kern = wv.samples;
 
+            % choose device
+            use_dev = kwargs.device && ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]);
+            use_gdev = use_dev && exist('greens.ptx', 'file') && gpuDeviceCount(); % use the GPU kernel
+            use_odev = use_dev && exist('oclDeviceCount','file') && oclDeviceCount(); % use the OpenCL kernel
+            if use_odev 
+                if kwargs.device > 0, oclDevice(kwargs.device); end % select device
+                dev = oclDevice(); % reference
+                use_odev = isscalar(dev) ...
+                    && (isUnderlyingType(kern, "single") ...
+                    || (isUnderlyingType(kern, "double") && dev.SupportsDouble) ...
+                    || (isUnderlyingType(kern, "half"  ) && dev.SupportsHalf));
+            end
+                
             F = numel(scat);
             % if kwargs.verbose, hw = waitbar(0); end
 
@@ -556,22 +610,37 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), self.rx.numel, self.tx.numel, prod(element_subdivisions));
-            x   = complex(zeros([1 T N M]));
+            x   = complex(zeros([1 T N M 0], 'like', kern)); % set size/type
+            x(:,:,:,:,1) = 0; % pre-allocate (once, not twice)
 
             % splice
             c0  = scat(f).c0;
-            pos = scat(f).pos; % 3 x S
-            amp = scat(f).amp; % 1 x S
+            ps = scat(f).pos; % 3 x S
+            as = scat(f).amp; % 1 x S
             fso = self.fs; % output channel data sampling frequency
-            if kwargs.device && exist('greens.ptx', 'file') ... % use the GPU kernel
-                    && (ismember(kwargs.interp, ["nearest", "linear", "cubic", "lanczos3"]))
+            if use_gdev, ps = gpuArray(ps); end
+
+            % compute the maximum distance for each scatterer
+            % sort points by geometric mean of minimum/maximum distance
+            [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
+            for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
+            for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+            for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1)); end % minimum scat time
+            for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+            [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+            [~, i] = sort((rmin .* rmax)); % get sorting
+
+            % sort points by geometric mean of minimum/maximum distance
+            [ps, as, rmin, rmax] = dealfun(@(x)sub(x,i,2), ps,as,rmin,rmax); % apply to all position variables
+
+            if use_gdev || use_odev
                 % function to determine type
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
                 % determine the data type
-                if     isftype(kern, 'double'), suffix = "" ; cfun = @double;
-                elseif isftype(kern, 'single'), suffix = "f"; cfun = @single;
-                elseif isftype(kern, 'halfT' ), suffix = "h"; cfun = @(x) alias(halfT(x));
+                if     isftype(kern, 'double'), typ = "double"; prc = 64; suffix = "" ; cfun = @double;
+                elseif isftype(kern, 'single'), typ = "single"; prc = 32; suffix = "f"; cfun = @single;
+                elseif isftype(kern, 'halfT' ), typ = "halfT" ; prc = 16; suffix = "h"; cfun = @(x) alias(halfT(x));
                 else,   error("Datatype " + class(kern) + " not recognized as a GPU compatible type.");
                 end
 
@@ -585,37 +654,40 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 end
 
                 % cast data / map inputs
-                [x, ps, as, pn, pv, kn, t0k, t0x, fso, cinv_] = dealfun(cfun, ...
-                    x, pos, amp, ptc_rx, ptc_tx, kern, t(1)/fso, wv.t0, fso, 1/c0 ...
+                [   x, ps, as, pn, pv, kn, t0k, t0x, fso, cinv_] = dealfun(cfun, ...
+                    x, ps, as, pn, pv, kern, t(1)/fso, wv.t0, fso, 1/c0 ...
                     );
 
                 % re-map sizing
                 [QI, QS, QT, QN, QM] = deal(scat(f).numScat, length(t), length(kern), N, M);
 
-                % compute the minimum and maximum time delay for each scatterer
-                ps = gpuArray(ps);
-                [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-                for p = self.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1) ./ c0); end % minimum scat time
-                for p = self.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1) ./ c0); end % maximum scat time
-                for p = self.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1) ./ c0); end % minimum scat time
-                for p = self.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1) ./ c0); end % maximum scat time
-                [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
-
-                % sort points by their maximum delay
-                [~, i] = sort(rmax); % get sorting
-                [ps, as, rmin, rmax] = dealfun(@(x)sub(x,i,2), ps,as,rmin,rmax); % apply to all position variables
-
                 % get the index bounds for the output time axis
-                sb = ([rmin; rmax] + t0x - t0k) * fso + [0; QT];
+                sb = ([rmin; rmax] ./ c0 + t0x - t0k) * fso + [0; QT];
 
                 % grab the kernel reference
-                k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
-                k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
-                try k.setConstantMemory('QUPS_T', uint64(QT), ...
-                    'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ... 
-                    ); end % already set by const compiler
-                try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
-                k.ThreadBlockSize = min([k.MaxThreadsPerBlock, 32]); % smaller is better
+                if use_gdev
+                    k = parallel.gpu.CUDAKernel('greens.ptx', 'greens.cu', 'greens' + suffix);
+                    k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
+                    try k.setConstantMemory('QUPS_T', uint64(QT), ...
+                            'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ...
+                            ); end % already set by const compiler
+                    try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
+                elseif use_odev
+                    k = oclKernel('greens.cl');
+                    k.macros = [k.macros, "QUPS_"+["S","T","N","M","I"]+"="+uint64([QS,QT,QN,QM,QI])]; % set constants
+                    k.macros(end+1) = "QUPS_PRECISION="+prc;
+                    k.defineTypes(repmat(typ,[1,3]), ["V","T","U"]); % time / data / position
+
+                    % enforce complexity
+                    [x, as, kn] = dealfun(@complex, x, as, kn);
+
+                    % expand positions 3D -> 4D
+                    [ps(4,:), pn(1,4,:), pv(1,4,:)] = deal(0);
+
+                end                
+                
+                % set kernel sizing
+                k.ThreadBlockSize(1) = min([k.MaxThreadsPerBlock, 32]); % smaller is better
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
                 % get the computational bounds
@@ -626,96 +698,154 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 ebk = cellfun(@(x)find(x,1,'last'), num2cell(diff(eblocks,1,2), 2)); % get transition point
                 
                 % call the kernel
-                if kwargs.verbose, fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
-                x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fso, wv.fs/fso, cinv_], [E,E], flagnum);
+                if kwargs.verbose, tt = tic; fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
+                x = k.feval(x, ps, as, pn, pv, kn, sb, gather([sbk,ebk]'-1), [t0k, t0x, fso, wv.fs/fso, cinv_, kwargs.R0], [E,E], flagnum);
                 
             else % operate in native MATLAB
-                % make time in dim 2
+                % parallel environment
+                penv = kwargs.penv;
+                if isempty(penv), penv = 0; end; % no parallel
+
+                % make time in dim 2, scats in dim 1
+                [ps, as] = deal(ps', as'); % transpose S x 3, S x 1
                 tvec = reshape(t,1,[]); % 1 x T full time vector
                 kern_ = reshape(kern,1,[]); % 1 x T' signal kernel
+                K = length(kern_); % kernel length in indices
 
-                % switch scat positions to S x 3
-                pos = pos.';
+                % timing info
+                t0_ = gather(wv.t0); % 1 x 1
+                fs_ = self.fs;
+                fsr = wv.fs / fs_; % sampling frequency ratio
 
                 % TODO: set data types | cast to GPU/tall? | reset GPU?
-                if kwargs.device > 0, gpuDevice(kwargs.device); end
-                if kwargs.device && ~kwargs.tall,
-                                  [pos, ptc_rx, ptc_tx, tvec, kern_] = dealfun(...
-                        @gpuArray, pos, ptc_rx, ptc_tx, tvec, kern_ ...
+                if use_gdev, gpuDevice(kwargs.device); end
+                if use_gdev && ~kwargs.tall
+                    [ps, pn, pv, tvec, kern_] = dealfun(@gpuArray, ...
+                     ps, pn, pv, tvec, kern_ ...
                         );
                 elseif kwargs.tall
-                              [pos, ptc_rx, ptc_tx, tvec] = dealfun(...
-                        @tall, pos, ptc_rx, ptc_tx, tvec ...
+                    [pn, pv] = dealfun(@tall, pn, pv);
+                end
+
+                % parallel worker size
+                if isempty(p) % no pool -> 1
+                    P = 1; 
+                elseif isnumeric(penv) 
+                    if penv, P = penv; else, P = 1; end % 0 -> 1
+                else % pool
+                    P = max(1,penv.NumWorkers); % ???
+                end 
+                
+                % get block sizes: if less than M, go 1 scat at a time
+                [B, S] = deal(floor(kwargs.bsize), scat(f).numScat);
+                Bm = max(1,min(floor(B/P),floor(M/P))); % simulataneous transmits
+                Bs = max( 1, floor(B / Bm / P) ); % simulataneous scats
+                svec = num2cell( (1:Bs)'+(0:Bs:S-1), 1);
+                mvec = num2cell( (1:Bm)'+(0:Bm:M-1), 1);
+                svec{end} = svec{end}(svec{end} <= S);
+                mvec{end} = mvec{end}(mvec{end} <= M);
+
+                % splice
+                [R0, terp, kvb] = deal(kwargs.R0, kwargs.interp, kwargs.verbose);
+                if kvb
+                    disp("Partitioning into " ...
+                        +numel(svec)+ " blocks of " ...
+                        +Bs+" scatterer(s) for " ...
+                        +numel(mvec)+" sets of " ...
+                        +Bm+" elements across "...
+                        +P+" worker(s)." ...
                         );
+                    tt = tic;
                 end
 
-                % for each tx/rx pair, extra subelements ...
-                % TODO: parallelize where possible
-                svec = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:scat(f).numScat-1), 1);
-                svec{end} = svec{end}(svec{end} <= scat(f).numScat);
-                S = numel(svec); % number of scatterer blocks
+                x = cell(size(mvec));% zeros(xsz,'like',kern_); % init x = 0;
+                parfor(mv = 1:numel(mvec), penv)  % each transmit
+                    m = mvec{mv}; % vector of tx indices
+                    M_ = numel(m); % number of transmit this block
 
-                for sv = 1:S, s = svec{sv}; % vector of indices
+                    % pre-allocate this transmit
+                    x_ = zeros([1,T,N,M_],'like',kern_);
+                    x{mv} = 0;
+                    
+                    for sv = 1:numel(svec) % each set of scatterers
+                    s = svec{sv}; % vector of scat indices
+                    
                     for em = 1:E
-                        for en = 1:E
-                            % compute time delays
-                            % TODO: do this via ray-path propagation through a medium
-                            % S x 1 x N x M x 1 x 1
-                            r_rx = vecnorm(sub(pos,s,1) - sub(ptc_rx, en, 5),2,2);
-                            r_tx = vecnorm(sub(pos,s,1) - sub(ptc_tx, em, 6),2,2);
-                            tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
-                            tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
+                    for en = 1:E
+                        % toc; % DEBUG
+                        % tic; % DEBUG
 
-                            % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
-                            att = sub(amp.',s,1);% .* (1 ./ r_rx) .* (1 ./ r_tx); % propagation attenuation
+                        % compute time delays
+                        % TODO: do this via ray-path propagation through a medium
+                        % S x 1 x N x /M x 1 x 1
+                        r_rx = vecnorm(sub(ps,s,1) - sub(pn,     en,      5 ),2,2);
+                        r_tx = vecnorm(sub(ps,s,1) - sub(pv, {m, em}, [4, 6]),2,2);
+                        tau_rx = (r_rx ./ c0); % S x 1 x N x 1 x 1 x 1
+                        tau_tx = (r_tx ./ c0); % S x 1 x 1 x M x 1 x 1
 
-                            % get 0-based sample time delay
-                            % switch time and scatterer dimension
-                            % S x T x N x M x 1 x 1
-                            t0 = gather(wv.t0); % 1 x 1
-                            fsr = wv.fs / self.fs; % sampling frequency ratio 
-                            % - stretch factor from output to input time domains
-
-                            % S x T x N x M x 1 x 1
-                            if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
-                                % compute as a tall array  % S | T x N x M x 1 x 1
-                                tau = tvec - (tau_tx + tau_rx + t0)*self.fs; % create tall ND-array
-                                s_ = matlab.tall.transform( ...
-                                    @(tau, att) wsinterpd(kern_, fsr * tau, 2, att ./ fsr, 1, kwargs.interp, 0), ...
-                                    ... @(x) sum(x, 1, 'omitnan'), ... reduce
-                                    tau, att...
-                                    );
-                                
-                                % add contribution (1 x T x N X M)
-                                x = x + s_;
-
-                            else
-                                % compute natively
-                                % TODO: compute where we actually receive a response
-                                tau = (tau_tx + tau_rx + t0)*self.fs; % S x 1 x N x M x 1 x 1
-                                it = tvec == tvec; %(1 x T')
-                                it = it & T-1 >= tvec - max(tau(:));
-                                it = it &   0 <= tvec - min(tau(:));
-
-                                % compute only for this range and sum as we go
-                                % (1 x T' x N X M)
-                                s_ = nan2zero(wsinterpd(kern_, fsr * (tvec(it) - tau), 2, att ./ fsr, 1, kwargs.interp, 0));
-
-                                % add contribution (1 x T x N X M)
-                                x(1,it,:,:,:,:) = x(1,it,:,:,:,:) + s_;
-                            end
-                            
-                            % update waitbar
-                            if kwargs.verbose && isvalid(hw), waitbar(sub2ind([E,E,S,F],en,em,sv,F-(f-1)) / (E*E*S*F), hw); end
+                        % propagation loss
+                        if R0 % min distance - no loss if 0
+                            r_rx = max(r_rx, R0); % avoid div by 0
+                            r_tx = max(r_tx, R0); % avoid div by 0
+                            att  = 1; % R0^-2; % scale by max energy?
+                        else
+                            [r_rx, r_tx, att] = deal(1); % no propagation loss
                         end
+
+                        % compute the attenuation (S x 1 x [1|N] x [1|M] x 1 x 1)
+                        att = att .* sub(as,s,1) ./ (r_rx .* r_tx); % propagation attenuation
+
+                        % convert time delays to indices
+                        % S x T x N x M x 1 x 1
+                        tau_tx = tau_tx * fs_;
+                        tau_rx = tau_rx * fs_;
+                        t0     = t0_    * fs_;
+
+                        % Get min/max samplipng times for this set
+                        % compute only for this range and sum as we go
+                        % tau = (tau_tx + tau_rx + t0); % S x 1 x N x M x 1 x 1
+                        tmax = t0 + max(tau_tx + tau_rx,[],'all');
+                        tmin = t0 + min(tau_tx + tau_rx,[],'all');
+                        it = (tmin - K-1) <= tvec & tvec <= (tmax + K+1); %(1 x T')
+
+                        % S x T x N x M x 1 x 1
+                        if any(cellfun(@istall, {tau_tx, tau_rx, tvec, kern_}))
+                            % compute as a tall array  % S | T x N x M x 1 x 1
+                            it = gather(it);
+                            t1 = fsr * (tvec(it) - tau_tx - t0); % create tall ND-array
+                            t2 = - fsr * tau_rx;
+                            s_ = matlab.tall.reduce( ...
+                                @(t1, t2, att) wsinterpd2( ...
+                                kern_, t1, t2, 2, att ./ fsr, 1, terp, 0 ...
+                                ), ... map function
+                                @(x)sum(x,1,'omitnan','native'), ... reduce function over scatterers
+                                t1, t2, att...
+                                );
+                        else
+                            % compute natively
+                            % (1 x T' x N X M)
+                            s_ = nan2zero(wsinterpd2(kern_, fsr * (tvec(it) - tau_tx - t0), - fsr * tau_rx, 2, att ./ fsr, 1, terp, 0));
+                        end
+
+                        % add contribution (1 x T x N x M')
+                        x_(1,it,:,:) = x_(1,it,:,:) + s_; % (1 x T' x N x M')
                     end
+                    end
+                    end
+                    x{mv} = x{mv} + x_; % accumulate
+                    if kvb, fprintf("."); end % update
                 end
+                
+                % unpack
+                if isscalar(x), x = x{1}; else, x = cat(4, x{:}); end
+
                 % compute for tall arrays
                 if istall(x), x = gather(x); end
 
                 % move back to GPU if requested
-                if kwargs.device, x = gpuArray(gather(x)); end
+                if use_gdev, x = gpuArray(gather(x)); end
             end
+            if kwargs.verbose, disp("Done!"); toc(tt); end
             
             % make a channel data object (T x N x M)
             x = reshape(x, size(x,2:ndims(x))); % same as shiftdim(x,1), but without memory copies on GPU
@@ -727,16 +857,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             T_ = gather(find(cumsum(~iszero, 'reverse'), 1, 'last' ));
             chd(f) = subD(chd(f), n0:T_, chd(f).tdim);
 
-
             % synthesize linearly
-            [chd(f)] = self.focusTx(chd(f), self.seq, 'interp', kwargs.interp);
+            [chd(f)] = self.focusTx(chd(f), self.seq, 'interp', kwargs.interp, 'bsize', kwargs.bsize, 'verbose', kwargs.verbose);
             end
-
-            % close the waitbar if it (still) exists
-            % if kwargs.verbose && isvalid(hw), delete(hw); end
-
-            % send data (back) to CPU
-            % chd = gather(chd);
 
             % combine all frames
             chd = join(chd, 4);
@@ -758,6 +881,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % [uchannel_data, uscan] = QUPS2USTB(...) additionally returns
             % a USTB compatible uff.scan.
             %
+            % Example:
+            % % Create an UltrasoundSystem and ChannelData
+            % xdc = TransducerArray.L12_3v();
+            % seq = SequenceRadial('type','PW','angles',-10 : 10);
+            % us = UltrasoundSystem('seq', seq, 'xdc', xdc);
+            % chd = ChannelData('data',zeros([128,xdc.numel,seq.numPulse]));
+            % 
+            % % Convert to USTB
+            % uchannel_data = QUPS2USTB(us, chd);
+            % 
             % See also ULTRASOUNDSYSTEM.UFF
             arguments
                 us (1,1) UltrasoundSystem
@@ -794,9 +927,93 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             if nargout >= 2, chd = ChannelData.UFF(uchannel_data, us.seq, us.xdc); end % data
         end
     end
+
+    % Verasonics interop
+    methods(Static)
+        function [us, chd] = Verasonics(Trans, TX, TW, kwargs)
+            % Verasonics - Import a Verasonics Vantage system and data
+            % 
+            % us = Verasonics(Trans, TX, TW) creates an UltrasoundSystem us
+            % with a Sequence and Transducer defined from the Verasonics 
+            % structs `Trans`, `TX`, and `TW`.
+            % 
+            % us = Verasonics(Trans, TX) or 
+            % us = Verasonics(Trans, TX, struct.empty) uses a
+            % Waveform.Delta as the excitation pulse function.
+            % 
+            % us = Verasonics(..., 'c0', c0) additionally specifies the
+            % sound speed in m/s. This should match the Verasonics property
+            % `Resource.Parameters.speedOfSound`. The default is 1540.
+            % 
+            % us = Verasonics(..., 'PData', PData) additionally defines a
+            % Scan from the Verasonics struct `PData`.
+            % 
+            % [us, chd] = Verasonics(..., 'Receive', Receive, 'RcvData', RcvData)
+            % additionally returns a ChannelData chd defined by the
+            % Verasonics `Receive` and `RcvData` structs.
+            % 
+            % If `RcvData` is omitted or empty, chd will contain data of
+            % size (time x acquisitions x receivers x frames x 0).
+            % 
+            % If `Receive` is omitted or empty, chd will contain data of
+            % size (0 x transmits x receivers x 0 x 0) and assumes a
+            % supported sampling frequency of approximately 4 * us.xdc.fc.
+            % 
+            % Example:
+            % 
+            % load('my_VSX_data.mat')
+            % c0 = Resource.Parameters.speedOfSound;
+            % us = UltrasoundSystem.Verasonics(Trans, TX, TW, 'c0', c0);
+            % 
+            % See also CHANNELDATA.VERASONICS TRANSDUCER.VERASONICS
+            % SEQUENCE.VERASONICS SCAN.VERASONICS
+            arguments
+                Trans (1,1) struct
+                TX struct
+                TW (1,:) struct = struct.empty
+                kwargs.PData struct {mustBeScalarOrEmpty} = struct.empty
+                kwargs.RcvData cell = {}
+                kwargs.Receive struct = struct.empty
+                kwargs.c0 (1,1) double = 1540
+            end
+            
+            % wavelength
+            lbda = kwargs.c0 / Trans.frequency / 1e6; 
+            
+            % create US
+            xdc = Transducer.Verasonics(Trans, kwargs.c0);
+            if numel(TW) > 1, TW = TW(unique([TX.waveform])); end
+            [seq, t0q] = Sequence.Verasonics(TX, Trans, TW, 'c0', kwargs.c0, 'xdc', xdc);
+            if isempty(kwargs.PData), scan_args = {};
+            else, scan_args = {'scan', Scan.Verasonics(kwargs.PData, lbda)};
+            end
+            us = UltrasoundSystem('seq', seq, 'xdc', xdc, scan_args{:}, 'recompile',false);
+            
+            
+            % construct ChannelData
+            if ~isempty(kwargs.Receive)
+                chd = ChannelData.Verasonics(kwargs.RcvData, kwargs.Receive, Trans);
+                us.fs = chd.fs;
+            else
+                fs = 250./(4:100); % supported frequencies
+                fs = fs(argmin(abs(4*Trans.frequency - fs))); % assume 200BW, closest frequency
+                sz = [0, numel(TX), Trans.numelements, 0, 0]; % output data sizing
+                chd = ChannelData('data', zeros(sz,'int16'), 'order','TMN', 'fs', fs);
+            end
+            
+            % refine t0
+            if isfield(Trans, 'lensCorrection')
+                t0x = 2*Trans.lensCorrection; else, t0x = 0;
+            end
+            if isfield(TW,'peak') && ~isempty(TW.peak)
+                t0p = TW.peak; else, t0p = 0;
+            end
+            chd.t0 = chd.t0 + swapdim(t0q,2,chd.mdim) - (t0p + t0x) / (Trans.frequency * 1e6);
+        end
+    end
     
-    % Fullwave calls
-    methods
+    % Fullwave calls (Hidden)
+    methods(Hidden)
         function conf = fullwaveConf(self, medium, sscan, kwargs)
             % FULLWAVECONF - Generate a Fullwave simulation configuration
             %
@@ -891,8 +1108,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % cfl,c0,ppw,omega0,dX,dY all go together!
             % at the end: conf.sim  = {c0,omega0,dur,ppw,cfl,maps2,xdcfw,nTic,modT};
 
-            %% Define the Transducer
-            xdcfw = self.xdc.getFullwaveTransducer(sscan);
+            %% Define the Transducer(s)
+            xdcfw = self.tx.getFullwaveTransducer(sscan);
+            if self.tx == self.rx
+                rxfw = xdcfw; else, rxfw = self.rx.getFullwaveTransducer(sscan);
+            end
 
             %% Define the Transmit Delays
 
@@ -919,7 +1139,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             t0_xdc = min(min(tau_tx_pix,[],1)); % reference true start time (1 x M)
             tau_tx_pix = (tau_tx_pix - t0_xdc); % 0-base the delays for the sim (I x M)
             tau_tx_max = ceil(max(tau_tx_pix, [],'all') / dT) .* dT; % maxmium additional delay
-            wv_tx = conv(self.xdc.impulse, self.seq.pulse, 10/dT); % get the waveform transmitted into the medium
+            wv_tx = conv(self.tx.impulse, self.seq.pulse, 10/dT); % get the waveform transmitted into the medium
             wv_tx.tend = wv_tx.tend + tau_tx_max; % extend waveform to cover maximum delay
             wv_tx.dt = dT; % set the sampling interval
             t = wv_tx.time; % get discrete sampling times
@@ -958,7 +1178,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             conf.f0  = kwargs.f0;     % simulation frequency
             conf.fs  = fs_;     % sampling frequency
             conf.tstart = t(1); % signal start time (0 is the peak)
-            conf.outmap = xdcfw.outcoords(:,4); % 4th column maps pixels to elements
+            conf.outmap = rxfw.outcoords(:,4); % 4th column maps pixels to elements
         end
         
         function [chd, conf] = fullwaveSim(self, medium, sscan, kwargs)
@@ -1015,9 +1235,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 sscan ScanCartesian = self.scan
                 kwargs.parcluster (1,1) parallel.Cluster = parcluster() % parallel cluster
                 kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim'); % simulation directory
-                kwargs.f0 (1,1) {mustBeNumeric} = self.xdc.fc; % center frequency of the transmit / simulation
+                kwargs.f0 (1,1) {mustBeNumeric} = self.tx.fc; % center frequency of the transmit / simulation
                 kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
-                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["disc", "cont", "terp"])} = 'terp'; % delay method
+                kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["discrete", "continuous", "interpolate"])} = 'interpolate';
             end            
 
             % create the configuration
@@ -1038,7 +1258,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd = UltrasoundSystem.readFullwaveSim(kwargs.simdir);
         end
     end
-    methods(Static)
+    methods(Static,Hidden)
         function job = fullwaveJob(conf, clu, kwargs)
             % FULLWAVEJOB - Create a Fullwave simulation job.
             %
@@ -1183,11 +1403,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % preallocate
             xm = cell(N,M);
-            f = waitbar(0, 'Initializing ...');
-            for m = 1:M
-                % update status
-                if isvalid(f), waitbar(m/M, f, sprintf('Loading Files: %d %%', floor(m/M*100))); end
-
+            for m = 1:M % each transmit
                 % load data (with a reference, in case it is large)
                 outfile = fullfile(simdir, num2str(m), 'genout.dat');
                 mdat = memmapfile(outfile, 'Writable', false, 'Format', 'single');
@@ -1201,9 +1417,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % Construct a Channel Data object
             chd = ChannelData('data', xm, 'fs', conf.fs, 't0', conf.t0 + conf.tstart);
-
-            % cleanup
-            if isvalid(f), delete(f); end
         end
     end
 
@@ -1249,20 +1462,41 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chd = SIMUS(...,Name, Value, ...) passes selected additional
             % Name/Value pairs to simus.m
             % 
+            % References:
+            % [1] Damien Garcia
+            % SIMUS: An open-source simulator for medical ultrasound imaging. 
+            % Part I: Theory & examples,
+            % Computer Methods and Programs in Biomedicine,
+            % Volume 218, 2022, 106726, ISSN 0169-2607,
+            % doi: <a href ="matlab:web('https://doi.org/10.1016/j.cmpb.2022.106726')">10.1016/j.cmpb.2022.106726</a>.
+            % 
+            % [2] Cigier A, Varray F, Garcia D. 
+            % SIMUS: An open-source simulator for medical ultrasound imaging. 
+            % Part II: Comparison with four simulators. 
+            % Comput Methods Programs Biomed. 2022 Jun;220:106774. 
+            % doi: <a href="matlab:web('10.1016/j.cmpb.2022.106774')">10.1016/j.cmpb.2022.106774</a>.
+            % Epub 2022 Mar 25. PMID: 35398580.
+            % 
+            % [3] D. Garcia, 
+            % "Make the most of MUST, an open-source Matlab UltraSound Toolbox," 
+            % 2021 IEEE International Ultrasonics Symposium (IUS), 
+            % Xi'an, China, 2021, pp. 1-4, 
+            % doi: <a href="matlab:web('10.1109/IUS52206.2021.9593605')">10.1109/IUS52206.2021.9593605</a>.
+            % 
             % Example:
             % 
             % % Simulate some data
             % us = UltrasoundSystem(); % get a default system
-            % us.rx = us.tx; % ensure the receiver and transmitter are identical
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
+            % us.fs = single(8 * us.xdc.fc); % must be multiple of 4 for MUST
+            % scat = Scatterers('pos', 1e-3*[0 0 30]', 'c0', us.seq.c0); % define a point target
             % chd = simus(us, scat); % simulate the ChannelData
             % 
             % % Display the data
             % figure;
-            % imagesc(real(chd));
+            % imagesc(chd);
             % colorbar;
             % 
-            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX SIMUS
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL FOCUSTX GREENS
             
             arguments
                 self (1,1) UltrasoundSystem
@@ -1421,7 +1655,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Example:
             % 
             % % Simulate some data
-            % us = UltrasoundSystem(); % get a default system
+            % us = UltrasoundSystem('fs', 50e6); % get a default system
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = calc_scat_all(us, scat); % simulate the ChannelData
             % 
@@ -1477,20 +1711,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 parenv = 0; 
             end
 
-            % get the transducer coordinate offset
-            if self.tx == self.rx || isequal(self.tx.offset, self.rx.offset)
-                off = - self.tx.offset; % offset to adjust scatterer positions instead
-            else
-                error("QUPS:CALC_SCAT_MULTI:TransducerOffsetMismatch", ...
-                    "Cannot simulate a transmitter with offset " + self.tx.offset ...
-                    + " with a receiver with offset " + self.rx.offset + "." ...
-                    );
-            end
-
             % splice
             [M, F] = deal(self.seq.numPulse, numel(scat)); % number of transmits/frames
-            [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos + off}, {t.amp}), scat); % splice
+            [fs_, tx_, rx_] = deal(gather(self.fs), self.tx, self.rx); % splice
+            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
 
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool'), 
@@ -1507,7 +1731,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             field_init(-1);
             
             % set sound speed/sampling rate
-            set_field('fs', fs_);
+            set_field('fs', double(fs_));
             set_field('c',c0(f));
 
             % get Tx/Rx apertures
@@ -1519,7 +1743,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             xdc_impulse   (Tx, tx_imp);
             xdc_impulse   (Rx, rx_imp);
             xdc_excitation(Tx, tx_pls);
-
             
             % call the sim
             down_sampling_factor = 1;
@@ -1540,7 +1763,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             chd = self.focusTx(chd, self.seq, 'interp', kwargs.interp);
         end        
 
-        function chd = calc_scat_multi(self, scat, element_subdivisions, kwargs)
+        function [chd, rfun] = calc_scat_multi(self, scat, element_subdivisions, kwargs)
             % CALC_SCAT_MULTI - Simulate channel data via FieldII
             %
             % chd = CALC_SCAT_MULTI(self, scat) simulates the Scatterers 
@@ -1562,10 +1785,50 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %
             % The default is the current pool returned by gcp.
             % 
-            % Example:
+            % job = CALC_SCAT_MULTI(..., 'parenv', clu, 'job', true)
+            % returns a job on the parcluster clu for each scatterer. The
+            % job can then be run with `submit(job)`.
             % 
+            % [job, rfun] = CALC_SCAT_MULTI(...) also returns a function
+            % rfun to read the output of the job into a ChannelData object
+            % once the job has been completed.
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true) uses the default
+            % cluster returned by parcluster().
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true, 'type', 'Independent')
+            % creates an independent job via `createJob`.
+            % 
+            % job = CALC_SCAT_MULTI(..., 'job', true, 'type', 'Communicating')
+            % creates a communicating job via `createCommunicatingJob`.
+            % This is the default.
+            % 
+            % An independent job transfers and stores a separate set of
+            % data for each task, allowing each transmit to be simulated on
+            % a different worker which may exist on different nodes, but it
+            % requires a full copy of the inputs for each worker which may
+            % incur a heavy data transfer and storage cost.
+            % 
+            % A communicating job shares all resources defined by the
+            % parcluster across all workers, which reduces data transfer
+            % and storage costs, but may require the entire job to fit on a
+            % single node.
+            % 
+            % The parcluster should be configured according to the job. For
+            % a communicating job, the NumWorkers and any memory options
+            % should be configured for all transmits. For an independent
+            % job, the NumWorkers and any memory options should be
+            % allocated for an individual transmit.
+            % 
+            % References:
+            % [1] Jensen, Jørgen Arendt.
+            % <a href="matlab.web('https://orbit.dtu.dk/en/publications/field-a-program-for-simulating-ultrasound-systems')">"Field: A program for simulating ultrasound systems."</a>
+            % Medical & Biological Engineering & Computing 
+            % 34.sup. 1 (1997): 351-353.
+            % 
+            % Example:
             % % Simulate some data
-            % us = UltrasoundSystem(); % get a default system
+            % us = UltrasoundSystem('fs', 50e6); % get a default system
             % scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % define a point target
             % chd = calc_scat_multi(us, scat); % simulate the ChannelData
             % 
@@ -1574,25 +1837,96 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % imagesc(real(chd));
             % colorbar;
             % 
+            % % Run on a parcluster instead
+            % clu = parcluster();
+            % [job, rfun] = calc_scat_multi(us, scat, 'job', true);
+            % 
+            % ... modify the job ...
+            % 
+            % % simulate data
+            % submit(job); % launch
+            % wait(job); % wait for the job to finish
+            % chd2 = rfun(job); % read data
+            % 
+            % isalmostn(chd.data, chd2.data)
+            % 
             % See also ULTRASOUNDSYSTEM/SIMUS ULTRASOUNDSYSTEM/FOCUSTX
 
             arguments
                 self (1,1) UltrasoundSystem
                 scat Scatterers
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
+                kwargs.fc double {mustBeNonnegative} = mean([self.rx.fc, self.tx.fc]); % attenuation central frequency
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
+                kwargs.job (1,1) logical = false
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Communicating";
+                kwargs.verbose (1,1) logical = false
+            end
+            % alias
+            [kvb, fcs] = deal(kwargs.verbose, kwargs.fc);
+
+            % validate inputs
+            if ~any(numel(kwargs.fc) == [1 numel(scat)])
+                error("QUPS:calc_scat_multi:vectorCentralFrequency", ...
+                    "The number of central frequencies ("+numel(kwargs.fc)...
+                    +") must be scalar or equivalent to the number of Scatterers (" ...
+                    +numel(scat)+")");
+            elseif isscalar(kwargs.fc)
+                kwargs.fc = repmat(kwargs.fc, size(scat)); % vectorize
             end
 
             % set default parenv
             if ~isfield(kwargs, 'parenv')
                 hcp = gcp('nocreate');
-                if isa(hcp, 'parallel.ThreadPool')
+                if kwargs.job
+                    kwargs.parenv = parcluster(); % default cluster
+                elseif isa(hcp, 'parallel.ThreadPool')
                     kwargs.parenv = 0; % don't default to a thread pool
                 else
-                    kwargs.parenv = hcp;
+                    kwargs.parenv = hcp; % use the current pool
                 end
             end
-            
+
+            % make a (communicating) job(s) instead
+            if kwargs.job
+                switch kwargs.type
+                    case "Communicating"
+                        job = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool');
+                        job.createTask(@(us,scat) ...
+                            us.calc_scat_multi(scat, element_subdivisions ...
+                            , 'parenv', Inf, 'fc', fcs, 'verbose', kvb ...
+                            ), 1, {self, scat}, 'CaptureDiary',true);
+
+                        % anonymous function to read in data
+                        rfun = @(job) job.Tasks(1).OutputArguments{1};
+
+                    case "Independent"
+                        for s = 1:numel(scat) % for each Scatterers
+                            seqs = splice(self.seq,1); % split up into individual sequences
+                            job(s) = createJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true); %#ok<AGROW>
+                            us_ = copy(self); % copy semantics
+                            for m = 1:self.seq.numPulse % each tx
+                                us_.seq = seqs(m); % switch to next tx
+                                job(s).createTask(@(us,scat,fc) ...
+                                    us.calc_scat_multi(scat, element_subdivisions ...
+                                    , 'parenv', 0, 'fc', fc, 'verbose', kvb ...
+                                    ), 1, {self, scat(s), fcs(s)}, 'CaptureDiary',true);
+                            end
+
+                            % anonymous function to read in data
+                            rfun = @(jobs) ...
+                                join( arrayfun(@(job) ... for each job
+                                join( arrayfun(@(tsk) ... for each tsk
+                                tsk.OutputArguments{1}, ... extract data
+                                job.Tasks), 3), ... and join tasks (txs) in dim 3
+                                jobs), 4); % and join jobs (scats) in dim 4
+                        end
+
+                end
+                chd = job; % alias
+                return;
+            end
+
             % helper function
             vec = @(x) x(:); % column-vector helper function
 
@@ -1602,7 +1936,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             wv_pl = copy(self.seq.pulse);
 
             % get the time axis (which passes through t == 0)
-            [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(self.fs);
+            [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(gather(self.fs));
             t_tx = wv_tx.time;
             t_rx = wv_rx.time;
             t_pl = wv_pl.time;
@@ -1613,51 +1947,42 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             tx_pls = gather(double(real(vec(wv_pl.samples)')));
 
             % get the apodization and time delays across the aperture
-            apod_tx = self.seq.apodization(self.tx); % N x M
-            tau_tx = -self.seq.delays(self.tx); % N x M
+            apd_tx = gather( self.seq.apodization(self.tx)); % N x M
+            tau_tx = gather(-self.seq.delays(     self.tx)); % N x M
             tau_offset = min(tau_tx, [], 1); % (1 x M)
             tau_tx = tau_tx - tau_offset; % 0-base the delays for FieldII
 
             % choose the parallel environment to operate on: avoid running on ThreadPools
             parenv = kwargs.parenv;
             if isempty(parenv), parenv = 0; end
-            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), 
-                warning('QUPS:InvalidParenv','calc_scat_multi cannot be run on a thread-based pool'); % Mex-files ...
+            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool')
+                warning("QUPS:calc_scat:invalidParalelEnvironment", ...
+                    "calc_scat_multi cannot be run on a "+class(parenv)+"."); % Mex-files ...
                 parenv = 0; 
-            end
-
-            % get the transducer coordinate offset
-            if self.tx == self.rx || isequal(self.tx.offset, self.rx.offset)
-                off = - self.tx.offset; % offset to adjust scatterer positions instead
-            else
-                error("QUPS:CALC_SCAT_MULTI:TransducerOffsetMismatch", ...
-                    "Cannot simulate a transmitter with offset " + self.tx.offset ...
-                    + " with a receiver with offset " + self.rx.offset + "." ...
-                    );
             end
 
             % splice
             [M, F] = deal(size(tau_tx,2), numel(scat)); % number of transmits/frames
-            [fs_, tx_, rx_] = deal(self.fs, self.tx, self.rx); % splice
-            [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos + off}, {t.amp}), scat); % splice
+            [fs_, tx_, rx_] = deal(gather(self.fs), self.tx, self.rx); % splice
+            [c0, att, pos, amp] = arrayfun(@(t)deal(t.c0, t.alpha0, {t.pos}, {t.amp}), scat); % splice
+            if ~isscalar(kwargs.fc), fc_ = kwargs.fc; else, fc_ = repmat(kwargs.fc, size(scat)); end
 
             % Make position/amplitude and transducers constants across the workers
             if isa(parenv, 'parallel.Pool')
                 cfun = @parallel.pool.Constant;
+                if kwargs.verbose, tb = ticBytes(parenv); end
             else
                 cfun = @(x)struct('Value', x);
                 [pos, amp] = deal({pos},{amp}); % for struct to work on cell arrays
             end
+                 
+            kvb = kwargs.verbose; % splice
             [pos_, amp_, tx_, rx_] = dealfun(cfun, pos, amp, tx_, rx_);
-
+            [voltages, ts] = deal(cell(M,F)); % pre-allocate
             parfor (m = 1:M, parenv) % each transmit pulse
-            for (f = F:-1:1) % each scat frame            
+                % for (m = 1:M) % each transmit pulse %%% DEBUG %%%
                 % (re)initialize field II
                 field_init(-1);
-
-                % set sound speed/sampling rate
-                set_field('fs', fs_);
-                set_field('c', c0(f)); %#ok<PFBNS> % this array is small
 
                 % get Tx/Rx apertures
                 p_focal = [0;0;0];
@@ -1674,14 +1999,32 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % for each transmit, set the transmit time delays and
                 % apodization
-                xdc_times_focus(Tx, 0,  tau_tx(:,m)'); % set the delays
-                xdc_apodization(Tx, 0, apod_tx(:,m)'); % set the apodization
-                
-                % call the sim
-                [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
+                xdc_times_focus(Tx, 0, double(tau_tx(:,m)')); % set the delays
+                xdc_apodization(Tx, 0, double(apd_tx(:,m)')); % set the apodization
+
+                for (f = 1:F) %#ok<NO4LP> % each scat frame
+                    % set sound speed/sampling rate
+                    set_field('fs', double(fs_));
+                    set_field('c', c0(f)); %#ok<PFBNS> % this array is small
+
+                    % set the attenuation
+                    use_att = isfinite(att(f)) && isfinite(fc_(f)); %#ok<PFBNS> this array is small too
+                    if use_att % TODO: no need to branch?
+                        set_field('att',fc_(f)*att(f)); % attenuation, frequency independent
+                        set_field('freq_att',  att(f)); % attenuation, frequency   dependent
+                        set_field('att_f0'  ,  fc_(f)); % attenuation, central frequency
+                        set_field('use_att' , double(use_att)); % turn on attenuation modelling                        
+                    end
+                    if kvb, disp("Simulating pulse "+m+" of frame "+f+" "+sub(["without","with"],1+use_att) + " attenuation."); end
+
+
+                    % call the sim
+                    [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
+                end
             end
-            end
-            
+
+            if isa(parenv, 'parallel.Pool') && kwargs.verbose, tocBytes(parenv, tb); end
+
             % adjust start time based on signal time definitions
             t0 = ... cell2mat(ts) + ... % fieldII start time (1 x 1 x M x F)
                 (t_pl(1) + t_tx(1) + t_rx(1)) ... signal delays for impulse/excitation
@@ -1823,26 +2166,26 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % Example:
             % 
             % % Setup a system
-            % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
-            % );
             % xdc = TransducerArray();
+            % grid = ScanCartesian( ...
+            %     'x', 1e-3*(-10 : 0.1 : 10), ...
+            %     'z', 1e-3*(  0 : 0.1 : 30) ...
+            % );
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'fs', single(16*xdc.fc));
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % [Xg, ~, Zg] = grid.getImagingGrid();
+            % rho(Xg == 0 & Zg == 10e-3) = 1000*2; % double the density
+            % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % chd = kspaceFirstOrder(us, med, sscan);
+            % chd = kspaceFirstOrder(us, med, grid);
             % 
             % % Display the ChannelData
             % figure;
-            % imagesc(real(chd));
+            % imagesc(hilbert(chd));
             % 
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM PARALLEL.JOB/FETCHOUTPUTS
             arguments % required arguments
@@ -1859,7 +2202,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.CFL_max (1,1) double {mustBePositive} = 0.25, % maximum cfl number (for stability)
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
-                kwargs.el_sub_div (1,2) double = self.getLambdaSubDiv(0.1, med.c0), % element subdivisions (width x height)
+                kwargs.el_sub_div (1,2) double = max(self.tx.getLambdaSubDiv(med.c0), self.rx.getLambdaSubDiv(med.c0)), % element subdivisions (width x height)
                 kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = self.seq.numPulse
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
                 kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim
@@ -1899,9 +2242,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 ksensor_args.directivity_pattern (1,1) string {mustBeMember(ksensor_args.directivity_pattern, ["pressure", "gradient", "total", "none"])} = "none"
             end
 
-            % only supported with tx == rx for now
-            assert(self.tx == self.rx, 'Transmitter and receiver must be identical.')
-
             % parse
             if isinf(sscan.dx), kwargs.el_sub_div(1) = 1; end % don't use sub-elements laterally for 1D sims
             if isinf(sscan.dy), kwargs.el_sub_div(2) = 1; end % don't use sub-elements in elevation for 2D sims
@@ -1933,13 +2273,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             cfl_ratio = dt_cfl_max / dt_us;
         
             if cfl_ratio < 1
-                warning('Upsampling the kWave time step for an acceptable CFL.');
+                warning("QUPS:kspaceFirstOrder:upsampling",'Upsampling the kWave time step for an acceptable CFL.');
                 time_step_ratio = ceil(inv(cfl_ratio));            
             else
                 % TODO: do (or don't) downsample? Could be set for temporal reasons
                 time_step_ratio = 1;
             end
-            kgrid.dt = dt_us / time_step_ratio;
+            kgrid.dt = gather(dt_us / time_step_ratio);
             fs_ = self.fs * time_step_ratio;
             
             % kgrid to sscan coordinate translation mapping
@@ -1954,28 +2294,30 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             t_tx = shiftdim((txn0 : txne)' / fs_, -2); % transmit signal time indices (1x1xT')
             txsamp = permute(apod .* txsig.sample(t_tx - del), [3,1,2]); % transmit waveform (T' x M x V)
             
-            % define the sensor on the grid 
+            % define the source and on the grid 
             % get the direction weights
-            [~,~,wnorm] = self.rx.orientations;
+            [~,~,wnorm] = self.tx.orientations;
             wnorm(1:3,:) = wnorm([3 1 2],:); % k-Wave coordinate mapping
             wnorm = swapdim(wnorm,1,5); % 1 x M x 1 x 1 x 3
 
             % generate {psig, mask, elem_weights}
+            if self.tx == self.rx, aps = "xdc"; else, aps = ["tx", "rx"]; end
+            for ap = aps % always do rx last: rx variables used in post
             switch kwargs.ElemMapMethod
                 case 'nearest'
                     pg = sscan.positions(); % -> 3 x Z x X x Y
-                    pn = self.xdc.positions; % element positions
+                    pn = self.(ap).positions; % element positions
                     if kwargs.gpu, [pg, pn] = dealfun(@gpuArray, pg, pn); end
                     [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing ( 1 if sliced )
                     mask = false(Nx, Ny, Nz); % grid size
                     assert(all(size(mask,1:3) == sscan.size), 'kWave mask and Scan size do not correspond.');
-                    for n = self.xdc.numel:-1:1 % get nearest pixel for each element
+                    for n = self.(ap).numel:-1:1 % get nearest pixel for each element
                         ind(n) = argmin(vecnorm(pn(:,n) - pg,2,1),[],'all', 'linear');
                     end
-                    assert(numel(unique(ind)) == self.xdc.numel, 'Elements are not unique; the Scan spacing or sizing may be too small.');
+                    assert(numel(unique(ind)) == self.(ap).numel, 'Elements are not unique; the Scan spacing or sizing may be too small.');
                     mask(ind) = true;
                     psig = pagetranspose(txsamp .* wnorm); % -> (J' x T' x V x 1 x 3) with M == J'
-                    elem_weights = eye(self.xdc.numel) ; % J' x M with ( J' == M )
+                    elem_weights = eye(self.(ap).numel) ; % J' x M with ( J' == M )
                     clear pg;
 
                 case 'linear'
@@ -1984,7 +2326,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                     % get a mapping of delays and weights to all
                     % (sub-)elements (J' x M)
-                    [mask, el_weight, el_dist, el_ind] = self.xdc.elem2grid(sscan, kwargs.el_sub_div);% perm(X x Y x Z), (J' x M)
+                    [mask, el_weight, el_dist, el_ind] = self.(ap).elem2grid(sscan, kwargs.el_sub_div);% perm(X x Y x Z), (J' x M)
                     el_map_grd = sparse((1:nnz(mask))' == el_ind(:)'); % matrix mapping (J' x J'')
 
                     % apply to transmit signal: for each element
@@ -2010,7 +2352,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 case {'karray-direct', 'karray-depend'}
                     karray_args.BLIType = char(karray_args.BLIType);
                     karray_opts = struct2nvpair(karray_args);
-                    karray = kWaveArray(self.xdc, kgrid.dim, kgrid_origin, karray_opts{:});
+                    karray = kWaveArray(self.(ap), kgrid.dim, kgrid_origin, karray_opts{:});
                     mask = karray.getArrayBinaryMask(kgrid);
 
                     % assign source for each transmission (J' x T' x V)
@@ -2022,14 +2364,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                             vec = @(x) x(:);
 
                             % get the offgrid source weights
-                            elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:self.xdc.numel);  % (J x {M})
+                            elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:self.(ap).numel);  % (J x {M})
                             elem_weights = cat(2, elem_weights{:}); % (J x M)
                             elem_weights = elem_weights(mask(:),:); % (J' x M)
                             psig = pagemtimes(full(elem_weights), 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
 
                             % get the offgrid source sizes
-                            elem_meas = arrayfun(@(i)karray.elements{i}.measure, 1:self.xdc.numel);
-                            elem_dim  = arrayfun(@(i)karray.elements{i}.dim    , 1:self.xdc.numel);
+                            elem_meas = arrayfun(@(i)karray.elements{i}.measure, 1:self.(ap).numel);
+                            elem_dim  = arrayfun(@(i)karray.elements{i}.dim    , 1:self.(ap).numel);
                             elem_norm = elem_meas ./ (kgrid.dx) .^ elem_dim; % normalization factor
                             elem_weights = elem_weights ./ elem_norm; 
 
@@ -2042,48 +2384,55 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     end
             end
 
-            % define the sensor
-            ksensor.mask = mask; % pixels to record
+            if (ap == "rx" || ap == "xdc")
+                % define the sensor
+                ksensor.mask = mask; % pixels to record
 
-            % set the directivity
-            switch ksensor_args.directivity_pattern 
-                case {'none'}
-                otherwise
-                switch kwargs.ElemMapMethod
-                    case {'linear', 'nearest'}
-                        elem_dir = zeros(size(mask)); % receive element directivity
-                        theta = deg2rad(self.xdc.orientations());
-                        if kwargs.ElemMapMethod == "nearest"
-                            elem_dir(ind) = theta; % set element directions
-                        else
-                            for n = 1:self.xdc.numel, elem_dir(el_ind(:,n)) = theta(n); end % set element directions
+                % set the directivity
+                switch ksensor_args.directivity_pattern
+                    case {'none'}
+                    otherwise
+                        switch kwargs.ElemMapMethod
+                            case {'linear', 'nearest'}
+                                elem_dir = zeros(size(mask)); % receive element directivity
+                                theta = deg2rad(self.rx.orientations());
+                                if kwargs.ElemMapMethod == "nearest"
+                                    elem_dir(ind) = theta; % set element directions
+                                else
+                                    for n = 1:self.rx.numel, elem_dir(el_ind(:,n)) = theta(n); end % set element directions
+                                end
+
+                                ksensor.directivity_angle = elem_dir; % 0 is most sensitive in x
+                                ksensor.directivity_size  = self.rx.width; % size of the element for producing the directivity
+                                ksensor.directivity_pattern = char(ksensor_args.directivity_pattern); % type of pattern
+                            case {'karray-direct', 'karray-depend'}
+                                warning('Unable to set directivity for karray element mapping methods.');
                         end
-
-                        ksensor.directivity_angle = elem_dir; % 0 is most sensitive in x
-                        ksensor.directivity_size  = self.rx.width; % size of the element for producing the directivity
-                        ksensor.directivity_pattern = char(ksensor_args.directivity_pattern); % type of pattern
-                    case {'karray-direct', 'karray-depend'}
-                        warning('Unable to set directivity for karray element mapping methods.');
                 end
             end
 
-            % define the source if it's not empty i.e. all zeros
-            switch kwargs.ElemMapMethod
-                case {'nearest', 'linear'} % use vector velocity source
-                    if any(sub(psig,1,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
-                    if any(sub(psig,2,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
-                    if any(sub(psig,3,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
-                    [ksource.u_mask] = deal(mask); % set transmit aperture mask
-                case {'karray-direct', 'karray-depend'} % use a pressure source
-                    if any(sub(psig,1,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).p = real(sub(psig,v,3)); end, end % set transmit pulses (J' x T' x V x 1 x 1)
-                    [ksource.p_mask] = deal(mask); % set transmit aperture mask
+            if (ap == "tx" || ap == "xdc")
+                % define the source if it's not empty i.e. all zeros
+                switch kwargs.ElemMapMethod
+                    case {'nearest', 'linear'} % use vector velocity source
+                        if any(sub(psig,1,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).ux = real(sub(psig,{v,1},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                        if any(sub(psig,2,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).uy = real(sub(psig,{v,2},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                        if any(sub(psig,3,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).uz = real(sub(psig,{v,3},[3,5])); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                        [ksource.u_mask] = deal(mask); % set transmit aperture mask
+                    case {'karray-direct', 'karray-depend'} % use a pressure source
+                        if any(sub(psig,1,5),'all'), for v = self.seq.numPulse:-1:1, ksource(v).p = real(sub(psig,v,3)); end, end % set transmit pulses (J' x T' x V x 1 x 1)
+                        [ksource.p_mask] = deal(mask); % set transmit aperture mask
+                end
+
+            end
+
             end
 
             % set the total simulation time: default to a single round trip at ambient speed
             if isempty(kwargs.T)
                 kwargs.T = 2 * (vecnorm(range([sscan.xb; sscan.yb; sscan.zb], 2),2,1) ./ med.c0);
             end
-            Nt = 1 + floor((kwargs.T + max(range(t_tx))) / kgrid.dt); % number of steps in time
+            Nt = 1 + gather(floor((kwargs.T + max(range(t_tx))) / kgrid.dt)); % number of steps in time
             kgrid.setTime(Nt, kgrid.dt);
 
             % get the receive impulse response function
@@ -2193,19 +2542,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elemmethod = kwargs.ElemMapMethod;
             
             % get the arguments to run the sim
-            if isfield(ksensor, 'record')
-                if contains(ksensor.record, 'u')
-                    wd = 1 : kgrid.dim; % record up to dim dimensions
-                else
-                    wd = ismember(["ux", "uy", "uz"], ksensor.record); % record corresponding fields
-                end
-            else
-                wd = 1:kgrid.dim; % ???
-            end
             args = {...
                 kspaceFirstOrderND_, ...
                 kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
-                rx_sig, elemmethod, wnorm(:,:,wd), rx_args, ...
+                rx_sig, elemmethod, rx_args, ...
                 t0, fs_ ...
                 };
 
@@ -2235,7 +2575,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
     methods(Static, Hidden)
-        function y = kspaceFirstOrderPostProc(x, rx_sig, method, wnorm, varargin)
+        function y = kspaceFirstOrderPostProc(x, rx_sig, method, varargin)
             % processing step: get sensor data, enforce on CPU (T x N)
             
             if isstruct(x)
@@ -2296,13 +2636,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % to combine the velocities
             switch method
                 case {}% {'linear', 'nearest'}
-                    y = sum(y .* wnorm, 3); % (T x N x D) * (1 x N x D) -> (T x N)
+                    % y = sum(y .* wnorm, 3); % (T x N x D) * (1 x N x D) -> (T x N)
             end
         end
     
         function chd = kspaceRunSim(kspaceFirstOrderND_, ...
                 kgrid, kmedium, kmedium_iso, ksource, ksensor, kwave_args_, ...
-                rx_sig, elemmethod, wnorm, rx_args, t0, fs_, W ...
+                rx_sig, elemmethod, rx_args, t0, fs_, W ...
                 )
 
             % splice
@@ -2336,7 +2676,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 sensor_data     = kspaceFirstOrderND_(kgrid, kmedium    , ksource(puls), ksensor, kwave_args_{puls}{:}); % data is small
 
                 % Post-process the simulation data
-                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data, rx_sig, elemmethod, wnorm, rx_args{:}); %#ok<PFBNS> data is small
+                out{puls} = UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data, rx_sig, elemmethod, rx_args{:}); %#ok<PFBNS> data is small
 
                 if runiso
                 % simulate
@@ -2344,7 +2684,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
                 % Post-process the simulation data, and remove background
                 out{puls} = out{puls} ...
-                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data, rx_sig, elemmethod, wnorm, rx_args{:}); 
+                          - UltrasoundSystem.kspaceFirstOrderPostProc(sensor_data, rx_sig, elemmethod, rx_args{:}); 
                 end
 
                 % report timing % TODO: make this part of some 'info' logger or something
@@ -2439,7 +2779,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
-            % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            % if isreal(chd) chd = hilbert(chd); end % complex analog
+            % chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
             % b = DAS(us, chd); % beamform the data
             % 
             % % Display the image
@@ -2456,7 +2797,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 c0(:,:,:,1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
-                kwargs.device (1,1) {mustBeInteger} = -1 * logical(gpuDeviceCount)
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
                 kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
@@ -2501,7 +2842,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if ~isequal(ord, 1:3), chd = rectifyDims(chd); end % reorder if necessary
 
                 % get the beamformer arguments
-                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'position-precision', kwargs.prec}; % data args
+                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'input-precision', kwargs.prec}; % data args
                 if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
                 ext_args = [interp_args, apod_args]; % extra args
     
@@ -2514,7 +2855,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                         pos_args = {P_im, P_rx, [0;0;0], self.seq.focus}; % TODO: use origin property in tx sequence
                         ext_args{end+1} = 'plane-waves'; %#ok<AGROW> 
                     case {'VS', 'FC', 'DV'}
-                        nf = self.seq.focus - self.xdc.offset; % normal vector
+                        nf = self.seq.focus - self.tx.offset; % normal vector
                         pos_args = {P_im, P_rx, self.seq.focus, nf ./ norm(nf)};
                         if self.seq.type == "DV", ext_args{end+1} = 'diverging-waves'; end %#ok<AGROW>
                 end
@@ -2523,7 +2864,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 if nargout > 1, ext_ret = cell(1,3); else, ext_ret = {}; end
 
                 % beamform the data (I1 x I2 x I3 x N x M x F x ...)
-                [b, ext_ret{:}] = beamform(fun, pos_args{:}, dat_args{:}, ext_args{:});
+                [b, ext_ret{:}] = das_spec(fun, pos_args{:}, dat_args{:}, ext_args{:});
 
                 % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
                 b = permute(b, [1:3,6:(D+2),4:5]);
@@ -2583,7 +2924,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Create plane-wave data by synthesizing the transmits with plane-wave delays
             % 
             % seq_pw = SequenceRadial('type', 'PW', 'c0', us.seq.c0, ...
-            %  'angles', -25:0.5:25, 'ranges', 1); % plane-wave sequence
+            %  'angles', -25:5:25, 'ranges', 1); % plane-wave sequence
             % chd_pw = focusTx(us, chd, seq_pw); % synthesize transmits
             %
             % % Beamform the plane-wave data
@@ -2605,7 +2946,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.length string {mustBeScalarOrEmpty} = string.empty;
                 kwargs.buffer (1,1) {mustBeNumeric, mustBeInteger} = 0
-                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = seq.numPulse
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,seq.numPulse)
+                kwargs.verbose (1,1) logical = false;
             end
 
             % Copy semantics
@@ -2650,12 +2992,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             assert(D > chd.mdim, "Transmit must be in the first 3 dimensions (" + chd.mdim + ").");
             tau  = swapdim(tau ,[1 2],[chd.mdim D]); % move data
             apod = swapdim(apod,[1 2],[chd.mdim D]); % move data
-            id   = num2cell((1:kwargs.bsize)' + (0:kwargs.bsize:seq.numPulse-1),1); % output sequence indices
+            B = max(1, floor(kwargs.bsize / self.tx.numel)); % simultaneous blocks of TxN, as best we can manage
+            id   = num2cell((1:B)' + (0:B:seq.numPulse-1),1); % output sequence indices
             id{end}(id{end} > seq.numPulse) = []; % delete OOB indices
+
+            if kwargs.verbose
+                disp("Focusing with "+numel(id)+" blocks of "+B+" transmit(s) each.")
+            end
 
             % sample and store
             for i = numel(id):-1:1
-                z{i} = chd.sample(chd.time - sub(tau,id{i},D), kwargs.interp, sub(apod,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
+                z{i} = chd.sample2sep(chd.time, - sub(tau,id{i},D), kwargs.interp, sub(apod,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
                 z{i} = swapdim(z{i}, chd.mdim, D); % replace transmit dimension (perm({T' x N} x M') x {F x ...})
             end
             z = cat(chd.mdim, z{:}); % unpack transmit dimension (perm(T' x N x M') x F x ...)
@@ -2709,10 +3056,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % % Define the setup - make plane waves
             % c0 = 1500;
             % us = UltrasoundSystem();
-            % us.seq.c0 = c0;
+            % seq = Sequence(        'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0);
             % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
-            % seqfc = SequenceRadial('type', 'VS', 'focus', [1;0;0].*(sub(us.xdc.positions,1,1)) + [0;0;20e-3], 'c0', c0);
-            % scat = Scatterers('pos', [5e-3;0;30e-3], 'c0', seqpw.c0); % define a point target
+            % seqfc = SequenceRadial('type', 'FC', 'focus',[0 0 20]' + [1 0 0]'.*sub(us.xdc.positions,1,1), 'c0', c0);
+            % scat = Scatterers('pos', [5 0 30]'*1e-3, 'c0', seqpw.c0); % define a point target
             %
             % % Compute the image
             % chd = greens(us, scat); % compute the response
@@ -2738,9 +3085,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % chdfsa2 = refocus(us, chdpw, seqpw);
             % bfsa2 = DAS(us, chdfsa2);
             %
-            % %% Display the channel data
+            % % Display the channel data
             % figure('Name', 'Channel Data');
-            % tiledlayout('flow');
+            % tiledlayout(3,2);
             % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
             % tnms = ["Original", "Original", "PW", "PW-REF", "FC", "FC-REF"];
             % for i = 1:numel(chds)
@@ -2750,13 +3097,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % end
             % linkaxes([himc.Parent]);
             %
-            % %% Display the images
+            % % Display the images
             % figure('Name', 'B-mode');
-            % tiledlayout('flow');
-            % bs = cat(4, b, b, bpw, bfsa1, bfc, bfsa2);
-            % bpow = gather(mod2db(max(bs,[],1:2)));
-            % for i = 1:size(bs,4)
-            %     himb(i) = imagesc(us.scan, sub(bs,i,4), nexttile(), bpow(i) + [-80 0]);
+            % tiledlayout(3,2);
+            % bs = {b, b, bpw, bfsa1, bfc, bfsa2};
+            % bpow = gather(mod2db(cellfun(@(b)max(b,[],'all'), bs)));
+            % for i = 1:numel(bs)
+            %     himb(i) = imagesc(us.scan, bs{i}, nexttile(), bpow(i) + [-80 0]);
             %     colormap gray; colorbar; 
             %     title(tnms(i));
             % end
@@ -2771,22 +3118,29 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
             end
 
-            % dispatch pagenorm function based on MATLAB version
-            if verLessThan('matlab', '9.13')
+            % dispatch pagenorm/pagemrdivide function based on MATLAB version
+            if     exist('pagenorm', 'file')
                 pagenorm2 = @(x) pagenorm(x,2);
+            elseif exist('pagesvd', 'builtin')
+                pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
-                pagenorm2 = @(x) max(pagesvd(x),[],1:2);
+                pagenorm2 = @(x) cellfun(@(x) svds(x,1), num2cell(double(x),1:2));
+            end
+            if exist('pagemrdivide','builtin')
+                pagemrdivide_ = @pagemrdivide;
+            else
+                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,num2cell(x,1:2),num2cell(y,1:2),'UniformOutput',false));
             end
 
             % get the apodization / delays from the sequence
-            tau = -seq.delays(self.tx); % (M x V)
+            tau = -seq.delays(     self.tx); % (M x V)
             a   =  seq.apodization(self.tx); % (M x V)
 
             % get the frequency vectors
             f = gather(chd.fftaxis); % perm(... x T x ...)
 
             % construct the encoding matrix (M x V x T)
-            H = a .* exp(+2j*pi*shiftdim(f(:),-2).*tau);
+            H = a .* exp(+2j*pi*swapdim(f,chd.tdim,3).*tau);
 
             % compute the pagewise tikhonov-inversion inverse (V x M x T)
             % TODO: there are other options according to the paper - they
@@ -2796,7 +3150,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     % TODO: option to use pinv, as it is (slightly)
                     % different than matrix division
                     A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm2(gather(H)).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
-                    Hi = pagetranspose(pagemrdivide(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
+                    Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
                     Hi = cast(Hi, 'like', H);
             end
 
@@ -2809,7 +3163,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % move data to the frequency domain
             x = chd.data;
             x = fft(x,chd.T,chd.tdim); % get the fft in time
-            omega0 = exp(-2i*pi*f .* chd.t0); % time-alignment phase
+            omega0 = exp(-2i*pi*f.*chd.t0); % time-alignment phase
             x = x .* omega0; % phase shift to re-align time axis
             
             % apply to the data - this is really a tensor-times-matrix
@@ -2821,7 +3175,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % move back to the time domain
             t0 = min(chd.t0,[],'all');
-            y = y .* exp(+2i*pi*f .* t0); % re-align time axes
+            y = y .* exp(+2i*pi*f.*t0); % re-align time axes
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
@@ -2901,7 +3255,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Compute the image
             % chd = greens(us, scat); % compute the response
-            % chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            % chd = zeropad(singleT(chd), 0, max(0, chd.T - 512)); % precondition the data
+            % if isreal(chd), chd = hilbert(chd); end % complex analog
             % b = bfAdjoint(us, chd); % beamform the data
             % 
             % % Display the image
@@ -3021,7 +3376,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
 
             % cast data type for efficency
             [w_tx, w_rx, w_steer, apod_tx] = dealfun(@(w) cast(w, 'like', real(x)), w_tx, w_rx, w_steer, apod_tx);
-            b = repmat(cast(0, 'like', x), [1, size(Pi,2:ndims(Pi))]);
+            b = zeros(1,'like', x);
 
             % splice data 
             k = gather(find(f_val)'); % skip unimportant frequencies
@@ -3029,8 +3384,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             k{end}(isnan(k{end})) = []; % delete invalid entries
             xk = cellfun(@(k) sub(x,k,chd.tdim), k, 'UniformOutput',false);
             chd_ord = [chd.ndim, chd.mdim, chd.tdim]; % permution order
+            ichd_ord(chd_ord) = 1:3; % inverse permutation
 
-            if kwargs.verbose, tt = tic; fprintf("Beamforming for " + numel(k) + " frequency bands. Completed: ["); end
+            if kwargs.verbose, tt = tic; fprintf("Beamforming for " + numel(k) + " frequency bands "); end % . Completed: ["); end
             % DEBUG: plot
             % figure; h = imagesc(squeeze(zeros(self.scan.size))); colorbar; colormap jet;
 
@@ -3049,19 +3405,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 xk_ = permute(xk{ik}, [chd_ord, 4:D]);
                 
                 % compute the greens functions on transmit/receive
-                G_tx = w_tx.^(k_-1); % 1 x M x F x 1 x [I]
-                G_rx = w_rx.^(k_-1); % 1 x N x F x 1 x [I]
+                % G_tx = w_tx.^(k_-1); % 1 x M x F x 1 x [I]
+                % G_rx = w_rx.^(k_-1); % 1 x N x F x 1 x [I]
 
                 % compute the inverse steering vector on transmit
-                T_tx = apod_tx .* w_steer.^(k_-1); % M x V x F
-                A_tx = pagemtimes(G_tx, T_tx); % 1 x V x F x 1 x [I]
+                A_tx = apod_tx .* w_steer.^(k_-1); % M x V x F
+                A_tx = pagemtimes(w_tx.^(k_-1), A_tx); % 1 x V x F x 1 x [I]
                 Ainv_tx = pagetranspose(A_tx); % V x 1 x F x 1 x [I] % make a column vector
                 Ainv_tx = Ainv_tx ./ vecnorm(Ainv_tx, 2, 1); % normalize the power
                 
                 % apodize, delay, and sum the data for this frequency
                 % only 1 of the a_* will contain the apodization
-                if sumrx, yn = a_m .*      pagemtimes(a_n .* conj(G_rx)   , a_mn .* xk_); % 1 x V x F x 1 x [I]
-                else,     yn = a_m .* (pagectranspose(a_n .*     (G_rx)) .* a_mn .* xk_); % N x V x F x 1 x [I]
+                if sumrx, yn = a_m .*      pagemtimes(a_n .* conj(w_rx.^(k_-1))   , a_mn .* xk_); % 1 x V x F x 1 x [I]
+                else,     yn = a_m .* (pagectranspose(a_n .*     (w_rx.^(k_-1))) .* a_mn .* xk_); % N x V x F x 1 x [I]
                 end
                 if sumtx, y  = pagemtimes(yn,                 conj(Ainv_tx));  % [1|N] x 1 x F x 1 x [I]
                 else,     y  =           (yn .* pagectranspose(   (Ainv_tx))); % [1|N] x V x F x 1 x [I]
@@ -3073,12 +3429,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 % DEBUG: update display
                 % h.CData(:) = mod2db(sum(y,3)); drawnow limitrate; 
             
-                if kvb, fprintf(string(ik) +","); end
+                % if kvb, fprintf(string(ik) +","); end
+                if kvb, fprintf("."); end
             end
-            if kwargs.verbose, fprintf("\b]\nDone! "); toc(tt), end
+            % if kvb, fprintf("\b]\nDone! "); toc(tt), end
+            if kvb, fprintf("\nDone! "); toc(tt), end
 
             % move to image dimensions ([I] x ... x perm([1|N] x [1|V] x 1)
-            b = swapdim(ipermute(b,[chd_ord, 4:(D+3)]), 1:3, D+(1:3));
+            b = swapdim(b, [D+(1:3), 3+(1:D-3), ichd_ord], 1:D+3);
 
             % set delays to proper output sizing
             if nargout >= 2
@@ -3171,12 +3529,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % 
             % % Setup a system
             % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
+            %   'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
+            %   'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
             % );
             % xdc = TransducerArray('numel', 16, 'fc', 3e6, 'bw', [1.5, 4.5]*1e6, 'pitch', 1.5e3/3e6);
             % seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', 1500);
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq, 'fs', 10*xdc.fc);
             % 
             % % Create a Medium to simulate
             % [c0, rho0] = deal(1.5e3, 1e3); 
@@ -3201,6 +3559,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % med = Medium.Sampled(sscan, c, rho);
             % 
             % % Simulate the ChannelData
+            % us.fs = single(us.fs); % accelerate
             % chd = kspaceFirstOrder(us, med, sscan, 'CFL_max', 0.5);
             % 
             % % Beamform
@@ -3437,7 +3796,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % get virtual source or plane wave geometries
             switch self.seq.type
                 case 'FSA',             [Pv, Nv] = deal(self.tx.positions(), argn(3, @()self.tx.orientations));
-                case {'VS','FC','DV'},  [Pv, Nv] = deal(self.seq.focus, normalize(self.seq.focus - self.xdc.offset,1,"norm"));
+                case {'VS','FC','DV'},  [Pv, Nv] = deal(self.seq.focus, normalize(self.seq.focus - self.tx.offset,1,"norm"));
                 case 'PW',              [Pv, Nv] = deal([0;0;0], self.seq.focus); % TODO: use origin property in tx sequence
             end
             Pr = swapdim(Pr,2,5); % move N to dim 5
@@ -3640,31 +3999,31 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             else, b = cat(chddim, b{:}); end % array
         end
         
-        function [b, bscan] = bfMigration(self, chd, c0, kwargs)
+        function [b, bscan] = bfMigration(self, chd, Nfft, kwargs)
             % BFMIGRATION - Plane-Wave Stolt's f-k migration beamformer
             %
             % b = BFMIGRATION(self, chd) creates a b-mode image b from
             % the plane-wave ChannelData chd created from a TransducerArray
             % defined by self.xdc.
             %
-            % [b, bscan] = BFMIGRATION(self, chd, c0) additionally returns a
-    	    % ScanCartesian bscan on which the bmode image is naturally defined.
+            % [...] = BFMIGRATION(self, chd, [F, K]) uses a F-point FFT in time and
+            % a K-point FFT laterally. If F < chd.T, the data is truncated temporally
+            % and if K < chd.N, the data is truncated laterally. The default is
+            % [chd.T, chd.N].
             %
-            % [...] = BFMIGRATION(..., Name, Value, ...) passes additional Name/Value
-            % pair arguments.
+            % [b, bscan] = BFMIGRATION(...) additionally returns a
+            % ScanCartesian bscan on which the bmode image is naturally defined.
+            %
+            % [...] = BFMIGRATION(..., 'c0', c0) sets the sound speed. The
+            % default is self.seq.c0.
             %
             % [...] = BFMIGRATION(..., 'keep_tx', true) preserves the
             % transmit dimension in the output image b.
             %
-            % [...] = BFMIGRATION(..., 'NFFT', [F, K]) uses a F-point FFT in time and
-    	    % a K-point FFT laterally. If F < chd.T, the data is truncated temporally
-    	    % and if K < chd.N, the data is truncated laterally. The default is
-    	    % [chd.T, chd.N].
-    	    %
-    	    % [...] = BFMIGRATION(..., 'interp', method) specifies the method for
-    	    % interpolation. The default is 'cubic'.
-    	    %
-    	    % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
+            % [...] = BFMIGRATION(..., 'interp', method) specifies the method for
+            % interpolation. The default is 'cubic'.
+            %
+            % [...] = BFMIGRATION(..., 'bsize', B) uses an block size of B to
             % compute at most B transmits at a time. A larger block size
             % will run faster, but use more memory. The default is chosen
             % heuristically.
@@ -3672,9 +4031,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % [...] = BFMIGRATION(..., 'fmod', fc) upmixes the data at a
             % modulation frequency fc. This undoes the effect of
             % demodulation/downmixing at the same frequency.
-    	    %
+            %
             % [...] = BFMIGRATION(..., 'jacobian', false) does not apply a
-    	    % jacobian update when mapping the frequncies.
+            % jacobian update when mapping the frequncies.
             %
             % References:
             % [1] Garcia D, Le Tarnec L, Muth S, Montagnon E, Porée J, Cloutier G.
@@ -3683,20 +4042,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % doi: <a href="matlab:web('https://doi.org/10.1109%2FTUFFC.2013.2771')">10.1109/TUFFC.2013.2771</a>. PMID: 24626107; PMCID: PMC3970982.
             %
             % Example:
-            % % Define the setup
-            % us = UltrasoundSystem(); % get a default system
-            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', us.seq.c0); % define a point target
-            %
             % % A plane-wave transmission is required - migration works
             % % best for small angles
-            % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10);
-            % us.seq = seq;
+            % c0 = 1500;
+            % seq = SequenceRadial('type', 'PW', 'angles', -10 : 0.25 : 10, 'c0', c0);
+            %
+            % % Define the setup
+            % us = UltrasoundSystem('seq', seq); % get a default system
+            % scat = Scatterers('pos', 1e-3*[0;0;1].*(5:5:30), 'c0', c0); % define a point target
             %
             % % Compute the response
             % chd = greens(us, scat);
             %
             % % beamform the data, with implicit zero-padding
-            % [b, bscan] = bfMigration(us, chd, 'Nfft', [2*chd.T, 4*chd.N]);
+            % [b, bscan] = bfMigration(us, chd, [2*chd.T, 4*chd.N]);
             %
             % % Display the image
             % bim = mod2db(b); % log-compression
@@ -3709,11 +4068,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             arguments
                 self (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
-                c0 (1,1) {mustBeNumeric} = self.seq.c0
+                Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
+                kwargs.c0 (1,1) {mustBeNumeric} = self.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 % modulation frequency
-                kwargs.Nfft (1,2) {mustBeInteger, mustBePositive} = [chd.T, chd.N]; % FFT-lengths
                 kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
-                kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(1*(2^30 / (4*chd.T*chd.N*size(chd.data,4:max(4,ndims(chd.data))))))); % vector computation block size
+                kwargs.bsize (1,1) {mustBeNumeric, mustBeInteger, mustBePositive} = max(1,floor(2^(30-4-2-2) / prod([Nfft,prod(size(chd.data,4:max(4,ndims(chd.data))))]))); % vector computation block size - defaults to ~ 1GB
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 % kwargs.verbose (1,1) logical = true
                 kwargs.jacobian (1,1) logical = true
@@ -3732,10 +4091,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % Choose the FFT size in time/frequency and laterally
-            [F, K] = deal(kwargs.Nfft(1), kwargs.Nfft(end));
+            [F, K] = deal(Nfft(1), Nfft(end));
 
             % Exploding Reflector Model velocity
-            cs = c0/sqrt(2);
+            cs = kwargs.c0/sqrt(2);
 
             % get the frequency domains' axes with negative frequencies
             f  = ((0 : F - 1) - floor(F/2)) / F * chd.fs        ; % 1 x T - temporal frequencies
@@ -3749,9 +4108,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             pn = self.xdc.positions;
             x0 = pn(1,1); % element lateral start position
 
-            % get transmit mapping in compatiable dimensions
+            % get transmit mapping in compatible dimensions
             sq = copy(self.seq);
-            sq.c0 = c0;
+            sq.c0 = kwargs.c0;
             th0 = self.xdc.rot(1); % array orientation (azimuth)
             tau = sq.delays(self.xdc); % N x M
             ord = [chd.ndim, chd.mdim]; % send to these dimensions
@@ -3883,13 +4242,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
             %   apod = apScanline(us, dx);
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -3927,6 +4286,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             elseif isa(us.scan, 'ScanPolar')
                 xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            else
+                error("QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "apMultiline does not support a " + class(us.scan) + " - please edit the code here." ...
+                    );
             end
             apod = abs(xi - xv) < tol; % create mask
         end
@@ -3953,13 +4316,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apMultiline(us);
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -3995,8 +4359,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                 xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
                 xdim = us.scan.adim; % dimension of change
-                xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
+                xi = swapdim(us.scan.a, 2, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
+            else
+                error("QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "apMultiline does not support a " + class(us.scan) + " - please edit the code here." ...
+                    );
             end
 
             % TODO: switch this to accept multiple transmits instead of
@@ -4057,13 +4425,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*50e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apTranslatingAperture(us, 64*us.xdc.pitch); % 64-element window
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4129,7 +4498,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % apod = APAPERTUREGROWTH(us, f, Dmax) restricts the
             % maximum size of the aperture to Dmax. The default is Inf.
             %
-            % The Transducer us.rx must be a TransducerArray.
+            % The Transducer us.rx must be a TransducerArray or 
+            % TransducerConvex.
             %
             % The output apod has dimensions I1 x I2 x I3 x N x M where
             % I1 x I2 x I3 are the dimensions of the scan, N is the number
@@ -4142,13 +4512,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apApertureGrowth(us, 2); % use a f# of 2
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4174,26 +4545,43 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
 
             % soft validate the transmit sequence and transducer types.
-            if ~isa(us.rx, 'TransducerArray'), warning(...
-                    "Expected Transducer to be a TransducerArray but instead got a " + class(us.rx) + ". This may produce unexpected results."...
+            if ~(isa(us.rx, 'TransducerArray') || isa(us.rx, 'TransducerConvex')), warning(...
+                    "Expected Transducer to be a TransducerArray or TransducerConvex but instead got a " + class(us.rx) + ". This may produce unexpected results."...
                     )
             end
 
-            % TODO: generalize to polar
             % get the transmit foci lateral position, M in dim 6
             % Pv = swapdim(sub(seq.focus,1:3,1), 2, 6);
 
-            % get the receiver lateral positions, N in dim 5
+            % get the receiver lateral/axial positions, N in dim 5
             Pn = swapdim(us.rx.positions, 2, 5); % (3 x 1 x 1 x 1 x N)
+            [Xn, Zn] = deal(sub(Pn,1,1), sub(Pn,3,1)); % (1 x 1 x 1 x 1 x N)
 
-            % get the pixel positions in the proper dimensions
-            Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
-            Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            % calculate x and z for scan
+            if isa(us.scan, 'ScanPolar') % polar scan -> convert to Cartesian
+                r = swapdim(us.scan.r, 2, 1+us.scan.rdim);
+                a = swapdim(us.scan.a, 2, 1+us.scan.adim);
+                Xi = r .* sind(a) + us.scan.origin( 1 ); % (1 x I1 x I2 x 1)
+                Zi = r .* cosd(a) + us.scan.origin(end); % (1 x I1 x I2 x 1)
+            else % already in Cartesian
+                % get the pixel positions in the proper dimensions
+                Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
+                Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            end 
 
             % get the equivalent aperture width (one-sided) and pixel depth
-            % d = sub(Pn - Pv, 1, 1); % one-sided width where 0 is aligned with transmit
-            d = sub(Pn,1,1) - Xi; % one-sided width where 0 is aligned with the pixel
-            z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            if isa(us.rx, 'TransducerConvex') % convex array width and depth calculation
+                ae = swapdim(us.rx.orientations(), 2, 5); % angles of elements, in degrees
+                rp = hypot( Xi - Xn, Zi - Zn); % radii to scan points
+                ap = atan2d(Xi - Xn, Zi - Zn); % angles to scan points
+                d =     rp .* sind(ap - ae) ; % equivalent one-sided widths for points
+                z = abs(rp .* cosd(ap - ae)); % equivalent depth for points; take abs() to use same apodization calculation as linear arrays
+            else % linear array width and depth calculation
+                d = Xn - Xi; % one-sided width where 0 is aligned with the pixel
+                z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
+            end
+
+            % determine apodization 
             apod = z > f * abs(2*d) ; % restrict the f-number
             apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
 
@@ -4222,13 +4610,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             %   dx = 0.5e-3; % spacing between foci
             %   xf  = -10e-3 : dx : 10e-3; % focal lateral position
             %   pf  = [1;0;0].*xf + [0;0;1].*40e-3; % focal positions (50mm focal depth)
-            %   seq = Sequence('type', 'VS', 'focus', pf, 'c0', 1500);
+            %   seq = Sequence('type', 'FC', 'focus', pf, 'c0', 1500);
             %   us = UltrasoundSystem('seq', seq); % get a default system
             %   scat = Scatterers('pos', [0;0;20e-3], 'c0', us.seq.c0); % define a point target
             %
             %   % Compute the image
             %   chd = greens(us, scat); % compute the response
-            %   chd = hilbert(zeropad(singleT(chd), 0, max(0, chd.T - 2^9))); % precondition the data
+            %   chd = zeropad(singleT(chd), 0, max(0, chd.T - 2^9)); % precondition the data
+            %   if isreal(chd), chd = hilbert(chd); end % complex analog
             %   apod = apAcceptanceAngle(us, 25); % use a limit of 25   degrees
             %   b0 = DAS(us, chd, 'apod',    1); % beamform the data w/o apodization
             %   ba = DAS(us, chd, 'apod', apod); % beamform the data with apodization
@@ -4257,7 +4646,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             n = swapdim(n, 2, 5); % (3 x 1 x 1 x 1 x N) % element normals
 
             % get the image pixels
-            Pi = us.scan.positions(); % (3 x I1 x I2 x I3)
+            Pi = us.scan.positions(); % (3 x I1 x I2 x I3 x 1)
 
             % get the normalized difference vector (3 x I1 x I2 x I3 x N)
             r = Pi - Pn;
@@ -4277,18 +4666,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
     % dependent methods
     methods
         function f = get.fc(self)
-            if self.rx == self.tx
+            if self.rx == self.tx || isalmostn(self.rx.fc, self.tx.fc)
                 f = self.rx.fc;
             else
                 f = [self.tx.fc, self.rx.fc];
-            end
-        end
-        function set.fc(self, f)
-            if self.rx == self.tx
-                self.rx.setCentralFrequency(f);
-            else
-                self.tx.setCentralFrequency(f(1));
-                self.rx.setCentralFrequency(f(end));
             end
         end
         function l = get.lambda(self), l = self.seq.c0 ./ self.fc; end
@@ -4300,8 +4681,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             end
         end
         function set.xdc(self, xdc), [self.tx, self.rx] = deal(xdc); end
-        function c = get.pulse(self), c = self.seq.pulse; end
-        function set.pulse(self, c), self.seq.pulse = c; end
         function s = get.sequence(self), warning("QUPS:UltrasoundSystem:syntaxDeprecated","UltrasoundSystem.sequence is deprecated. Use the .seq property instead."); s = self.seq; end
         function set.sequence(self, s), warning("QUPS:UltrasoundSystem:syntaxDeprecated","UltrasoundSystem.sequence is deprecated. Use the .seq property instead."); self.seq = s; end
     end
@@ -4433,11 +4812,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
                     join("-D" + d.DefinedMacros)...
                     ));
                 
-                try
-                    s = system(com(i));
-                    if s, warning("Unable to recompile " + d.Source); else, disp("Success recompiling " + d.Source); end
+                try s = system(com(i));
+                    if s, warning( ...
+                            "QUPS:recompile:UnableToRecompile", ...
+                            "Unable to recompile " + d.Source ...
+                            + " (" + s + ")"); 
+                    else
+                        disp("Success recompiling " + d.Source); 
+                    end
                 catch
-                    warning("Unable to recompile code!");
+                    warning("QUPS:recompile:UnableToRecompile", "Unable to recompile code!");
                 end
             end
         end
@@ -4709,7 +5093,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
             % defs = UltrasoundSystem.genMexdefs("msfm2d");
             % us.recompileMex(defs);
             %
-            % SEE ALSO ULTRASOUNDSYSTEM.RECOMPILEMEX 
+            % See also ULTRASOUNDSYSTEM.RECOMPILEMEX 
             arguments
                 name (1,:) string {mustBeMember(name, ["all" , ...
                     "msfm2d", "msfm3d" ...
@@ -4740,18 +5124,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable
         end
     end
 end
-
-% defaults
-function tmp = mktempdir()
-tmp = tempname(); % new folder
-try
-    mkdir(tmp); % try to create it
-catch % cannot create new folder
-    tmp = cachedir(); % reference the cache folder
-end
-end
-
-function d = cachedir(), d = fullfile(fileparts(mfilename('fullpath')), 'bin'); end
 
 function arch = nvarch()
 % NVARCH - compute capability architecture string for the current gpu

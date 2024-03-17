@@ -18,10 +18,24 @@ classdef Medium < matlab.mixin.Copyable
         rho0 (1,1) double {mustBePositive} = 1020; % ambient density
         % BOA0 - ambient non-linearity
         BoA0 (1,1) double = NaN; % ambient non-linearity
-        % ALPHA0 - ambient attenuation factor
-        alpha0 (1,1) double = NaN; % ambient power law absorption factor (dB/cm/MHz)
-        % ALPHAP0 - global attenuation power 
-        alphap0 (1,1) double = 1.01;     % global power law absorption exponent
+        % ALPHA0 - ambient attenuation coefficient
+        %
+        % ALPHA0 defines the attenuation pre-factor coefficient for
+        % simulation routines that support one. If alpha0 is NaN, no
+        % attenuation is used.
+        %
+        % To follow convention and maintain consistent units of distance
+        % and time, this value is in dB/m/Hz by default and supports
+        % scaling e.g. for typical soft tissue attenuation
+        %
+        %                       0.5   dB / cm / MHz  is equivalent to
+        % (0.5 / 1e-2 / 1e+6) = 50e-6 dB /  m /  Hz (SI units) or 
+        % (0.5 / 1e+1 / 1   ) = 0.05  dB / mm / MHz (mm / us / MHz)
+        % 
+        % See also: ALPHA_POWER BOA0
+        alpha0 (1,1) double = NaN; % ambient power law absorption pre-factor
+        % alpha_power - global attenuation power law (kWave)
+        alpha_power (1,1) double {mustBeInRange(alpha_power,0,3)} = 1.01; % global power law absorption exponent
         % PERTREG - perturbation regions
         % 
         % PERTREG defines regions of alternate properties. A region can be 
@@ -53,12 +67,12 @@ classdef Medium < matlab.mixin.Copyable
         %
         % scan = ScanCartesian(...
         % 'z', linspace(0, 60e-3, 241), ...
-        % 'x',linspace(-20e-3, 20e-3, 161) ...
+        % 'x', linspace(-20e-3, 20e-3, 161) ...
         % );
         %
         % med = Medium('pertreg', {reg1, reg2});
         % figure;
-        % imagesc(med, scan, ["c", "rho"]);
+        % imagesc(med, scan, "props", ["c", "rho"]);
         pertreg (1,:) cell = cell.empty([1,0]); % perturbation regions
     end
     properties(Hidden)
@@ -86,8 +100,8 @@ classdef Medium < matlab.mixin.Copyable
             % the attenuation parameters are unused when calling a 
             % simulation routine.
             %
-            % med = MEDIUM(...,'alphap0', alphap0) constructs a medium with
-            % an ambient attenuation power of alphap0. If alphap0 is NaN,
+            % med = MEDIUM(...,'alpha_power', alpha_power) constructs a medium with
+            % an ambient attenuation power of alpha_power. If alpha_power is NaN,
             % the attenuation parameters are unused when calling a 
             % simulation routine.
             %
@@ -102,7 +116,7 @@ classdef Medium < matlab.mixin.Copyable
                 kwargs.rho0 (1,1) double
                 kwargs.BoA0 (1,1) double
                 kwargs.alpha0 (1,1) double
-                kwargs.alphap0 (1,1) double
+                kwargs.alpha_power (1,1) double
                 kwargs.pertreg (1,:) cell = cell.empty([1,0])
             end
             
@@ -220,12 +234,12 @@ classdef Medium < matlab.mixin.Copyable
             % compute cumulative scaling
             cscale_ = 1; % speed -> dist / time
             rscale_ = 1; % density -> mass / dist^3
-            % TODO: scale alpha0? -> time / dist ?
+            % ascale_ = 1; % attenuation -> time / dist
             
             if isfield(kwargs, 'dist')
-                cscale_ = cscale_ * kwargs.dist;
-                rscale_ = rscale_ / (kwargs.dist ^ 3);
-                med.pscale = med.pscale ./ kwargs.dist; % pos -> dist
+                cscale_    = cscale_     *  kwargs.dist;
+                rscale_    = rscale_     / (kwargs.dist ^ 3);
+                med.pscale = med.pscale ./  kwargs.dist; % pos -> dist
             end
             if isfield(kwargs, 'time')
                 cscale_ = cscale_ / kwargs.time;
@@ -237,8 +251,9 @@ classdef Medium < matlab.mixin.Copyable
             % apply scaling
             med.cscale = med.cscale * cscale_;
             med.rscale = med.rscale * rscale_;
-            med.c0 = med.c0 * cscale_;
-            med.rho0 = med.rho0 * rscale_;
+            med.c0     = med.c0     * cscale_;
+            med.rho0   = med.rho0   * rscale_;
+            med.alpha0 = med.alpha0 / cscale_;
         end
     end
 
@@ -269,10 +284,10 @@ classdef Medium < matlab.mixin.Copyable
                         
                         % modify the property
                         nfout = length(self.pertreg{reg}{2});
-                        if nfout >= 1, c  (ind)    = self.cscale * self.pertreg{reg}{2}(1); end
-                        if nfout >= 2, rho(ind)    = self.rscale * self.pertreg{reg}{2}(2); end
-                        if nfout >= 3, BoA(ind)    = self.pertreg{reg}{2}(3); end
-                        if nfout >= 4, alpha(ind)  = self.pertreg{reg}{2}(4); end
+                        if nfout >= 1, c  (  ind) = self.pertreg{reg}{2}(1) * self.cscale; end
+                        if nfout >= 2, rho(  ind) = self.pertreg{reg}{2}(2) * self.rscale; end
+                        if nfout >= 3, BoA(  ind) = self.pertreg{reg}{2}(3)              ; end
+                        if nfout >= 4, alpha(ind) = self.pertreg{reg}{2}(4) / self.cscale; end
 
                     elseif isa(self.pertreg{reg}, 'function_handle') % this is a functional region
                         % get the values corresponding to the input points
@@ -300,10 +315,10 @@ classdef Medium < matlab.mixin.Copyable
                         
                         % set the value for valid points
                         ind = cellfun(@isnan, {c_r, rho_r, BoA_r, alpha_r}, 'UniformOutput', false);
-                        if nfout >= 1, c(~ind{1})      = self.cscale * c_r(~ind{1});      end
-                        if nfout >= 2, rho(~ind{2})    = self.rscale * rho_r(~ind{2});    end
-                        if nfout >= 3, BoA(~ind{3})    = BoA_r(~ind{3});    end
-                        if nfout >= 4, alpha(~ind{4})  = alpha_r(~ind{4});  end
+                        if nfout >= 1, c(    ~ind{1}) = c_r(    ~ind{1}) * self.cscale; end
+                        if nfout >= 2, rho(  ~ind{2}) = rho_r(  ~ind{2}) * self.rscale; end
+                        if nfout >= 3, BoA(  ~ind{3}) = BoA_r(  ~ind{3})              ; end
+                        if nfout >= 4, alpha(~ind{4}) = alpha_r(~ind{4}) / self.cscale; end
                     end
 
                     % update the number of arguments modified
@@ -375,14 +390,23 @@ classdef Medium < matlab.mixin.Copyable
 
             % move to k-Wave dimensions
             [kmedium.sound_speed, kmedium.density, kmedium.BonA, kmedium.alpha_coeff] = ...
-                dealfun(@(x)permute(x, ord), c, rho, BoA, alpha);
+                dealfun(@(x)permute(x, ord), c, rho, BoA, (1e6*1e-2)*alpha); % (Hz^y * m)^-1 -> (MHz^y * cm)^-1
 
             % remove higher order terms if the coefficients are all 0s
             if all(isnan(kmedium.alpha_coeff)), kmedium = rmfield(kmedium, "alpha_coeff"); end
             if all(isnan(kmedium.BonA)),        kmedium = rmfield(kmedium, "BonA"); end
 
             % set alpha power if alpha coefficient is set
-            if isfield(kmedium, 'alpha_coeff'), kmedium.alpha_power = self.alphap0; end
+            if isfield(kmedium, 'alpha_coeff')
+                kmedium.alpha_power = self.alpha_power;
+                if self.alpha_power == 1
+                    warning( ...
+                        "QUPS:getMediumKWave:noDispersion", ...
+                        "Deactivating dispersion for an exponential coefficient of 1." ...
+                        );
+                    kmedium.alpha_mode = 'no_dispersion';
+                end
+            end
         end
     end
 
@@ -442,7 +466,7 @@ classdef Medium < matlab.mixin.Copyable
             % % Construct the Medium
             % med = Medium.Sampled(sscan, c, rho, 'c0', c0, 'rho0', rho0);
             % 
-            % See also MEDIUM/MEDIUM
+            % See also MEDIUM/MEDIUM MEDIUM.DIFFUSE
 
             arguments
                 scan (1,1) ScanCartesian
@@ -513,6 +537,113 @@ classdef Medium < matlab.mixin.Copyable
             % add perterbation
             medium.pertreg = [{@(p) dealret(p, cfun, rfun, bfun, afun)}, medium.pertreg];
         end
+    
+        function med = Diffuse(us, grid, kwargs)
+            % DIFFUSE - Generate a diffuse (density) scattering Medium
+            %
+            % med = DIFFUSE(us, grid) generates a diffuse scaterring Medium
+            % med on the ScanCartesian grid for the UltrasoundSystem us.
+            %
+            % rho = DIFFUSE(..., 'scat_per_cell', n) sets the number of
+            % scatterers per resolution voxel. A rule of thumb minimum is 12. The
+            % default is 25. 
+            % 
+            % Note: The grid must be sampled finely enough to produce
+            % sub-wavelength scattering characteristics. 
+            %
+            % rho = DIFFUSE(..., 'ampdB', amp) scales the
+            % intensity of the variation by amp in dB. The default is 0.
+            %
+            % med = DIFFUSE(..., Name, Value) sets additionally properties
+            % for the Medium med via name value pairs.
+            %
+            % Example:
+            % % Get a default UltrasoundSystem and Medium
+            % us = UltrasoundSystem();
+            % med = Medium();
+            %
+            % % Get a simulation region
+            % grid = copy(us.scan);
+            % [grid.dx, grid.dy, grid.dz] = deal(us.lambda / 8); % set grid resolution
+            %
+            % % Create a diffuse scattering distribution
+            % med = Medium.Diffuse(us, grid, 'c0', 1540);
+            %
+            % % display
+            % figure;
+            % him = imagesc(med, grid, "props", ["c",     "rho"    ]);
+            % arrayfun(@title,    [him.Parent], ["Speed", "Density"]);
+            % arrayfun(@colormap, [him.Parent], ["jet",   "parula" ]);
+            % 
+            % See also Medium.Sampled
+            arguments
+                us UltrasoundSystem
+                grid ScanCartesian
+                kwargs.rho0 (1,1) {mustBeFloat} = us.seq.c0 / 1.5 % heuristic
+                kwargs.c0 (1,1) {mustBeFloat} = us.seq.c0
+                kwargs.?Medium
+                kwargs.scat_per_cell (1,1) {mustBeInteger, mustBePositive} = 25;
+                kwargs.ampdB (1,1) {mustBeReal} = 1;
+            end
+
+            % alias
+            [rho0, c0] = deal(kwargs.rho0, kwargs.c0);
+
+            % archive
+            %{
+            % transmit signal properties
+            % ncycles = min(1/us.xdc.bw_frac, us.seq.pulse.duration * us.xdc.fc); % Number of Cycles as Function of Bandwidth
+            wv = conv(conv(us.tx.impulse, us.rx.impulse), us.seq.pulse); % total temporal impulse response
+            ncycles = wv.duration * us.xdc.fc;
+            ncycles = min(ncycles, 1/us.xdc.bw_frac); % Number of Cycles as Function of Bandwidth
+
+            % wavelength
+            lambda = c0 / us.xdc.fc;
+
+            % lower bound on the imaging resolution
+            % TODO: compute based on either arbitrary Transducer, or frequency alone
+            if isa(us.xdc, 'TransducerArray')
+                D = us.xdc.aperture_size;
+            else
+                warning('Expected a linear array - please check this formula.');
+                pn = us.xdc.positions;
+                D = norm(range(pn, 2)); % heuristic upper bound on aperture size
+            end
+            H = us.xdc.height;
+
+            % resolution cell size (minimum?)
+            res_cell = [ ...
+                (lambda / D) * (range(grid.xb) / grid.dx), ...
+                (lambda / H) * (range(grid.yb) / grid.dy), ...
+                (lambda / 2) * (    ncycles    / grid.dz) ...
+                ];
+
+            % total number of scatterers
+            S = round(kwargs.scat_per_cell * grid.nPix ./ prod(res_cell(res_cell > 0)));
+            
+            %}
+
+            % number of voxels per dim
+            wvl = range([grid.xb; grid.yb; grid.zb], 2) ./ us.lambda;
+            S = kwargs.scat_per_cell * prod(wvl(wvl > 0));
+
+            % generate uniform random positions and normally distributed amplitudes
+            N   = arrayfun(@(p) grid.("n"+p), lower(grid.order)); % size in each dimension
+            ind = arrayfun(@(N) {randi(N, [S,1], 'like', rho0([]))}, N); % position indices
+            as  =                rand(    [S,1], 'like', rho0([]));      % amplitude values
+
+            % assign perturbation
+            rho = zeros(grid.size, 'like', rho0);
+            rho(sub2ind(grid.size, ind{:})) = as;
+
+            % add to base
+            rho = rho0 + db2pow(kwargs.ampdB) * rho0 * rho;
+            c = c0 * ones(grid.size);
+
+            % sample the Medium on the grid
+            args = namedargs2cell(rmfield(kwargs, ["scat_per_cell","ampdB"]));
+            med = Medium.Sampled(grid, c, rho, args{:});
+        end
     end
 
     % visualization methods
@@ -546,7 +677,7 @@ classdef Medium < matlab.mixin.Copyable
             % % Construct and image the Medium
             % med = Medium.Sampled(scan, c, rho);
             % figure;
-            % imagesc(med, scan, ["c", "rho"], 'linkaxs', true);
+            % imagesc(med, scan, "props", ["c", "rho"], 'linkaxs', true);
             % 
             % See also SCAN/IMAGESC IMAGESC LINKAXES
             arguments
@@ -596,8 +727,15 @@ classdef Medium < matlab.mixin.Copyable
             im_args = struct2nvpair(im_args);
             h = cellfun(@(x, axs) imagesc(scan, real(x), axs{:}, varargin{:}, im_args{:}), x, axs);
 
-            if kwargs.linkaxs && N > 1, linkaxes(axs); end
+            if kwargs.linkaxs && N > 1, axs = [axs{:}]; linkaxes([axs{:}]); end
         end
+    end
+    properties(Hidden, Dependent)
+        alphap0
+    end
+    methods
+        function P = get.alphap0(med), warning("QUPS:Medium:syntaxDeprecated","Medium.alphap0 is deprecated. Use the .alpha_power property instead."); P = med.alpha_power; end
+        function set.alphap0(med, P ), warning("QUPS:Medium:syntaxDeprecated","Medium.alphap0 is deprecated. Use the .alpha_power property instead."); med.alpha_power = P; end
     end
 end
 

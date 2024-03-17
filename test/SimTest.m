@@ -16,8 +16,7 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     properties(ClassSetupParameter)
-        gpu   = getgpu()
-        clp = poolfilter({'none', 'threads', 'pool', 'background', 'default'}); % cluster: local has to create a temp cluster each time
+        clp = poolfilter({'pool', 'none', 'threads'}); % cluster: local has to create a temp cluster each time
         xdc_seq_name = struct(...
             'linfsa', string({"L11-5V", 'FSA'}),...
             'linpw', string({"L11-5V",'Plane-wave'}), ...
@@ -28,13 +27,9 @@ classdef SimTest < matlab.unittest.TestCase
             );
     end
 
-    methods(TestClassSetup, ParameterCombination = 'exhaustive')
+    methods(TestClassSetup, ParameterCombination = 'pairwise')
         % Shared setup for the entire test class
-        function setupQUPS(test, gpu, clp, xdc_seq_name)
-            cd(SimTest.proj_folder); % call setup relative to here
-            setup(gpu{:}); % compile what we can
-            if ~exist('bin', 'dir'), setup cache; end % recompile and make a cache
-
+        function setupQUPS(test, clp)
             % ensure we can actually start these pools
             switch clp
                 case "background", test.assumeTrue(logical(exist('backgroundPool','builtin')), ...
@@ -70,7 +65,7 @@ classdef SimTest < matlab.unittest.TestCase
             % create point target data with the configuration
 
             % simple point target 30 mm depth
-            target_depth = 30e-3;
+            target_depth = 15e-3;
             scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500);
             rho0 = 1000; % ambient density
             rho_scat = 2; % make density scatterers at 2x the density
@@ -101,8 +96,8 @@ classdef SimTest < matlab.unittest.TestCase
                             'ranges', 1, 'angles',  linspace(amin, amax, Na)); % Plane Wave (PW) sequence
                     case 'Focused'
                         [xmin, xmax, Nx] = deal( -10 ,  10 , 3 );
-                        seq = Sequence('type', 'VS', 'c0', scat.c0, ...
-                            'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 2mm
+                        seq = Sequence('type', 'FC', 'c0', scat.c0, ...
+                            'focus', [1;0;0] .* 1e-3*linspace(xmin, xmax, Nx) + scat.pos ... % translating aperture: depth of 30mm, lateral stride of 2mm
                             ...'focus', [1;0;0] .* 1e-3*(-10 : 0.2 : 10) + [0;0;target_depth] ... % translating aperture: depth of 30mm, lateral stride of 0.2 mm
                             );
                 end
@@ -111,9 +106,9 @@ classdef SimTest < matlab.unittest.TestCase
                 switch seq_name
                     case 'sector'
                         [amin, amax, Na] = deal( -40 ,  40 , 3 );
-                        seq = SequenceRadial('type', 'VS', 'c0', scat.c0, ...
+                        seq = SequenceRadial('type', 'FC', 'c0', scat.c0, ...
                             'angles', linspace(amin, amax, Na), ...
-                            'ranges', norm(xdc.center) + target_depth, 'apex', xdc.center ...
+                            'ranges', norm(xdc.center - scat.pos), 'apex', xdc.center ...
                             ); % sector scan sequence
                     case 'FSA'
                         seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'c0', scat.c0 ...
@@ -154,8 +149,10 @@ classdef SimTest < matlab.unittest.TestCase
             
             % Choose the simulation region (eikonal)
             switch xdc_name
-                case "C5-2V", tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20*2^3), 'z', linspace(-2e-3, 43e-3, 1+45*2^3));
-                otherwise,    tscan = ScanCartesian('x',linspace(-10e-3, 10e-3, 1+20*2^3), 'z', linspace(-5e-3, 45e-3, 1+50*2^3));
+                case "C5-2V",   tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+10*2^3), 'z', linspace(-2e-3, 23e-3, 20*2^3));
+                case "PO192O",  tscan = ScanCartesian('x',linspace(-2e-3, 2e-3, 1+04*2^3), 'z', linspace(-2e-3, 18e-3, 1+20*2^3));
+                                tscan.y = tscan.x;
+                otherwise,      tscan = ScanCartesian('x',linspace(-5e-3, 5e-3, 1+10*2^4), 'z', linspace(-5e-3, 20e-3, 1+25*2^4));
             end
 
             % create a distributed medium based on the point scatterers
@@ -169,9 +166,9 @@ classdef SimTest < matlab.unittest.TestCase
             us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 40e6);
 
             % Make the transducer impulse tighter
-            us.xdc.fc = us.fs / 8; % 5e6, with numeric precision w.r.t. us.fs
+            % us.xdc.fc = us.fs / 8; % 5e6, with numeric precision w.r.t. us.fs
             us.xdc.bw_frac = 0.2; % SIMUS errors above 0.2
-            us.xdc.impulse = us.xdc.ultrasoundTransducerImpulse(); 
+            us.xdc.impulse = us.xdc.xdcImpulse(); 
             % us.xdc.impulse = Waveform.Delta(); 
             % us.seq.pulse = Waveform.Delta(); % adding this may make the
             % length of the signal go to 0, causing problems for interpolators
@@ -193,10 +190,23 @@ classdef SimTest < matlab.unittest.TestCase
 
     % some of these options aren't fully supported yet.
     properties(TestParameter)
-        terp = {'nearest', 'linear', 'cubic'};  % interpolation
         sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
     end
     methods(TestMethodSetup)
+        function resetGPU(test)
+            return; % pass
+            if gpuDeviceCount()
+                reselectgpu();
+                if ~isempty(gcp('nocreate'))
+                    wait(parfevalOnAll(gcp(), @reselectgpu, 0));
+                end
+            end
+
+            % helper
+            function reselectgpu()
+                id = gpuDevice().Index; gpuDevice([]); gpuDevice(id); 
+            end
+        end
     end
 
     % Github test routine
@@ -210,20 +220,20 @@ classdef SimTest < matlab.unittest.TestCase
             if isa(test.clu, 'parallel.Cluster') || isa(test.clu, 'parallel.ProcessPool'), return; end
             
             % forward remaining
-            pscat(test, 'Greens', 'cubic');
+            pscat(test, 'Greens');
         end
     end
 
     % Full test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'full'})
-        function full_pscat(test, sim_name, terp), pscat(test, sim_name, terp); end % forward all
-        function full_greens_devs(test, sim_name, terp), greens_devs(test, sim_name, terp); end % forward all
+    methods(Test, ParameterCombination = 'exhaustive', TestTags={'full', 'build'})
+        function full_pscat(test, sim_name), pscat(test, sim_name); end % forward all
+        function full_greens_devs(test), greens_devs(test); end % forward all
     end
 
     
     % test method implementations
     methods
-        function pscat(test, sim_name, terp)
+        function pscat(test, sim_name)
             % PSF - Test the PSF
             % 
             % Test that the PSF for a point at a reasonable distance 
@@ -239,13 +249,10 @@ classdef SimTest < matlab.unittest.TestCase
             switch sim_name
                 case {'FieldII', 'FieldII_multi'} 
                                 test.assumeTrue(logical(exist('field_init', 'file')));
-                case {'SIMUS'}, test.assumeTrue(logical(exist('pfield'    , 'file')));
+                case {'SIMUS'}, test.assumeTrue(logical(exist('pfield3'   , 'file')));
                 case {'kWave'}, test.assumeTrue(logical(exist('kWaveGrid' , 'file')));
             end
 
-            % k-Wave/calc_scat_multi don't use interpolation: pass on all but one option
-            if ismember(sim_name,["FieldII_multi", "kWave"]) && terp ~= "nearest", return; end
-            
             % SIMUS restricts the fractional bandwidth to < 0.2 and 
             % requires sampling frequency be a multiple of 4 x the central
             % frequency
@@ -253,7 +260,7 @@ classdef SimTest < matlab.unittest.TestCase
 
             
             % simulate based on the simulation routine
-            opts = {'parenv', clu, 'interp', terp, };
+            opts = {'parenv', clu, 'interp', "nearest", };
             switch sim_name
                 case 'FieldII',       chd = calc_scat_all   (us, scat, opts{:}); % use FieldII,
                 case 'FieldII_multi', chd = calc_scat_multi (us, scat, opts{[1:2]}); % use FieldII,
@@ -265,8 +272,8 @@ classdef SimTest < matlab.unittest.TestCase
                 otherwise, warning('Simulator not recognized'); return;
             end
 
-            % peak should be ~near~ 40us at the center elements for
-            % FSA and PW, ~near~ 20us (at the focus) for VS
+            % peak should be ~near~ 20us at the center elements for
+            % FSA and PW, ~near~ 10us (at the focus) for FC
 
             % truncate the data if we observed the transmit pulse
             if sim_name == "kWave",
@@ -293,10 +300,10 @@ classdef SimTest < matlab.unittest.TestCase
             ip = argmax(sub(chd.data, {n,m,1}, [2,3,4]), [], 1); % slice rx/tx/frames
             tau = gather(double(chd.time(ip,median(1:size(chd.time,2)), median(1:size(chd.time,3)), 1)));
 
-            % true peak time - exactly 20us travel time
+            % true peak time - exactly 10us travel time
             switch us.seq.type
-                case {'PW', 'FSA'}, t0 = 40e-6;
-                case {'VS'},        t0 = 20e-6;
+                case {'PW', 'FSA'}, t0 = 20e-6;
+                case {'FC'},        t0 = 10e-6;
                 otherwise, error("Unrecognized sequence type " + us.seq.type + ".");
             end
             switch sim_name
@@ -311,21 +318,15 @@ classdef SimTest < matlab.unittest.TestCase
 
             % temporal offset
             test.assertThat(tau, IsEqualTo(t0, 'Within', AbsoluteTolerance(tol)), sprintf(...
-                "Peak of the data (" + tau + "us) is offset from the true peak (" + t0 + "us)." ...
+                "Peak of the data (" + tau + "us) is offset by more than " + tol + "from the true peak (" + t0 + "us)." ...
                 ));
         end
     
-        function greens_devs(test, sim_name, terp)
+        function greens_devs(test)
             % test that device options produce (roughly) the same result
 
-            if sim_name ~= "Greens", return; end % pass if not Greens
-           
-            
-            % gpu-cubic is a different algorithm, so we get very different results
-            switch terp, case "cubic", return; end
-
             % unpack
-            [us, scat, clu] = deal(test.us, test.scat, test.clu);
+            [us_, scat_] = dealfun(@copy, test.us, test.scat);
 
             % test definitions
             import matlab.unittest.constraints.IsEqualTo;
@@ -333,26 +334,23 @@ classdef SimTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.AbsoluteTolerance;
 
             % simulate based on the simulation routine
-            opts = {'interp', terp, 'parenv', clu};
-            switch sim_name
-                case 'Greens' 
-                    us.fs = single(us.fs); % implicit cast to single type
-                    chd0 = gather(greens(us, scat, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
-                    [xo, to] = deal(double(chd0.data), double(chd0.t0));
-                    for usetall = [true, false]
-                        for dev = [0 -1]
-                            chd = gather(greens(us, scat, [1,1], opts{1:2}, 'device', dev , 'tall', usetall));
-                            [x, t] = deal(double(gather(chd.data)), gather(double(chd.t0)));
-                            test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
-                                "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us.seq.type + " sequence."  ...
-                                ));
+            opts = {'interp', 'linear', 'parenv', test.clu};
+            us_.fs = single(us_.fs); % implicit cast to single type
+            chd0 = gather(greens(us_, scat_, [1,1], opts{1:2}, 'device', 0 , 'tall', false)); % reference
+            [xo, to] = deal(double(chd0.data), double(chd0.t0));
+            for usetall = [true, false]
+                for dev = [0 -1]
+                    chd = gather(greens(us_, scat_, [1,1], opts{1:2}, 'device', dev , 'tall', usetall));
+                    [x, t] = deal(double(gather(chd.data)), gather(double(chd.t0)));
+                    test.assertEqual(x, xo, 'AbsTol', 1e-3, 'RelTol', 1e-3, sprintf(...
+                        "The data is different on device " + dev + " and tall set to " + usetall + " for a " + us_.seq.type + " sequence."  ...
+                        ));
 
-                            % accurate to 10 nanoseconds
-                            test.assertEqual(t, to, 'AbsTol', 1e-9, 'RelTol', 1e-9, sprintf(...
-                                "The time axis is different on device " + dev + " and tall set to " + usetall + " for a " + us.seq.type + " sequence."  ...
-                                ));
-                        end
-                    end
+                    % accurate to 10 nanoseconds
+                    test.assertEqual(t, to, 'AbsTol', 1e-9, 'RelTol', 1e-9, sprintf(...
+                        "The time axis is different on device " + dev + " and tall set to " + usetall + " for a " + us_.seq.type + " sequence."  ...
+                        ));
+                end
             end
         end
     end

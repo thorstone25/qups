@@ -9,7 +9,7 @@
 %
 % See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERMATRIX
 
-classdef (Abstract) Transducer < matlab.mixin.Copyable
+classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogeneous
     properties
         fc (1,1) double = 5e6        % center frequency
         bw (1,2) double = [3.5e6 6.5e6] % bandwidth
@@ -73,7 +73,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
             % regardless of input, if impulse is empty, initialize it
             if isempty(xdc.impulse)
-                xdc.impulse = xdc.ultrasoundTransducerImpulse();
+                xdc.impulse = xdc.xdcImpulse();
             end
         end
     
@@ -280,10 +280,112 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
                 patch(1:3)'), el_patches, 'UniformOutput', false);
             p = reshape(cat(1, p{:}), [3, size(p)]);
         end
+
+        function p = transPos(xdc, p, method)
+            % transPos - Transform positions
+            % 
+            % p = transPos(xdc, p) rotates and translates the matrix of
+            % positions p according to the rotation xdc.rot and translation
+            % xdc.offset. The positions must be a 3 x N array in cartesian
+            % coordinates.
+            %
+            % p = transPos(xdc, p, "quat") uses a quaternionic expression
+            % to performs the rotation.
+            % 
+            % p = transPos(xdc, p, "mat") uses a matrix expression to
+            % performs the rotation. The default is "mat". 
+            %
+            % This method is for internal use, and may be moved or changed
+            % in a future version.
+            % 
+            % See also TRANSDUCER.ROT TRANSDUCER.OFFSET
+
+            arguments
+                xdc Transducer
+                p (3,:)
+                method (1,1) string {mustBeMember(method, ["quat", "mat"])} = "mat" % rotate with quaternions
+            end
+            switch method
+                case "quat"
+                q = prod(quaternion([-xdc.rot(2),0,0;0,xdc.rot(1),0], 'rotvecd'));
+                p = rotatepoint(q, p')' + xdc.offset;
+                case "mat" % rotate with matrices
+                [az, el] = deal(xdc.rot(1), xdc.rot(2)); % azimuth, elevation rotation
+                Raz = [cosd(az), 0, sind(az); 0 1 0; -sind(az), 0, cosd(az)]; % azimuth   rotation (about y)
+                Rel = [1 0 0; 0, cosd(el), sind(el); 0, -sind(el), cosd(el)]; % elevation rotation (about x)
+                p = (Rel * Raz) * p + xdc.offset; % rotation and translation
+            end
+        end
+        
+        function [pf, nf] = focActive(xdc, apd, r)
+            % focActive - Create foci for the active apertures
+            %
+            % pf = focActive(xdc, apd, r) creates an array of foci pf at a
+            % focal depth r from the Transducer xdc with the apodization
+            % matrix apd. 
+            % 
+            % The array apd must be a (N x S) array of weights where 
+            % N == xdc.numel and S is the number of transmit pulses. The
+            % median of the non-zero elements of each transmit in apd are
+            % used generate the beam origins, and the foci are placed at a
+            % range r normal to the surface of the transducer from the beam
+            % origins. The range r can be a scalar or a (1 x S) array of
+            % ranges per transmit pulse.
+            % 
+            % [pf, nf] = focActive(...) additionaly returns the normal
+            % vector from center of the active aperture to the focal
+            % points.
+            % 
+            % Note: a negative value of r will define a diverging wave.
+            % 
+            % Example:
+            % % Create a Transducer
+            % xdc = TransducerConvex.C5_2v();
+            % 
+            % % Create a walking aperture of 64 elements each
+            % apd = Sequence.apWalking(xdc.numel, 64);
+            % 
+            % % Create a focused Sequence at a range of 50mm
+            % pf = xdc.focActive(apd, 50e-3);
+            % seq = SequenceRadial( ...
+            %     'type','FC', 'focus',pf, 'apd',apd, 'apex',xdc.center ...
+            % ); 
+            % 
+            % % Create and plot the system
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
+            % plot(us);
+            % 
+            % See also SEQUENCE.APWALKING
+            arguments
+                xdc (1,1) Transducer
+                apd (:,:) {mustBeNumericOrLogical} % apodization (N x S)
+                r (1,:) {mustBeReal, mustBeFinite} = 0
+            end
+
+            % central element of active apertures
+            ic = cellfun(@(a) median(find(a)), num2cell(apd,1)); % 1 x S
+
+            % compute beams based on transducer geometry
+            if any(arrayfun(@(s)isa(xdc,s),["TransducerArray", "TransducerMatrix"])) % linear interpolation
+                pn = xdc.positions(); % element position (3 x N)
+                [~,~,nn] = xdc.orientations(); % element normals (3xN)
+                pnc = (pn(:,floor(ic)) + pn(:,ceil(ic))) ./ 2; % mean position
+                nf = (nn(:,floor(ic)) + nn(:,ceil(ic))) ./ 2; % mean normal
+                pf = pnc + r .* nf; % create focal positions
+            elseif isa(xdc,"TransducerConvex") % angular interpolation
+                th = xdc.orientations(); % element angles (1xN)
+                thc = (th(:,floor(ic)) + th(:,ceil(ic))) ./ 2; % mean angle (1 x S)
+                nf = [sind(thc); 0*thc; cosd(thc)]; % normal vectors
+                pf = (xdc.radius + r) * nf + xdc.center; % extend radius from beam origins
+            else
+                error("Sequence:focActive:unsupportedTransducer", ...
+                    "A "+class(xdc)+" is not supported.");
+            end
+        end
     end
 
     % toolbox conversion functions
-    methods (Abstract)
+    methods
         % GETFIELDIIAPERTURE - Create a FieldII aperture object
         %
         % ap = GETFIELDIIAPERTURE(xdc) creates a FieldII aperture ap
@@ -302,7 +404,39 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % realmax('single').
         %
         % See also ULTRASOUNDSYSTEM.CALC_SCAT_ALL, FIELD_INIT
-        aperture = getFieldIIAperture(xdc, sub_div, focus);
+        function aperture = getFieldIIAperture(xdc, sub_div, focus)
+            arguments
+                xdc Transducer
+                sub_div (1,2) double = [1,1]
+                focus (1,3) double = [0 0 realmax('single')]
+            end
+
+            focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
+            sdiv = sub_div; % alias
+            aperture = arrayfun(@make_fieldII_aperture, xdc);
+            
+            function aperture = make_fieldII_aperture(xdc)
+                pch = xdc.patches(sdiv); % [Nel x Ndv] array with  {X / Y / Z / C} tuples
+                r = zeros([size(pch'),19]); % Ndv x Nel x 19
+                for i = 1 : size(pch,1) % each element
+                    for j = 1 : size(pch,2) % each subelement
+                        pchij = pch{i,j}; % get tuple
+                        p = reshape(permute(cat(3, pchij{1:3}), [3,1,2]), 3, 4); % get as 3 x 4 array
+                        p = p(:,[1,2,4,3]); % swap 4th<->3rd for clockwise ordering
+                        r(j,i,:) = [i, p(:)', 1, [xdc.width, xdc.height] ./ sdiv, mean(p,2)']; % get rectangle
+                    end
+                end
+
+                % reshape arguments
+                r = reshape(r, [numel(pch) 19]); %#ok<CPROPLC> % rectangles: [sdiv x element] x 19
+                c = double(gather(xdc.positions()')); % element centers
+
+                % Generate aperture for emission
+                try evalc('field_info'); catch, field_init(-1); end
+                aperture = xdc_rectangles(r, c, focus);
+            end
+        end
+
 
         % QUPS2USTB - Create a USTB compatible uff.probe object
         %
@@ -314,7 +448,21 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         % probe = QUPS2USTB(TransducerArray.L12_3v());
         % 
         % See also UFF.PROBE
-        probe = QUPS2USTB(xdc); % get the USTB probe object
+        function probe = QUPS2USTB(xdc)
+            arguments, xdc Transducer, end
+            probe = arrayfun(@(xdc) uff.probe(...
+                'geometry', [ ...
+                xdc.positions(); ...
+                deg2rad(argn(1, @orientations, xdc)); ...
+                deg2rad(argn(1, @orientations, xdc)); ...
+                repmat([ ...
+                xdc.width; ...
+                xdc.height ...
+                ], [1, xdc.numel]) ...
+                ]', ...
+                'origin', uff.point('xyz', xdc.offset(:)') ...
+                ), xdc);
+        end
     end
 
     % Verasonics conversion functions
@@ -384,14 +532,24 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     % SIMUS functions
-    methods (Abstract)
+    methods
         % GETSIMUSPARAM - Create a MUST compatible parameter struct
         %
         % p = GETSIMUSPARAM(xdc) returns a structure with properties
         % for a call to simus().
         %
+        % Example:
+        % 
+        % xdc = TransducerArray();
+        % p = xdc.getSIMUSParam();
+        % 
         % See also ULTRASOUNDSYSTEM/SIMUS
-        p = getSIMUSParam(xdc)
+        function p = getSIMUSParam(xdc)
+            error( ...
+                "QUPS:Transducer:unsupportedTransducer", ...
+                "SIMUS does not support a " + class(xdc) + "." ...
+                );
+        end
     end
 
     % UFF constructor
@@ -404,7 +562,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             %
             % See also TRANSDUCER.QUPS2USTB
             arguments, probe uff.probe; end
-            switch class(probe)
+            switch class(probe) % dispatch
                 case 'uff.linear_array',     xdc = TransducerArray.UFF(probe);
                 case 'uff.curvilinear_array',xdc = TransducerConvex.UFF(probe);
                 case 'uff.matrix_array',     xdc = TransducerMatrix.UFF(probe);
@@ -778,7 +936,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
     end
 
     % fullwave functions
-    methods (Abstract)
+    methods(Hidden)
         % GETFULLWAVETRANSDUCER - define a Fullwave transducer structure
         %
         % xdc_fw = GETFULLWAVETRANSDUCER(xdc, scan) creates a fullwave
@@ -793,8 +951,16 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         %       - incoords      (x,y,1,el) coordinate pairs of the input pixels
         %       - outcoords     (x,y,1,el) coordinate pairs of the output pixels
         %
+        % Note: fullwave support is incomplete, and is subject to change or
+        % removal.
+        % 
         % See also ULTRASOUNDSYSTEM/FULLWAVESIM
-        xdc_fw = getFullwaveTransducer(xdc, scan)
+        function xdc_fw = getFullwaveTransducer(xdc, scan)
+            error( ...
+                "QUPS:Transducer:notImplemented", ...
+                "Fullwave support is not implemented for a " + class(xdc) + "." ...
+                );
+        end
     end
 
     % Field II calls - rely on being able to get a FieldII aperture
@@ -834,7 +1000,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             end
 
             % get the aperture
-            ap = xdc.getFieldIIAperture([0 0 0], el_sub_div);
+            ap = xdc.getFieldIIAperture(el_sub_div);
 
             % extract corners
             data = xdc_get(ap, 'rect');
@@ -866,13 +1032,13 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
 
     % internal subroutines
     methods
-        function impulse = ultrasoundTransducerImpulse(xdc)
-            % ULTRASOUNDTRANSDUCERIMPULSE - create an impulse response Waveform
-            % 
-            % impulse = ULTRASOUNDTRANSDUCERIMPULSE(xdc) creates a gaussian
+        function impulse = xdcImpulse(xdc)
+            % XDCIMPULSE - create an impulse response Waveform
+            %
+            % impulse = XDCIMPULSE(xdc) creates a gaussian
             % pulse Waveform with the bandwidth and fractional bandwidth of
             % the Transducer xdc.
-            % 
+            %
             % See also WAVEFORM.DELTA()
 
             % defaults
@@ -894,6 +1060,45 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             % make a Waveform object
             impulse = Waveform('fun', impulse_fun, 't0', -tc, 'tend', tc);
         end
+    
+        function sub_div = getLambdaSubDiv(xdc, c0, p)
+            % GETLAMBDASUBDIV - Get subelement divisions w.r.t. wavelength
+            %
+            % sub_div = GETLAMBDASUBDIV(xdc, c0, p) returns the element
+            % subdivision sizes corresponding to a proportion p of the
+            % wavelength given sound speed c0 (m/s).
+            %
+            % sub_div = GETLAMBDASUBDIV(xdc, c0, [pw ph]) uses a proportion
+            % pw in the width dimension and ph in the height dimension.
+            %
+            % sub_div = GETLAMBDASUBDIV(xdc, c0) uses a default value of 
+            % [pw ph] == p == 0.1 (10%). 
+            %
+            % Example:
+            % % Get a system
+            % us = UltrasoundSystem(); % a system
+            % scat = Scatterers(); % a scaterrer
+            % 
+            % % Get subdivisions of rectangles of <= [lambda / 10, lambda]
+            % sub_div = us.xdc.getLambdaSubDiv(scat.c0, [1/10 1]),
+            % 
+            % % Simulate
+            % us.fs = single(us.fs); % reduce workload
+            % chd = greens(us, scat, sub_div);
+            % 
+            % See also
+            arguments
+                xdc (1,1) Transducer
+                c0 (1,1) {mustBePositive}
+                p (1,2) {mustBePositive} = 0.1
+            end
+
+            % make odd
+            plus2Odd = @(x) x + 1 - rem(x, 2); % odd -> odd, even -> odd
+
+            % get divisions
+            sub_div = plus2Odd(ceil([xdc.width, xdc.height] ./ (p .* c0 ./ xdc.fc)));
+        end
     end
 
     % dependent methods
@@ -914,6 +1119,13 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
         function o = get.origin(self), o = - self.offset; end
 
         function set.origin(self, o), self.offset = -o; end
+    end
+
+    % heterogeneous support
+    methods (Static,Sealed,Access = protected)
+        function xdc = getDefaultScalarElement()
+            xdc = TransducerGeneric(); % default heterogeneous instance
+        end
     end
 
     % plot functions
@@ -948,6 +1160,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable
             arguments
                 patch_args.?matlab.graphics.primitive.Patch
                 patch_args.DisplayName = 'Elements'
+                patch_args.FaceColor   = 'flat'
+                patch_args.EdgeColor   = 'black'
                 xdc_args.el_sub_div (1,2) double {mustBeInteger, mustBePositive} = [1 1];
             end
 

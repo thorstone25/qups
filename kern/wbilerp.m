@@ -1,5 +1,5 @@
 function [cxy, ixo, iyo] = wbilerp(x, y, xa, ya, xb, yb)
-% WBILERP - Weighted bilinear interpolation weights
+% WBILERP - Weights for bilinear interpolation
 %
 % [cxy, ixo, iyo] = WBILERP(x, y, xa, ya, xb, yb) takes in a pair of grid 
 % vectors x, y and a pair of endpoints (xa,ya) to (xb,yb) and returns the 
@@ -193,16 +193,14 @@ end
 
 % set correct output for x and y in original coordinates
 if yneg, iyo(iyo > 0) = (1 + Y) - iyo(iyo > 0); end
-if steep, [ixo, iyo] = deal2(iyo, ixo); end
+if steep, [ixo, iyo] = deal(iyo, ixo); end
 
 % set output sizing as a vector
-[ixo, iyo, cxy] = deal3(ixo(:), iyo(:), cxy(:));
+[ixo, iyo, cxy] = deal(ixo(:), iyo(:), cxy(:));
 
 end
 
 % helper functions
-function [a,b] = deal2(a,b), end
-function [a,b,c] = deal3(a,b,c), end
 function [a,b,c,d,e,f] = deal6(a,b,c,d,e,f), end
 function [a,b,c,d,e,f] = deal6fun(fun,a,b,c,d,e,f)
     a = fun(a); b = fun(b); c = fun(c); d = fun(d); e = fun(e); f = fun(f);

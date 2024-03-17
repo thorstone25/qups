@@ -33,7 +33,7 @@ xdc.numel = 256;
 xdc.pitch = c0 / fc / 4; % lambda / 4
 
 % (re)set the impulse response waveform (affects simulation only)
-xdc.impulse = ultrasoundTransducerImpulse(xdc); % ideal impulse response
+xdc.impulse = xdc.xdcImpulse(); % ideal impulse response
 % or
 xdc.impulse = Waveform.Delta(); % no impulse response
 
@@ -62,8 +62,7 @@ seq = Sequence('type', 'FSA', 'numPulse', xdc.numel);
 
 % setup a Hadamard encoded transmit
 % NOTE: array size N is supported only where N, N/12 or N/20 is a power of 2.
-seq = Sequence('type', 'FSA', 'numPulse', xdc.numel);
-seq.apodization_ = hadamard(xdc.numel); % set hidden apodization matrix
+seq = Sequence('type', 'FSA', 'numPulse', xdc.numel, 'apd', hadamard(xdc.numel));
 
 % ---------- Plane Wave Sequences -------- %
 % setup a plane wave (PW) sequence
@@ -81,29 +80,28 @@ xdc = TransducerArray();
 pn = xdc.positions(); % element positions
 Na = floor(xdc.numel/2); % active aperture size
 Nv = xdc.numel - Na + 1; % number of transmits
-apod = [ones([Na, Nv]); zeros([xdc.numel - Na, Nv])]; % transmit apodization (elems x txs)
+apd = [ones([Na, Nv]); zeros([xdc.numel - Na, Nv])]; % transmit apodization (elems x txs)
 for i = 1 : Nv
     % shift the active aperture over by i elements for the ith transmit
-    apod(:,i) = circshift(apod(:,i), i-1, 1);
+    apd(:,i) = circshift(apd(:,i), i-1, 1);
 
     % get focal positions centered on the active aperture
-    pf(:,i) = mean(pn(:, logical(apod(:,i))),2); 
+    pf(:,i) = mean(pn(:, logical(apd(:,i))),2); 
 end
-seq = Sequence('type','FC','focus',pf);
-seq.apodization_ = apod; % set hidden apodization matrix
+seq = Sequence('type','FC','focus',pf, 'apd', apd);
 
 % setup a walking transmit aperture focused pulse (FC) for a curvilinear array
 xdc = TransducerConvex();
 th = xdc.orientations(); % element azimuth angles (deg)
 Na = floor(xdc.numel/2); % active aperture size
 Nv = xdc.numel - Na + 1; % number of transmits
-apod = [ones([Na, Nv]); zeros([xdc.numel - Na, Nv])]; % transmit apodization (elems x txs)
+apd = [ones([Na, Nv]); zeros([xdc.numel - Na, Nv])]; % transmit apodization (elems x txs)
 for i = 1 : xdc.numel - Na + 1
     % shift the active aperture over by i elements for the ith transmit
-    apod(:,i) = circshift(apod(:,i), i-1, 1);
+    apd(:,i) = circshift(apd(:,i), i-1, 1);
 
     % get focal positions centered on the active aperture
-    tha(:,i) = mean(th(logical(apod(:,i))),2); % get focal positions (centered)
+    tha(:,i) = mean(th(logical(apd(:,i))),2); % get focal positions (centered)
 end
 rfocal = 60e-3; %% focal range
 seq = SequenceRadial( ...
@@ -111,14 +109,14 @@ seq = SequenceRadial( ...
     'angles',tha, ...
     'ranges',norm(xdc.center) + rfocal, ...
     'apex',xdc.center ...
+    ,'apd', apd ...
     );
-seq.apodization_ = apod; % set hidden apodization matrix
 
 % --------- Arbitrary Delay Sequences ----------- %
 % Create an arbitrary-delay sequence
 tau = randn(xdc.numel); % (elems x txs)
-apod = hadamard(xdc.numel); % (elems x txs)
-seq = SequenceGeneric('del', tau, 'apod', apod);
+apd = hadamard(xdc.numel); % (elems x txs)
+seq = SequenceGeneric('del', tau, 'apd', apd);
 
 % ---------- Modify Sequence Parameters ---------- %
 % set the beamforming sound speed (m/s)
@@ -201,7 +199,7 @@ b = bfAdjoint(us, chd);
 uspw = copy(us); % same system
 uspw.seq = SequenceRadial('type', 'PW','angles',-10:1/4:10); % use plane waves instead
 chdpw = focusTx(uspw, chd); % focus FSA into PW pulses
-[b, bscan] = bfMigration(uspw, chdpw, 'Nfft', [2*chd.T, 4*chd.N]);
+[b, bscan] = bfMigration(uspw, chdpw, [2*chd.T, 4*chd.N]);
 % image using this scan i.e. with `imagesc(bscan, b);`
 
 % ----------------- Aperture Reduction Functions --------------- %
@@ -345,7 +343,7 @@ us = UltrasoundSystem();
 [scan, seq, xdc] = deal(us.scan, us.seq, us.xdc);
 us.seq.pulse = Waveform('t0',-1/xdc.fc, 'tend',1/xdc.fc, 'fun',@(t)sinpi(2*xdc.fc*t));
 med = Medium();
-scat = Scatterers('pos', [0,0,30e-3]');
+scat = Scatterers('pos', [mean(us.scan.x),0,mean(us.scan.z)]');
 chd = greens(us, scat);
 b = DAS(us, chd, 'keep_tx', true);
 
@@ -400,20 +398,48 @@ animate(b, h, 'loop', false);
 
 % animate multiple plots together
 nexttile(); h(1) = imagesc(hilbert(chd)); colormap(h(1).Parent,'jet');
-nexttile(); h(2) = imagesc(us.scan, b); colormap(h(2).Parent,'gray');
+nexttile(); h(2) = imagesc(us.scan, b  ); colormap(h(2).Parent,'gray');
 hmv = animate({chd.data, b}, h, 'loop', false);
 
 % save animation to a gif
 % NOTE: MATLAB may have a bug causing frame sizing to be inconsistent
-mv = [hmv{:}]; % extract from a cell-array to a struct-array
-frame2gif(mv, 'tmp.gif');
+frame2gif(hmv, 'tmp.gif');
 
 % save animation to an .avi file (higher resolution)
 vobj = VideoWriter('tmp', 'Motion JPEG AVI');
 vobj.open();
-vobj.writeVideo(mv);
+vobj.writeVideo(hmv);
 vobj.close();
 
+
+%% Waveforms (affects Simulation only)
+% Waveforms are used when simulating with an excitation function and/or a 
+% transducer impulse response function.
+ 
+% --------------- Creation ---------------- %
+% Create a delta dirac function
+wv = Waveform.Delta();
+
+% create a 2-cycle 5 MHz sine wave tone burst
+fc = 5e6;
+wv = Waveform('fun', @(t) sin(2*pi*fc*t), 't0', -1/fc, 'tend', 1/fc);
+
+% create an ideal transducer gaussian impulse response 
+wv = us.xdc.xdcImpulse();
+
+% import a sampled signal
+t = -2e-6 : 1/50e6 : 2e-6;
+x = sin(2*pi*fc*t) + sin(2*pi*1/2*fc*t) + sin(2*pi*1/3*fc*t);
+wv = Waveform('t', t, 'samples', x);
+
+
+% ----------- Signal processing ------------ %
+% sample the waveform 
+tau = (0 : 1023) .* 0.1e-6;
+y = wv.sample(tau);
+
+% convolve waveforms
+wv2 = conv(wv, wv);
 
 %% Simulation
 % create some example objects and data for this section
@@ -440,36 +466,7 @@ chd = kspaceFirstOrder(us, med, cscan);
 
 % run on a local or remote cluster
 clu = parcluster('local');
-chd = kspaceFirstOrder(us, med, cscan, 'parenv', clu);
+[job, rfun] = kspaceFirstOrder(us, med, cscan, 'parenv', clu);
 
-
-%% Waveforms (affects Simulation only)
-% Waveforms are used when simulating with an excitation function and/or a 
-% transducer impulse response function.
- 
-% --------------- Creation ---------------- %
-% Create a delta dirac function
-wv = Waveform.Delta();
-
-% create a 2-cycle 5 MHz sine wave tone burst
-fc = 5e6;
-wv = Waveform('fun', @(t) sin(2*pi*fc*t), 't0', -1/fc, 'tend', 1/fc);
-
-% create an ideal transducer gaussian impulse response 
-wv = us.xdc.ultrasoundTransducerImpulse();
-
-% import a sampled signal
-t = -2e-6 : 1/50e6 : 2e-6;
-x = sin(2*pi*fc*t) + sin(2*pi*1/2*fc*t) + sin(2*pi*1/3*fc*t);
-wv = Waveform('t', t, 'samples', x);
-
-
-% ----------- Signal processing ------------ %
-% sample the waveform 
-tau = (0 : 1023) .* 0.1e-6;
-y = wv.sample(tau);
-
-% convolve waveforms
-wv2 = conv(wv, wv);
 
 

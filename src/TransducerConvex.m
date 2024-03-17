@@ -82,21 +82,20 @@ classdef TransducerConvex < Transducer
     % define position methods
     methods
         % get methods                
-        function p = positions(self)
-            array_angular_width = (self.numel - 1)* self.angular_pitch;
-            theta = linspace(-array_angular_width/2, array_angular_width/2, self.numel);
-            z = self.radius * cosd(theta);
-            x = self.radius * sind(theta);
-            y = zeros(size(theta));
-            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-            p = rotatepoint(q, cat(1, x, y, z)')' + self.center;
+        function p = positions(xdc)
+            array_angular_width = (xdc.numel - 1)* xdc.angular_pitch;
+            theta = linspace(-array_angular_width/2, array_angular_width/2, xdc.numel);
+            z = xdc.radius * cosd(theta);
+            x = xdc.radius * sind(theta);
+            y =      0      *      theta ;
+            p = xdc.transPos([x; y; z]) - [0 0 xdc.radius]';
         end
         
-        function [theta, phi, normal, width, height] = orientations(self)
-            array_angular_width = (self.numel - 1)* self.angular_pitch;
-            theta =  self.rot(1) + linspace(-array_angular_width/2, array_angular_width/2, self.numel);
-            phi   = -self.rot(2) + zeros(size(theta));
-            ZERO  = zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(xdc)
+            array_angular_width = (xdc.numel - 1)* xdc.angular_pitch;
+            theta =  xdc.rot(1) + linspace(-array_angular_width/2, array_angular_width/2, xdc.numel);
+            ZERO  =       0      * theta; % broadcast 
+            phi   = -xdc.rot(2) + ZERO; % implicit broadcast
             normal     = [cosd(phi).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
             width      = [cosd(theta);            sind(ZERO); -cosd(ZERO).*sind(theta)];
             height     = [sind(phi).*sind(ZERO ); cosd(phi );  sind(phi ).*cosd(ZERO )];
@@ -106,7 +105,8 @@ classdef TransducerConvex < Transducer
     % SIMUS conversion functions
     methods
         function p = getSIMUSParam(self)
-            p = struct( ...
+            arguments, self TransducerConvex {mustBeNonempty}, end
+            p = arrayfun(@(self) struct( ... 
                 'fc', self.fc, ...
                 'pitch', self.pitch, ...
                 'width', self.width, ...
@@ -115,7 +115,8 @@ classdef TransducerConvex < Transducer
                 'radius', self.radius, ...
                 'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in %
                 'focus', self.el_focus ... elevation focus
-                );
+                ), self);
+            if isempty(p), p = struct.empty; end
             % TODO: error if origin not at 0.
         end
     end
@@ -125,7 +126,7 @@ classdef TransducerConvex < Transducer
     methods
         function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
-                xdc (1,1) TransducerConvex
+                xdc TransducerConvex
                 sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
             end
@@ -133,7 +134,7 @@ classdef TransducerConvex < Transducer
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
                         
             % Field II parameters
-            xdc_convex_params = { ...
+            xdc_convex_params = arrayfun(@(xdc) {{ ...
                 xdc.numel,     ... no of elements in x direciton
                 xdc.width,     ... size of elements in x-arc direction
                 xdc.height,    ... size of elements in y direciton
@@ -142,25 +143,29 @@ classdef TransducerConvex < Transducer
                 sub_div(1), ... x sub-divisions
                 sub_div(2), ... y sub-divisions
                 focus.'         ... focal depth
-                };
+                }}, xdc);
             
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_convex_array (xdc_convex_params{:});
+            i = arrayfun(@(xdc) any(xdc.offset) || any(xdc.rot), xdc); % extra translation/rotation
+            aperture( i) = getFieldIIAperture@Transducer(xdc(i), sub_div, focus); % call superclass to make rectangles directly
+            aperture(~i) = cellfun(@(p)xdc_convex_array(p{:}), xdc_convex_params(~i));
         end
     end
     
     % USTB conversion function
     methods
         function probe = QUPS2USTB(self)
-            probe = uff.curvilinear_array(...
+            arguments, self TransducerConvex, end
+            probe = arrayfun(@(self) uff.curvilinear_array(...
                 'N', self.numel, ...
                 'pitch', self.pitch, ...
                 'radius', self.radius, ...
                 'element_width', self.width, ...
                 'element_height', self.height, ...
                 'origin', uff.point('xyz', self.offset(:)') ...
-                );
+                ), self);
+            if isempty(probe), probe = reshape(uff.curvilinear_array.empty, size(probe)); end
         end
     end
 

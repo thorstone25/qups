@@ -92,17 +92,16 @@ classdef TransducerArray < Transducer
     % define position methods
     methods(Access=public)    
         % get methods
-        function p = positions(self)
-            array_width = (self.numel - 1) * self.pitch;
-            x = linspace(-array_width/2, array_width/2, self.numel);
-            q = prod(quaternion([-self.rot(2),0,0;0,self.rot(1),0], 'rotvecd'));
-            p = rotatepoint(q, cat(1, x, zeros(2, numel(x)))')' + self.offset;
+        function p = positions(xdc)
+            array_width = (xdc.numel - 1) * xdc.pitch;
+            x = linspace(-array_width/2, array_width/2, xdc.numel);
+            p = xdc.transPos([1 0 0]'*x);
         end
         
-        function [theta, phi, normal, width, height] = orientations(self)            
-            theta =  self.rot(1) + zeros([1, self.numel]);
-            phi   = -self.rot(2) + zeros(size(theta));
-            ZERO  = zeros(size(theta));
+        function [theta, phi, normal, width, height] = orientations(xdc)            
+            theta =  xdc.rot(1) + zeros([1, xdc.numel]);
+            phi   = -xdc.rot(2) + 0 * theta;
+            ZERO  = 0 * theta;
             normal     = [cosd(phi  ).*sind(theta); sind(phi );  cosd(phi ).*cosd(theta)];
             width      = [cosd(theta);              sind(ZERO); -cosd(ZERO).*sind(theta)];
             height     = [sind(phi  ).*sind(ZERO ); cosd(phi );  sind(phi ).*cosd(ZERO )];
@@ -113,7 +112,8 @@ classdef TransducerArray < Transducer
     % SIMUS conversion functions
     methods
         function p = getSIMUSParam(self)
-            p = struct( ...
+            arguments, self TransducerArray, end
+            p = arrayfun(@(self) struct( ...
                 'fc', self.fc, ...
                 'pitch', self.pitch, ...
                 'width', self.width, ...
@@ -122,7 +122,8 @@ classdef TransducerArray < Transducer
                 'radius', inf, ...
                 'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in % 
                 'focus', self.el_focus ... elevation focus
-                );
+                ), self);
+            if isempty(p), p = struct.empty; end
             % TODO: error if origin not at 0.
         end
     end
@@ -131,15 +132,14 @@ classdef TransducerArray < Transducer
     methods
         function aperture = getFieldIIAperture(xdc, sub_div, focus)
             arguments
-                xdc (1,1) TransducerArray
+                xdc TransducerArray
                 sub_div (1,2) double = [1,1]
                 focus (3,1) double = [0 0 realmax('single')]
             end
-            
             focus(isinf(focus)) = realmax('single') .* sign(focus(isinf(focus))); % make focus finite
-                        
+
             % Field II parameters
-            xdc_lin_array_params = { ...
+            xdc_lin_array_params = arrayfun(@(xdc){{ ...
                 xdc.numel, ...
                 xdc.width, ...
                 xdc.height,...
@@ -147,33 +147,33 @@ classdef TransducerArray < Transducer
                 sub_div(1), ...
                 sub_div(2), ...
                 reshape(focus, 1, []),...
-                };
-            
-            % ensure double type
-            xdc_lin_array_params = cellfun(@double, xdc_lin_array_params, 'UniformOutput', false);
-            xdc_lin_array_params = cellfun(@gather, xdc_lin_array_params, 'UniformOutput', false);
-            
+                }}, xdc);
+
             % Generate aperture for emission
             try evalc('field_info'); catch, field_init(-1); end
-            aperture = xdc_linear_array(xdc_lin_array_params{:});
-        end        
+            i = arrayfun(@(xdc) any(xdc.offset) || any(xdc.rot), xdc); % extra translation/rotation
+            aperture( i) = getFieldIIAperture@Transducer(xdc(i), sub_div, focus); % call superclass to make rectangles directly
+            aperture(~i) = cellfun(@(p)xdc_linear_array(p{:}), xdc_lin_array_params(~i));
+        end
     end
     
     % USTB conversion function
     methods
         function probe = QUPS2USTB(self)
-            probe = uff.linear_array(...
+            arguments, self Transducer, end
+            probe = arrayfun(@(self) uff.linear_array(...
                 'N', self.numel, ...
                 'pitch', self.pitch, ...
                 'element_width', self.width, ...
                 'element_height', self.height, ...
                 'origin', uff.point('xyz', self.offset(:)') ...
-                );
+                ), self);
+            if isempty(probe), probe = reshape(uff.linear_array.empty, size(probe)); end
         end
     end
 
     % Fullwave functions
-    methods
+    methods(Hidden)
         function xdc = getFullwaveTransducer(self, sscan)
 
             [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size

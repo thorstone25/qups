@@ -11,7 +11,7 @@
 % 
 % See also SCANCARTESIAN SCANPOLAR
 
-classdef Scan < matlab.mixin.Copyable
+classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixin.CustomDisplay
     properties(Abstract)
         % ORDER - ordering of the dimension of the imaging grid
         %
@@ -23,26 +23,33 @@ classdef Scan < matlab.mixin.Copyable
         % each as a 3 x A x B x C ND-array.
         order (1,3) char  % dimension of change for the pixels
     end
+    properties
+        origin (3,1) double % Cartesian origin
+    end
     
     % dependent parameters
     properties(Dependent)
         size        % size of each dimension of the generated pixels
         nPix        % total number of pixels
     end
-    
+
     % USTB interop
-    methods(Abstract)
+    methods
         % QUPS2USTB - Convert a Scan to a USTB/UFF compatible uff.scan
         %
         % uscan = QUPS2USTB(scan) returns a uff.scan object.
         %
         % Example:
         % uscan = QUPS2USTB(ScanCartesian());
-        % 
+        %
         % See also UFF.SCAN
-        uscan = QUPS2USTB(scan)
+        % USTB interface methods
+        function uscan = QUPS2USTB(scan)
+            uscan = uff.scan('xyz', reshape(scan.positions(),3,[])');
+        end
+
     end
-        
+
     % UFF constructor
     methods(Static)
         function scan = UFF(uscan)
@@ -147,7 +154,9 @@ classdef Scan < matlab.mixin.Copyable
         %
         % See also: SCAN/POSITIONS
         [X, Y, Z] = getImagingGrid(scan)
-        
+    end
+    methods
+
         % SCALE - Scale units
         %
         % scan = SCALE(scan, 'dist', factor) scales the distance of the
@@ -164,9 +173,22 @@ classdef Scan < matlab.mixin.Copyable
         % scan.xb
         %
         % 
-        scale(scan, kwargs)
+        function scan = scale(scan, kwargs)
+            arguments
+                scan ScanGeneric
+                kwargs.dist (1,1) double
+            end
+            if kwargs.dist ~= 1
+                warning("QUPS:Scan:noOverride", ...
+                    "You used 'scale' by " + kwargs.dist + " on a " + class(scan) + "!" ...
+                    +newline+"It's not very effective ..." ...
+                    );
+            end
+            scan = copy(scan);
+        end
     end
 
+    % positions
     methods
         function  p = positions(scan), p = scan.getImagingGrid("vector", true); end
         % POSITIONS - get the multi-dimensional grid positions
@@ -181,7 +203,62 @@ classdef Scan < matlab.mixin.Copyable
         % 'order' property of the Scan.
         %
         % See also: GETIMAGINGGRID
-        
+    end
+
+    % heterogeneous support
+    methods (Static,Sealed,Access = protected)
+        function scan = getDefaultScalarElement()
+            scan = ScanCartesian(); % default heterogeneous instance
+        end
+    end
+
+    % object display
+    methods (Sealed, Access = protected)
+        function header = getHeader(obj)
+            header = getHeader@matlab.mixin.CustomDisplay(obj);
+        end
+
+        function groups = getPropertyGroups(scan)
+            if ~isscalar(scan)
+                groups = getPropertyGroups@matlab.mixin.CustomDisplay(scan);
+            else % scan is scalar - show info in groups
+                axs = arrayfun(@string, lower(scan.order)); % axes (in order)
+                j = scan.size > 1; % filter to non-singular dimensions
+                ax = matlab.mixin.util.PropertyGroup(["order","size","origin",axs], "Axes");
+                % sz = matlab.mixin.util.PropertyGroup([ "nPix", "n"+axs], "Shape");
+                rs = matlab.mixin.util.PropertyGroup(["d"+axs(j)], "Resolution");
+                bd = matlab.mixin.util.PropertyGroup([axs(j)+"b"], "Bounds (min/max)");
+                lb = matlab.mixin.util.PropertyGroup([axs(j)+"label"],"Labels");
+                groups = [ax,rs,bd,lb];
+
+                other_props = setdiff(properties(scan), [groups.PropertyList, "nPix"]);
+                other_props = other_props(~contains(other_props, ("d" + axs | axs + ("b" | "label"))));
+                if ~isempty(other_props)
+                    groups(end+1) = matlab.mixin.util.PropertyGroup(other_props, "Other");
+                end
+            end
+        end
+
+        % Hetergenous support functions (for further customization)
+        % function footer = getFooter(obj)
+        %     footer = getFooter@matlab.mixin.CustomDisplay(obj);
+        % end
+        %
+        % function displayNonScalarObject(obj)
+        %     displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
+        % end
+        %
+        % function displayScalarObject(obj)
+        % Do not override this method: a 'Scan' is Abstract and therefore
+        % cannot be instanstiated.
+        %
+        % function displayEmptyObject(obj)
+        %     displayEmptyObject@matlab.mixin.CustomDisplay(obj);
+        % end
+        %
+        % function displayScalarHandleToDeletedObject(obj)
+        %     displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
+        % end
     end
 
     % conversion
@@ -359,7 +436,7 @@ classdef Scan < matlab.mixin.Copyable
             % default axis setting
             if isa(scan, 'ScanCartesian')
                 axis(ax, 'image');
-            elseif isa (scan, 'ScanPolar') || isa(scan, 'ScanGeneric')
+            elseif any(arrayfun(@(s)isa(scan,s), ["ScanPolar", "ScanGeneric", "ScanSpherical"]))
                 axis(ax, 'tight')
             else
                 warning('QUPS:Scan:UnrecognizedScan', "Unrecognized Scan of class " + class(scan) + ".");
@@ -501,8 +578,6 @@ classdef Scan < matlab.mixin.Copyable
                 axis(ax, 'tight')
             end
         end
-
-    
     end
 
     % Dependent properties

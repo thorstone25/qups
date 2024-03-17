@@ -19,13 +19,13 @@
 % For types 'FC' (focused), 'DV' (diverging), the foci are spatial
 % positions and time 0 is when the wavefront passes through the foci.
 % 
-% Use type 'FSA' and set the hidden `delays_` and/or `apodization_`
-% properties to use custom transmit delays and apodization. These will be
-% compatible with all simulation methods.
+% Use type 'FSA' and set the `del` and/or `apd` properties to use custom 
+% transmit delays and apodization. These will be compatible with all
+% simulation methods.
 % 
 % 
 % See also: SEQUENCERADIAL SEQUENCEGENERIC WAVEFORM
-classdef Sequence < matlab.mixin.Copyable    
+classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixin.CustomDisplay
     properties
         % TYPE - Type of pulse sequence definition
         %
@@ -88,7 +88,109 @@ classdef Sequence < matlab.mixin.Copyable
         % See also SEQUENCE.FOCUS SEQUENCE.TYPE SEQUENCE.C0
         pulse (1,1) Waveform = Waveform.Delta() % transmit Waveform
     end
-    
+
+    properties(Dependent)
+        % APD - Apodization function/matrix definition
+        %
+        % SEQUENCE.APD specifies the apodization weights a as
+        % either a (N x S) matrix, or a function that takes a Transducer
+        % and a Sequence and returns a (N x S) matrix of weights where N is
+        % the number of elements of the corresponding Transducer and S is
+        % the number of transmit pulses.
+        %
+        % Example:
+        % % Create a hadamard encoding sequence
+        % seq = Sequence('type', 'FSA');
+        % seq.apd = @(tx, seq) hadamard(tx.numel);
+        % seq.del = @(tx, seq) zeros(tx.numel);
+        %
+        % % Get a default system and scatterers
+        % us = UltrasoundSystem('seq', seq);
+        % us.seq.numPulse = us.tx.numel; % set the number of pulses
+        % scat = Scatterers('pos', [0;0;30e-3]);
+        %
+        % % get the ChannelData
+        % chdh = greens(us, scat);
+        %
+        % % decode the data via refocus
+        % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
+        % us.seq.apd = @(tx, seq) eye(tx.numel); % specify FSA apodization
+        %
+        % % beamform and display the image
+        % figure;
+        % b = DAS(us, chd);
+        % imagesc(us.scan, b);
+        % caxis(max(caxis) + [-60 0]);
+        %
+        % See also APODIZATION SEQUENCE.DEL
+        apd  {mustBeA(apd, ["function_handle", "numeric", "logical"])}
+
+        % DEL - Delay function/matrix definition
+        %
+        % SEQUENCE.DEL specifies the delays as either a (N x S) matrix, or
+        % a function that takes a Transducer and a Sequence and returns a
+        % (N x S) matrix of delays where N is the number of elements and S
+        % is the number of pulses.
+        %
+        % Example:
+        % % Get a default system and scatterers
+        % p0 = [0 0 30]' * 1e-3; % scatterer position
+        % scat = Scatterers('pos', p0);
+        % us = UltrasoundSystem();
+        % N = us.xdc.numel;
+        %
+        % % Create a random phasor sequence
+        % apd = randn(N,N);
+        % del = randn(N,N) * 2 / us.xdc.fc; % std. of 2 wavelengths
+        % seqf = Sequence('numPulse', N); % FSA
+        % seqg = Sequence('numPulse', N, 'del', del, 'apd', apd); % random
+        %
+        % % simulate ChannelData from the random phasor sequence
+        % us.seq = seqg;
+        % chdh = greens(us, scat);
+        %
+        % % decode the data into an FSA sequence via refocus
+        % chdr = refocus(us, chdh);
+        % us.seq = seqf; % now it's an FSA sequence
+        %
+        % % simulate the ideal data (with a true FSA sequence)
+        % chd = greens(us, scat);
+        %
+        % % beamform and display the images
+        % us.scan = ScanCartesian( ...
+        %     'xb', p0(1) + [-5 5]*1e-3, ...
+        %     'zb', p0(3) + [-5 5]*1e-3 ...
+        %     ); % image boundaries
+        % [us.scan.dx, us.scan.dz] = deal(us.lambda / 8); % image resolution
+        %
+        % % beamform
+        % chds = cat(3, chd, chdh, chdr); % combine ChannelData for efficiency
+        % b = DAS(us, chds);
+        % bmax = gather(mod2db(max(b,[],1:2))); % max power
+        % 
+        % % display images
+        % ttls = ["Ideal FSA","Random Phasor","Refocused FSA"];
+        % figure;
+        % tiledlayout('flow');
+        % clear ax;
+        % for i = 1:3
+        %     ax(i) = nexttile(i);
+        %     imagesc(us.scan, b(:,:,i), ax(i));
+        %     title(ax(i), ttls(i));
+        %     colormap gray;
+        %     colorbar;
+        %     caxis(bmax(i) + [-60 0]);
+        % end
+        % linkaxes(ax);
+        %
+        % See also DELAYS SEQUENCE.APD ULTRASOUNDSYSTEM.REFOCUS ULTRASOUNDSYSTEM.FOCUSTX
+        del   {mustBeA(del,  ["function_handle", "numeric"])}
+    end
+
+    properties(Hidden)
+        tscale (1,1) double {mustBeReal, mustBeFinite} = 1;
+    end
+
     properties(Dependent)
         % NUMPULSE - Number of pulses
         %
@@ -111,10 +213,11 @@ classdef Sequence < matlab.mixin.Copyable
         % (N x S) matrix of weights where N is the number of elements and 
         % S is the number of pulses.
         %
+        % Note: This property is a hidden alias of the `apd` property.
+        % 
         % Example:
         % % Create a hadamard encoding sequence
-        % seq = Sequence('type', 'FSA');
-        % seq.apodization_ = @(tx, seq) hadamard(tx.numel);
+        % seq = Sequence('type', 'FSA', 'apd', @(tx, seq) hadamard(tx.numel));
         %
         % % Get a default system and scatterers
         % us = UltrasoundSystem('seq', seq);
@@ -126,11 +229,12 @@ classdef Sequence < matlab.mixin.Copyable
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.seq.apodization_ = []; % clear the encoding
+        % us.seq.apd = []; % clear the encoding
         % 
         % % beamform and display the image
         % figure; 
-        % imagesc(mod2db(DAS(us, chd)));
+        % b = DAS(us, chd);
+        % imagesc(us.scan, b);
         % caxis(max(caxis) + [-60 0]);
         % 
         % See also APODIZATION SEQUENCE.DELAYS_
@@ -146,12 +250,14 @@ classdef Sequence < matlab.mixin.Copyable
         %
         % Example:
         % % Create a random phase sequence
-        % seq = Sequence('type', 'FSA');
-        % seq.delays_ = (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc;
+        % tx = TransducerArray('numel', 32);
+        % seq = Sequence(...
+        %     'type', 'FSA', 'numPulse', tx.numel, ...
+        %     'del', (randi([0,3],tx.numel) - 1.5) / 4 / tx.fc ...
+        %     );
         %
         % % Get a default system and scatterers
-        % us = UltrasoundSystem('seq', seq);
-        % us.seq.numPulse = us.tx.numel; % set the number of pulses
+        % us = UltrasoundSystem('seq', seq, 'xdc', tx);
         % scat = Scatterers('pos', [0;0;30e-3]);
         % 
         % % get the ChannelData
@@ -159,7 +265,7 @@ classdef Sequence < matlab.mixin.Copyable
         %
         % % decode the data via refocus
         % chd = refocus(us, chdh, 'gamma', 0); % don't use regularization
-        % us.seq.delays_ = []; % clear the encoding
+        % us.seq.del = []; % clear the encoding
         % 
         % % beamform and display the image
         % figure; 
@@ -215,6 +321,16 @@ classdef Sequence < matlab.mixin.Copyable
                 kwargs.c0 (1,1) double
                 kwargs.pulse (1,1) Waveform
                 kwargs.numPulse (1,1) double {mustBeInteger}
+                kwargs.apd {mustBeA(kwargs.apd, ["function_handle", "numeric", "logical"])}
+                kwargs.del {mustBeA(kwargs.del, ["function_handle", "numeric"])}
+            end
+
+            % deprecationg warning
+            if isfield(kwargs,'type') && kwargs.type == "VS"
+                warning( ...
+                    "QUPS:Sequence:DeprecatedValue", ...
+                    "The 'VS' value for the 'type' property is deprecated - use 'FC' or 'DV' instead." ...
+                    );
             end
 
             % initialize
@@ -230,13 +346,15 @@ classdef Sequence < matlab.mixin.Copyable
             % Example:
             %
             % % Create a Sequence
-            % seq = Sequence()
+            % seq = SequenceRadial('angles', -25:0.5:25);
             %
             % % convert to a MATLAB struct
             % seq = obj2struct(seq)
             %
             arguments, seq Sequence {mustBeScalarOrEmpty}; end
-            W = warning('off', "MATLAB:structOnObject"); % squash warnings
+            wmsg = ["MATLAB:structOnObject", "QUPS:Sequence:DeprecatedProperty", "QUPS:Sequence:numPulseUnset"];
+            W = warning(); % warning state
+            for w = wmsg, warning('off', w); end % squash warnings
             s = struct(seq); % convert self
             if ~isempty(s), s.pulse = obj2struct(s.pulse); end % convert pulse
             s.class = class(seq); % append class info
@@ -246,7 +364,65 @@ classdef Sequence < matlab.mixin.Copyable
             s = rmfield(s, [fds(ids), "FSA_n_tx"]); % remove empty, hidden & redundant props
             warning(W); % restore warnings
         end
-        
+
+        function [seqs, i] = splice(seq, bsize)
+            % SPLICE - Split the Sequence into an array of Seqeunces
+            %
+            % seqs = SPLICE(seq) returns an array of Sequence objects seqs
+            % where each element of seqs contains a single transmit pulse.
+            %
+            % seqs = SPLICE(chd, bsize) uses a maximum block size of bsize
+            % to partition the transmits objects. The default is 1.
+            %
+            % [seqs, i] = SPLICE(...) also returns the indices for each
+            % transmit. For example, if seq contains 5 transmits and is
+            % spliced with a block size of 2, i = {[1 2], [3 4], [5]}.
+            %
+            % Example:
+            %
+            % % Splice a Sequence of 5 plane waves
+            % seq = SequenceRadial('type', 'PW', 'angles', [-10 -5 0 5 10]);
+            % seqs = splice(seq, 2)
+            % isequal(seq.focus, [seqs.focus])
+            % 
+            % See also SUB SEQUENCE.DEL SEQUENCE.APD
+            arguments
+                seq (1,1) Sequence
+                bsize (1,1) {mustBeInteger, mustBePositive} = 1
+            end
+            % copy semantics
+            seq = copy(seq);
+
+            % special case - if implicit FSA, set apodization/focus first!
+            if seq.type == "FSA"
+                if isempty(seq.apd), seq.apd = eye(seq.numPulse); end
+            end
+
+            % make new Sequence objects
+            S = seq.numPulse; % number of pulses
+            i = num2cell((0:bsize:S-1) + (1:bsize)',1); % list of indices
+            i{end}(i{end} > S) = []; % restrict to max size
+            seqs = copy(repmat(seq, [1,numel(i)])); % new Sequence objects
+
+            % sub-index the properties
+            for j = 1:numel(seqs)
+                sq = seqs(j); % refernce jth sequence
+                if size(sq.focus,2) > 1
+                    sq.focus = sq.focus(:,i{j});
+                end
+                if size(sq.apd,2) > 1
+                    sq.apd = sq.apd(:,i{j});
+                elseif isa(sq.apd, 'function_handle')
+                    sq.apd = @(tx,xdc) sub(sq.apd(tx,xdc), i{j}, 2);
+                end
+                if size(sq.del,2) > 1
+                    sq.del = sq.del(:,i{j});
+                elseif isa(sq.del, 'function_handle')
+                    sq.del = @(tx,xdc) sub(sq.del(tx,xdc), i{j}, 2);
+                end
+            end
+        end
+
         % scaling
         function self = scale(self, kwargs)
             % SCALE - Scale units
@@ -286,6 +462,12 @@ classdef Sequence < matlab.mixin.Copyable
             if isfield(kwargs, 'time')
                 self.pulse = scale(self.pulse, 'time', kwargs.time);
                 cscale = cscale / kwargs.time;
+                if ~isempty(self.del) % manual delays
+                if isnumeric(self.del), self.del = self.del * kwargs.time; % scale values
+                else, self.tscale = self.tscale .* kwargs.time; % record functional scaling
+                end
+                    
+                end
             end
             self.c0 = self.c0 * cscale;
         end
@@ -374,14 +556,14 @@ classdef Sequence < matlab.mixin.Copyable
 
             wvt = unique([sequence.wavefront]);
             if(~isscalar(wvt)), error( ...
-                    'QUPS:ChannelData:nonUniqueWavefront', ...
+                    'QUPS:Sequence:nonUniqueWavefront', ...
                     'The uff.channel_data object must contain a unique wavefront type.'...
                     );
             end
 
             prb = unique([sequence.probe]);
             if(~isscalar(prb)), error( ...
-                    'QUPS:ChannelData:nonUniqueProbe', ...
+                    'QUPS:Sequence:nonUniqueProbe', ...
                     'The uff.channel_data must contain a unique probe.'...
                     );
             end
@@ -399,7 +581,7 @@ classdef Sequence < matlab.mixin.Copyable
                     pm = gather(single(cat(1, p0.xyz)));
                     pd = [p0.distance];
                     if(~(all(isinf(pd)) || all(~isinf(pd)))), error( ...
-                        'QUPS:ChannelData:nonUniqueWavefront', ...
+                        'QUPS:Sequence:nonUniqueWavefront', ...
                         'The uff.channel_data object contains heterogeneous wavefront types.'...
                         );
                     end
@@ -409,7 +591,7 @@ classdef Sequence < matlab.mixin.Copyable
                     end
                 otherwise
                     error( ...
-                        'QUPS:ChannelData:unknownWavefront', ...
+                        'QUPS:Sequence:unknownWavefront', ...
                         "The uff.channel_data object uses unrecognized wavefront type '" + wvt + "'." ...
                         );
             end
@@ -504,16 +686,24 @@ classdef Sequence < matlab.mixin.Copyable
             tau = cat(1,TX.Delay ) ./ fc; % tx delays (s)
 
             % build the full delay/apodization matrix
-            [apdtx, tautx] = deal(zeros(Trans.numelements, numel(TX))); % pre-allocate
-            for i = 1 : numel(TX) % for each transmit
-                if ismux,   api = ap(:, TX(i).aperture); 
-                else,       api = ap(logical(ap)); 
-                end %       selected aperture
-                j = logical(api); % active elements
-                apdtx(j,i) = apd(i,:); % apodization
-                tautx(j,i) = tau(i,:); % delays
-            end
+            xsz = [numel(TX), Trans.numelements]; % full size
+            if all([size(apd); size(tau)] == xsz) % already built in newer versions of Vantage 
+                apdtx = apd';
+                tautx = tau';
+            else
+                % older version of Vantage
+                [apdtx, tautx] = deal(zeros(xsz)'); % pre-allocate
+                for i = 1 : numel(TX) % for each transmit
+                    if ismux,   api = ap(:, TX(i).aperture);
+                    else,       api = ap(logical(ap));
+                    end %       selected aperture
+                    j = logical(api); % active elements (indexed different on TX than RX ?!?)
 
+                    apdtx(j,i) = apd(i,:); % apodization
+                    tautx(j,i) = tau(i,:); % delays
+                end
+            end
+            
             % attempt to import the Transducer
             xdc = kwargs.xdc;
             if isempty(xdc)
@@ -529,15 +719,15 @@ classdef Sequence < matlab.mixin.Copyable
                 );
 
             % create the corresponding Sequence
-            if isfield(TX, "FocalPt") % focal points -> VS
+            if isfield(TX, "FocalPt") && all(~cellfun(@isempty, {TX.FocalPt})) % focal points -> VS
                 pf = cat(1, TX.FocalPt)' .* lambda; % focal points
                 % attempt to infer focused or diverging wave
-                if     isa(class(xdc), "TransducerArray" ) ...
-                        || isa(class(xdc), "TransducerMatrix")
+                if     isa(xdc, "TransducerArray" ) ...
+                        || isa(xdc, "TransducerMatrix")
                     if     all(pf(3,:) < 0), styp = "DV";
                     elseif all(pf(3,:) > 0), styp = "FC";
                     end
-                elseif isa(class(xdc), "TransducerConvex")
+                elseif isa(xdc, "TransducerConvex")
                     r = vecnorm(pf - xdc.center,2,1);
                     if     all(r < xdc.radius), styp = "DV";
                     elseif all(r > xdc.radius), styp = "FC";
@@ -579,7 +769,7 @@ classdef Sequence < matlab.mixin.Copyable
                     "QUPS:Verasonics:ambiguousSequenceType", ...
                     "Unable to infer transmit sequence type." ...
                     );
-                seq = SequenceGeneric("apod",apdtx, "del",tautx, "numPulse",numel(TX));
+                seq = SequenceGeneric("apd",apdtx, "del",tautx, "numPulse",numel(TX));
             end
             seq.c0 = c0;
 
@@ -590,11 +780,11 @@ classdef Sequence < matlab.mixin.Copyable
                         "QUPS:Verasonics:overrideSequenceApodization", ...
                         "Overriding QUPS apodization with Vantage defined values." ...
                         );
-                    seq.apodization_ = apdtx;
+                    seq.apd = apdtx;
             end
 
             % validate the delays
-            [t0, val] = deal(NaN, false); % no offset / unverified until proven successful
+            [t0, val] = deal(0, false); % no offset / unverified until proven successful
             if ~isempty(xdc) % transducer successfully imported
                 act  = logical(apdtx); % whether elements were active
                 tauq = seq.delays(xdc); % QUPS delays (N x S)
@@ -612,7 +802,7 @@ classdef Sequence < matlab.mixin.Copyable
                     "QUPS:Verasonics:overrideSequenceDelays", ...
                     "Overriding QUPS delays with Vantage defined values." ...
                     );
-                seq.delays_ = tautx;
+                seq.del = tautx;
             end
 
             % import waveform
@@ -622,6 +812,56 @@ classdef Sequence < matlab.mixin.Copyable
         end
     end
     
+    % transmit sequence generator functions
+    methods(Static)
+        function apd = apWalking(N, sz, str, off)
+            % APWALKING - Generate a walking active aperture
+            %
+            % apd = apWalking(N, sz) generates a walking active aperture
+            % apodization array apd for a Transducer with N elements with
+            % sz contiguous elements active per transmit. This method is
+            % valid for 1D Transducers with contiguous elements e.g. a
+            % TransducerArray or TransducerConvex.
+            % 
+            % apd = apWalking(N, sz, str) additionally sets the stride str
+            % between active apertures. The default is 1.
+            % 
+            % apd = apWalking(N, sz, str, off) additionally sets an offset
+            % for the first active aperture. The default is 0.
+            %
+            % Example:
+            % % Create a Transducer
+            % xdc = TransducerArray.L12_3v(); % 192 elements
+            % 
+            % % Generate active apertures of 64 elements moving by 4
+            % apd = Sequence.apWalking(xdc.numel, 64, 4);
+            %
+            % % Create corresponding focal positions
+            % zf  = 50e-3; % focal depth
+            % pf  = xdc.focActive(apd, zf);
+            % 
+            % % Create a focused Sequence
+            % seq = Sequence('type','FC', 'focus',pf, 'apd', apd);
+            % 
+            % % Create and plot the system
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
+            % plot(us);
+            % 
+            % See also SEQUENCE.APODIZATION_ TRANSDUCER.FOCACTIVE
+
+
+            arguments
+                N (1,1) % number of total elements
+                sz (1,1) {mustBePositive, mustBeInteger} % active size
+                str (1,1) {mustBePositive, mustBeInteger} = 1 % stride
+                off (1,1) {mustBeNonnegative, mustBeInteger} = 0 % starting offset
+            end
+            apd = cell2mat(arrayfun(@(i){ ...
+                circshift((1:N)' <= sz, i) ...
+                }, off : str : max(off,N-sz)));
+        end
+    end
+
     % temporal response methods
     methods   
         function tau = delays(self, tx)
@@ -647,14 +887,14 @@ classdef Sequence < matlab.mixin.Copyable
             %
             % See also APODIZATION
             arguments
-                self Sequence
-                tx Transducer
+                self (1,1) Sequence
+                tx (1,1) Transducer
             end
             
             % element positions (3 x 1 x N)
             p = swapdim(tx.positions(),2,3); 
             
-            if isempty(self.delays_)
+            if isempty(self.del)
                 switch self.type
                     case {'FC','DV','VS'}
                         v = self.focus - p; % element to focus vector (3 x S x N)
@@ -678,16 +918,15 @@ classdef Sequence < matlab.mixin.Copyable
                 % reshape for output (N x S)
                 tau = permute(tau, [3 2 1]);
             else
-                if isa(self.delays_, 'function_handle')
-                    tau = self.delays_(tx, self); % call the function on tx
-                elseif isnumeric(self.delays_)
-                    tau = self.delays_; % return the user supplied values
+                if isa(self.del, 'function_handle')
+                    tau = self.del(tx, self); % call the function on tx
+                    tau = tau .* self.tscale; % scale 
+                elseif isnumeric(self.del)
+                    tau = self.del; % return the user supplied values
                 else, warning("Unable to interpret delays; not a function handle or numeric type.");
-                    tau = self.delays_; % return the user supplied values anyway
+                    tau = self.del; % return the user supplied values anyway
                 end
             end
-
-            
         end
 
         function a = apodization(self, tx)
@@ -699,11 +938,10 @@ classdef Sequence < matlab.mixin.Copyable
             % (tx.numel) and S is the number of transmit pulses
             % (self.numPulse).
             %
-            % To use a custom apodization, set the hidden property
-            % self.apodization_ to be either an array of the proper size 
-            % for the Transducer that you plan to use or a function that
-            % accepts a Transducer and a Sequence and returns an N x S
-            % array of apodization values.
+            % To use a custom apodization, set the property self.apd to be
+            % either an array of the proper size for the Transducer that
+            % you plan to use or a function that accepts a Transducer and a
+            % Sequence and returns an N x S array of apodization values.
             %
             % Example:
             % % Make a walking aperture sequence
@@ -715,25 +953,20 @@ classdef Sequence < matlab.mixin.Copyable
             % xf = xdc.pitch * (-10:1:10); % (1 x S) focal x-positions
             % 
             % % define the walking aperture apodization: use only 32
-            % elements nearest to the focus.
-            % apod = abs(xn - xf) <= 32/2; % (N x S) array
+            % % elements nearest to the focus.
+            % apd = abs(xn - xf) <= 32/2; % (N x S) array
             % 
             % % construct the Sequence
-            % seq = Sequence(...
-            % 'type', 'FC', ...
-            % 'focus', [0;0;30e-3] + xf .* [1;0;0] ...
-            % );
-            % 
-            % % Define the apodization
-            % seq.apodization_ = apod; % set the hidden property
+            % pf = [0;0;30e-3] + xf .* [1;0;0];
+            % seq = Sequence('type','FC', 'focus',pf, 'apd',apd);
             % 
             % See also DELAYS
             arguments
-                self Sequence
-                tx Transducer
+                self (1,1) Sequence
+                tx (1,1) Transducer
             end
 
-            if isempty(self.apodization_) % apodization not set by user:
+            if isempty(self.apd) % apodization not set by user:
                 switch self.type
                     case 'FSA'
                         a = eye(size(tx.positions(),2)); % N x N identity
@@ -741,12 +974,12 @@ classdef Sequence < matlab.mixin.Copyable
                         a = ones([size(tx.positions(),2) self.numPulse]); % N x S
                 end
             else
-                if isa(self.apodization_, 'function_handle')
-                    a = self.apodization_(tx, self); % call the function on tx
-                elseif isnumeric(self.apodization_) || islogical(self.apodization_)
-                    a = self.apodization_; % return the user supplied values
+                if isa(self.apd, 'function_handle')
+                    a = self.apd(tx, self); % call the function on tx
+                elseif isnumeric(self.apd) || islogical(self.apd)
+                    a = self.apd; % return the user supplied values
                 else, warning("Unable to interpret apodization; not a function handle or numeric type")
-                    a = self.apodization_; % return the user supplied values anyway
+                    a = self.apd; % return the user supplied values anyway
                 end
             end
         end
@@ -784,7 +1017,7 @@ classdef Sequence < matlab.mixin.Copyable
             % 
             % See also SEQUENCE/TYPE
 
-            arguments, seq Sequence, end
+            arguments, seq (1,1) Sequence, end
             switch seq.type
                 case {'VS', 'FC'} % for virtual source, t0 is at the foci
                     t0 = - vecnorm(seq.focus, 2,1) ./ seq.c0; % (1 x S)
@@ -797,60 +1030,98 @@ classdef Sequence < matlab.mixin.Copyable
         end
     end
     
-    % get methods
+    % dependent properties
     methods
         % number of transmit pulses 
         function v = get.numPulse(self)
-            switch self.type
-                case 'FSA'
-                    v = self.FSA_n_tx;
-                    if isnan(v), warning("Number of pulses is unset."); end
-                otherwise
-                    v = size(self.focus, 2);
+            [asz, tsz] = deal(size(self.apodizationv_), size(self.delaysv_)); % override data sizing
+            if any([asz, tsz])
+                if     ~any(tsz), v = asz(2);
+                elseif ~any(asz), v = tsz(2);
+                else
+                    if ~any(asz ~= tsz), v = asz(2);
+                    else, error("QUPS:Sequence:matrixSizeMismatch",...
+                            "Expected the delay and apodization matrices to have identical sizing."),
+                    end
+                end
+            else
+                switch self.type
+                    case 'FSA'
+                        v = self.FSA_n_tx;
+                        if isempty(v) || ~isfinite(v), warning("QUPS:Sequence:numPulseUnset", "Number of pulses is unset."); end
+                    otherwise
+                        v = size(self.focus, 2);
+                end
             end
         end
-        
         function set.numPulse(self, n)
+            arguments, self (1,1) Sequence, n (1,1) double, end
             self.FSA_n_tx = n;
         end
 
-        function set.apodization_(self, apod)
-            if isa(apod, 'function_handle')
-                self.apodizationf_ = apod;
-            elseif isnumeric(apod) || islogical(apod)
-                self.apodizationv_ = apod;
+        function set.apd(seq, apd)
+            arguments
+                seq (1,1) Sequence
+                apd {mustBeA(apd, ["function_handle", "numeric", "logical"])}
+            end
+            if isa(apd, 'function_handle')
+                [seq.apodizationv_, seq.apodizationf_] = deal([], apd);
             else
-                error("Expected a function handle or numeric type; instead got a " + class(apod) + ".");
+                [seq.apodizationv_, seq.apodizationf_] = deal(apd, function_handle.empty);
             end
         end
-       
-        function set.delays_(self, tau)
+        function apd = get.apd(seq)
+            arguments, seq (1,1) Sequence, end
+            if     ~isempty(seq.apodizationf_), apd = seq.apodizationf_;
+            elseif ~isempty(seq.apodizationv_), apd = seq.apodizationv_;
+            else, apd = [];
+            end
+        end
+        function set.del(seq, tau)
+            arguments
+                seq (1,1) Sequence
+                tau {mustBeA(tau, ["function_handle", "numeric"])}
+            end
             if isa(tau, 'function_handle')
-                self.delaysf_ = tau;
-            elseif isnumeric(tau) || islogical(tau)
-                self.delaysv_ = tau;
+                [seq.delaysv_, seq.delaysf_] = deal([], tau);
             else
-                error("Expected a function handle or numeric type; instead got a " + class(tau) + ".");
+                [seq.delaysv_, seq.delaysf_] = deal(tau, function_handle.empty);
+            end
+        end
+        function tau = get.del(seq)
+            arguments, seq (1,1) Sequence, end
+            if     ~isempty(seq.delaysf_), tau = seq.delaysf_;
+            elseif ~isempty(seq.delaysv_), tau = seq.delaysv_;
+            else, tau = [];
             end
         end
 
-        function apod = get.apodization_(self)
-            if ~isempty(self.apodizationf_), 
-                apod = self.apodizationf_;
-            else, 
-                apod = self.apodizationv_;
-            end
+        function set.apodization_(self, apd)
+            warning("QUPS:Sequence:DeprecatedProperty", ...
+                "The 'apodization_' property is deprecated - use 'apd' instead." ...
+                );
+            self.apd = apd;
         end
-
+        function apd = get.apodization_(self)
+            warning("QUPS:Sequence:DeprecatedProperty", ...
+                "The 'apodization_' property is deprecated - use 'apd' instead." ...
+                );
+            apd = self.apd;
+        end
+        function set.delays_(self, tau)
+            warning("QUPS:Sequence:DeprecatedProperty", ...
+                "The 'delays_' property is deprecated - use 'del' instead." ...
+                );
+            self.del = tau;
+        end
         function tau = get.delays_(self)
-            if ~isempty(self.delaysf_), 
-                tau = self.apodizationf_;
-            else, 
-                tau = self.delaysv_;
-            end
+            warning("QUPS:Sequence:DeprecatedProperty", ...
+                "The 'delays_' property is deprecated - use 'del' instead." ...
+                );
+            tau = self.del;
         end
     end
-
+    
     % plotting methods
     methods
         function h = plot(self, varargin, plot_args)
@@ -874,7 +1145,6 @@ classdef Sequence < matlab.mixin.Copyable
             % Plots only the x-z slice.
             %
             % See also TRANSDUCER/PATCH QUIVER
-
 
             arguments
                 self (1,1) Sequence
@@ -905,6 +1175,21 @@ classdef Sequence < matlab.mixin.Copyable
                 otherwise
                     % plot the positions with the options given in the inputs
                     h = plot(hax, self.focus(1,:), self.focus(3,:), varargin{:}, plot_args{:});
+            end
+        end
+    end
+
+    % object display
+    methods(Access = protected)
+        function propgrp = getPropertyGroups(seq)
+            if ~isscalar(seq)
+                propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(seq);
+            else
+                p = string(properties(seq)); % get public properties
+                for f = ["apd", "del"] % fields to remove if empty
+                if isprop(seq, f) && isempty(seq.(f)), p(p == f) = []; end
+                end
+                propgrp = matlab.mixin.util.PropertyGroup(p);
             end
         end
     end

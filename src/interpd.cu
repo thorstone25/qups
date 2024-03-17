@@ -172,7 +172,7 @@ __device__ void interpd_temp(T2 * __restrict__ y,
     
     // get sampling index
     const size_t tid = threadIdx.x + blockIdx.x * blockDim.x;
-    const size_t n = threadIdx.y + blockIdx.y * blockDim.y;
+    const size_t n = threadIdx.y + blockIdx.y * blockDim.y + gridDim.y * (threadIdx.z + blockIdx.z * blockDim.z);
     // const size_t m = threadIdx.z + blockIdx.z * blockDim.z;
     
     // rename for readability

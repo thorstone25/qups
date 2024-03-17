@@ -11,23 +11,50 @@ function setup(opts)
 %
 % SETUP CUDA - adds the default CUDA installation paths to the system
 % environmental variable PATH so that nvcc can be called. The function will
-% attempt to find an installation of CUDA. On Windows, it will also attempt
-% to find an installation of MSVC C/C++. If the 'CUDA_PATH' environmental
-% variable is set, it will use that version of CUDA first. If the
-% 'VCToolsInstallDir' environmental variable is set, it will use that C/C++
-% compiler.
+% attempt to find an installation of CUDA with nvcc and add it to the
+% system PATH. On Windows, it will also attempt to find an installation of
+% MSVC C/C++. If the 'MW_NVCC_PATH' environment variable is set, it will
+% use that version of CUDA first. On Windows, if the 'VCToolsInstallDir'
+% environmental variable is set, it will use that C/C++ compiler.
 %
+% Note: In MATLAB R2023a+ ptx compilation in provided via mexcuda, which
+% will also use the 'MW_NVCC_PATH' environment variable if set.
+%
+% SETUP disable-gpu - disables gpu support by shadowing `gpuDeviceCount` so
+% that it always returns 0. This prevents implicit gpu usage by some
+% functions.
+% 
+% SETUP enable-gpu undoes the effects of the above.
+% 
+% SETUP disable-ocl - disables gpu support by shadowing `oclDeviceCount` so
+% that it always returns 0, similar to the disable-gpu option. This 
+% prevents implicit oclDevice and oclKernel usage and checks, which may be
+% necessary to run some function with a parallel.ThreadPool.
+% 
+% SETUP enable-ocl undoes the effects of the above.
+% 
 % See also TEARDOWN
 
 arguments(Repeating)
-    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel"])}
+    opts (1,1) string {mustBeMember(opts, ["CUDA", "cache", "parallel", "disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl", "no-path"])}
 end
 
-base_path = fileparts(mfilename('fullpath'));
-rel_paths = {'.', 'kern', 'src', 'utils'};
-paths = cellfun(@(p)fullfile(base_path, p), rel_paths, 'UniformOutput', false);
-paths = paths(7 == cellfun(@exist, paths));
-addpath(paths{:});
+base_path = string(fileparts(mfilename('fullpath')));
+prj = matlab.project.rootProject;
+nms = recursiveProjectName(prj); % get all open project names
+if ~any(cellfun(@(o) o=="no-path", opts)) % don't modify paths if asked not to
+    if isempty(prj)
+        openProject(fullfile(base_path, 'Qups.prj')); % open the project
+    elseif ismember(nms, "qups") % qups already open
+        % if no argumnets, this is likely a re-initialization
+        if isempty(opts), warning("QUPS:setup:AlreadyInitialized","QUPS is already initialized here: '" + prj.RootFolder + "'."), end
+    else % addpaths manually, so as not to disturb open projects
+        rel_paths = [".", "kern", "src", "utils", "bin"];
+        paths = fullfile(base_path, rel_paths);
+        paths = paths(7 == arrayfun(@exist, paths));
+        addpath(paths{:});
+    end
+end
 
 i = 1;
 while i <= nargin % go through arguments sequentially
@@ -48,20 +75,17 @@ while i <= nargin % go through arguments sequentially
             us = UltrasoundSystem('recompile', false); % needs paths to have been added already
             us.recompile(); % attempt to recompile code
             copyfile(us.tmp_folder, fullfile(base_path, "bin")); % copy it
-            addpath(fullfile(base_path, 'bin')); % add new cache path
+            % addpath(fullfile(base_path, 'bin')); % add new cache path
         
         case 'CUDA' % add CUDA to the path
             
             % get the nvcc executable path
             if isunix
-                p = getenv('CUDA_PATH'); % use env. var if set
-                if isfolder(p)
-                    p = fullfile(p, 'bin'); % bin should have nvcc
-                else
+                p = getenv('MW_NVCC_PATH'); % use env. var if set
+                if ~isfolder(p) % bin should have nvcc
                     p = "/usr/local/cuda/bin"; % linux default nvcc path
                 end                
                 if ~exist(fullfile(p, 'nvcc')), warning("nvcc not found at " + p); end
-                p = pathsep + p; % prepend path separator here
             
             elseif ispc
                 % get all the windows drives, from A to Z
@@ -71,10 +95,8 @@ while i <= nargin % go through arguments sequentially
 
                 % get the nvcc path
                 % find the windows (default) nvcc paths
-                p1 = getenv('CUDA_PATH'); % use env. var if set
-                if isfolder(p1)
-                    p1 = fullfile(p1, 'bin'); % bin should have nvcc
-                else
+                p1 = getenv('MW_NVCC_PATH'); % use env. var if set
+                if ~isfolder(p1) % should have nvcc
                     l = arrayfun(@(d) {dir(fullfile(d + ":\Program Files\NVIDIA GPU Computing Toolkit\CUDA","**","nvcc*"))}, wdrvs); % search for nvcc
                     l = cat(1, l{:});
                     if ~isempty(l) % we found at least one
@@ -109,20 +131,47 @@ while i <= nargin % go through arguments sequentially
                 p2 = string(p2); % enforce string type for casting/sizing
                 
                 % join nvcc and CUDA paths (if they exist)
-                p = strjoin([(pathsep + p1), (pathsep + p2)],'');                
+                p = strjoin([p1, p2],pathsep);
                 
             else 
-                error('CUDA compilation paths undefined if not unix or pc.');
+                warning('CUDA compilation paths undefined if not unix or pc.');
+                i = i + 1;
+                continue;
             end
             
             % add them to the system path
             % TODO: keep track of this so that we can remove it during
             % teardown.m
-            setenv('PATH', fullfile(getenv('PATH'), p));
+            setenv('PATH', join([p, string(getenv('PATH'))],pathsep));
             
+        case {"disable-gpu", "disable-ocl", "enable-gpu", "enable-ocl"}
+            
+            dev = extractAfter(opts{i}, "able-"); % dev type
+            fl = fullfile(base_path,"utils",dev+"DeviceCount.m"); % file
+            switch extractBefore(opts{i}, "-")
+                case "disable"
+                    % shadow gpu/ocl support by setting the device count to 0
+                    writelines("function n = "+dev+"DeviceCount(), n = 0;", fl);
+                case "enable"
+                    % delete the shadowing file (if it exists)
+                    delete(fl);                    
+            end
+        case "no-path" % pass
         otherwise
             error("Unrecognized option " + opts{i} + ".");
     end
     i = i + 1; % move to next argument
 end
+
+function nms = recursiveProjectName(prj)
+arguments 
+    prj matlab.project.Project
+end
+if isempty(prj)
+    nms = string.empty;
+else
+    nms = cellfun(@recursiveProjectName, {prj.ProjectReferences.Project}, 'UniformOutput', false);
+    nms = unique([prj.Name, nms{:}]);
+end
+
 
