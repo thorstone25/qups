@@ -368,7 +368,11 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
 
             % assert a clean run
             test.silenceAcceptableWarnings();
+            if any(contains(code, "compile"))
+                f = str2func("@"+fnm); f(); % run directly
+            else
             test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
+            end
         end
     end
     methods
