@@ -51,8 +51,8 @@ classdef(TestTags = ["full", "Github", "build"]) ChdTest < matlab.unittest.TestC
             chd = ChannelData('data', randn([T M N F], 'single'), 't0', randn([1 1 N F]), 'fs', 1, 'order', 'TMNF');
 
             % fft
-            chd =  fftshift( fft(chd));
-            chd = ifftshift(ifft(chd));
+             fftshift( fft(chd));
+            ifftshift(ifft(chd));
             
             % Filtering
             D1 = chd.getLowpassFilter(0.2, 5);

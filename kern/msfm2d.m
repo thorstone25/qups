@@ -29,7 +29,7 @@ function [T,Y]=msfm2d(F, SourcePoints, usesecond, usecross)
 %
 % Function is written by D.Kroon University of Twente (June 2009)
 % 
-% Example:
+% % Example 1:
 %   SourcePoint = [51; 51];
 %   SpeedImage = ones([101 101]);
 %   [X Y] = ndgrid(1:101, 1:101);
@@ -52,7 +52,7 @@ function [T,Y]=msfm2d(F, SourcePoints, usesecond, usecross)
 %   fprintf('FMM2:   %9.5f %9.5f %9.5f\n', Results{3}(1), Results{3}(2), Results{3}(3));
 %   fprintf('MSFM2:  %9.5f %9.5f %9.5f\n', Results{4}(1), Results{4}(2), Results{4}(3));
 %
-% Example:
+% % Example 2:
 % % multiple starting points,
 %   SourcePoint=rand(2,100)*255+1;
 %   SpeedImage = ones([256 256]);

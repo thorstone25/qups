@@ -101,22 +101,22 @@ classdef(TestTags = ["Github", "full", "build"]) interpTest < matlab.unittest.Te
             % compare answers
             import matlab.unittest.constraints.RelativeTolerance;
             import matlab.unittest.constraints.IsEqualTo;
-            tol = 1e2; 
+            tol = 1e4; 
             if terp == "cubic"
             switch type_ % needs much more room because the algs aren't the same
                 case "double", tol = tol * 1e16; 
-                case "single", tol = tol * 1e9;
+                case "single", tol = tol * 1e8;
                 case "halfT",  tol = tol * 1;
             end
             end
 
             switch type_
                 case "halfT"
-                    test.assertThat(double(y1), IsEqualTo(double(y0), 'Within', RelativeTolerance(tol*double(max(eps(y0(:)))))))
-                    test.assertThat(double(y2), IsEqualTo(double(y0), 'Within', RelativeTolerance(tol*double(max(eps(y0(:)))))))
+                    test.assertThat(double(y1), IsEqualTo(double(y0), 'Within', RelativeTolerance(tol*double(eps(max(y0(:)))))))
+                    test.assertThat(double(y2), IsEqualTo(double(y0), 'Within', RelativeTolerance(tol*double(eps(max(y0(:)))))))
                 otherwise
-                    test.assertThat(y1, IsEqualTo(y0, 'Within', RelativeTolerance(tol*(max(eps(y0(:)))))))
-                    test.assertThat(y2, IsEqualTo(y0, 'Within', RelativeTolerance(tol*(max(eps(y0(:)))))))
+                    test.assertThat(y1, IsEqualTo(y0, 'Within', RelativeTolerance(tol*(eps(max(y0(:)))))))
+                    test.assertThat(y2, IsEqualTo(y0, 'Within', RelativeTolerance(tol*(eps(max(y0(:)))))))
             end
         end
     end

@@ -3124,7 +3124,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             elseif exist('pagesvd', 'builtin')
                 pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
-                pagenorm2 = @(x) cellfun(@(x)svds(x,1), num2cell(x,1:2));
+                pagenorm2 = @(x) cellfun(@(x) svds(x,1), num2cell(double(x),1:2));
             end
             if exist('pagemrdivide','builtin')
                 pagemrdivide_ = @pagemrdivide;
@@ -4812,11 +4812,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     join("-D" + d.DefinedMacros)...
                     ));
                 
-                try
-                    s = system(com(i));
-                    if s, warning("Unable to recompile " + d.Source); else, disp("Success recompiling " + d.Source); end
+                try s = system(com(i));
+                    if s, warning( ...
+                            "QUPS:recompile:UnableToRecompile", ...
+                            "Unable to recompile " + d.Source ...
+                            + " (" + s + ")"); 
+                    else
+                        disp("Success recompiling " + d.Source); 
+                    end
                 catch
-                    warning("Unable to recompile code!");
+                    warning("QUPS:recompile:UnableToRecompile", "Unable to recompile code!");
                 end
             end
         end

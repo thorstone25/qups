@@ -46,7 +46,7 @@ classdef(TestTags = ["full","Github","build"]) InteropTest < matlab.unittest.Tes
             tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this
             uscn = QUPS2USTB(scns);
             qscn = Scan.UFF(uscn);
-            tst.assertEqual(reshape(scns.positions(),3,[]), qscn.positions());
+            tst.assertEqual(reshape(scns.positions(),3,[]), reshape(qscn.positions(),3,[]));
         end
         function ustb_seq(tst, seqs, xdcs)
             tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this

@@ -826,7 +826,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % resample in time - no support for other dims: fs is required arg
             % [y, ty] = resample(chd.data, chd.time, fs, varargin{:}, 'Dimension', chd.tdim);
             % [chd.fs, chd.t0, chd.data] = deal(fs, ty(1), y);
-            y = matlab.tall.transform(@resample, chd.data, chd.time, fs, varargin{:}, 'Dimension', chd.tdim);
+            t = swapdim(1:chd.T,2,chd.tdim) ./ chd.fs; % time axes
+            y = matlab.tall.transform(@resample, chd.data, t, fs, varargin{:}, 'Dimension', chd.tdim);
             [chd.fs, chd.data] = deal(fs, y);
 
             % cast back to original type

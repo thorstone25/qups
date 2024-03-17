@@ -31,7 +31,7 @@ colorbar; % always activate colorbar
 ax = gca; h = ax.Children(isa(ax.Children,'matlab.graphics.primitive.Image'));
 assert(isscalar(h), "Cannot identify the image for this axis."); % HACK - get the maximum value
 % caxis auto; cmax = max(caxis); 
-cmax = max(h.CData,[],'all', 'omitmissing');
+cmax = max(h.CData,[],'all', 'omitnan');
 switch mode
     case "b-mode", colormap(gca, 'gray'); caxis(cmax + [-rang   0 ]);
     case "echo"  , colormap(gca, 'jet' ); caxis(cmax + [-rang   0 ]);
