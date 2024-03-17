@@ -205,7 +205,7 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
             end
         end
         function selectOclDevice(~)
-            if oclDeviceCount()
+            if exist('oclDeviceCount', 'file') && oclDeviceCount()
                 devs = oclDeviceTable();
                 if isempty(devs), return; end % nothing to do
                 devs = sortrows(devs, ["Type", "MaxComputeUnits"], "ascend"); % prefer gpu, most CUs
