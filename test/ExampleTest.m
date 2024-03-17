@@ -129,14 +129,14 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
         end
         function silenceAcceptableWarnings(testCase)
             lids = [...
-                "QUPS:kspaceFirstOrder:upsampling", ...% in k-Wave
-                "MATLAB:ver:ProductNameDeprecated" ... % in US
+                "QUPS:kspaceFirstOrder:upsampling", ...  % in US
+                "MATLAB:ver:ProductNameDeprecated", ... % in k-Wave
+                "QUPS:recompile:UnableToRecompile" ... % in US 
                 ];
-            if isempty(gcp('nocreate')) % no pool
                 W = warning(); % get current state
                 arrayfun(@(l)                warning(    'off', l), lids); % silence
                 testCase.addTeardown(@() warning(W)); % restore on exit
-            else % any pool - execute on each worker
+            if ~isempty(gcp('nocreate')) % any pool - execute on each worker
                 ws = parfevalOnAll(@warning, 1); wait(ws);% current state
                 ws = fetchOutputs(ws); % retrieve
                 [~, i] = unique(string({ws.identifier}), 'stable');

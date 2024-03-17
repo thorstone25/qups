@@ -29,7 +29,7 @@ function [y, k, ord] = interpd(x, t, dim, interp, extrapval)
 % Example:
 % % Create data
 % x = randn([4, 32, 2]);
-% t = (1 : 0.25 : 32); 
+% t = (2 : 0.25 : 31); 
 % 
 % % Upsample in dim 2 via interp1
 % for i = 1:4,
