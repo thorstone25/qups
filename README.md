@@ -1,6 +1,6 @@
 # QUPS: Quick Ultrasound Processing &amp; Simulation
 ![Static Badge](https://img.shields.io/badge/matlab-R2020b%2B-orange)
-![GitHub Tag](https://img.shields.io/github/v/tag/thorstone25/qups)
+![GitHub Release](https://img.shields.io/github/v/release/thorstone25/qups)
 ![GitHub License](https://img.shields.io/github/license/thorstone25/qups)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/thorstone25/qups/testing.yml)
 ![Endpoint Badge](https://img.shields.io/endpoint?url=https%3A%2F%2Fgist.githubusercontent.com%2Fthorstone25%2Fa38004ac36b1dbdb87cb61852435ab3d%2Fraw%2Fqups-cobertura-coverage.json)
