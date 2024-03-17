@@ -40,7 +40,7 @@ jobs:
       - name: Run complete build and generate code coverage
         uses: matlab-actions/run-build@v2
         with:
-            build-options: -continueOnFailure -skip compile_CUDA -skip install_OpenCL
+            build-options: -continueOnFailure -skip compile_CUDA -skip install_OpenCL -skip patch_OpenCL
             tasks: install patch check compile test
       - name: Make Coverage Badge
         uses: gaelgirodon/ci-badges-action@v1
