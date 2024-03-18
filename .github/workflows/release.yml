@@ -1,0 +1,32 @@
+name: Generate Code Coverage for Release on GitHub-Hosted Runner
+on:
+  release:
+    types: [published]
+jobs:
+  coverage:
+    name: Code Coverage
+    strategy:
+      matrix:
+        platform: [ubuntu-latest]
+        release: [latest]
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - name: Install OpenCL
+        run: sudo apt-get install -y ocl-icd-opencl-dev pocl-opencl-icd
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up MATLAB
+        uses: matlab-actions/setup-matlab@v2
+        with: 
+            release: ${{matrix.release}}
+            products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox
+      - name: Generate Code Coverage
+        uses: matlab-actions/run-build@v2
+        with:
+            build-options: -skip compile_CUDA
+            tasks: install patch check compile test
+      - name: Make Coverage Badge
+        uses: gaelgirodon/ci-badges-action@v1
+        with:
+          gist-id: a38004ac36b1dbdb87cb61852435ab3d
+          token: ${{ secrets.GIST_TOKEN }}

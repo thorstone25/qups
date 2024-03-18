@@ -1,4 +1,4 @@
-classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.TestCase
+classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.unittest.TestCase
     % INITTEST - Initialization tests class
     %
     % This class test that all objects initialize properly
@@ -22,6 +22,7 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             xdcs = [TransducerArray, TransducerConvex, TransducerMatrix, TransducerGeneric]; % init / hetero
             arrayfun(@(xdc) test.assertThat(xdc, IsInstanceOf('Transducer')), xdcs); % class maintained
             arrayfun(@(xdc) scale(xdc, 'dist', 1e3, 'time', 1e6), xdcs, "UniformOutput",false); % can scale
+            arrayfun(@obj2struct, xdcs, 'UniformOutput', false); % supports specialized struct conversion
             xdcs(end+2) = xdcs(1); % implicit empty value            
        end
         function initseq(test)
@@ -30,8 +31,11 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             import matlab.unittest.constraints.IsInstanceOf;
             seqs = [Sequence(), SequenceRadial(), SequenceGeneric()];
             arrayfun(@(seq) test.assertThat(seq, IsInstanceOf('Sequence')), seqs);
-            arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale
+            arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale            
             seqs(end+2) = seqs(1); % implicit empty value
+            s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
+            cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
+
 
             % deprecation
             seq = Sequence();
@@ -51,6 +55,7 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             scns = [ScanCartesian(), ScanPolar(), ScanSpherical(), ScanGeneric()]; % init / hetero
             arrayfun(@(scn) test.assertThat(scn, IsInstanceOf('Scan')), scns);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), scns, "UniformOutput",false); % can scale
+            arrayfun(@obj2struct, scns, 'UniformOutput', false); % supports specialized struct conversion
             scns(end+2) = scns(1); % implicit empty value
 
             % test assigning / retrieving sizing
@@ -81,6 +86,7 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
             [chd.tdim, chd.ndim, chd.mdim, chd.T, chd.N, chd.M]; % get
+            arrayfun(@obj2struct, chd, 'UniformOutput', false); % supports specialized struct conversion
 
             % deprecated properties
             test.assertWarning(@()setfield(chd,'ord','TMN'), "QUPS:ChannelData:syntaxDeprecated")
@@ -98,6 +104,9 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             test.assertFalse(logical(exist(fld,"dir")));
             us = UltrasoundSystem('copybin',true);
             us = UltrasoundSystem('recompile',true);
+            s = obj2struct(us);
+            flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
+            arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
 
             % deprecation
             test.assertWarning(@()setfield(us,'sequence',Sequence()),"QUPS:UltrasoundSystem:syntaxDeprecated")
@@ -113,6 +122,9 @@ classdef (TestTags = ["Github", "full", "build"]) InitTest < matlab.unittest.Tes
             test.assertThat(Medium(),     IsInstanceOf('Medium'));
             scale(Medium()    , "dist", 1e3, "time", 1e6, "mass", 1e6);
             scale(Scatterers(), "dist", 1e3, "time", 1e6);
+                struct(Medium()    ); % no-specialized struct conversion yet ...
+            obj2struct(Scatterers()); % specialized struct conversion
+
 
         end
         function staticTest(test)

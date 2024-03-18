@@ -1,4 +1,5 @@
-classdef(TestTags = ["full","Github","build"]) InteropTest < matlab.unittest.TestCase
+classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.unittest.TestCase
+    % INTEROPTEST - Test interoperability for extension packages (FieldII, USTB, etc.)
     properties(TestParameter)
         xdcs = struct( ...
             "Linr", TransducerArray("numel", 3), ...

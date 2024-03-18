@@ -14,4 +14,12 @@ function I = argmin(varargin), [~, I] = min(varargin{:}); end
 % ARGMIN calls min to perform the calculation. Other inputs accepted by min
 % are valid here.
 %
+% Example:
+% x = rand([1 10]);
+% [y, i] = min(x);
+% j = argmin(x);
+% 
+% assert(isequal(i, j));
+% assert(isequal(y, x(j)));
+% 
 % See also MIN ARGMAX

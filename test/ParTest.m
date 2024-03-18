@@ -1,4 +1,5 @@
 classdef ParTest < matlab.unittest.TestCase
+    % PARTEST - Test parallel execution functionality (GPU & parallel.Pool)
     properties
         us
         sct

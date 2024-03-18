@@ -1,4 +1,5 @@
 classdef USTest < matlab.unittest.TestCase
+    % USTEST - Test the beamforming and simulation methods complete as expected
 
     methods(TestClassSetup)
         % Shared setup for the entire test class

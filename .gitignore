@@ -1,4 +1,5 @@
 # Autosave files
+*.ptx
 *.asv
 *.m~
 *.autosave

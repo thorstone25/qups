@@ -14,4 +14,12 @@ function I = argmax(varargin), [~, I] = max(varargin{:}); end
 % ARGMAX calls max to perform the calculation. Other inputs accepted by max
 % are valid here.
 %
+% Example:
+% x = rand([1 10]);
+% [y, i] = max(x);
+% j = argmax(x);
+% 
+% assert(isequal(i, j));
+% assert(isequal(y, x(j)));
+% 
 % See also MAX ARGMIN
