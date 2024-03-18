@@ -296,9 +296,9 @@ end
 % make a project
 if ~proj, return; end % short circuit if not making it a project dependency
 
-if isempty(dir(fullfile(fld, "*"+ext+"*.prj"))) ... % proper project file and folders
-        || ~exist(fullfile(fld,'resources'), 'dir') % resource folders
-
+try eprj = matlab.project.loadProject(fld); % if project already exists
+catch ME % else probably no project, so make one
+    if ~ismember(ME.identifier, "MATLAB:project:api:LoadFail"), rethrow(ME); end % something else?
     % project folders to add to path, w.r.t. base path (`pth`)
     switch ext
         case "kWave", pflds = fullfile("k-Wave",[".", "binaries"]);
@@ -309,17 +309,11 @@ if isempty(dir(fullfile(fld, "*"+ext+"*.prj"))) ... % proper project file and fo
     eprj = matlab.project.createProject("Folder",fld,"Name",ext);
     arrayfun(@(p) eprj.addPath(fullfile(fld, p)), pflds); % add project folders
 
-else % project should already exist
-    eprj = matlab.project.loadProject(fld);
 end
 
 % add as a QUPS reference
 prj = openProject(fullfile(og, "Qups.prj"));
-if ~any(eprj == [prj.ProjectReferences.Project]) % check if already installed
-    addReference(prj, eprj);
-else
-    warning(ext + " already installed.");
-end
+prj.addReference(eprj); % save to add if already exists
 end
 
 function patch_MUSTTask(context)
