@@ -21,7 +21,7 @@ jobs:
       - name: Run tests on legacy version
         uses: matlab-actions/run-command@v2
         with:
-          command: setup cache; addpath build; parpool local; res = runProjectTests(); assertSuccess(res);
+          command: setup cache; addpath build; res = runProjectTests(); assertSuccess(res);
       - name: Upload MEX files
         uses: actions/upload-artifact@v4
         with:
