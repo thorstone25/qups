@@ -1,5 +1,7 @@
-classdef(TestTags = ["full", "Github", "build"]) ChdTest < matlab.unittest.TestCase
-     %#ok<*NASGU> The outputs will not be televised
+classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unittest.TestCase
+    % CHDTEST - This class test that ChannelData methods function properly 
+    
+    %#ok<*NASGU> The outputs will not be televised
 
     methods(Test)
         function typeCheck(tst)

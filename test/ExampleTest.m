@@ -1,4 +1,4 @@
-classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.TestCase
+classdef ExampleTest < matlab.unittest.TestCase
 
     % files
     properties
@@ -309,9 +309,27 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
 
     % ---------------------------------------------- % 
 
-    methods (Test, ParameterCombination="sequential")
+    methods (Test, ParameterCombination="sequential", TestTags=["Github","full","build"])
         % Test methods
-        function run_examples(test, fls, lns)
+        function run_all_examples(test, fls, lns)
+            run_examples(test, fls, lns, string.empty);
+        end
+    end
+    methods (Test, ParameterCombination="sequential", TestTags=["syntax"])
+        % Test methods
+        function run_kernel_examples(test, fls, lns)
+            prj = matlab.project.rootProject;
+            if isempty(prj) || prj.Name ~= "qups"
+                base_dir = fullfile(fileparts(mfilename('fullpath')), '..');
+            else
+                base_dir = prj.RootFolder;
+            end
+            flds = fullfile(base_dir, ["src", "examples"]); % blacklist classes and examples
+            run_examples(test, fls, lns, flds);
+        end
+    end
+    methods
+        function run_examples(test, fls, lns, flt_fld)
             % arguments
             %     test matlab.unittest.TestCase
             %     fls (1,1) string
@@ -319,7 +337,13 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
 
             % name of the file
             fls = string(fls);
-            [~, n] = fileparts(fls);
+            [fld, n] = fileparts(fls);
+
+            % apply folder filter
+            test.assumeFalse(contains(fld, flt_fld), ...
+                "[Blacklist]: Filtering file " + fls + ":" ...
+                +newline+"Matching folder " + flt_fld + "." ...
+                );
 
             % get the code snippet
             lns = double(split(lns,"-"));
@@ -374,8 +398,6 @@ classdef(TestTags=["Github", "full", "build"]) ExampleTest < matlab.unittest.Tes
             test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
             end
         end
-    end
-    methods
     end
 end
 
