@@ -25,6 +25,6 @@ jobs:
       - name: Upload MEX files
         uses: actions/upload-artifact@v4
         with:
-          name: MEX files
+          name: MEX-files-${{runner.os}}
           path: bin/*.mex*
 
