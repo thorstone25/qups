@@ -11,6 +11,8 @@ jobs:
         release: [latest]
     runs-on: ${{ matrix.platform }}
     steps:
+      - name: Install OpenCL
+        run: sudo apt-get install -y ocl-icd-opencl-dev pocl-opencl-icd
       - name: Check out repository
         uses: actions/checkout@v4
       - name: Set up MATLAB
@@ -21,7 +23,7 @@ jobs:
       - name: Generate Code Coverage
         uses: matlab-actions/run-build@v2
         with:
-            build-options: -continueOnFailure -skip compile_CUDA -skip install_OpenCL -skip patch_OpenCL
+            build-options: -skip compile_CUDA
             tasks: install patch check compile test
       - name: Make Coverage Badge
         uses: gaelgirodon/ci-badges-action@v1
