@@ -259,9 +259,9 @@ chd_rfc = refocus(us_foc, chd_foc);
 
 % get sampling delay tensors
 % NOTE: we assume chd.ord == 'TNM', which means time(T) x receives(N) x transmits(M)
-tau_rx = zeros([1024, chd.N,   1  ]); % delay matrix: pixels x receives x     1
-tau_tx = zeros([1024,   1  , chd.M]); % delay matrix: pixels x     1    x transmits
-tau = tau_tx + tau_rx;                % delay tensor: pixels x receives x transmits
+tau_rx = zeros([64, chd.N,   1  ]); % delay matrix: pixels x receives x     1
+tau_tx = zeros([64,   1  , chd.M]); % delay matrix: pixels x     1    x transmits
+tau = tau_tx + tau_rx;              % delay tensor: pixels x receives x transmits
 
 % sample the data applying transmit delays only, for all transmits
 y = sample(chd, tau_tx);
@@ -464,9 +464,17 @@ chd = simus(us, scat);
 % k-Wave
 chd = kspaceFirstOrder(us, med, cscan);
 
-% run on a local or remote cluster
-clu = parcluster('local');
+% run simulations on a local or remote cluster
+clu = parcluster(); % your default cluster
 [job, rfun] = kspaceFirstOrder(us, med, cscan, 'parenv', clu);
+% submit(job);
+% wait(job);
+% chd = rfun(job);
+
+[job, rfun] = calc_scat_multi(us, scat, 'parenv', clu, 'job', true);
+% submit(job);
+% wait(job);
+% chd = rfun(job);
 
 
 
