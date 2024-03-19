@@ -61,17 +61,17 @@ buildtool test
 ### Legacy Installation
 If the above procedure does not work for you, you can manually download and install each [extension](##Extensions).
 1. Download the desired extension packages into a folder adjacent to the "qups" folder e.g. if qups is located at `/path/to/my/qups`, kWave should be downloaded to an adjacent folder `/path/to/my/kWave`.
+
 2. Create a MATLAB [Project](https://www.mathworks.com/help/matlab/matlab_prog/create-projects.html) and add the root folder of the extension to the path e.g. `/path/to/my/kWave`.
+* Note: The "prj" file in USTB is a [_Toolbox_](https://www.mathworks.com/help/matlab/matlab_prog/create-and-share-custom-matlab-toolboxes.html) file, not a [_Project_](https://www.mathworks.com/help/matlab/matlab_prog/) file - you will still need to make a new _Project_.
 
-Note: The "prj" file in USTB is a [_Toolbox_](https://www.mathworks.com/help/matlab/matlab_prog/create-and-share-custom-matlab-toolboxes.html) file, not a [_Project_](https://www.mathworks.com/help/matlab/matlab_prog/) file - you will still need to make a new _Project_.
-
-3. Open the Qups.prj project and add each extension package as a [reference](https://www.mathworks.com/help/matlab/matlab_prog/componentize-large-projects.html).
+3. Open the `Qups.prj` project and add each extension package as a [reference](https://www.mathworks.com/help/matlab/matlab_prog/componentize-large-projects.html).
 
 4. (optional) Apply [patches](###parallel-processing-with-external-packages) to enable further parallel processing.
 
 5. (optional) Run tests via the `runProjectTests()` function in the build directory.
 ```
-addpath build; runProjectTests('Github', 'verbosity', 'Concise');
+addpath build; runProjectTests('verbosity', 'Concise'),
 ```
 
 ## Extensions
@@ -83,9 +83,9 @@ All extensions to QUPS are optional, but must be installed separately from their
 | [k-Wave](http://www.k-wave.org/index.php) | distributed medium simulator | `addpath path/to/kWave` | [website](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)  |
 | [kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources) | k-Wave transducer extension | `addpath path/to/kWaveArray` | [forum](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources), [paper](http://bug.medphys.ucl.ac.uk/papers/2019-Wise-JASA.pdf) |
 | [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST`| [website](https://www.biomecardio.com/MUST/documentation.html) |
-| [USTB](ustb.no) | Ultrasound signal processing library and toolbox | `addpath path/to/USTB` | [website](https://www.ustb.no/citation/) |
+| [USTB](ustb.no) | signal processing library and toolbox | `addpath path/to/USTB` | [website](https://www.ustb.no/citation/) |
 | [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))| [website](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via MatCL) |
-| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), [Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | (see [CUDA Support](#cuda-support)) | |
+| [CUDA](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) | hardware acceleration | (see [CUDA Support](#cuda-support)) | |
 
 ## Quick Start
 1. Start MATLAB R2020b or later and open the [Project](https://www.mathworks.com/help/matlab/projects.html)
@@ -104,7 +104,7 @@ xdc = TransducerArray.L11_5v(); % simulate a Verasonics L11-5v transducer
 seq = Sequence('type', 'FSA', 'numPulse', xdc.numel); % full synthetic-aperture pulse sequence
 scan = ScanCartesian('x', 1e-3*[-10, 10], 'z', 1e-3*[25 35]); % set the image boundaries - we'll set the resolution later
 us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 4*xdc.fc); % create a system description
-[us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % set the image resolution based on the wavelength
+[us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % set the imaging resolution based on the wavelength
 ```
 
 4. Display the geometry
@@ -124,8 +124,7 @@ chd = greens(us, scat); % create channel data using a shifted Green's function (
 ```
 6. Display the channel data 
 ```
-figure;
-imagesc(chd);
+figure; imagesc(chd);
 colormap jet; colorbar;
 animate(chd.data);
 ```
@@ -137,10 +136,8 @@ b = DAS(us, hilbert(chd));
 ```
 8. Display the B-mode image
 ```
-figure;
-imagesc(us.scan, b); % plot the image (in dB when complex)
-caxis(max(caxis) + [-60 0]); % ... with 60dB dynamic range
-colormap gray; colorbar;
+figure; imagesc(us.scan, b); % plot the image (in dB when b is complex)
+dbr b-mode 60; % ... with 60dB dynamic range
 title('B-mode image');
 ```
 
@@ -203,11 +200,11 @@ OpenCL support is provided via [Matlab-OpenCL](github.com/thorstone25/Matlab-Ope
 ##### Ubuntu 22.04: 
 | Command  | Description |
 | ------- | ------------- |
-| `sudo apt install opencl-headers` | Compilation header files |
-| `sudo apt install pocl-opencl-icd` | Portable CPU devices |
-| `sudo apt install intel-opencl-icd` | Intel Graphics devices |
-| `sudo apt install nvidia-driver-xxx` | Nvidia Graphics devices (included with the driver) |
-| `sudo apt install ./amdgpu-install_x.x.x-x_all.deb` | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html) or [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/native-install/ubuntu.html))|
+| `sudo apt install opencl-headers`                    | Compilation header files (req'd for all devices)|
+| `sudo apt install pocl-opencl-icd`                   | Most CPU devices |
+| `sudo apt install intel-opencl-icd`                  | Intel Graphics devices |
+| `sudo apt install nvidia-driver-xxx`                 | Nvidia Graphics devices (included with the driver) |
+| `sudo apt install ./amdgpu-install_x.x.x-x_all.deb`  | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html) or [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/native-install/ubuntu.html))|
 
 
 ### CUDA Support
@@ -216,8 +213,8 @@ Starting in R2023a, CUDA support is provided by default within MATLAB via [`mexc
 Otherwise, for CUDA to work, `nvcc` must succesfully run from the MATLAB environment. If a Nvidia GPU is available and `setup CUDA cache` completes with no warnings, you're all set! If you have difficulty getting nvcc to work in MATLAB, you may need to figure out which environment paths are required for _your_ CUDA installation. Running `setup CUDA` will attempt to do this for you, but may fail if you have a custom installation.
 
 #### Linux
-If you can run `nvcc` from a terminal or command-line interface per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), then set the `MW_NVCC_PATH` environmental variable within MATLAB by running `setenv('MW_NVCC_PATH', YOUR_NVCC_BIN_PATH);` prior to running `setup CUDA`. You can run `which nvcc` within a terminal to locate the installation directory. For example, if `which nvcc` returns `/opt/cuda/bin/nvcc`, then run `setenv('MW_NVCC_PATH', '/opt/cuda/bin');`.
+First, be sure you can run `nvcc` from a terminal or command-line interface per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html). Then set the `MW_NVCC_PATH` environmental variable within MATLAB by running `setenv('MW_NVCC_PATH', YOUR_NVCC_BIN_PATH);` prior to running `setup CUDA`. You can run `which nvcc` within a terminal to locate the installation directory. For example, if `which nvcc` returns `/opt/cuda/bin/nvcc`, then run `setenv('MW_NVCC_PATH', '/opt/cuda/bin');`.
 
 #### Windows
-On Windows you must set the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. Then, in MATLAB, set these paths with `setenv('MW_NVCC_PATH', YOUR_CUDA_BIN_PATH); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`, where `YOUR_CUDA_BIN_PATH` is the path to the `bin` folder in the `CUDA_PATH` folder. Finally, run `setup CUDA`. From here the proper paths should be added.
+First, setup your system for CUDA per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html). On Windows you must set the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. Then, in MATLAB, set these paths with `setenv('MW_NVCC_PATH', YOUR_CUDA_BIN_PATH); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`, where `YOUR_CUDA_BIN_PATH` is the path to the `bin` folder in the `CUDA_PATH` folder. Finally, run `setup CUDA`. From here the proper paths should be added.
 
