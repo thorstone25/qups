@@ -314,6 +314,16 @@ classdef ExampleTest < matlab.unittest.TestCase
         function run_all_examples(test, fls, lns)
             run_examples(test, fls, lns, string.empty);
         end
+        function run_main_example(test)
+            fnms = ["example_", "cheat_sheet"];
+            test.assumeTrue(logical(exist("calc_scat_multi",    "file")), "Missing package FieldII"); % FieldII
+            test.assumeTrue(logical(exist("simus3",             "file")), "Missing package MUST"   ); % MUST
+            test.assumeTrue(logical(exist("kspaceFirstOrder3D", "file")), "Missing package kWave"  ); % kWave
+            for f = fnms
+                copyfile(which(f+".m"), "./"); % copy to here (temp folder)
+                eval(f); % run
+            end
+        end
     end
     methods (Test, ParameterCombination="sequential", TestTags=["syntax"])
         % Test methods
@@ -328,6 +338,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             run_examples(test, fls, lns, flds);
         end
     end
+
     methods
         function run_examples(test, fls, lns, flt_fld)
             % arguments
@@ -398,6 +409,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
             end
         end
+
     end
 end
 
