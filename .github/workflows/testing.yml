@@ -1,7 +1,10 @@
-name: Run MATLAB Tests on GitHub-Hosted Runner
+name: Run MATLAB Tests and Generate MEX files on GitHub-Hosted Runner
 on:
   pull_request:
     types: [opened, reopened, review_requested]
+  schedule:
+    - cron: '25 21 * * 2,5'
+  workflow_dispatch:
 jobs:
   compatability:
     name: Legacy & OS Compatability Syntax Tests
@@ -18,7 +21,7 @@ jobs:
         with: 
             release: ${{matrix.release}}
             products: Signal_Processing_Toolbox Parallel_Computing_Toolbox
-      - name: Run tests on legacy version
+      - name: Run Tests on Legacy version
         uses: matlab-actions/run-command@v2
         with:
           command: setup cache; addpath build; res = runProjectTests(); assertSuccess(res);

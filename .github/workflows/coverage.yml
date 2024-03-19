@@ -1,0 +1,17 @@
+name: Generate Code Coverage Badge
+on:
+  push:
+    paths:
+      -'*coverage*.xml'  
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Make Coverage Badge
+        uses: gaelgirodon/ci-badges-action@v1
+        with:
+          gist-id: a38004ac36b1dbdb87cb61852435ab3d
+          token: ${{ secrets.GIST_TOKEN }}
