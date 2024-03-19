@@ -1,7 +1,10 @@
 name: Generate Code Coverage for Release on GitHub-Hosted Runner
 on:
   release:
-    types: [published]
+    types: [published, edited]
+
+  schedule:
+    - cron: '25 21 * * 2,5'
 jobs:
   coverage:
     name: Code Coverage
