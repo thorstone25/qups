@@ -77,14 +77,15 @@ addpath build; runProjectTests('Github', 'verbosity', 'Concise');
 ## Extensions
 All extensions to QUPS are optional, but must be installed separately from their respective sources.
 
-| Extension | Description | Installation |
-| ------ | ------ | ------ |
-| [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`|
-| [k-Wave](http://www.k-wave.org/index.php), ([kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources)) | distributed medium simulator | `addpath path/to/kWave, addpath path/to/kWaveArray` |
-| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST`|
-| [USTB](ustb.no) | Ultrasound signal processing library and toolbox | `addpath path/to/USTB` |
-| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), [Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | (see [CUDA Extension](####CUDA-Extension)) |
-| [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))|
+| Extension | Description | Installation Paths | Citation |
+| ------ | ------ | ------ | ---------- |
+| [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`| [website](https://www.field-ii.dk/?background.html) |
+| [k-Wave](http://www.k-wave.org/index.php) | distributed medium simulator | `addpath path/to/kWave` | [website](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)  |
+| [kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources) | k-Wave transducer extension | `addpath path/to/kWaveArray` | [forum](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources), [paper](http://bug.medphys.ucl.ac.uk/papers/2019-Wise-JASA.pdf) |
+| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST`| [website](https://www.biomecardio.com/MUST/documentation.html) |
+| [USTB](ustb.no) | Ultrasound signal processing library and toolbox | `addpath path/to/USTB` | [website](https://www.ustb.no/citation/) |
+| [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))| [website](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via MatCL) |
+| CUDA([Linux](https://docs.nvidia.com/cuda/cuda-installation-guide-linux/index.html), [Windows](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html)) | hardware acceleration | (see [CUDA Support](#cuda-support)) | |
 
 ## Quick Start
 1. Start MATLAB R2020b or later and open the [Project](https://www.mathworks.com/help/matlab/projects.html)
@@ -197,7 +198,7 @@ delete(output_filename);
 To enable the usage of a `parallel.ThreadPool` with the `simus()` method, the GUI and file I/O calls used in the `AdMessage` and `MUSTStat` functions must not be called from `pfield.m` and/or `pfield3.m` (see [#2](https://github.com/thorstone25/qups/issues/2)). It is safe to comment out the advertising and statistics functions.
 
 ### [Matlab-OpenCL](github.com/thorstone25/Matlab-OpenCL)
-OpenCL support is provided via [Matlab-OpenCL](github.com/thorstone25/Matlab-OpenCL), but is only tested on Linux. This package relies on [MatCL](https://github.com/IANW-Projects/MatCL), but the underlying OpenCL installation is platform and OS specific. The following packages and reference may be helpful, but are not tested for compatability.
+OpenCL support is provided via [Matlab-OpenCL](github.com/thorstone25/Matlab-OpenCL), but is only tested on Linux. This package relies on [MatCL](https://github.com/IANW-Projects/MatCL), but the underlying OpenCL installation is platform and OS specific. The following packages and references may be helpful, but are not tested for compatability.
 
 ##### Ubuntu 22.04: 
 | Command  | Description |
@@ -209,7 +210,7 @@ OpenCL support is provided via [Matlab-OpenCL](github.com/thorstone25/Matlab-Ope
 | `sudo apt install ./amdgpu-install_x.x.x-x_all.deb` | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html) or [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/native-install/ubuntu.html))|
 
 
-### CUDA Support (Nvidia devices only)
+### CUDA Support
 Starting in R2023a, CUDA support is provided by default within MATLAB via [`mexcuda`](https://www.mathworks.com/help/parallel-computing/mexcuda.html).
 
 Otherwise, for CUDA to work, `nvcc` must succesfully run from the MATLAB environment. If a Nvidia GPU is available and `setup CUDA cache` completes with no warnings, you're all set! If you have difficulty getting nvcc to work in MATLAB, you may need to figure out which environment paths are required for _your_ CUDA installation. Running `setup CUDA` will attempt to do this for you, but may fail if you have a custom installation.
