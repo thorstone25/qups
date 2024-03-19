@@ -22,11 +22,15 @@ jobs:
             release: ${{matrix.release}}
             products: Signal_Processing_Toolbox Parallel_Computing_Toolbox Image_Processing_Toolbox
       - name: Install OpenCL
-        run: sudo apt-get install -y ocl-icd-opencl-dev pocl-opencl-icd matlab-support
+        run: sudo apt-get install -y ocl-icd-opencl-dev pocl-opencl-icd
+      - name: Setup MEX compilation
+        uses: matlab-actions/run-command@v2
+        with:
+          command: mex -setup C++
       - name: Generate Code Coverage
         uses: matlab-actions/run-build@v2
         with:
-            build-options: -skip compile_CUDA
+            build-options: -skip compile_CUDA -skip install_OpenCL -skip patch_OpenCL 
             tasks: install patch check compile test
       - name: Make Coverage Badge
         uses: gaelgirodon/ci-badges-action@v1
