@@ -206,7 +206,7 @@ OpenCL support is provided via [Matlab-OpenCL](github.com/thorstone25/Matlab-Ope
 | `sudo apt install pocl-opencl-icd` | Portable CPU devices |
 | `sudo apt install intel-opencl-icd` | Intel Graphics devices |
 | `sudo apt install nvidia-driver-xxx` | Nvidia Graphics devices (included with the driver) |
-| `sudo apt install ./amdgpu-install_x.x.x-x_all.deb` | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html or [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/native-install/ubuntu.html)))|
+| `sudo apt install ./amdgpu-install_x.x.x-x_all.deb` | AMD Discrete Graphics devices (see [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/amdgpu-install.html) or [here](https://docs.amd.com/projects/install-on-linux/en/latest/how-to/native-install/ubuntu.html))|
 
 
 ### CUDA Support (Nvidia devices only)
