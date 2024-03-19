@@ -1317,6 +1317,12 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             f = @(t) exp(-t .* t .* isig) .* (cospi(2*fc*t)                      );
         end
     end
+    methods
+        function varargout = ultrasoundTransducerImpulse(varargin)
+            warning("QUPS:Transducer:DeprecatedMethod", "Transducer.ultrasoundTransducerImpulse is deprecated - use xdcImpulse instead.");
+            [varargout{1:nargout}] = xdcImpulse(varargin{:});
+        end
+    end
 end
 
 % helper functions

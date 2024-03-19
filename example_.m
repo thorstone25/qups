@@ -40,6 +40,7 @@
  
 %#ok<*UNRCH> ignore unreachable code due to constant values
 %#ok<*BDLGI> ignore casting numbers to logical values
+%#ok<*CAXIS> use caxis not clim to maintain compatibility with R2020b
 gpu = logical(gpuDeviceCount); % set to false to remain on the cpu
 if ~exist('UltrasoundSystem.m','file')
     % this setup function adds the proper paths to use QUPS: it only needs
@@ -56,6 +57,10 @@ if exist('oclDeviceCount', 'file') && oclDeviceCount()
     oclDevice(1); % select the first OpenCL device
 end 
 %% Create a simple simulation
+
+ 
+%% 
+% 
 % Create some Scatterers
 
 switch "grid"
@@ -80,7 +85,6 @@ switch "L11-5v"
     case 'C5-2v' , xdc = TransducerConvex.C5_2v();  % convex array
     case 'PO192O', xdc = TransducerMatrix.PO192O(); % matrix array
 end
-xdc.impulse = xdc.ultrasoundTransducerImpulse(); % set the impulse response function
 % Define the Simulation Region
 
 if isa(xdc, 'TransducerMatrix')
@@ -220,7 +224,7 @@ tic;
 switch "Greens"
     case 'Greens' , chd0 = greens(us, scat); % use a Greens function with a GPU if available!su-vpn.stanford.edu
     case 'FieldII', chd0 = calc_scat_all(us, scat); % use FieldII to simulate FSA, then focus in QUPS
-    case 'FieldII-multi', 
+    case 'FieldII-multi' 
                     chd0 = calc_scat_multi(us, scat); % use FieldII to simulate sequence directly
     case 'SIMUS',   us.fs = 4 * us.fc; % to address a bug in early versions of MUST where fs must be a ~factor~ of 4 * us.fc
                     chd0 = simus(us, scat, 'periods', 1, 'dims', 3); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse

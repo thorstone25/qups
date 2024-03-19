@@ -24,6 +24,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@(xdc) scale(xdc, 'dist', 1e3, 'time', 1e6), xdcs, "UniformOutput",false); % can scale
             arrayfun(@obj2struct, xdcs, 'UniformOutput', false); % supports specialized struct conversion
             xdcs(end+2) = xdcs(1); % implicit empty value            
+            test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
+
        end
         function initseq(test)
             % INITSEQ - Assert that Sequence constructors initialize
