@@ -1,8 +1,9 @@
 name: Generate Code Coverage Badge
 on:
+  workflow_dispatch:
   push:
     paths:
-      -'*coverage*.xml'  
+      -'build/coverage.xml'  
 jobs:
   coverage:
     name: Code Coverage
