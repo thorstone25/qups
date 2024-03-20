@@ -38,24 +38,32 @@
 % Setup the workspace
 
  
+% Some error suppression
 %#ok<*UNRCH> ignore unreachable code due to constant values
 %#ok<*BDLGI> ignore casting numbers to logical values
 %#ok<*CAXIS> use caxis not clim to maintain compatibility with R2020b
-gpu = logical(gpuDeviceCount); % set to false to remain on the cpu
-if ~exist('UltrasoundSystem.m','file')
-    % this setup function adds the proper paths to use QUPS: it only needs
-    % to be run once.
 
-    % setup;  % add all the necessary paths
-    % setup parallel; % start a parpool for faster CPU processing
-    setup CUDA cache; % setup CUDA paths & recompile and cache local mex/CUDA binaries (ignore any warnings)
+% open the QUPS project
+prj = matlab.project.rootProject; % the current project
+if isempty(prj) % if none-loaded ...
+    prj = openProject(which("Qups.prj")); % find & load it
 end
 
-% if Matlab-OpenCL is installed, you can select an OpenCL device to
-% accelerate some functions
+% CUDA hardware acceleration
+gpu = logical(gpuDeviceCount()); % set to false to remain on the cpu
+if gpu && ~ismac, setup CUDA; end % add default CUDA installation paths on Linux / Windows devices
+
+% OpenCL hardware acceleration if Matlab-OpenCL is installed
 if exist('oclDeviceCount', 'file') && oclDeviceCount()
     oclDevice(1); % select the first OpenCL device
-end 
+end
+
+% start a parallel environment for faster processing
+if isempty(gcp('nocreate'))
+    parpool Threads; % Threads usually works best, but might be incompatible
+    % parpool local; % 'local' or 'Processes' is more compatible, but uses much more memory
+end
+
 %% Create a simple simulation
 
  
@@ -78,7 +86,7 @@ switch "grid"
 end
 % Choose a Transducer
 
-switch "L11-5v"
+switch "P4-2v"
     case 'L11-5v', xdc = TransducerArray.L11_5v();  % linear array
     case 'L12-3v', xdc = TransducerArray.L12_3v();  % another linear array
     case 'P4-2v',  xdc = TransducerArray.P4_2v();   % a phased array 
@@ -235,14 +243,14 @@ chd0
 % Show the Channel Data
 
  
-% display the channel data across the transmits
+% display the channel data
 figure; 
 h = imagesc(chd0); 
-colormap jet; colorbar; 
-cmax = gather(mod2db(max(chd0.data(:)))); % maximum power
-caxis([-80 0] + cmax); % plot up to 80 dB down
-% animate(chd0.data, h, 'fs', 10, 'loop', false); % show all transmits
-for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); drawnow limitrate; pause(1/10); end % implement above manually for live editor
+dbr echo 80; % plot up to 80 dB down
+
+% animate across the transmits
+% animate(chd0.data, h, 'fs', 10, 'loop', false, 'title', "Tx " + (1:chd0.M)); % show all transmits
+for i = 1:chd0.M, h.CData(:) = mod2db(chd0.data(:,:,i)); title("Tx "+i); drawnow limitrate; pause(1/10); end % implement above manually for live editor
 %% Create a B-mode Image
 
  
@@ -331,18 +339,15 @@ switch "DAS"
 end
 
 % show the image
-dbR = 40;
 figure; imagesc(bscan, b); % display
-colormap gray; colorbar;
-caxis(max(caxis) + [-dbR 0]); % 60dB dynamic range
+dbr b-mode 40;
 %% Scan Convert for a Sector Scan
 
 if ~isa(bscan, 'ScanCartesian')
     scanc = ScanCartesian(bscan); % make a ScanCartesian from the ScanPolar
     [scanc.dx, scanc.dz] = deal(1/32e3); % (optional) increase resolution
     bc_im = (scanConvert(bscan, mod2db(b), scanc)); % interpolate in dB - could also do abs, as long as it's not complex!
-    
-    imagesc(scanc, bc_im); 
-    caxis([-dbR, 0] + max(caxis)); % set 60dB dynamic range
-    colormap gray; colorbar;
+
+    imagesc(scanc, bc_im);
+    dbr b-mode 40;
 end
