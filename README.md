@@ -1,5 +1,6 @@
 # QUPS: Quick Ultrasound Processing &amp; Simulation
 ![Static Badge](https://img.shields.io/badge/matlab-R2020b%2B-orange)
+[![View on File Exchange](https://www.mathworks.com/matlabcentral/images/matlab-file-exchange.svg)](https://www.mathworks.com/matlabcentral/fileexchange/161381-qups)
 ![GitHub Release](https://img.shields.io/github/v/release/thorstone25/qups)
 ![GitHub License](https://img.shields.io/github/license/thorstone25/qups)
 ![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/thorstone25/qups/testing.yml)
@@ -7,13 +8,14 @@
 ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/thorstone25/qups)
 ![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/thorstone25/qups)
 
+
 ## Description
 QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyping pulse-echo ultrasound systems and algorithms. 
 It provides a flexible, high-level representation of transducers, pulse sequences, imaging regions, and scattering media as well as hardware accelerated implementations of common signal processing functions for pulse-echo ultrasound systems.
 QUPS can interface with multiple other Ultrasound acquisition, simulation and processing tools including [Verasonics](https://verasonics.com/vantage-advantage/), [k-Wave](http://www.k-wave.org/index.php), [MUST](https://www.biomecardio.com/MUST/), [FieldII](https://www.field-ii.dk/) and [USTB](https://www.ustb.no/).
 
-## Compatibility
-QUPS targets MATLAB R2020b+ and is tested for R2021a+ on Ubuntu, Windows, and macOS (see [#27](github.com/thorstone25/qups/issues/27)). R2023b is currently the recommended version. While it may work for older versions of MATLAB, you may get strange errors that don't appear in later versions. QUPS does minimal error checking in order to maximize flexibility, utility, and forward compatability.
+This package can readily be used to develop new transducer array designs by specifying element positions and orientations or develop new pulse sequence designs by specifying waveforms, element delays, and element weights (apodization). Simulating the received echoes (channel data) is supported for any valid UltrasoundSystem. Define custom properties or overload the built-in classes to create new types.
+
 
 ## Features
 - Flexible:
