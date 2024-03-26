@@ -44,6 +44,7 @@ oneL = decl + wc + "end";
 % function declaration
 for fl = fls
     txt = readlines(fl); % read file line by line
+    txt(end+1) = ""; % append a blank line to make indexing safe
     i = contains(txt,"function") & contains(txt,"end"); % mandatory
     i(i) = contains(txt(i), oneL); % see if this is truly a one-liner
     if kwargs.verbose, [~,nm] = fileparts(fl); disp(nm+": "+nnz(i)+" 1-liners."), end
