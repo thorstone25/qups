@@ -85,7 +85,7 @@ All extensions to QUPS are optional, but must be installed separately from their
 | [k-Wave](http://www.k-wave.org/index.php) | distributed medium simulator | `addpath path/to/kWave` | [website](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)  |
 | [kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources) | k-Wave transducer extension | `addpath path/to/kWaveArray` | [forum](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources), [paper](http://bug.medphys.ucl.ac.uk/papers/2019-Wise-JASA.pdf) |
 | [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST`| [website](https://www.biomecardio.com/MUST/documentation.html) |
-| [USTB](www.ustb.no) | signal processing library and toolbox | `addpath path/to/USTB` | [website](https://www.ustb.no/citation/) |
+| [USTB](https://www.ustb.no/) | signal processing library and toolbox | `addpath path/to/USTB` | [website](https://www.ustb.no/citation/) |
 | [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))| [website](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via MatCL) |
 | [CUDA](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) | hardware acceleration | (see [CUDA Support](#cuda-support)) | |
 
