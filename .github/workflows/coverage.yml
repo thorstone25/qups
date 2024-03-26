@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      -'build/coverage.xml'  
+      - 'build/coverage.xml'  
 jobs:
   coverage:
     name: Code Coverage
