@@ -2,8 +2,7 @@ name: Build Documentation
 on:
   workflow_dispatch:
   push:
-    paths:
-      - 'build/coverage.xml'
+    branches: ['dev-docs']
 jobs:
   docs:
     name: Build docs with Sphinx
