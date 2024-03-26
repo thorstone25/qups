@@ -21,12 +21,14 @@ jobs:
         uses: matlab-actions/run-command@v2
         with:
           command: addpath build; reformat1liners();  
-      - name: Build documentation
-        uses: ammaraskar/sphinx-action@master
-        with:
-          docs-folder: "docs/"
-          pre-build-command: "pip install sphinxcontrib-matlabdomain"
-          build-command: "make html"
+      - name: Install sphinx and build documentation
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install sphinxcontrib-matlabdomain
+          cd docs/
+          make html
+          cd ../
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
