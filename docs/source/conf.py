@@ -20,6 +20,7 @@ matlab_src_dir = "/home/thurston/sandbox/qups"
 autoclass_content = "class" # show top of class help text
 autodoc_member_order = "bysource"
 # matlab_auto_link = "all" # not working :(
+matlab_auto_link = "basic"
 matlab_short_links = True
 
 # defaults
