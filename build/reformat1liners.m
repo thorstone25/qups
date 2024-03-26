@@ -46,7 +46,7 @@ for fl = fls
     txt = readlines(fl); % read file line by line
     i = contains(txt,"function") & contains(txt,"end"); % mandatory
     i(i) = contains(txt(i), oneL); % see if this is truly a one-liner
-    if kwargs.verbose, disp(argn(2,@fileparts,fl)+": "+nnz(i)+" 1-liners."), end
+    if kwargs.verbose, [~,nm] = fileparts(fl); disp(nm+": "+nnz(i)+" 1-liners."), end
     i = find(i); % we need line indices
     code = txt(i);
     if isempty(i), continue; end % short-circuit
