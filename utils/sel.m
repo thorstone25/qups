@@ -1,3 +1,4 @@
+function y = sel(x, ind, dim)
 % SEL Subscripting expression to index in one dimension only.
 %
 % y = SEL(x, ind) selects x at indices ind in the first non-singleton 
@@ -10,11 +11,10 @@
 % Example:
 % x = rand(2,3,4);
 % [xmax, ix] = max(x, [], 3);
-% xmax_ = sel(x, ix, 3);
-% all(xmax == xmax_, 'all')
+% xmax_2 = sel(x, ix, 3);
+% all(xmax == xmax_2, 'all')
 % 
 % See also SUB
-function y = sel(x, ind, dim)
 arguments
     x
     ind {mustBeIndex}

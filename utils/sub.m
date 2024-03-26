@@ -1,3 +1,4 @@
+function y = sub(x, ind, dim, expr)
 % SUB Subscripting expression to slice in one dimension only.
 %
 % y = SUB(x, ind) returns x(ind,:,:,...,:) where x is any subscriptable
@@ -19,8 +20,6 @@
 % assert(isequal(x(:,2:3,4,:,:,:,:), sub(x,{2:3,4},[2 3])))
 %
 % See also SEL SUBSREF SUBSASGN SUBSTRUCT
-
-function y = sub(x, ind, dim, expr)
 if nargin < 3, dim = max([1, find(size(x) ~= 1, 1, 'first')]); end
 if nargin < 4, expr = false; end
 

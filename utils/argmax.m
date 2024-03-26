@@ -1,4 +1,4 @@
-function I = argmax(varargin), [~, I] = max(varargin{:}); end
+function I = argmax(varargin)
 % ARGMAX - Index of the maximum elements of an array
 %
 % I = ARGMAX(X) returns the indices corresponding to the maximum
@@ -23,3 +23,4 @@ function I = argmax(varargin), [~, I] = max(varargin{:}); end
 % assert(isequal(y, x(j)));
 % 
 % See also MAX ARGMIN
+[~, I] = max(varargin{:}); end

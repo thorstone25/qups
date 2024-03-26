@@ -1,4 +1,4 @@
-function x = nan2zero(x), x(isnan(x)) = 0;
+function x = nan2zero(x)
 % NAN2ZERO - Convert NaN values to a 0
 %
 % y = NAN2ZERO(x) returns an output where all nan-values in x are replaced
@@ -8,3 +8,4 @@ function x = nan2zero(x), x(isnan(x)) = 0;
 % nan2zero([1 2 nan 4 5])
 % 
 % See also ISNAN
+x(isnan(x)) = 0;

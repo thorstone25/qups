@@ -64,6 +64,8 @@ classdef SequenceGeneric < Sequence
 
     % temporal response methods
     methods
-        function t0 = t0Offset(seq), arguments, seq (1,1) SequenceGeneric, end, t0 = 0; end %#ok<MANU>
+        function t0 = t0Offset(seq) %#ok<MANU>
+            arguments, seq (1,1) SequenceGeneric, end, t0 = 0; 
+        end 
     end
 end

@@ -4687,7 +4687,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     
     % recompilation helper functions
     methods
-        function [mcom, nvcom] = recompile(self), mcom = recompileMex(self); if gpuDeviceCount, nvcom = recompileCUDA(self); else, nvcom = string.empty; end, end
+        function [mcom, nvcom] = recompile(self)
         % RECOMPILE - Recompile mex and CUDA files
         %
         % RECOMPILE(self) recompiles all mex binaries and CUDA files and 
@@ -4695,6 +4695,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         % GPUs, it does not attempt to recompile CUDA files.
         %
         % See also ULTRASOUNDSYSTEM.RECOMPILECUDA ULTRASOUNDSYSTEM.RECOMPILEMEX
+        mcom = recompileMex(self); if gpuDeviceCount, nvcom = recompileCUDA(self); else, nvcom = string.empty; end
+        end
         function mcom = recompileMex(self, defs)
             % RECOMPILEMEX - Recompile mex files
             %

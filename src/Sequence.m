@@ -847,7 +847,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % us = UltrasoundSystem('xdc', xdc, 'seq', seq);
             % plot(us);
             % 
-            % See also SEQUENCE.APODIZATION_ TRANSDUCER.FOCACTIVE
+            % See also SEQUENCE.APD TRANSDUCER.FOCACTIVE
 
 
             arguments

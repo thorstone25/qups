@@ -24,11 +24,12 @@ function [y, k, pre_args, post_args] = das_spec(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 % Where T -> time samples, N -> receivers, M -> transmits, F -> data frames
 % I = [I1 x I2 x I3] -> pixels
 % 
-% fun must be one of {'DAS'*|'SYN'|'BF'|'delays'}:
-%   DAS - sum across both apertures
-%   SYN - sum across the transmi apeture only
-%   BF  - do not sum
-%   delays - return time delays
+% 'fun' must be one of:
+%   
+%   * 'DAS' - sum across both apertures (default)
+%   * 'SYN' - sum across the transmi apeture only
+%   * 'BF'  - do not sum
+%   * 'delays' - return time delays
 %
 % If the function is 'delays', the output will be the time delay for each
 % transmitter-receiver pair. The values for 'x', 't0', and 'fs' will be

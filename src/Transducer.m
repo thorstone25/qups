@@ -91,7 +91,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % % convert to a MATLAB struct
             % xdc = obj2struct(xdc)
             %
-            arguments, xdc Transducer {mustBeScalarOrEmpty}; end
+            arguments
+                xdc Transducer {mustBeScalarOrEmpty}; 
+            end
             
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
             s = struct(xdc); % convert self
@@ -238,7 +240,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             %
             % See also POSITIONS ORIENTATIONS PATCHES
     
-            arguments, xdc Transducer, end
+            arguments
+                xdc Transducer
+            end
 
             % transducer patches of {x,y,z,c} bound tuples
             pch = xdc.patches([1,1]);
@@ -449,7 +453,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % 
         % See also UFF.PROBE
         function probe = QUPS2USTB(xdc)
-            arguments, xdc Transducer, end
+            arguments
+                xdc Transducer
+            end
             probe = arrayfun(@(xdc) uff.probe(...
                 'geometry', [ ...
                 xdc.positions(); ...
@@ -561,7 +567,9 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % Transducer xdc.
             %
             % See also TRANSDUCER.QUPS2USTB
-            arguments, probe uff.probe; end
+            arguments
+                probe uff.probe; 
+            end
             switch class(probe) % dispatch
                 case 'uff.linear_array',     xdc = TransducerArray.UFF(probe);
                 case 'uff.curvilinear_array',xdc = TransducerConvex.UFF(probe);
@@ -1178,10 +1186,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % corners must be specified in sequential order
             % make column vector, drop apodization,
             ind_map = [1 2 4 3]';
-            el_patches = cellfun(@(patch) cell2mat(cellfun(@(component) ...
-                reshape(component(ind_map),[],1), ... .* 1e3, ...
-                patch, 'UniformOutput', false)), ...
-                el_patches, 'UniformOutput', false);
+            el_patches = cellfun(@(patch) cell2mat(cellfun(@(component) reshape(component(ind_map),[],1), patch, 'UniformOutput', false)), el_patches, 'UniformOutput', false);
 
             % convert to get vertex x index x X/Y/Z array
             el_patches = permute(cat(3, el_patches{:}), [1,3,2]);

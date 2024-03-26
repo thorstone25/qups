@@ -1,3 +1,4 @@
+function nv = struct2nvpair(s)
 % STRUCT2NVPAIR - Convert a struct to a cell array of Name/Value pairs.
 %
 % nv = STRUCT2NVPAIR(s) converts the struct s to cell array of Name/Value
@@ -11,6 +12,8 @@
 % assert(isequal(s, s2));
 % 
 % See also STRUCT STRUCT2CELL FIELDNAMES
-function nv = struct2nvpair(s), arguments, s (1,1) struct, end
+arguments
+    s (1,1) struct
+end
 nv = reshape(namedargs2cell(s), 2, []);
 end

@@ -1,4 +1,4 @@
-function I = argmin(varargin), [~, I] = min(varargin{:}); end
+function I = argmin(varargin)
 % ARGMIN - Index of the minimum elements of an array
 %
 % I = ARGMIN(X) returns the indices corresponding to the minimum
@@ -23,3 +23,4 @@ function I = argmin(varargin), [~, I] = min(varargin{:}); end
 % assert(isequal(y, x(j)));
 % 
 % See also MIN ARGMAX
+[~, I] = min(varargin{:}); end

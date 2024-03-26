@@ -12,8 +12,9 @@ function z = slsc(x, dim, L, method, kdim, kwargs)
 % including 0 e.g. L = [0 5]. The default is
 % max(1, floor(1/4 * size(x,dim)));
 %
-% z = SLSC(x, dim, L, method) uses the specified method. Must be one
-% of {"ensemble" | "average"*}.
+% z = SLSC(x, dim, L, "ensemble") or 
+% z = SLSC(x, dim, L, "average") uses the specified method to compute the 
+% coherence. The default is "average".
 %
 % z = SLSC(x, dim, L, method, kdim) interprets kdim as the time kernel
 % dimension. When dimension kdim is non-singular, samples in time are

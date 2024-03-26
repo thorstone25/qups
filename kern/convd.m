@@ -8,7 +8,7 @@ function [C, lags] = convd(x, y, dim, shape, kwargs)
 % C = CONVD(A, B, dim) executes in dimension "dim" instead of dimension 1
 % 
 % C = CONVD(A, B, dim, shape) selects the shape of the output. Must be one 
-% of {'full'*|'same'|'valid'}. The default is 'full'.
+% of {'full'*, 'same', 'valid'}. The default is 'full'.
 % 
 % C = CONVD(..., 'gpu', true) selects whether to use a gpu. A ptx-file will 
 % be used if compiled. The default is true if x or y is a gpuArray.
