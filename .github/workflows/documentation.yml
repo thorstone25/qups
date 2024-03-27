@@ -15,8 +15,8 @@ jobs:
         with: 
             release: latest
             products: Signal_Processing_Toolbox Parallel_Computing_Toolbox
-      - name: Delete tests
-        run: rm -r test/ 
+      - name: Delete tests and FMM duplicates
+        run: rm -r test/ src/FMM/
       - name: Reformat 1-liners
         uses: matlab-actions/run-command@v2
         with:
