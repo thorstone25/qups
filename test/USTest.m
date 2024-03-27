@@ -62,7 +62,7 @@ classdef USTest < matlab.unittest.TestCase
     end
 
     % github settings
-    methods(Test, ParameterCombination="pairwise", TestTags = ["Github"])
+    methods(Test, ParameterCombination='pairwise', TestTags = ["Github"])
         function simgeneric_github(testCase, tx, rx, seq, simulator)
             simgeneric(       testCase, tx, rx, seq, simulator);
         end
@@ -79,7 +79,7 @@ classdef USTest < matlab.unittest.TestCase
     end
 
     % full settings
-    methods(Test, ParameterCombination="exhaustive", TestTags = ["full", "build"])
+    methods(Test, ParameterCombination='exhaustive', TestTags = ["full", "build"])
         function simgeneric_full(testCase, tx, rx, seq, simulator)
                  simgeneric(     testCase, tx, rx, seq, simulator);
         end

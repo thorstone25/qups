@@ -226,7 +226,7 @@ classdef ParTest < matlab.unittest.TestCase
     end
 
     % ---------------------------------------------- %
-    methods(Test, TestTags="benchmark",  ParameterCombination='sequential')
+    methods(Test, TestTags='benchmark',  ParameterCombination='sequential')
         function DAS_dev_benchmark(tst, dev)
             if ~isnumeric(dev) || dev ~= 0, tst.setDev(dev); else, return; end % pass on no dev
             f = @DAS;

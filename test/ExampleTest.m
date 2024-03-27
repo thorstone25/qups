@@ -309,7 +309,7 @@ classdef ExampleTest < matlab.unittest.TestCase
 
     % ---------------------------------------------- % 
 
-    methods (Test, ParameterCombination="sequential", TestTags=["Github","full","build"])
+    methods (Test, ParameterCombination='sequential', TestTags=["Github","full","build"])
         % Test methods
         function run_all_examples(test, fls, lns)
             run_examples(test, fls, lns, string.empty);
@@ -325,7 +325,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             end
         end
     end
-    methods (Test, ParameterCombination="sequential", TestTags=["syntax"])
+    methods (Test, ParameterCombination='sequential', TestTags=["syntax"])
         % Test methods
         function run_kernel_examples(test, fls, lns)
             prj = matlab.project.rootProject;
