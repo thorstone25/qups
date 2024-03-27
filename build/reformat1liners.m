@@ -47,7 +47,7 @@ for fl = fls
     txt(end+1) = ""; % append a blank line to make indexing safe
     i = contains(txt,"function") & contains(txt,"end"); % mandatory
     i(i) = contains(txt(i), oneL); % see if this is truly a one-liner
-    if kwargs.verbose, [~,nm] = fileparts(fl); disp(nm+": "+nnz(i)+" 1-liners."), end
+    if kwargs.verbose, [~,nm] = fileparts(fl); disp("1-liners: "+nnz(i)+" in file "+nm+"."), end
     i = find(i); % we need line indices
     code = txt(i);
     if isempty(i), continue; end % short-circuit
@@ -68,7 +68,7 @@ for fl = fls
     j = ~ismissing(hlp); % help available
     code    = replaceBetween(code   , decl, bod, newline);
     code(j) = replaceBetween(code(j), decl, newline, newline+"%"+hlp(j));
-    code    = replaceBetween(code   , bod, "end",newline);
+    code    = replaceBetween(code   , bod+newline, "end",newline);
     
     % write to file
     txt(i) = code;
