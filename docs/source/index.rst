@@ -13,6 +13,7 @@ Welcome to QUPS's documentation!
    classes.rst
    kernels.rst
    utilities.rst
+   tests.rst
 
 Indices and tables
 ==================
