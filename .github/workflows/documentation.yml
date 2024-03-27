@@ -10,22 +10,25 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+      - name: Delete tests and FMM duplicates
+        run: rm -r test/ src/FMM/
+      - name: Install sphinx
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          git clone https://github.com/sphinx-contrib/matlabdomain.git ../
+          pip install -e ../sphinxcontrib-matlabdomain
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
         with: 
             release: latest
             products: Signal_Processing_Toolbox Parallel_Computing_Toolbox
-      - name: Delete tests and FMM duplicates
-        run: rm -r test/ src/FMM/
       - name: Reformat 1-liners
         uses: matlab-actions/run-command@v2
         with:
           command: addpath build; reformat1liners();  
-      - name: Install sphinx and build documentation
+      - name:  Build documentation
         run: |
-          python3 -m venv .venv
-          source .venv/bin/activate
-          pip install sphinxcontrib-matlabdomain
           cd docs/
           make html
           cd ../
