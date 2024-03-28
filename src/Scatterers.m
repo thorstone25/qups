@@ -463,8 +463,60 @@ classdef Scatterers < matlab.mixin.Copyable
             args = namedargs2cell(kwargs); % get optional arguments
             scat = Scatterers(args{:});
         end
-    end
+    
+        function scat = Verasonics(Media, kwargs)
+            % Verasonics - Create a Scatterers from a Verasonics Media struct
+            %
+            % scat = Scatterers.Verasonics(Media) imports the point
+            % scatterers in the verasonics Media struct.
+            %
+            % scat = Scatterers.Verasonics(..., 'c0', c0) uses sound speed
+            % c0. The default is 1540.
+            % 
+            % scat = Scatterers.Verasonics(..., 'scale', scale) scales the
+            % locations of the point targets by scale. The default is 1.
+            % 
+            % Example:
+            % % Import the Transducer and Scatterers
+            % c0   = Resource.Parameters.speedOfSound;
+            % xdc  = Transducer.Verasonics(Trans, c0);
+            % scat = Scatterers.Verasonics(Media,'c0',c0,'scale',c0/xdc.fc)
+            % 
+            % % Display
+            % figure;
+            % plot(xdc);
+            % hold on;
+            % plot(scat, 'r.');
+            % set(gca, 'YDir', 'reverse')
+            % legend();
+            % 
+            % See also UltrasoundSystem.Verasonics
+            arguments
+                Media struct
+                kwargs.c0 (1,1) double {mustBePositive} = 1540
+                kwargs.scale (1,1) double {mustBePositive} = 1
+            end
+            
+            % short-circuit on empty
+            if isempty(Media)
+                scat = reshape(Scatterers.empty, size(Media)); 
+                return;
+            end
+            
+            % set default attenuation
+            if ~isfield(Media, 'attenuation')
+                [Media.attenuation] = deal(nan); 
+            end
 
+            % create a Scatterers for each Media
+            scat = arrayfun(@(m) Scatterers(...
+                "pos", m.MP(:,1:3)'.*kwargs.scale, ...
+                "amp",m.MP(:,4)', ...
+                "c0", kwargs.c0, ...
+                "alpha0", 1e-4*m.attenuation ...
+                ), Media);
+        end
+    end
     
     % dependent variables
     methods
