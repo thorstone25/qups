@@ -22,6 +22,8 @@ autodoc_member_order = "bysource"
 # matlab_auto_link = "all" # not working :(
 matlab_auto_link = "basic"
 matlab_short_links = True
+matlab_class_signature = True
+matlab_show_property_default_value = True
 
 # defaults
 templates_path = ['_templates']
