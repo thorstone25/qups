@@ -16,8 +16,10 @@ jobs:
         run: |
           python3 -m venv .venv
           source .venv/bin/activate
-          git clone https://github.com/sphinx-contrib/matlabdomain.git ../matlabdomain
+          git clone https://github.com/thorstone25/matlabdomain.git ../matlabdomain
           pip install -e ../matlabdomain
+          git clone https://github.com/DeveloperRSquared/case-insensitive-dict.git ../case-insensitive-dict
+          pip install -e ../case-insensitive-dict
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
         with: 
