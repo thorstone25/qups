@@ -4588,17 +4588,38 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % shift to (I1 x I2 x I3 x N x M)
             apod = reshape(apod, size(apod,2:6));
         end
-        function apod = apTxParallelogram(us, theta)
+        function apod = apTxParallelogram(us, theta, phi)
+            % apTxParallelogram - Plane-wave illumination apodization
+            %
+            % apod = apTxParallelogram(us, theta) creates a pixel by
+            % transmit based apodization mask apod for pixels that lie
+            % within the lateral boundaries of the transducer when
+            % projected along the transmit angles theta.
+            %
+            % apod = apTxParallelogram(us, theta, [phi_min, phi_max])
+            % expands the accepted angle of projection theta to 
+            % theta + [phi_min, phi_max]. The default is [0 0].
+            %
+            % Example:
+            % seq = SequenceRadial('angles', -10 : 5 : 10); % PW sequence
+            % us = UltrasoundSystem('seq', seq);
+            % ap = us.apTxParallelogram(seq.angles, [-5 5]);
+            % figure; imagesc(us.scan, ap);
+            % animate(ap,'fs',1,'loop',false,"title","Angle: "+seq.angles);
+            % 
+            % See also apAcceptanceAngle
             arguments
                 us (1,1) UltrasoundSystem
                 theta (1,:) = atan2d(us.seq.focus(1,:), us.seq.focus(3,:));
+                phi (1,2) double = 0;
             end
+            phi = swapdim(phi,2,7); % min max  difference in angle
             pg = us.scan.positions();
-            nv = swapdim([sind(theta); 0*theta; cosd(theta)],2,6);  % normal vectors (Tx in dim 6)
+            nv = swapdim([sind(phi+theta); 0*(phi+theta); cosd(phi+theta)],2,6);  % normal vectors (Tx in dim 6)
             pg = pg - nv .* (sub(pg,3) ./ sub(nv,3)); % project to z == 0
             pb = us.xdc.bounds();
-            apod = pb(1,1) < sub(pg,1,1) & sub(pg,1,1) <= pb(1,2); % in-bounds of xdc
-            apod = reshape(apod, size(apod,2:ndims(apod))); % to I x N x M
+            apod = any(pb(1,1) < sub(pg,1,1),7) & any(sub(pg,1,1) <= pb(1,2),7); % in-bounds of xdc
+            apod = reshape(apod, size(apod,2:6)); % to I x N x M
         end
 
         function apod = apAcceptanceAngle(us, theta)
