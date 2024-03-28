@@ -12,11 +12,6 @@ jobs:
         uses: actions/checkout@v4
       - name: Delete tests and FMM duplicates
         run: rm -r test/ src/FMM/
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-          cache: 'pip' # caching pip dependencies
       - name: Install sphinx
         run: |
           python3 -m venv .venv
