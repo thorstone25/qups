@@ -536,7 +536,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments
                 kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
-                kwargs.penv {mustBeScalarOrEmpty, mustBeA(kwargs.penv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
                 kwargs.tall (1,1) logical = false; % whether to use a tall type
                 kwargs.bsize (1,1) {mustBeInteger, mustBePositive} = max([1 us.seq.numPulse],[],'omitnan'); % number of simulataneous scatterers
                 kwargs.verbose (1,1) logical = false;
@@ -703,8 +703,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 
             else % operate in native MATLAB
                 % parallel environment
-                penv = kwargs.penv;
-                if isempty(penv), penv = 0; end; % no parallel
+                penv = kwargs.parenv;
+                if isempty(penv), penv = 0; end % no parallel
 
                 % make time in dim 2, scats in dim 1
                 [ps, as] = deal(ps', as'); % transpose S x 3, S x 1
