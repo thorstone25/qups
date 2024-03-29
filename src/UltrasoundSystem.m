@@ -4727,6 +4727,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         % stores them in self.tmp_folder. If there are no MATLAB compatible
         % GPUs, it does not attempt to recompile CUDA files.
         %
+        % Example:
+        % us = UltrasoundSystem();
+        % us.recompile();
+        % ls(us.tmp_folder)
+        % 
         % See also ULTRASOUNDSYSTEM.RECOMPILECUDA ULTRASOUNDSYSTEM.RECOMPILEMEX
         function mcom = recompileMex(self, defs)
             % RECOMPILEMEX - Recompile mex files
