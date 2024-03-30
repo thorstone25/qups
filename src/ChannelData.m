@@ -367,13 +367,6 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % helper functions
     methods(Hidden)
-        function chd = applyFun2Props(chd, fun)
-            chd = copy(chd);
-            for i = 1 : numel(chd)
-                chd_ = chd(i); % reference for each
-                [chd_.t0, chd_.fs, chd_.data] = deal(fun(chd_.t0), fun(chd_.fs), fun(chd_.data));
-            end
-        end
         function chd = applyFun2Data(chd, fun), chd = copy(chd); [chd.data] = dealfun(fun, chd.data); end
         function chd = applyFun2Dim(chd, fun, dim, varargin),
             chd = copy(chd); % copy semantics
