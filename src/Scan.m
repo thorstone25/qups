@@ -212,12 +212,8 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
         end
     end
 
-    % object display
+    % object display (must be Sealed)
     methods (Sealed, Access = protected)
-        function header = getHeader(obj)
-            header = getHeader@matlab.mixin.CustomDisplay(obj);
-        end
-
         function groups = getPropertyGroups(scan)
             if ~isscalar(scan)
                 groups = getPropertyGroups@matlab.mixin.CustomDisplay(scan);
@@ -239,26 +235,27 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
             end
         end
 
-        % Hetergenous support functions (for further customization)
-        % function footer = getFooter(obj)
-        %     footer = getFooter@matlab.mixin.CustomDisplay(obj);
-        % end
-        %
-        % function displayNonScalarObject(obj)
-        %     displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
-        % end
-        %
-        % function displayScalarObject(obj)
+        % Heterogenous display support functions - must be sealed manually
+        function header = getHeader(obj)
+            header = getHeader@matlab.mixin.CustomDisplay(obj);
+        end
+        function footer = getFooter(obj)
+            footer = getFooter@matlab.mixin.CustomDisplay(obj);
+        end
+        function displayNonScalarObject(obj)
+            displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
+        end
         % Do not override this method: a 'Scan' is Abstract and therefore
         % cannot be instanstiated.
-        %
-        % function displayEmptyObject(obj)
-        %     displayEmptyObject@matlab.mixin.CustomDisplay(obj);
-        % end
-        %
-        % function displayScalarHandleToDeletedObject(obj)
-        %     displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
-        % end
+        function displayScalarObject(obj)
+            displayScalarObject@matlab.mixin.CustomDisplay(obj);
+        end
+        function displayEmptyObject(obj)
+            displayEmptyObject@matlab.mixin.CustomDisplay(obj);
+        end
+        function displayScalarHandleToDeletedObject(obj)
+            displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
+        end
     end
 
     % conversion

@@ -1180,7 +1180,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
     end
 
     % object display
-    methods(Access = protected)
+    methods(Sealed, Access = protected)
         function propgrp = getPropertyGroups(seq)
             if ~isscalar(seq)
                 propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(seq);
@@ -1191,6 +1191,27 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 end
                 propgrp = matlab.mixin.util.PropertyGroup(p);
             end
+        end
+        % Heterogenous display support functions - must be sealed manually
+        function header = getHeader(obj)
+            header = getHeader@matlab.mixin.CustomDisplay(obj);
+        end
+        function footer = getFooter(obj)
+            footer = getFooter@matlab.mixin.CustomDisplay(obj);
+        end
+        function displayNonScalarObject(obj)
+            displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
+        end
+        % Do not override this method: a 'Scan' is Abstract and therefore
+        % cannot be instanstiated.
+        function displayScalarObject(obj)
+            displayScalarObject@matlab.mixin.CustomDisplay(obj);
+        end
+        function displayEmptyObject(obj)
+            displayEmptyObject@matlab.mixin.CustomDisplay(obj);
+        end
+        function displayScalarHandleToDeletedObject(obj)
+            displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
         end
     end
 end
