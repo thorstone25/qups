@@ -742,7 +742,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             elseif ~any(tau,'all') % no delays -> FSA
                 seq = Sequence("type","FSA", "numPulse",numel(TX));
             
-            elseif all(all(pog == 0,2) & all(rf == 0,1) & any(ang,'all'),1) % PW
+            elseif all(all(abs(pog) <= 1e-12, 2) & all(rf == 0,1) & any(ang,'all'),1) % PW (with tolerance)
                 az = rad2deg(ang(:,1)'); % azimuth
                 el = rad2deg(ang(:,2)'); % elevation
                 if any(el)
