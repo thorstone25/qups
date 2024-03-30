@@ -13,6 +13,10 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
 
     methods(TestMethodSetup)
         % Setup for each test
+        function fig(~), figure; end
+    end
+    methods(TestMethodTeardown)
+        function cls(~), close; end
     end
     methods(Test)
         function initxdc(test)
@@ -23,6 +27,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@(xdc) test.assertThat(xdc, IsInstanceOf('Transducer')), xdcs); % class maintained
             arrayfun(@(xdc) scale(xdc, 'dist', 1e3, 'time', 1e6), xdcs, "UniformOutput",false); % can scale
             arrayfun(@obj2struct, xdcs, 'UniformOutput', false); % supports specialized struct conversion
+            arrayfun(@plot, xdcs); % supports plotting
+            arrayfun(@patch, xdcs); % supports surface
             xdcs(end+2) = xdcs(1); % implicit empty value            
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
 
@@ -36,6 +42,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale            
             seqs(end+2) = seqs(1); % implicit empty value
             s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
+            arrayfun(@plot, seqs, 'UniformOutput',false); % supports plotting
             cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
 
 
@@ -58,6 +65,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@(scn) test.assertThat(scn, IsInstanceOf('Scan')), scns);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), scns, "UniformOutput",false); % can scale
             arrayfun(@obj2struct, scns, 'UniformOutput', false); % supports specialized struct conversion
+            arrayfun(@plot, scns); % supports plotting
+            arrayfun(@(s) imagesc(s,randn(s.size)), scns); % supports imagesc
+            
             scns(end+2) = scns(1); % implicit empty value
 
             % test assigning / retrieving sizing
@@ -89,6 +99,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             scale(chd, 'time', 1e6);
             [chd.tdim, chd.ndim, chd.mdim, chd.T, chd.N, chd.M]; % get
             arrayfun(@obj2struct, chd, 'UniformOutput', false); % supports specialized struct conversion
+            arrayfun(@imagesc, chd); % supports imagesc
 
             % deprecated properties
             test.assertWarning(@()setfield(chd,'ord','TMN'), "QUPS:ChannelData:syntaxDeprecated")
@@ -106,6 +117,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             test.assertFalse(logical(exist(fld,"dir")));
             us = UltrasoundSystem('copybin',true);
             us = UltrasoundSystem('recompile',true);
+            plot(us); % supports plotting
             s = obj2struct(us);
             flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
             arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
