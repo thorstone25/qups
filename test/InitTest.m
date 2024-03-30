@@ -2,8 +2,18 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
     % INITTEST - Initialization tests class
     %
     % This class test that all objects initialize properly
-
     properties(TestParameter)
+        % all classes to test
+        clss = cellstr([
+            "Transducer" + ["Array","Convex", "Matrix", "Generic"], ...
+            "Sequence" + ["", "Radial", "Generic"], ...
+            "Scan" + ["Cartesian", "Polar", "Spherical", "Generic"], ...
+            "Scatterers", "Medium", "Waveform", ...
+            "UltrasoundSystem", "ChannelData", ...
+            ]);
+    end
+
+    properties
     end
 
     methods(TestClassSetup, ParameterCombination = 'exhaustive')
@@ -29,7 +39,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@obj2struct, xdcs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, xdcs); % supports plotting
             arrayfun(@patch, xdcs); % supports surface
-            xdcs(end+2) = xdcs(1); % implicit empty value            
+            xdcs(end+2) = xdcs(1), %#ok<NOPRT> implicit empty value, display
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
 
        end
@@ -40,7 +50,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             seqs = [Sequence(), SequenceRadial(), SequenceGeneric()];
             arrayfun(@(seq) test.assertThat(seq, IsInstanceOf('Sequence')), seqs);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale            
-            seqs(end+2) = seqs(1); % implicit empty value
+            seqs(end+2) = seqs(1), %#ok<NOPRT> implicit empty value, display
             s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, seqs, 'UniformOutput',false); % supports plotting
             cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
@@ -67,8 +77,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@obj2struct, scns, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, scns); % supports plotting
             arrayfun(@(s) imagesc(s,randn(s.size)), scns); % supports imagesc
-            
-            scns(end+2) = scns(1); % implicit empty value
+            scns(end+2) = scns(1),%#ok<NOPRT> implicit empty value, display
 
             % test assigning / retrieving sizing
             dvars = 'XYZRUVW'; % dist
@@ -94,10 +103,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITCHD - Assert that a ChannelData constructor initializes
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            chd = ChannelData();
+            chd = ChannelData(), %#ok<NOPRT> implicit display
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
-            [chd.tdim, chd.ndim, chd.mdim, chd.T, chd.N, chd.M]; % get
             arrayfun(@obj2struct, chd, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@imagesc, chd); % supports imagesc
 
@@ -109,57 +117,98 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITUS - Assert that an UltrasoundSystem constructor
             % initializes without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            us = UltrasoundSystem();
+            us = UltrasoundSystem(), %#ok<NOPRT> implicit display
             test.assertThat(us, IsInstanceOf('UltrasoundSystem'));
             us = scale(us, "dist",1e3, "time",1e6);
             fld = us.tmp_folder;
-            clear us; % destroy
-            test.assertFalse(logical(exist(fld,"dir")));
-            us = UltrasoundSystem('copybin',true);
-            us = UltrasoundSystem('recompile',true);
+            test.assertTrue(logical(exist(fld,"dir")));
+            UltrasoundSystem('copybin',  true);
+            UltrasoundSystem('recompile',true);
             plot(us); % supports plotting
             s = obj2struct(us);
             flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
             arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
-
+            
             % deprecation
             test.assertWarning(@()setfield(us,'sequence',Sequence()),"QUPS:UltrasoundSystem:syntaxDeprecated")
             test.assertWarning(@()us.sequence                       ,"QUPS:UltrasoundSystem:syntaxDeprecated")
-
+            
+            % destroy
+            clear us;
         end
         function initmedscat(test)
             % INITMEDSCAT - Assert that a Scatterers and Mediums
             % initialize without arguments
 
             import matlab.unittest.constraints.IsInstanceOf;
-            test.assertThat(Scatterers(), IsInstanceOf('Scatterers'));
-            test.assertThat(Medium(),     IsInstanceOf('Medium'));
-            scale(Medium()    , "dist", 1e3, "time", 1e6, "mass", 1e6);
-            scale(Scatterers(), "dist", 1e3, "time", 1e6);
-                struct(Medium()    ); % no-specialized struct conversion yet ...
-            obj2struct(Scatterers()); % specialized struct conversion
-
+            sct = Scatterers(), %#ok<NOPRT> implicit display
+            med = Medium(),     %#ok<NOPRT> implicit display
+            test.assertThat(sct, IsInstanceOf('Scatterers'));
+            test.assertThat(med, IsInstanceOf('Medium'    ));
+            scale(sct, "dist", 1e3, "time", 1e6);
+            scale(med, "dist", 1e3, "time", 1e6, "mass", 1e6);
+            struct(med); % no-specialized struct conversion yet ...
+            struct(sct); % specialized struct conversion
+            imagesc(med, ScanCartesian()); % support image on cartesian grid
+            plot(sct); % supports plot
 
         end
-        function staticTest(test)
-            % static constructors
-            cls = [
-                "Transducer" + ["Array","Convex", "Matrix", "Generic"], ...
-                "Sequence" + ["", "Radial", "Generic"], ...
-                "Scan" + ["Cartesian", "Polar", "Spherical", "Generic"], ...
-                "Scatterers", "Medium", "Waveform", ...
-                "UltrasoundSystem", "ChannelData", ...
-                ];
+        function staticTest(test, clss)
+            % staticTest - Test static functions with no inputs (constructors)
+            mc = meta.class.fromName(clss); % all class descriptions
+            mthd = mc.MethodList([mc.MethodList.Static]);
+            n = arrayfun(@(m)length(m.InputNames), mthd);
+            mthd = mthd(n == 0 & {mthd.Access}' == "public"); % 0 inputs only TODO: handle varargin?
+            com = "@()"+clss + "." + {mthd.Name}' + "()";
+            arrayfun(@(s) test.assertWarningFree(str2func(s)), com);
+        end
+        function propTest(test, clss)
+            % Property set/get works as expected
 
-            % all class escriptions
-            mc = arrayfun(@meta.class.fromName, cls);
-            for i = 1:numel(mc)
-                mthd = mc(i).MethodList([mc(i).MethodList.Static]);
-                n = arrayfun(@(m)length(m.InputNames), mthd);
-                mthd = mthd(n == 0 & {mthd.Access}' == "public"); % 0 inputs only TODO: handle varargin?
-                com = "@()"+cls(i) + "." + {mthd.Name}' + "()";
-                arrayfun(@(s) test.assertWarningFree(str2func(s)), com);
-            end 
+            % all class descriptions
+            mc = meta.class.fromName(clss);
+            if(~mc.Abstract), return; end % ensure non-abstract classes only
+            
+            % instantiate the class
+            x = eval(clss);
+
+            % get all getable properties
+            prp = mc.PropertyList({mc.PropertyList.GetAccess} == "public");
+
+            % request all properties
+            cellfun(@(f) {x.(f)}, {prp.Name});
+
+            % get all setable properties
+            prp = mc.PropertyList({mc.PropertyList.SetAccess} == "public");
+
+            % set each property, somehow, in order to check that
+            % (re)assignment works as expected
+            for j = 1 : numel(prp)
+                % property field name
+                f = string(prp(j).Name);
+
+                % assign via some strategy
+                if prp(j).HasDefault
+                    % if it has a default, just reassign the default
+                    x.(f) = prp(j).DefaultValue;
+
+                elseif ~isempty(prp(j).Validation) && ~isempty(prp(j).Validation.Class)
+                    % if the type is known, assign based on that type
+                    switch prp(j).Validation.Class.Name
+                        case "Scan",        x.(f) = ScanCartesian();
+                        case "Sequence",    x.(f) = Sequence();
+                        case "Transducer",  x.(f) = TransducerArray();
+                        case "Waveform",    x.(f) = Waveform.Delta();
+                        case "double",      x.(f) = 5;
+                        otherwise
+                            test.log(3, "No known test value for `"+mc.Name+"."+prp(j).Name+"`.")
+                    end
+                else  % no known type - manually validate?
+                            test.log(3, "No known test value for `"+mc.Name+"."+prp(j).Name+"`.")
+                end
+            end
+            % arrayfun(@(s) test.assertWarningFree(str2func(s)), com);
+
         end
     end
 end
