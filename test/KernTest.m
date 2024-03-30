@@ -123,22 +123,24 @@ classdef KernTest < matlab.unittest.TestCase
                 [x,t,tau] = dealfun(str2func(prec), x,t,tau);
                 % get matching data via interp1
                 clear z0;
-                for f = F:-1:1, for m = M:-1:1 %#ok<ALIGN> 
+                for f = F:-1:1
+                    for m = M:-1:1
                         xf = num2cell(x  (:,:,:,f),1);
                         tf = num2cell(tau(:,:,m,:),1);
                         z0(1,:,m,f) = cellfun(@(x,t) {interp1(x,1+t,terp_,0)}, xf, tf);
-                end, end
-            z0 = reshape(cat(2,z0{:}), [I,N,M,F]); % I x N x M x F
+                    end
+                end
+                z0 = reshape(cat(2,z0{:}), [I,N,M,F]); % I x N x M x F
 
-            for ord = ords'
-                [xp, tp] = dealfun(@(x)permute(x, ord), x, tau);
-                z1 = wsinterpd(xp, tp, find(ord == 1), 1, [], terp_, 0);
-                z1 = ipermute(z1, ord);
-                test.assertThat(...
-                    double(gather(z1)), IsEqualTo(double(gather(z0)), 'Using', ...
-                    NumericComparator('Within', RelativeTolerance(tol*gather(double(eps(cast(1,'like',z0)))))) ...
-                    ));
-            end
+                for ord = ords'
+                    [xp, tp] = dealfun(@(x)permute(x, ord), x, tau);
+                    z1 = wsinterpd(xp, tp, find(ord == 1), 1, [], terp_, 0);
+                    z1 = ipermute(z1, ord);
+                    test.assertThat(...
+                        double(gather(z1)), IsEqualTo(double(gather(z0)), 'Using', ...
+                        NumericComparator('Within', RelativeTolerance(tol*gather(double(eps(cast(1,'like',z0)))))) ...
+                        ));
+                end
             end
         end
         function aperture_reduction(test, dev, prec)
@@ -161,11 +163,6 @@ classdef KernTest < matlab.unittest.TestCase
                 z = slsc(repmat(b,[ones(1,6),2]), 4, 2, "ensemble", 7);
             end
         end
-    end
-
-    methods(Static)
-        % PROJ_FOLDER - Identifies the base folder for the project
-        function f = proj_folder(), f = fullfile(fileparts(mfilename('fullpath')), '..'); end
     end
 end
 
