@@ -1512,7 +1512,7 @@ classdef ChannelData < matlab.mixin.Copyable
             for j = 1:numel(chd)
                 chd(j).data = ipermute(chd(j).data, dord); % change data dimensions
                 chd(j).t0   = ipermute(chd(j).t0, dord); % change t0 dimensions
-                chd(j).order(1:numel(dord)) = chd(j).order(dord); % change data order
+                chd(j).order(dord) = chd(j).order(1:numel(dord)); % change data order
             end
         end
         function [chd, dord] = rectifyDims(chd)
