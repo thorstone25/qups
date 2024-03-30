@@ -193,11 +193,11 @@ classdef ParTest < matlab.unittest.TestCase
         function greens_das_dev(tst, dev)
             % test that greens works
             
-            tt = tic(); chd = greens(tst.us, tst.sct, 'device', -1*(dev ~= 0));
+            tt = tic(); chd = greens(tst.us, tst.sct, 'device', -1*~isequal(dev, 0));
             tst.logTestCheck(chd, tt);
 
             % test that DAS works
-            tt = tic(); chd.data = DAS(tst.us, chd, 'device', -1*(dev ~= 0));
+            tt = tic(); chd.data = DAS(tst.us, chd, 'device', -1*~isequal(dev, 0));
             tst.logTestCheck(chd, tt);
         end
         function greens_penv(tst, par_prof) % test greens
