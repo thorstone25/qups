@@ -152,6 +152,7 @@ classdef ParTest < matlab.unittest.TestCase
             if (~isempty(hcp) && ~isa(hcp, oldT)) % active pool matches
             elseif isempty(hcp) && ~strlength(oldT) % no active pool, none needed
             else % mismatch
+                try ME = []; % no error
                 disp("Switching from " + class(hcp) + " to a " + par_prof + " profile.");
                 if ~isempty(hcp), delete(hcp); end
                 switch par_prof
@@ -162,6 +163,9 @@ classdef ParTest < matlab.unittest.TestCase
                     case "Threads",   parpool("Threads"     );
                     otherwise,        % parpool(parcluster()  ); % TODO: flag for parpool vs. parcluster input
                 end
+                catch ME % error ...
+                end
+                test.assumeEmpty(ME); % were we able to switch?
             end
         end
     end
