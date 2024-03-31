@@ -32,12 +32,12 @@ function [w, d] = rayPaths(xg, zg, pj, pa, kwargs)
 %
 % % Create a grid
 % x = -5:5;
-% z = -5:5;
+% z = -4:4;
 % [xa, ya] = deal(-4, +1);
 % [xb, yb] = deal(+3, -2);
 % 
 % % Create a series of rays
-% w = rayPaths(x, z, [[xa; ya], [xb; yb]], [0;0], 'ord', "ZX");
+% w = rayPaths(x, z, [[xa; ya], [xb; yb]], [0;0]);
 % w = reshape(full(w), numel(z), numel(x), []);
 % 
 % % Display it
@@ -46,6 +46,17 @@ function [w, d] = rayPaths(xg, zg, pj, pa, kwargs)
 % title("Weights from (0,0) to ("+xa+","+ya+")."); 
 % subplot(1,2,2); pcolor(x, z, w(:,:,2));
 % title("Weights from (0,0) to ("+xb+","+yb+").");
+% 
+% % Example 2: change the method and axes
+% w = rayPaths(x, z, [[xa; ya], [xb; yb]], [0;0], "ord","XZ", "method","xiaolin");
+% w = reshape(full(w), numel(x), numel(z), []);
+% 
+% % Display it
+% figure; 
+% subplot(1,2,1); pcolor(x, z, w(:,:,1)');
+% title("XW-weights from (0,0) to ("+xa+","+ya+")."); 
+% subplot(1,2,2); pcolor(x, z, w(:,:,2)');
+% title("XW-weights from (0,0) to ("+xb+","+yb+").");
 % 
 % See also WBILERP WBILERPG XIAOLINWU_K_SCALED
 
@@ -86,7 +97,7 @@ end
 
 % get input data sizing
 osz = [Kmax, J, M];
-[ix, iz] = deal(zeros(osz, 'int32'));
+[ix, iz] = deal(zeros(osz, 'int32')); %#ok<ASGLU> 'iz' here for clarity
 iw = zeros(osz, 'like', dproto);
 d = zeros([osz(2:end)], 'like', dproto);
 
@@ -99,12 +110,12 @@ for j = numel(js):-1:1
     if kwargs.verbose, fprintf('\n'); end
 
     % get input data
-    if size(pj,2) == 1,
+    if size(pj,2) == 1
         pj_ = pj;
     else
         pj_ = sub(pj,js{j},2);
     end
-    if size(pa,2) == 1,
+    if size(pa,2) == 1
         pa_ = pa;
     else
         pa_ = sub(pa,js{j},2);
@@ -174,12 +185,16 @@ for j = numel(js):-1:1
     end
     
     % check that all values positive or nan
-    assert(all(iwo >= 0, 'all'), ...
+    assert(~any(iwo < 0, 'all'), ...
         "Found negative values - this is likely due to numerical precision issues. " ...
         + "Consider changing the grid axes and ensure that the grid contains all endpoints. " ...
         );
-    assert(all(~isnan(iwo), 'all'), 'Detected nan values - this is a bug :''(');
-    
+    switch kwargs.method
+        case "bilerp" 
+            assert(all(~isnan(iwo), 'all'), 'Detected nan values - this is a bug :''(');
+        case "xiaolin"
+            iwo = nan2zero(iwo); % NaNs are fine, negative is not
+    end
 
     % move results to MATLAB indexing % (K x J' x M)
     ix = ixo - 1;
@@ -205,12 +220,13 @@ for j = numel(js):-1:1
 
     % compute sparse tensor as matrix indices (& add
     % identical indices implicitly)
+    if kwargs.method == "xiaolin", Kmax = Kmax*2; end % adjust sizing for 2 outputs
     [~,jv,mv] = ind2sub([Kmax,Jp,M], val);
     ijv = sub2ind([I,Jp],(1 + zstride .* iz(:) + xstride .* ix(:)), jv);
     % [indij, indm] = ind2sub([int32(Kmax)*spsz(2), spsz(3)], find(val));
     w{j} = sparse(ijv, mv, double(iw(:)), double(I*Jp), double(M)); % ([I x J'] x M)
 
-    if kwargs.verbose, 
+    if kwargs.verbose 
         fprintf('Completed batch %i of %i in %0.5f seconds.\n', ...
         j, numel(js), toc(tt)); 
     end
