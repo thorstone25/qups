@@ -57,8 +57,8 @@
                 im_args.DelayTime (1,1) double {mustBePositive} = 1/15
                 im_args.Comment (1,:) string
                 im_args.DisposalMethod (1,1) string {mustBeMember(im_args.DisposalMethod, ["leaveInPlace","restoreBG","restorePrevious","doNotSpecify"])}
-                im_args.TransparentColor (1,1) double {mustBeInteger}
-                im_args.BackgroundColor (1,1) double {mustBeInteger}
+                im_args.TransparentColor (1,1) {mustBeInteger, mustBeNumericOrLogical}
+                im_args.BackgroundColor  (1,1) {mustBeInteger, mustBeNumericOrLogical}
                 im_args.ScreenSize (1,2) double 
                 im_args.Location (1,2) double 
             end
