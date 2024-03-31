@@ -210,7 +210,7 @@ classdef SimTest < matlab.unittest.TestCase
     end
 
     % Github test routine
-    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Github','syntax'})
         function github_pscat(test)
             % only test Green's function
             % switch terp, case {'nearest','linear','cubic'}, otherwise, return; end

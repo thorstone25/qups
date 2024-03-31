@@ -182,7 +182,7 @@ classdef ExampleTest < matlab.unittest.TestCase
         end
         function limitSims(test)
             if gpuDeviceCount()
-                test.pulse_lim = 25; else, test.pulse_lim = 3; 
+                test.pulse_lim = 30; else, test.pulse_lim = 3; 
             end
             if gpuDeviceCount() || (exist('oclDeviceCount', 'file') && oclDeviceCount())
                 test.scat_lim = 1e4; else, test.scat_lim = 1e2;
@@ -334,7 +334,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             else
                 base_dir = prj.RootFolder;
             end
-            flds = fullfile(base_dir, ["src", "examples"]); % blacklist classes and examples
+            flds = fullfile(base_dir, ["examples"]); % blacklist classes and examples
             run_examples(test, fls, lns, flds);
         end
     end
@@ -409,7 +409,6 @@ classdef ExampleTest < matlab.unittest.TestCase
             test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
             end
         end
-
     end
 end
 

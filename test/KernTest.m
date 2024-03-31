@@ -44,7 +44,7 @@ classdef KernTest < matlab.unittest.TestCase
 
     % dispatch
     % Github test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github'})
+    methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github','syntax'})
         function github_runconvd(test, prec, complexity)
             runconvd(test, prec, complexity, "none")% forward remaing
         end
