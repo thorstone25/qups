@@ -43,5 +43,5 @@ switch mode
     case "b-mode", r = 40; % dB
     case "echo",   r = 60; % dB
     case "phase", r = 180; % degrees
-    otherwise, error("Not implemented");
+    % otherwise, error("Not implemented");
 end
