@@ -43,7 +43,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@plot, xdcs); % supports plotting
             arrayfun(@patch, xdcs); % supports surface
             xdcs(end+2) = xdcs(1), %#ok<NOPRT> implicit empty value, display
-            arrayfun(@disp, xdcs)
+            arrayfun(@disp, xdcs) % display scalar
+            arrayfun(@(x)disp(x([])), xdcs) % display empty
+            x = copy(xdcs); x.delete(); x, arrayfun(@disp, x); % display deleted
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
 
        end
@@ -63,7 +65,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, seqs, 'UniformOutput',false); % supports plotting
             cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
-            arrayfun(@disp, seqs)
+            arrayfun(@disp, seqs) % display scalar
+            arrayfun(@(x)disp(x([])), seqs) % display empty
+            x = copy(seqs); x.delete(); x, arrayfun(@disp, x); % display deleted
 
             % polar: manipulate range/angles
             seq = SequenceRadial("focus",[0 0 1]'); % fine
@@ -103,7 +107,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@plot, scns); % supports plotting
             arrayfun(@(s) imagesc(s,randn(s.size)), scns); % supports imagesc
             scns(end+2) = scns(1),%#ok<NOPRT> implicit empty value, display
-            arrayfun(@disp, scns)
+            arrayfun(@disp, scns) % display scalar
+            arrayfun(@(x)disp(x([])), scns) % display empty
+            x = copy(scns); x.delete(); x, arrayfun(@disp, x); % display deleted
             
             % supports req'd overload methods
             [~,~,~] = arrayfun(@getImagingGrid, scns, "UniformOutput",false); 
@@ -192,6 +198,11 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             s = obj2struct(us);
             flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
             arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
+            
+            uss = copy([us us us]); % array
+            uss(end+2) = copy(us); % implicit creation
+            arrayfun(@disp, uss) % display scalar
+            arrayfun(@(x)disp(x([])), uss) % display empty
             
             % deprecation
             test.assertWarning(@()setfield(us,'sequence',Sequence()),"QUPS:UltrasoundSystem:syntaxDeprecated")
