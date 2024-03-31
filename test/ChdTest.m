@@ -39,6 +39,7 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             chdo = angle(complex(chd));
             chdo = deg2rad(rad2deg(chd));
             chdo = mag2db(abs(chd));
+            chdo = mod2db(    chd );
             chdo = real(imag(complex(chd)));
 
             % qualifiers
@@ -59,10 +60,12 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             % Filtering
             D1 = chd.getLowpassFilter(0.2, 5);
             D2 = chd.getPassbandFilter([0.1 0.4], 5);
+            D3 = chd.getLowpassFilter(0.2);
+            D4 = chd.getPassbandFilter([0.1 0.4]);
             for D = [D1 D2]
-                filter(chd, D)
+                filter(  chd, D)
                 filtfilt(chd, D)
-                fftfilt(chd, D)
+                fftfilt( chd, D)
             end
 
             % sampling
@@ -73,13 +76,48 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             [T,M,N,F] = deal(16,8,4,2);
             a = ChannelData('data', rand([T M N F]), 't0', randn([1 M 1 F]), 'order', 'TMNF');
             b = ChannelData('data', rand([T M N F]), 't0', a.t0            , 'order', 'TMNF');
+            c = copy(a); c.t0 = c.t0 + rand(size(c.t0)); % incompatible
+            d = copy(b); d.fs = d.fs * 2; % incompatible
 
-            5 + a, 
-            a + 5, 
-            a + b,
+            % should work
+            5  + a 
+            a  + 5 
+            a  + b 
             5 .* a
             a .* 5
             a .* b
+
+            % should fail
+            tst.assertError(@() a  + c , "");
+            tst.assertError(@() a  + d , "");
+            tst.assertError(@() a .* c , "");
+            tst.assertError(@() a .* d , "");
+        end
+
+        function transforming(tst)
+            [T,M,N,F] = deal(16,8,4,2);
+            chd = ChannelData('data', rand([T M N F]), 't0', randn([1 M 1 F]), 'order', 'TMNF', 'fs', 25);
+
+            % time alignment
+            chd.rectifyt0();
+            chd.alignInt();
+            chd.time = randn(size(chd.t0)) + swapdim((0 : chd.T - 1) ./ chd.fs, 2, chd.tdim);
+            
+            % join/splice
+            ChannelData.empty().join(4)
+            join(chd.splice(),4)
+            chd.splice(4)
+            chd.splice(1,4)
+
+            % data order
+            ord = [1,4,2,3];
+            chdp = chd.permuteD(ord);
+            chdi = chdp.ipermuteD(ord);
+            tst.assertEqual(chd.order, chdi.order);
+            tst.assertEqual(chd.data , chdi.data );
+            tst.assertEqual(chd.t0   , chdi.t0   );
+
+
         end
     end
 end

@@ -34,8 +34,8 @@ classdef KernTest < matlab.unittest.TestCase
 
             % random values for slsc / pcf / dmas
             us = UltrasoundSystem();
-            [us.xdc.numel, us.seq.numPulse] = deal(8);
-            [us.scan.nx, us.scan.nz] = deal(32);
+            [us.xdc.numel, us.seq.numPulse] = deal(8, 4);
+            [us.scan.nx, us.scan.nz] = deal(16,32);
             sz = [us.scan.size us.xdc.numel];
             b = complex(randn(sz), randn(sz));
             test.dargs{3} = {us, b};
@@ -165,6 +165,45 @@ classdef KernTest < matlab.unittest.TestCase
                 z = slsc(repmat(b,[ones(1,6),2]), 4, 2, "ensemble", 7);
             end
         end
+    end
+
+    methods(Test)
+        function imag_util_test(test)
+            % test animate, dbr
+            % 
+            % animate function should find the image, or make one if it
+            % can't find it. It should also permute data to match the size
+            % of the image it finds.
+            %
+            % dbr should work with default or specified options
+
+            hf = figure('Visible', 'off');
+            [us, b] = deal(test.dargs{3}{:}); % get data
+            ftls = "Frm " + (1:size(b,4)); % frame titles
+            for tp = [true, false] % transpose
+            for multi_image = [true, false] % multiple images
+            for init_fig = [true, false] % initialize?
+                [b0, scn] = deal(b, copy(us.scan));
+                if tp, ord = [2,1,3,4]; b0=permute(b0,ord); scn.order=scn.order(ord(1:3)); end
+                if multi_image, bs = {b0,b0}; else, bs = {b0}; end
+                if init_fig, hs = {cellfun(@(b)imagesc(scn,b,nexttile()), bs)}; else, hs = {}; end
+                itls = "View " + (1:numel(bs)); % image titles
+                ttl_set = {"", ftls, ftls', itls, itls', ftls'+" | "+itls, ftls+" | "+itls'};
+                for ttl = ttl_set
+                    animate(bs, hs{:}, "loop", false,"fs",Inf,"fn",true,"title",ttl{1});
+                end
+                clf(hf);
+            end
+            end
+            end
+
+            % test that defaults work
+            imagesc(us.scan, b); dbr;
+            arrayfun(@dbr, ["b-mode", "phase", "echo"])
+            
+            close(hf)
+        end
+
     end
 end
 

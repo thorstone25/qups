@@ -43,6 +43,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@plot, xdcs); % supports plotting
             arrayfun(@patch, xdcs); % supports surface
             xdcs(end+2) = xdcs(1), %#ok<NOPRT> implicit empty value, display
+            arrayfun(@disp, xdcs)
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
 
        end
@@ -50,14 +51,35 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITSEQ - Assert that Sequence constructors initialize
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            seqs = [Sequence(), SequenceRadial(), SequenceGeneric()];
+            typs = ["FSA","PW","FC","DV","VS"];
+            seqs = [arrayfun(@(t) Sequence(      "type",t), typs(1:end)), ...
+                    arrayfun(@(t) SequenceRadial("type",t), typs(2:end)), ...
+                                  SequenceGeneric(), ...
+                    ];
+            [seqs([seqs.type] == "FSA").numPulse] = deal(1);
             arrayfun(@(seq) test.assertThat(seq, IsInstanceOf('Sequence')), seqs);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale            
             seqs(end+2) = seqs(1), %#ok<NOPRT> implicit empty value, display
             s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, seqs, 'UniformOutput',false); % supports plotting
             cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
+            arrayfun(@disp, seqs)
 
+            % polar: manipulate range/angles
+            seq = SequenceRadial("focus",[0 0 1]'); % fine
+            seq = SequenceRadial("focus",[-0.5 0 0.5; 0 0 sqrt(2)/2; 0.5 0 0.5]'); % fine
+            seq = SequenceRadial("angles",-1:1); % fine
+            seq = SequenceRadial("ranges",[1 1 1]); % fine
+            seq = SequenceRadial("angles",-1:1, "ranges",[1 1 1]); % fine
+            seq = SequenceRadial("angles",   0, "ranges",[1 1 1]); % fine
+            seq = SequenceRadial("angles",-1:1, "ranges",[1]); % fine
+            test.assertError(@()SequenceRadial("focus",[0 0 1]',"angles",0),""); % bad
+            test.assertError(@()SequenceRadial("focus",[0 0 1]',"ranges",1),""); % bad
+            seq = SequenceRadial("angles",-1:1, "ranges",2*[1 1 1]); % fine
+            seq.moveApex([0 0 -1]); % moving apex should not move range/angle
+            test.assertTrue(isalmostn(seq.angles, -1:1))
+            test.assertTrue(isalmostn(seq.ranges, 2*[1 1 1]))
+            test.assertTrue(isalmostn(seq.apex, [0 0 -1]'))
 
             % deprecation
             seq = Sequence();
@@ -81,6 +103,11 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@plot, scns); % supports plotting
             arrayfun(@(s) imagesc(s,randn(s.size)), scns); % supports imagesc
             scns(end+2) = scns(1),%#ok<NOPRT> implicit empty value, display
+            arrayfun(@disp, scns)
+            
+            % supports req'd overload methods
+            [~,~,~] = arrayfun(@getImagingGrid, scns, "UniformOutput",false); 
+            [~]     = arrayfun(@positions     , scns, "UniformOutput",false); 
 
             % test assigning / retrieving sizing
             dvars = 'XYZRUVW'; % dist
@@ -101,6 +128,40 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
                 for a = ax, scn.("d"+a) = 1/2; end % dist or ang
                 test.assertTrue(all(arrayfun(@(c) scn.("d"+c),ax) == 1/2), "Setting the scan resolution failed for a " + class(scn) + "!");
             end
+
+            % convert polar to cart
+            ScanCartesian(ScanPolar()),
+            ScanCartesian(ScanSpherical()),
+
+            % deprecations
+            test.assertWarning(@()scanCartesian(ScanPolar()    ), "QUPS:ScanPolar:syntaxDeprecated"    );
+            test.assertWarning(@()scanCartesian(ScanSpherical()), "QUPS:ScanSpherical:syntaxDeprecated");
+
+        end
+        function initwv(test)
+            % INITWV - Assert that the Waveform constructor initializes
+            import matlab.unittest.constraints.IsInstanceOf;
+            wv = Waveform(); % init
+            test.assertThat(wv, IsInstanceOf('Waveform'));
+            
+            % multiple ways to init
+            dt = 1/8;
+            fc = 1/2;
+            t = 0 : dt : 1;
+            f = @(t)sinpi(2*fc*t);
+            x = f(t);
+            wv = Waveform(); 
+            wv = Waveform("samples", x, "t",  t);
+            wv = Waveform("samples", x, "t0", t(1), "dt", dt  , "tend",t(end));
+            wv = Waveform("samples", x, "t0", t(1), "fs", 1/dt, "tend",t(end));
+            wv = Waveform("fun"    , f, "t",  t);
+            wv = Waveform("fun"    , f, "t0", t(1), "dt", dt  , "tend",t(end));
+            wv = Waveform("fun"    , f, "t0", t(1), "fs", 1/dt, "tend",t(end));
+
+            scale(wv, 'time', 1e6); % supports scaling
+            obj2struct(wv); % supports specialized struct conversion
+            plot(wv); % supports plot
+            plot(wv, "freqs", true); % supports frequency plot
         end
         function initchd(test)
             % INITCHD - Assert that a ChannelData constructor initializes
@@ -154,6 +215,16 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             struct(sct); % specialized struct conversion
             imagesc(med, ScanCartesian()); % support image on cartesian grid
             plot(sct); % supports plot
+
+            % special constructors
+            grd = ScanCartesian();
+            Medium.Sampled(grd)
+            Scatterers.Diffuse(grd)
+            Scatterers.Grid()
+
+            % deprecated properties
+            test.assertWarning(@()setfield(med,'alphap0','TMN'), "QUPS:Medium:syntaxDeprecated")
+            test.assertWarning(@()med.alphap0                  , "QUPS:Medium:syntaxDeprecated")
 
         end
         function staticTest(test, clss)

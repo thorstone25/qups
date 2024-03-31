@@ -38,9 +38,9 @@
             % frame2gif(fr, 'noise', 'LoopCount', Inf, 'DelayTime', 1/fps);
             %
             % % Customize the GIF with valid arguments for imwrite
-            % frame2gif(fr, 'WriteMode', 'append', 'DisposalMethod', 'restorePrevious')
+            % frame2gif(fr, 'WriteMode', 'overwrite', 'DisposalMethod', 'restorePrevious')
             % 
-            % See also ANIMATE SCAN/GIF CHANNELDATA/GIF IMWRITE
+            % See also ANIMATE SCAN.GIF CHANNELDATA.GIF IMWRITE
 
             arguments
                 fr struct
