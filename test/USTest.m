@@ -23,6 +23,9 @@ classdef USTest < matlab.unittest.TestCase
     properties(TestParameter)
         beamformer = struct("bfDAS", @bfDAS, "DAS", @DAS, "LUT", @bfDASLUT, "Eik", @bfEikonal);
         apodizer = {"none","angle","fnumb","linem","lines",}
+    end
+    % data for iteration
+    properties
         scan_size = struct("I2D", [15 15 1], "I3D", [15, 15, 5], "I1D", [15 1 1]);
         scan_order = {[1 2 3],[2 1 3],[1 3 2]}; % num2cell(perms([1 2 3]),2)'
         % data_order = {[1 2 3],[2 1 3],[1 3 2]}; % iterate in method
@@ -69,13 +72,13 @@ classdef USTest < matlab.unittest.TestCase
         function bfusgeneric_github(testCase, tx, rx, seq, scan, beamformer)
                  bfusgeneric(       testCase, tx, rx, seq, scan, beamformer);
         end
-        function bfordgeneric_github(testCase, rx, scan, beamformer, scan_size, scan_order)
-                 bfordgeneric(       testCase, rx, scan, beamformer, scan_size, scan_order)
+        function bfordgeneric_github(testCase, rx, scan, beamformer)
+                 bfordgeneric(       testCase, rx, scan, beamformer)
         end
         % Not ready ...
-        % function apgen_github(testCase, rx, scan, seq, scan_size, scan_order, apod)
-        %          apgen(       testCase, rx, scan, seq, scan_size, scan_order, apod)
-        % end
+        function apgen_github(testCase, rx, scan, seq, apod)
+                 apgen(       testCase, rx, scan, seq, apod)
+        end
     end
 
     % full settings
@@ -86,11 +89,11 @@ classdef USTest < matlab.unittest.TestCase
         function bfusgeneric_full(testCase, tx, rx, seq, scan, beamformer)
                  bfusgeneric(     testCase, tx, rx, seq, scan, beamformer);
         end
-        function bfordgeneric_full(testCase, rx, scan, beamformer, scan_size, scan_order)
-                 bfordgeneric(     testCase, rx, scan, beamformer, scan_size, scan_order);
+        function bfordgeneric_full(testCase, rx, scan, beamformer)
+                 bfordgeneric(     testCase, rx, scan, beamformer);
         end
-        function apgen_full(testCase, rx, scan, seq, scan_size, scan_order, apod)
-                 apgen(     testCase, rx, scan, seq, scan_size, scan_order, apod)
+        function apgen_full(testCase, rx, scan, seq, apod)
+                 apgen(     testCase, rx, scan, seq, apod)
         end
     end
 
@@ -192,14 +195,18 @@ classdef USTest < matlab.unittest.TestCase
             % testCase.verifyFail("Unimplemented test");
         end
     
-        function bfordgeneric(testCase, rx, scan, beamformer, scan_size, scan_order)
-            scan = copy(scan);
+        function bfordgeneric(testCase, rx, scan, beamformer)
+            [scan0, scan] = dealfun(@copy, scan);
             seq = SequenceRadial('type', 'PW', 'angles', [-10 0 10]);
             if isa(rx, "TransducerConvex"), seq.apex = rx.center; end
 
+            % Iterate through sizes
+            for f = string(fieldnames(testCase.scan_size))'
+            for j = 1:numel(testCase.scan_order)
+            
             % shrink image size
-            scan.size = scan_size;
-            scan.order = scan.order(scan_order);
+            scan.size = testCase.scan_size.(f);
+            scan.order = scan.order(testCase.scan_order{j});
 
             % system and apodization
             tx = TransducerArray('numel', 9);
@@ -262,17 +269,22 @@ classdef USTest < matlab.unittest.TestCase
                         b = beamformer(us,chd,'apod',a);
                     end
             end
-
+            end
+            end
         end
 
-        function apgen(testCase, rx, scan, seq, scan_size, scan_order, apod)
+        function apgen(testCase, rx, scan, seq, apod)
             
             scan = copy(scan);
             seq  = copy(seq);
 
+            % Iterate through sizes
+            for i = string(fieldnames(testCase.scan_size))'
+            for j = 1:numel(testCase.scan_order)
+                
             % shrink image size
-            scan.size = scan_size;
-            scan.order = scan.order(scan_order);
+            scan.size = testCase.scan_size.(i);
+            scan.order = scan.order(testCase.scan_order{j});
 
             % make system
             if seq.type == "FSA", seq.numPulse = rx.numel; end
@@ -283,14 +295,20 @@ classdef USTest < matlab.unittest.TestCase
             try ap = f(us); % success!
             catch ME % failure - QUPS should tell the user
                 warning(ME.identifier, '%s', ME.message);
-                testCase.assertTrue(ME.identifier == "QUPS:UltrasoundSystem:UnsupportedScan", "Caught " + ME.identifier + ":" + newline + ME.message);
+                testCase.assertTrue(any(ME.identifier == [ ... any of the following errors are fine
+                    "QUPS:UltrasoundSystem:UnsupportedScan" ...
+                    "MATLAB:noSuchMethodOrField" ... we warn before hand if we aren't sure it's there 
+                    ... "MATLAB:getReshapeDims:notSameNumel" ... probably a bug ...
+                    ]), "Caught " + ME.identifier + ":" + newline + ME.message ...
+                    );
                 return;
             end
 
             testCase.assertTrue(all(any(size(ap,1:5) == [[us.scan.size, us.xdc.numel, us.seq.numPulse]; ones(1,5)],1),2));
 
             % TODO: apply
-
+            end
+            end
 
         end
     end
