@@ -93,7 +93,18 @@ classdef ChannelData < matlab.mixin.Copyable
             % channel_data = QUPS2USTB(..., fmod) sets the modulation 
             % frequency to fmod. The default is 0.
             % 
+            % Example:
+            % % Define plane wave data
+            % xdc = TransducerArray('numel', 4);
+            % seq = SequenceRadial('angles', [-10 0 10]);
+            % [T, F] = deal(16, 2); % time, frames
+            % x = rand([T,xdc.numel,seq.numPulse,F]); % data
+            % chd = ChannelData('data', x, 'order', 'TNMF');
             % 
+            % % Export
+            % uchannel_data = QUPS2USTB(chd, seq, xdc)
+            % 
+            % See also UltrasoundSystem.QUPS2USTB ChannelData.UFF
             if nargin < 4, fmod = 0; end
             chd = rectifyDims(chd); % make sure it's in order 'TNM' first
             uchannel_data = uff.channel_data(...
@@ -167,12 +178,43 @@ classdef ChannelData < matlab.mixin.Copyable
 
     methods(Static)
         function chd = UFF(uchannel_data, seq, xdc)
+            % UFF - Construct a ChannelData from a uff.channel_data
+            %
+            % chd = UFF(uchannel_data) constructs a ChannelData chd from
+            % the uff.channel_data uchannel_data.
+            %
+            % Example:
+            % % First, we need a uff.probe
+            % prb = uff.linear_array();
+            % prb.N = 4;
+            % prb.pitch = 300e-6;
+            % 
+            % % Then a sequence (uff.wave array)
+            % az = {-10, 0, 10}; % plane wave angles
+            % nrm = cellfun(@(az) {uff.point('azimuth', deg2rad(az))}, az); % normals
+            % wav = cellfun(@(az) uff.wave(), az); % make the sequence
+            % [wav.wavefront] = deal(uff.wavefront.plane);
+            % [wav.source] = deal(nrm{:});
+            % [wav.probe] = deal(prb);
+            % 
+            % % Then create the channe data
+            % [T, F] = deal(16, 2); % Time, Frames
+            % chn_dta = uff.channel_data();
+            % chn_dta.probe = prb;
+            % chn_dta.data = rand([T,prb.N,numel(wav),F]);
+            % chn_dta.sampling_frequency = 1;
+            % chn_dta.initial_time = 0;
+            % chn_dta.sequence = wav;
+            % 
+            % % Import to QUPS
+            % chd = ChannelData.UFF(chn_dta);
+            % 
+            % See also: UltrasoundSystem.UFF Sequence.UFF Transducer.UFF Scan.UFF
             arguments
                 uchannel_data (1,1) uff.channel_data
                 seq (1,1) Sequence = Sequence.UFF(uchannel_data.sequence, uchannel_data.sound_speed);
                 xdc Transducer {mustBeScalarOrEmpty} = Transducer.UFF(uchannel_data.probe); % only needed for FSA
-            end
-            
+            end            
             
             t0 = [uchannel_data.sequence.delay]; % get the start time in QUPS format
             switch seq.type
@@ -473,6 +515,21 @@ classdef ChannelData < matlab.mixin.Copyable
     % math overloads
     methods
         function c = times(a, b)
+            % TIMES - Multiply ChannelData data
+            %
+            % chd .* a or a .* chd multiplies the numeric value a to the
+            % data property of the ChannelData chd.
+            %
+            % chd1 .* chd2 multiplies the data of the ChannelDatas chd1 and
+            % chd2. The time axes of chd1 and chd2 must be compatible.
+            %
+            % Example:
+            % chds = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
+            % chds = chds + (- mean(chds.data,'all')); % de-bias
+            % chds = splice(chds, 4); % split into frames
+            % 2.*chds(1) + (-1).*chds(2), % scale and add over the 2 frames
+            % 
+            % See also ChannelData.plus
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
                 c = copy(a); c.data = times(a.data, b);
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
@@ -487,6 +544,21 @@ classdef ChannelData < matlab.mixin.Copyable
         end
     
         function c = plus(a, b)
+            % PLUS - Add ChannelData data
+            %
+            % chd + a or a + chd adds the numeric value a to the data
+            % property of the ChannelData chd.
+            %
+            % chd1 + chd2 adds the data of the ChannelDatas chd1 and chd2.
+            % The time axes of chd1 and chd2 must be compatible.
+            %
+            % Example:
+            % chds = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
+            % chds = chds + (- mean(chds.data,'all')); % de-bias
+            % chds = splice(chds, 4); % split into frames
+            % 2.*chds(1) + (-1).*chds(2), % scale and add over the 2 frames
+            % 
+            % See also ChannelData.times
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
                 c = copy(a); c.data = plus(a.data, b);
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
@@ -1173,6 +1245,27 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs] = deal(n0_, 1);
         end    
         function f = fftaxis(chd)
+            % FFTAXIS - Return the FFT axis
+            %
+            % f = chd.fftaxis() returns the frequencies f corresponding to
+            % chd.fft()
+            %
+            % Example:
+            % [T, N, fs, fc] = deal(512, 64, 200, 50);
+            % t = (0 : T - 1)' ./ fs; % time
+            % n = (1 : N) - (N + 1) / 2; % frequency offset
+            % w = repmat(gausswin(32),[1 64]); % blurring window
+            % x = convd(sinpi(2*(fc+n).*t), w, 1);
+            % 
+            % chd = ChannelData('data', x, 'fs', fs);
+            % figure; tiledlayout('flow');
+            % nexttile(); h    = imagesc(chd);
+            % nexttile(); h(2) = imagesc(fft(chd), 'YData', chd.fftaxis);
+            % dbr echo;
+            % ttls = ["Time", "Frequency"] + " Domain";
+            % arrayfun(@title, [h.Parent], ttls);
+            % 
+            % See also ChannelData.fft FFT
             f = cast(swapdim((0 : chd.T - 1),2,chd.tdim) .* chd.fs ./ chd.T, 'like', real(chd.data([])));
         end
     end
@@ -1367,6 +1460,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % The start time t0 must be either full in dimension dim or 
             % identical in dimension dim for all ChannelData objects.
             %
+            % Example:
+            % chd1 = ChannelData('data', rand([5,4,3]));
+            % chd2 = ChannelData('data', rand([5,4,3]));
+            % chds = join([chd1, chd2], 4), % join as frames (4th dim)
+            % 
             % See also CHANNELDATA/SPLICE
             
             if isempty(chds), sz=size(chds); sz(dim)=1; chd=reshape(chds, sz); return; end % trivial case
@@ -1413,6 +1511,11 @@ classdef ChannelData < matlab.mixin.Copyable
             % title('Estimated frequency per transmit');
             % legend({'True', 'Estimated'});
             % 
+            % Example:
+            % chd = ChannelData('data', rand([5,4,3,2]));
+            % chd = splice(chd, 4), % split over frames
+            % chd(1), chd(2)
+            % 
             % See also CHANNELDATA/JOIN SUB
             
             arguments
@@ -1441,6 +1544,16 @@ classdef ChannelData < matlab.mixin.Copyable
 
         end
         function chd = subD(chd, ind, dim)
+            % SUBD - Subindex data
+            %
+            % chd = subD(chd, ind, dim) subindexes the ChannelData chd at
+            % indices ind in dimension dim
+            %
+            % Example:
+            % chd = ChannelData('data', rand([5,4,3,2]));
+            % chd.subD([1,3,5], 1)
+            % 
+            % See also SUB CHANNELDATA.PERMUTED
             if ~iscell(ind), ind = {ind}; end % enforce cell syntax
             tind = ind; % separate copy for the time indices
             tind(size(chd.time,dim) == 1) = {1}; % set singleton where t0 is sliced
@@ -1488,20 +1601,39 @@ classdef ChannelData < matlab.mixin.Copyable
             end
         end
         function chd = swapdimD(chd, i, o)
+            % SWAPDIMD - Swap dimensions of the data
+            % 
+            % chd = swapdimD(chd, i, o) swaps dimensions i with dimensions
+            % o of the data.
+            % 
+            % Example:
+            % chd = ChannelData('data', rand([4,3,2]), 'order', 'TMN')
+            % swapdimD(chd,2,3)
+            % 
+            % See also: CHANNELDATA.PERMUTED CHANNELDATA.IPERMUTED SWAPDIM
             D = max([i,o,ndims(chd), cellfun(@numel, {chd.order}), cellfun(@ndims, {chd.data})]); % max possible dim
-            ord = 1:D;
+            ordr = 1:D;
             l = min(min(i),min(o)) : max(max(i),max(o)); % all indices within swap
             i = [i, setdiff(l, i)]; % expanded input indices
             o = [o, setdiff(l, o)]; % expanded output indices
-            ord(o) = i; % full permutation ordering
+            ordr(o) = i; % full permutation ordering
             for j = 1:numel(chd)
                 chd(j) = expandDims(chd(j), D); % expand to have enough dim labels
                 chd(j).data = swapdim(chd(j).data, i, o); % swap data
                 chd(j).t0   = swapdim(chd(j).t0  , i, o); % swap start time
-                chd(j).order  = chd(j).order(ord); % swap labels
+                chd(j).order  = chd(j).order(ordr); % swap labels
             end
         end
         function chd = permuteD(chd, dord)
+            % PERMUTED - Permute data dimensions
+            %
+            % chd = permuteD(chd, dord) permutes the dimensions of the data
+            %
+            % Example:
+            % chd = ChannelData('data', rand([4,3,2]), 'order', 'TMN')
+            % permuteD(chd, [3,1,2])
+            % 
+            % See also: CHANNELDATA.IPERMUTED CHANNELDATA.SWAPDIMD PERMUTE
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
             for j = 1:numel(chd)
                 chd(j).data = permute(chd(j).data, dord); % change data dimensions
@@ -1510,6 +1642,16 @@ classdef ChannelData < matlab.mixin.Copyable
             end
         end
         function chd = ipermuteD(chd, dord)
+            % IPERMUTED - Inverse permute data dimensions
+            %
+            % chd = permuteD(chd, dord) permutes the dimensions of the data
+            %
+            % Example:
+            % chd = ChannelData('data', rand([4,3,2]), 'order', 'TMN')
+            % permuteD(chd, [3,1,2])
+            %
+            % See also: CHANNELDATA.PERMUTED CHANNELDATA.SWAPDIMD IPERMUTE
+
             chd = expandDims(chd, max(dord)); % expand to have enough dim labels
             for j = 1:numel(chd)
                 chd(j).data = ipermute(chd(j).data, dord); % change data dimensions
@@ -1523,16 +1665,32 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd = RECTIFYDIMS(chd) sets the dimension of the data to
             % their default order of time x receive x transmit x ...
             %
+            % Example:
+            % chd = ChannelData('data', rand([4,3,2]), 'order', 'TMN')
+            % chd.rectifyDims()
+            %
+            % See also ChannelData.rectifyt0 ChannelData.permuteD
             for j = 1:numel(chd)
                 chdj = chd(j);
                 D = gather(max(numel(chdj.order), ndims(chdj.data))); % number of dimensions
                 [~, dord] = ismember('TNM', chdj.order); % want this order to start
-                dord = [dord, setdiff(1:D, dord)]; %#ok<AGROW> % make sure we have all dimensions accounted for
+                dord = [dord, setdiff(1:D, dord)]; %#ok<AGROW> (not growing) % make sure we have all dimensions accounted for
                 chd(j) = permuteD(chdj, dord); % set dims to match in lower dimensions
                 % chd = truncateDims(chd); % remove unnecessary dimensions
             end
         end
         function chd = truncateDims(chd)
+            % TRUNCATEDIMS - Remove extra singular dimensions
+            %
+            % chd = TRUNCATEDIMS(chd) removes extra dimensions in the
+            % 'order' property that are unnecessary. 
+            %
+            % Example:
+            % chd = ChannelData('data', rand([4,3,2]), 'order', 'TMNFGH')
+            % chd.truncateDims()
+            %
+            % See also ChannelData.rectifyt0 ChannelData.rectifyDims
+
             nd = numel(chd.order); % number of (labelled) dimensions
             [~,o] = ismember('TMN', chd.order); % position of necessary params
             sdims = find(size(chd.data,1:nd) ~= 1); % singleton dims

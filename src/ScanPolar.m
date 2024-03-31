@@ -181,7 +181,14 @@ classdef ScanPolar < Scan
             % scan = SCANCARTESIAN(self) creates a ScanCartesian object
             % encompassing the region covered by the ScanPolar self.
             %
-            % See also SCANCARTESIAN/SCANCARTESIAN
+            % Example:
+            % scn_pol = ScanPolar(), % polar Scan
+            % scn_crt = ScanCartesian(scn_pol), % Cartesian Scan
+            % bnds = [scn_crt.xb; scn_crt.yb; scn_crt.zb]; % Cartesian boundaries
+            % assert(all( bnds(:,1) <= scn_pol.positions() ...
+            %           & bnds(:,2) >= scn_pol.positions(),'all'));
+            % 
+            % See also SCANCARTESIAN
 
             p = self.positions();
             grd = num2cell([min(p,[],2:4), max(p,[],2:4)],2); % 3 x 2 min/max

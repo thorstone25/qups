@@ -346,7 +346,32 @@ classdef Medium < matlab.mixin.Copyable
             % maps = getFullwaveMap(med, scan) returns a map sampled on
             % the Scan scan.
             %
-            % See also SCANCARTESIAN MEDIUM/PROPS
+            % Example:
+            % % Define properties for two-layers
+            % [c0, r0] = deal(1500, 1000); % sound speed / density
+            % [c1, r1] = deal(1600, 1200); % sound speed / density
+            % [a0, b0] = deal(50e-6, 6  ); % attenuation / non-linearity
+            % 
+            % % Define the region
+            % grd = ScanCartesian();
+            % z01 = median(grd.z);
+            % f   = @(p) sub(p,3,1) > z01; % 2nd region predicate
+            % 
+            % % Define the Medium
+            % med = Medium('c0',1500,'rho0',r0,'alpha0',a0,'BoA0',b0);
+            % med.pertreg{1} = {f, [c1, r1]};
+            % 
+            % % Display the Medium
+            % figure;
+            % ttls = ["Sound Speed", "Density", "Attenuation", "Non-Linearity"];
+            % h = imagesc(med, grd, "props", ["c", "rho", "alpha", "BoA"]);
+            % arrayfun(@colorbar, [h.Parent])
+            % arrayfun(@title   , [h.Parent], ttls);
+            % 
+            % % Get a Fullwave compatible map
+            % maps = getFullwaveMap(med, grd),
+            % 
+            % See also MEDIUM.GETMEDIUMKWAVE MEDIUM.PROPS
 
             arguments
                 med Medium
@@ -376,7 +401,32 @@ classdef Medium < matlab.mixin.Copyable
             % compatible struct from the Medium med and the ScanCartesian
             % scan.
             %
-            %
+            % Example:
+            % % Define properties for two-layers
+            % [c0, r0] = deal(1500, 1000); % sound speed / density
+            % [c1, r1] = deal(1600, 1200); % sound speed / density
+            % [a0, b0] = deal(50e-6, 6  ); % attenuation / non-linearity
+            % 
+            % % Define the region
+            % grd = ScanCartesian();
+            % z01 = median(grd.z);
+            % f   = @(p) sub(p,3,1) > z01; % 2nd region predicate
+            % 
+            % % Define the Medium
+            % med = Medium('c0',1500,'rho0',r0,'alpha0',a0,'BoA0',b0);
+            % med.pertreg{1} = {f, [c1, r1]};
+            % 
+            % % Display the Medium
+            % figure;
+            % ttls = ["Sound Speed", "Density", "Attenuation", "Non-Linearity"];
+            % h = imagesc(med, grd, "props", ["c", "rho", "alpha", "BoA"]);
+            % arrayfun(@colorbar, [h.Parent])
+            % arrayfun(@title   , [h.Parent], ttls);
+            % 
+            % % Get a k-Wave compatible map
+            % kmedium = getMediumKWave(med, grd),
+            % 
+            % See also ULTRASOUNDSYSTEM.KSPACEFIRSTORDER MEDIUM.PROPS
             arguments
                 med Medium
                 scan Scan
@@ -567,7 +617,7 @@ classdef Medium < matlab.mixin.Copyable
             % [grid.dx, grid.dy, grid.dz] = deal(us.lambda / 8); % set grid resolution
             %
             % % Create a diffuse scattering distribution
-            % med = Medium.Diffuse(us, grid, 'c0', 1540);
+            % med = Medium.Diffuse(us, grid);
             %
             % % display
             % figure;

@@ -1,13 +1,15 @@
 % SCAN - Imaging region definition
 %
 % The Scan class stores definitions for the imaging region. A Scan
-% provides a method to return the image pixel coordinates as an ND-array of
-% up to 3 dimensions as well as the row vectors for each individual
-% dimension. It also provides convenience methods for defining apodization
-% array defined for the Scan.
+% provides a `positions` method to return the image pixel coordinates as an
+% ND-array of up to 3 dimensions as well as the row vectors for each axis.
+% The order of the axes is determined by the `order` property. Redefining
+% the order will transpose or, more generally, permute the image.
 % 
-% Scan is an abstract class. To instantiate a Scan, create a
-% ScanCartesian or a ScanPolar.
+% Simulation classes reuse a ScanCartesian to define a Cartesian grid.
+% 
+% Scan is an Abstract class. To instantiate a Scan, use a non-Abstract
+% class such as a ScanCartesian or a ScanPolar.
 % 
 % See also SCANCARTESIAN SCANPOLAR
 
@@ -35,16 +37,16 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
 
     % USTB interop
     methods
-        % QUPS2USTB - Convert a Scan to a USTB/UFF compatible uff.scan
-        %
-        % uscan = QUPS2USTB(scan) returns a uff.scan object.
-        %
-        % Example:
-        % uscan = QUPS2USTB(ScanCartesian());
-        %
-        % See also UFF.SCAN
-        % USTB interface methods
         function uscan = QUPS2USTB(scan)
+            % QUPS2USTB - Convert a Scan to a USTB/UFF compatible uff.scan
+            %
+            % uscan = QUPS2USTB(scan) returns a uff.scan object.
+            %
+            % Example:
+            % uscan = QUPS2USTB(ScanCartesian());
+            %
+            % See also UFF.SCAN
+            % USTB interface methods
             uscan = uff.scan('xyz', reshape(scan.positions(),3,[])');
         end
 
@@ -157,23 +159,23 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
     end
     methods
 
-        % SCALE - Scale units
-        %
-        % scan = SCALE(scan, 'dist', factor) scales the distance of the
-        % properties by factor. This can be used to convert from meters to
-        % millimeters for example.
-        %
-        % Example:
-        %
-        % % Create a scan
-        % scan = ScanCartesian('xb', [-2e-3, 2e-3]); % in meters
-        %
-        % % convert from meters to millimeters
-        % scan = scale(scan, 'dist', 1e3); % in millimeters
-        % scan.xb
-        %
-        % 
         function scan = scale(scan, kwargs)
+            % SCALE - Scale units
+            %
+            % scan = SCALE(scan, 'dist', factor) scales the distance of the
+            % properties by factor. This can be used to convert from meters
+            % to millimeters for example.
+            %
+            % Example:
+            %
+            % % Create a scan
+            % scan = ScanCartesian('xb', [-2e-3, 2e-3]); % in meters
+            %
+            % % convert from meters to millimeters
+            % scan = scale(scan, 'dist', 1e3); % in millimeters
+            % scan.xb
+            %
+            %
             arguments
                 scan ScanGeneric
                 kwargs.dist (1,1) double

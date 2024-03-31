@@ -104,7 +104,7 @@ function z = slsc(x, dim, L, method, kdim, kwargs)
 %
 % % compute SLSC with a time kernel
 % L = floor(us.rx.numel/4); % maximum lag
-% zk = slsc(bk, mdim, L, "average", kdim);
+% zk = slsc(bk, mdim, L, "ensemble", kdim);
 %
 % % show the SLSC image
 % figure;

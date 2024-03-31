@@ -1,11 +1,11 @@
 % TRANSDUCER - Abstract Transducer class
 %
-% Superclass for a medical ultrasound transducer. Any TRANSDUCER has
+% Superclass for a diagnostic ultrasound transducer. Any TRANSDUCER has
 % methods for the positions and orientations of it's elements as well as
 % the characteristics of the elements (width/height, impulse response,
 % central frequency, etc.). This class offers definitions for common
 % transducers and conversion functions between real transducers (mainly
-% from Verasonics) and simulation programs (k-Wave, Fullwave, FieldII).
+% from Verasonics) and simulation programs (k-Wave, FieldII, MUST).
 %
 % See also TRANSDUCERARRAY TRANSDUCERCONVEX TRANSDUCERMATRIX
 
@@ -386,25 +386,25 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % toolbox conversion functions
     methods
-        % GETFIELDIIAPERTURE - Create a FieldII aperture object
-        %
-        % ap = GETFIELDIIAPERTURE(xdc) creates a FieldII aperture ap
-        % from the Transducer xdc. If FieldII is not initialized before
-        % calling this function, it will be initiated.
-        %
-        % ap = GETFIELDIIAPERTURE(xdc, sub_div) divides the width and 
-        % height of each element by into a sub_div(1) x sub_div(2)
-        % sub-elements. The default is [1 1].
-        %
-        % ap = GETFIELDIIAPERTURE(xdc, sub_div, focus) creates an aperture
-        % with an elevational focus at the point focus. A focal depth of
-        % Inf represents no focus. The default is [0 0 Inf].
-        % 
-        % When creating the aperture, an infinite focus in instead set to
-        % realmax('single').
-        %
-        % See also ULTRASOUNDSYSTEM.CALC_SCAT_ALL, FIELD_INIT
         function aperture = getFieldIIAperture(xdc, sub_div, focus)
+            % GETFIELDIIAPERTURE - Create a FieldII aperture object
+            %
+            % ap = GETFIELDIIAPERTURE(xdc) creates a FieldII aperture ap
+            % from the Transducer xdc. If FieldII is not initialized before
+            % calling this function, it will be initiated.
+            %
+            % ap = GETFIELDIIAPERTURE(xdc, sub_div) divides the width and
+            % height of each element by into a sub_div(1) x sub_div(2)
+            % sub-elements. The default is [1 1].
+            %
+            % ap = GETFIELDIIAPERTURE(xdc, sub_div, focus) creates an aperture
+            % with an elevational focus at the point focus. A focal depth of
+            % Inf represents no focus. The default is [0 0 Inf].
+            %
+            % When creating the aperture, an infinite focus in instead set to
+            % realmax('single').
+            %
+            % See also ULTRASOUNDSYSTEM.CALC_SCAT_ALL, FIELD_INIT
             arguments
                 xdc Transducer
                 sub_div (1,2) double = [1,1]
@@ -437,18 +437,17 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             end
         end
 
-
-        % QUPS2USTB - Create a USTB compatible uff.probe object
-        %
-        % probe = QUPS2USTB(xdc) creates a uff.probe probe from the
-        % Transducer xdc. USTB must be on the path.
-        %
-        % Example:
-        %
-        % probe = QUPS2USTB(TransducerArray.L12_3v());
-        % 
-        % See also UFF.PROBE
         function probe = QUPS2USTB(xdc)
+            % QUPS2USTB - Create a USTB compatible uff.probe object
+            %
+            % probe = QUPS2USTB(xdc) creates a uff.probe probe from the
+            % Transducer xdc. USTB must be on the path.
+            %
+            % Example:
+            %
+            % probe = QUPS2USTB(TransducerArray.L12_3v());
+            %
+            % See also UFF.PROBE
             arguments, xdc Transducer, end
             probe = arrayfun(@(xdc) uff.probe(...
                 'geometry', [ ...
@@ -872,8 +871,8 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         function karray = kWaveArray(xdc, dim, og, karray_args)
             % KWAVEARRAY - Create a kWaveArray object from the Transducer
             %
-            % karray = KWAVEARRAY(self, dim, og) creates a kWaveArray from the
-            % Transducer self defined on a kWaveGrid with dim dimensions and
+            % karray = KWAVEARRAY(xdc, dim, og) creates a kWaveArray from the
+            % Transducer xdc defined on a kWaveGrid with dim dimensions and
             % origin og.
             %
             % karray = KWAVEARRAY(..., Name, Value, ...) forwards Name/Value

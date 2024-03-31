@@ -12,10 +12,10 @@ function [x, ord] = swapdim(x, i, o)
 % copy and falls back to permute when required.
 % 
 % Example:
-%   x = rand([1,2,3,4,5]);
-%   [y, ord] = swapdim(x,[2 3],[5 4]); % swap 2<->5, 3<->4
-%   assert(isequal(size(y), [1,5,4,3,2]))
-%   assert(isequal(y, permute(x, ord)));
+% x = rand([1,2,3,4,5]);
+% [y, ord] = swapdim(x,[2 3],[5 4]); % swap 2<->5, 3<->4
+% assert(isequal(size(y), [1,5,4,3,2]))
+% assert(isequal(permute(x, ord), swapdim(x, ord)));
 %
 % See also SUB PERMUTE RESHAPE
 arguments

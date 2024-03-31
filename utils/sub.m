@@ -15,9 +15,13 @@
 % 
 % Example:
 % x = rand(2,3,4,5,4,3,2);
-% assert(isequal(x(2,:,:,:,:,:,:), sub(x,2,1))); 
-% assert(isequal(x(:,2:3,4,:,:,:,:), sub(x,{2:3,4},[2 3])))
-%
+% i = sub(x,2,1,true), % the indexing expression
+% assert(isequal(x(2,:,:,:,:,:,:), sub(x,2)));
+% assert(isequal(x(2,:,:,:,:,:,:), subsref(x, i)));
+% assert(isequal(x(:,2:3,:,4,:,:,[true,false]), ...
+%            sub(x,{ 2:3,  4,    [true,false]}, [2 4 7])))
+% 
+% 
 % See also SEL SUBSREF SUBSASGN SUBSTRUCT
 
 function y = sub(x, ind, dim, expr)

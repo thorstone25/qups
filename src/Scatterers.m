@@ -361,6 +361,19 @@ classdef Scatterers < matlab.mixin.Copyable
             % 
             % For Scatterers, the c0 and alpha0 properties must match.
             %
+            % Example:
+            % a = Scatterers('c0', 1500);
+            % b = Scatterers('c0', 1500);
+            % c = Scatterers('c0', 1450);
+            % d = Scatterers('c0', 1450, 'alpha0', 0);
+            % e = Scatterers('c0', 1450, 'alpha0', nan);
+            % 
+            % scts = [a b c d e];
+            % % compute `scts' == scts` with explicit broadcasting
+            % repmat(scts',1,5) == repmat(scts,5,1)
+            % prop_match(scts', scts)
+            % 
+            % See also SCATTERERS.PLUS
             arguments
                 this Scatterers
                 that Scatterers

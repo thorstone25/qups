@@ -4,14 +4,16 @@
 % dimension of ind. This allows selection expressions in one dimension to
 % be broadcast to all other dimensions.
 %
+% If any value of ind is NaN, the corresponding value of y will be missing.
+%
 % y = SEL(x, ind, dim) selects x in dimension dim instead of the first
 % non-singleton dimension
 %
 % Example:
 % x = rand(2,3,4);
-% [xmax, ix] = max(x, [], 3);
-% xmax_ = sel(x, ix, 3);
-% all(xmax == xmax_, 'all')
+% [y, ix] = max(x, [], 3);
+% ys = sel(x, ix, 3);
+% all(y == ys, 'all')
 % 
 % See also SUB
 function y = sel(x, ind, dim)

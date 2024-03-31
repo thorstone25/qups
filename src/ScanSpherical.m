@@ -161,7 +161,13 @@ classdef ScanSpherical < Scan
             % scan = SCANCARTESIAN(self) creates a ScanCartesian object
             % encompassing the region covered by the ScanSpherical self.
             %
-            % See also SCANCARTESIAN/SCANCARTESIAN
+            % scn_pol = ScanSpherical(), % polar Scan
+            % scn_crt = ScanCartesian(scn_pol), % Cartesian Scan
+            % bnds = [scn_crt.xb; scn_crt.yb; scn_crt.zb]; % Cartesian boundaries
+            % assert(all( bnds(:,1) <= scn_pol.positions() ...
+            %           & bnds(:,2) >= scn_pol.positions(),'all'));
+            % 
+            % See also SCANCARTESIAN.SCANCARTESIAN
 
             arguments, self (1,1) ScanSpherical, end
 

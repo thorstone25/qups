@@ -22,8 +22,8 @@
 % Multiple beamformers are provided, all of which are GPU enabled, either
 % natively in MATLAB or via ptx binaries, or both. They include:
 % 
-% * bfDAS - a standard delay-and-sum beamformer
-% * DAS - a restricted but more performant standard delay-and-sum beamformer
+% * DAS - a performant conventional delay-and-sum beamformer
+% * bfDAS - a generic delay-and-sum beamformer
 % * bfDASLUT - a delay-and-sum beamformer for custom delays
 % * bfEikonal - a delay-and-sum beamformer using eikonal equation delays
 % * bfAdjoint - a frequency domain matrix adjoint beamformer
@@ -36,15 +36,16 @@
 % * apScanline - emulate a scan-line beamformer (focal sequences)
 % * apMultiline - emulate a multi-line beamformer (focal sequences)
 % * apTranslatingAperture - emulate a translating transmit aperture
-% * apApertureGrowth - receive apodization limiting the f#
-% * apAcceptanceAngle - receive apodization limited by the element to pixel angle
+% * apApertureGrowth - limit the f# on rx
+% * apAcceptanceAngle - limit the element-to-pixel angle on rx
+% * apTxParallelogram - limit to an illumination parallelogram on tx (plane-waves)
 % 
 % One can also synthesize new transmit sequences from full synthetic
 % aperture (FSA) data or synthesizse FSA data from focused pulses. These
 % utilities are provided by:
 %
-% * focusTx - synthesize a transmit sequence from FSA data
-% * refocus - synthesize FSA data from a transmit sequence
+% * focusTx - synthesize a generic transmit sequence from FSA data
+% * refocus - synthesize FSA data from a generic transmit sequence
 % 
 % See also CHANNELDATA TRANSDUCER SEQUENCE SCAN SCATTERERS MEDIUM 
 
@@ -2700,7 +2701,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     % Beamforming
     methods
         function [b, k, PRE_ARGS, POST_ARGS] = DAS(us, chd, c0, kwargs)
-            % DAS - Delay and sum beamformer
+            % DAS - Delay-and-sum beamformer (compute-optimized)
             %
             % b = DAS(us, chd) performs delay-and-sum beamforming on 
             % the ChannelData chd. The ChannelData must conform to the 

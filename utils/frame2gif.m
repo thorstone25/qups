@@ -13,7 +13,6 @@
             % imwrite.
             %
             % Example:
-            % 
             % % create some data
             % sz = [151,101,100];
             % im = complex(rand(sz), rand(sz)) - (0.5 + 0.5i);
@@ -36,9 +35,12 @@
             % end
             %
             % % Write frames into a GIF
-            % frame2gif(fr, 'noise.gif', 'LoopCount', Inf, 'DelayTime', 1/fps);
+            % frame2gif(fr, 'noise', 'LoopCount', Inf, 'DelayTime', 1/fps);
             %
-            % See also ANIMATE SCAN/GIF CHANNELDATA/GIF
+            % % Customize the GIF with valid arguments for imwrite
+            % frame2gif(fr, 'WriteMode', 'append', 'DisposalMethod', 'restorePrevious')
+            % 
+            % See also ANIMATE SCAN/GIF CHANNELDATA/GIF IMWRITE
 
             arguments
                 fr struct
