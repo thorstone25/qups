@@ -4,7 +4,7 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
     %#ok<*NASGU> The outputs will not be televised
 
     methods(Test)
-        function typeCheck(tst)
+        function typeCheck(~)
             chd = ChannelData('data', randn([16 8 4 2], 'single'));
 
             % all precision types
@@ -49,7 +49,7 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             underlyingType(chd);
         end
 
-        function freqDomainCheck(tst)
+        function freqDomainCheck(~)
             [T, N, M, F] = deal(128, 8, 4, 2);
             chd = ChannelData('data', randn([T M N F], 'single'), 't0', randn([1 1 N F]), 'fs', 1, 'order', 'TMNF');
 
@@ -80,12 +80,12 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             d = copy(b); d.fs = d.fs * 2; % incompatible
 
             % should work
-            5  + a 
-            a  + 5 
-            a  + b 
-            5 .* a
-            a .* 5
-            a .* b
+            5  + a; %#ok<VUNUS>
+            a  + 5; %#ok<VUNUS>
+            a  + b; %#ok<VUNUS>
+            5 .* a; %#ok<VUNUS>
+            a .* 5; %#ok<VUNUS>
+            a .* b; %#ok<VUNUS>
 
             % should fail
             tst.assertError(@() a  + c , "");
