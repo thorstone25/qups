@@ -1015,7 +1015,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % imagesc(chd   , 1, nexttile()); title('Default axis');
             % imagesc(chd_og, 1, nexttile()); title('Shifted axis');
             % 
-            % See also SEQUENCE/TYPE
+            % See also SEQUENCE.TYPE
 
             arguments, seq (1,1) Sequence, end
             switch seq.type
@@ -1180,7 +1180,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
     end
 
     % object display
-    methods(Sealed, Access = protected)
+    methods(Sealed, Access = protected, Hidden)
         function propgrp = getPropertyGroups(seq)
             if ~isscalar(seq)
                 propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(seq);

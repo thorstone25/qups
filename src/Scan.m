@@ -213,7 +213,7 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
     end
 
     % object display (must be Sealed)
-    methods (Sealed, Access = protected)
+    methods (Sealed, Access = protected, Hidden)
         function groups = getPropertyGroups(scan)
             if ~isscalar(scan)
                 groups = getPropertyGroups@matlab.mixin.CustomDisplay(scan);

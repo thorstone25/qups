@@ -151,7 +151,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % p = POSITIONS(xdc) returns a 3 x N array representing the 
         % positions of the center of each element.
         % 
-        % See also ORIENTATIONS TRANSDUCER/PLOT
+        % See also ORIENTATIONS TRANSDUCER.PLOT
         p = positions(xdc); 
 
         % ORIENTATIONS - Orientation of the elements
@@ -166,7 +166,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % vector with the direction and mangitude of the height of the
         % element.
         %
-        % See also POSITIONS TRANSDUCER/PLOT
+        % See also POSITIONS TRANSDUCER.PLOT
         [theta, phi, normal, width, height] = orientations(xdc); % compute the orientations
     end        
 
@@ -1127,7 +1127,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             xdc = TransducerGeneric(); % default heterogeneous instance
         end
     end
-    methods(Sealed, Access=protected)
+    methods(Sealed, Access=protected, Hidden)
         function propgroups = getPropertyGroups(obj)
             propgroups = getPropertyGroups@matlab.mixin.CustomDisplay(obj);
         end
@@ -1249,7 +1249,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             %
             % Plots only the x-z slice.
             %
-            % See also TRANSDUCER/PATCH 
+            % See also TRANSDUCER.PATCH 
 
             arguments
                 self (1,1) Transducer

@@ -304,7 +304,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     end
     
     % overloading methods
-    methods(Access=protected)
+    methods(Access=protected, Hidden)
         % copy 
         function other = copyElement(self)
             arguments, self (1,1) UltrasoundSystem, end % always scalar in            
@@ -383,7 +383,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     end
 
     % object display
-    methods(Access = protected)
+    methods(Access=protected, Hidden)
         function propgrp = getPropertyGroups(us)
             if ~isscalar(us)
                 propgrp = getPropertyGroups@matlab.mixin.CustomDisplay(us);
@@ -891,7 +891,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Convert to USTB
             % uchannel_data = QUPS2USTB(us, chd);
             % 
-            % See also ULTRASOUNDSYSTEM.UFF
+            % See also ULTRASOUNDSYSTEM.UFF CHANNELDATA.QUPS2USTB
             arguments
                 us (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
@@ -913,7 +913,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % [us, chd] = UFF(uchannel_data, uscan) additionally sets the
             % Scan us.scan from the uff.scan uscan.
             %
-            % See also ULTRASOUNDSYSTEM.UFF
+            % See also ChannelData.UFF Sequence.UFF Transducer.UFF Scan.UFF
 
             arguments
                 uchannel_data (1,1) uff.channel_data
@@ -2789,7 +2789,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % imagesc(us.scan, bim, [-80 0] + max(bim(:)));
             % colormap gray; colorbar;
             %
-            % See also BFDAS BFADJOINT BFEIKONAL CHANNELDATA/SAMPLE
+            % See also BFDAS BFADJOINT BFEIKONAL CHANNELDATA.SAMPLE
             
             arguments
                 us (1,1) UltrasoundSystem

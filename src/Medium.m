@@ -6,9 +6,9 @@
 %
 % The Medium definition can be used to simulate ChannelData from an
 % UltrasoundSystem using a finite difference simulation call, such as
-% the UltrasoundSystem/kspaceFirstOrder method.
+% the UltrasoundSystem.kspaceFirstOrder method.
 %
-% See also SCATTERERS ULTRASOUNDSYSTEM/KSPACEFIRSTORDER CHANNELDATA
+% See also SCATTERERS ULTRASOUNDSYSTEM.KSPACEFIRSTORDER CHANNELDATA
 
 classdef Medium < matlab.mixin.Copyable
     properties
@@ -110,7 +110,7 @@ classdef Medium < matlab.mixin.Copyable
             % varies. A perturbation region can be used to define a
             % distribution such that it can be sampled arbitrarily.
             % 
-            % See also MEDIUM.SAMPLED MEDIUM/PERTREG
+            % See also MEDIUM.SAMPLED MEDIUM.PERTREG
             arguments
                 kwargs.c0 (1,1) double
                 kwargs.rho0 (1,1) double
@@ -157,7 +157,7 @@ classdef Medium < matlab.mixin.Copyable
             % isequal(c  , props(med, scan, 'c'  ))
             % isequal(rho, props(med, scan, 'rho'))
             % 
-            % See also TARGET ARGN GETPROPERTYMAP
+            % See also MEDIUM.SAMPLED
 
             arguments
                 self Medium
@@ -466,7 +466,7 @@ classdef Medium < matlab.mixin.Copyable
             % % Construct the Medium
             % med = Medium.Sampled(sscan, c, rho, 'c0', c0, 'rho0', rho0);
             % 
-            % See also MEDIUM/MEDIUM MEDIUM.DIFFUSE
+            % See also MEDIUM.MEDIUM MEDIUM.DIFFUSE
 
             arguments
                 scan (1,1) ScanCartesian
