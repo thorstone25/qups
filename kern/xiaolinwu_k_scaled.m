@@ -1,7 +1,7 @@
 function [c1, x1, y1, c2, x2, y2] = xiaolinwu_k_scaled(xa, ya, xb, yb, k, dx, dy)
 % XIAOLINWU_K_SCALED - Kth line segment weights of Xiaolin Wu's algorithm
 %
-% [c1, x1, y1, c2, x2, y2] = XIAOLINWU_K_SCALED(xa, ya, xb, yb, k)
+% [c1, x1, y1, c2, x2, y2] = XIAOLINWU_K_SCALED(xa, ya, xb, yb, k, 1, 1)
 % computes the weights for the kth set of pixels described by the line
 % segment from (xa,ya) to (xb,yb) and outputs them in the triples
 % (x1,y1,c1) and (x2,y2,c2), where 0 <= ci <= 1 if ci is valid. For invalid
@@ -15,14 +15,9 @@ function [c1, x1, y1, c2, x2, y2] = xiaolinwu_k_scaled(xa, ya, xb, yb, k, dx, dy
 % and is defined similarly for the y-grid. The calling function should 
 % determine the total number of points necessary to traverse this grid.
 %
-% [...] = XIAOLINWU_K_SCALED(xa, ya, xb, yb, k, dxy) scales the size of
-% the grid in x and y so that each pixel step is of size dxy in x and dxy 
-% in y. The outputs ci are then scaled by the length of the line through
-% the pixel. 
-%
 % [...] = XIAOLINWU_K_SCALED(xa, ya, xb, yb, k, dx, dy) scales the size of
 % the grid in x and y so that each pixel step is of size dx in x and dy in
-% y. The outputs ci are then scaled by the length of the line through the
+% y. The outputs ci are then scaled by the length of the line through each
 % pixel.
 %
 % Example:
@@ -34,7 +29,7 @@ function [c1, x1, y1, c2, x2, y2] = xiaolinwu_k_scaled(xa, ya, xb, yb, k, dx, dy
 % % Get the interpolation weights
 % K = max(numel(x), numel(y)) + 1; % total number
 % [c1, ix1, iy1, c2, ix2, iy2] = arrayfun(...
-%     @(k) xiaolinwu_k_scaled(xa, ya, xb, yb, k),...
+%     @(k) xiaolinwu_k_scaled(xa, ya, xb, yb, k, 1, 1),...
 %     (1:K)); % arrayfun computes this in parallel if on a gpuArray
 % cxy = [c1, c2]; % combine output
 % [~, ixo] = ismember([ix1 ix2], x); % find x-indices of the grid
@@ -64,18 +59,10 @@ function [c1, x1, y1, c2, x2, y2] = xiaolinwu_k_scaled(xa, ya, xb, yb, k, dx, dy
 %     dy (1,1) {mustBeReal, mustBeFinite, mustBeNumeric, mustBeFloat} = dx;
 % end
 
-% defaults
-% if nargin < 6, dx = ones('like', xa); end
-% if nargin < 7, dy = ones('like', dx); end
-
 % Type checks and casting
 % assert(all(cellfun(@isscalar, {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be scalar.')
 % assert(all(cellfun(@isfloat , {xa,ya,xb,yb,dx,dy})), 'All coordinates and distances must be a floating point type.');
 %}
-
-% defaults
-if nargin < 6, dx = ones('like', xa); end
-if nargin < 7, dy = ones('like', dx); end
 
 % convert to 0-based indexing
 k = k - 1;
