@@ -223,8 +223,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             Scatterers.Grid()
 
             % deprecated properties
-            test.assertWarning(@()setfield(med,'alphap0','TMN'), "QUPS:Medium:syntaxDeprecated")
-            test.assertWarning(@()med.alphap0                  , "QUPS:Medium:syntaxDeprecated")
+            test.assertWarning(@()setfield(med,'alphap0',1.2), "QUPS:Medium:syntaxDeprecated")
+            test.assertWarning(@()med.alphap0                , "QUPS:Medium:syntaxDeprecated")
 
         end
         function staticTest(test, clss)
