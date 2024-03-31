@@ -4286,7 +4286,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 xi = swapdim(us.scan.x, 2, us.scan.xdim); % lateral per pixel
                 xv = swapdim(sub(us.seq.focus,1,1), 2, 5); % 1 x 1 x 1 x 1 x M
             elseif isa(us.scan, 'ScanPolar')
-                xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
+                xi = swapdim(us.scan.a, 2, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % 1 x 1 x 1 x 1 x M
             else
                 error("QUPS:UltrasoundSystem:UnsupportedScan", ...
