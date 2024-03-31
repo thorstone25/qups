@@ -34,7 +34,7 @@ classdef Medium < matlab.mixin.Copyable
         % 
         % See also: ALPHA_POWER BOA0
         alpha0 (1,1) double = NaN; % ambient power law absorption pre-factor
-        % alpha_power - global attenuation power law (kWave)
+        % alpha_power - global attenuation power law (kWave-only)
         alpha_power (1,1) double {mustBeInRange(alpha_power,0,3)} = 1.01; % global power law absorption exponent
         % PERTREG - perturbation regions
         % 

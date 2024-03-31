@@ -1,18 +1,23 @@
 % CHANNELDATA - Store and process channel data
 %
-% The ChannelData class stores an N-dimensional datacube and it's temporal 
-% axes and provides overloaded methods for manipulating and plotting the 
-% data. The ChannelData must have a t0 value consistent with the
-% definition of t0 in QUPS to be used with other beamforming algorithms in
-% QUPS. Most methods that affect the time axes, such as zeropad or filter, 
-% will shift the time axes accordingly.
+% The ChannelData class stores an N-dimensional datacube and it's axes, and
+% provides overloaded methods for manipulating and displaying the data. The
+% ChannelData must have a `t0` value consistent with the definition of t0
+% in QUPS to be used with the beamforming algorithms in QUPS. Methods that
+% affect the time axes, such as `zeropad` or `filter`, will attempt to
+% shift the time axes accordingly.
 %
-% The underlying datacube can be N-dimensional as long as the first three
-% dimensions contain the (fast) time, receive and transmit dimensions. All 
-% data must share the same sampling frequency fs, but the start time t0 may
-% vary across any dimension(s) except for the time and receiver dimensions.
-% For example, if each transmit has a different t0, this can be represented
-% by an array of size [1,1,M] where M is the number of transmits.
+% The underlying datacube must always specify the (fast) time (T), receive
+% (N) and transmit (M) dimensions in the `order` property. All data must by
+% uniformly sampled at a single sampling frequency `fs`. The start time t0
+% must be singular in the time (T) and receive (N) dimensions to remain
+% compatible, but may vary over the transmit (M) and all further
+% dimensions.
+% 
+% For example, if each transmit has a different start time and the data is
+% stored as a (time x receive x transmit) datacube, this can be represented
+% by an order of 'TNM' and reshape t0 to size [1,1,M] where M is the number
+% of transmits. 
 % 
 % The underlying numeric type of the data can be cast by appending 'T' to
 % the type (e.g. singleT(chd) produces a ChannelData) whereas the datacube 
@@ -20,7 +25,11 @@
 % produces an array). Overloaded methods are also provided to cast to a 
 % gpuArray or tall type. The time axes is also cast to the corresponding
 % type. This enables MATLABian casting rules to apply to the object, which
-% can be used by other functions.
+% can be used by other functions outside of QUPS.
+% 
+% Data permutation can be performed by methods ending in 'D' (e.g.
+% swapdimD(chd) or permuteD(chd, ord)) which apply the indexing as
+% appropriate to all properties of the ChannelData chd.
 % 
 % See also SEQUENCE TRANSDUCER ULTRASOUNDSYSTEM
 
@@ -37,10 +46,17 @@ classdef ChannelData < matlab.mixin.Copyable
     properties (Dependent)
         time    % time axis (T x 1 x [1|M] x [1|F] x ...)
     end
-    properties(Hidden, Dependent)
+    properties(Dependent, Hidden)
         T       % number of time samples
         N       % number of receiver channels
         M       % number of transmits
+    end
+
+    % sizing functions (used to control tall behaviour and reshaping)
+    properties(Dependent, Hidden)
+        tdim % time dimension
+        ndim % receiver dimension
+        mdim % transmit dimension
     end
 
     % constructor/destructor
@@ -368,7 +384,7 @@ classdef ChannelData < matlab.mixin.Copyable
     % helper functions
     methods(Hidden)
         function chd = applyFun2Data(chd, fun), chd = copy(chd); [chd.data] = dealfun(fun, chd.data); end
-        function chd = applyFun2Dim(chd, fun, dim, varargin),
+        function chd = applyFun2Dim(chd, fun, dim, varargin)
             chd = copy(chd); % copy semantics
             for i = 1 : numel(chd) % per chd
                 chd(i).data = matlab.tall.transform(@dimfun, chd(i).data, varargin{:}); % apply function in dim 1; % set output data
@@ -882,7 +898,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % defined by the Waveform that was transmitted, the impulse
             % response of the Transducer(s), or the Transducer itself
             %
-            % See also TRANSDUCER WAVEFORM SEQUENCE TRANSDUCER/XDCIMPULSE
+            % See also TRANSDUCER WAVEFORM SEQUENCE TRANSDUCER.XDCIMPULSE
 
 
             f = chd.fs * ((0:chd.T-1)' ./ chd.T); % compute frequency axis
@@ -1335,13 +1351,6 @@ classdef ChannelData < matlab.mixin.Copyable
         function M = get.M(chd), M = gather(size(chd.data,chd.mdim)); end
     end
 
-    % sizing functions (used to control tall behaviour and reshaping)
-    properties(Hidden, Dependent)
-        tdim % time dimension
-        ndim % receiver dimension
-        mdim % transmitter dimension
-    end
-
     % data indexing functions
     methods
         function chd = join(chds, dim)
@@ -1435,7 +1444,7 @@ classdef ChannelData < matlab.mixin.Copyable
             if ~iscell(ind), ind = {ind}; end % enforce cell syntax
             tind = ind; % separate copy for the time indices
             tind(size(chd.time,dim) == 1) = {1}; % set singleton where t0 is sliced
-            has_tdim = any(dim == chd.tdim); % whether we are idnexing in the time dimension too
+            has_tdim = any(dim == chd.tdim); % whether we are indexing in the time dimension too
             if has_tdim 
                 n = tind{dim == chd.tdim}; % get the time indices
                 if isnumeric(n)
