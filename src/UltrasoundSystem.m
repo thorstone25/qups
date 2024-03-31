@@ -4481,6 +4481,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 xi = swapdim(us.scan.a, us.scan.adim); % angle per pixel
                 xv = swapdim(us.seq.angles, 2, 5); % angle per transmit 1 x 1 x 1 x 1 x M
                 xn = swapdim(us.rx.orientations,2,4); % angle per receiver
+            else
+                error( ...
+                    "QUPS:UltrasoundSystem:UnsupportedScan", ...
+                    "UltrasoundSystem.apTranslatingAperture does not support a " + class(us.scan) + ". " ...
+                    +newline+"Use a ScanCartesian or ScanPolar instead." ...
+                    );
             end
             apod = abs(xi - xv) <= tol(1) & abs(xi - xn) <= tol(end); % create mask
         end
@@ -4560,31 +4566,29 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             [Xn, Zn] = deal(sub(Pn,1,1), sub(Pn,3,1)); % (1 x 1 x 1 x 1 x N)
 
             % calculate x and z for scan
-            if isa(us.scan, 'ScanPolar') % polar scan -> convert to Cartesian
-                r = swapdim(us.scan.r, 2, 1+us.scan.rdim);
-                a = swapdim(us.scan.a, 2, 1+us.scan.adim);
-                Xi = r .* sind(a) + us.scan.origin( 1 ); % (1 x I1 x I2 x 1)
-                Zi = r .* cosd(a) + us.scan.origin(end); % (1 x I1 x I2 x 1)
-            else % already in Cartesian
+            if isa(us.scan, 'ScanCartesian') % already in Cartesian
                 % get the pixel positions in the proper dimensions
                 Xi = swapdim(us.scan.x, 2, 1+us.scan.xdim); % (1 x 1 x I2 x 1)
                 Zi = swapdim(us.scan.z, 2, 1+us.scan.zdim); % (1 x I1 x 1 x 1)
+            else % generic -> convert to Cartesian
+                [Xi, ~, Zi] = us.scan.getImagingGrid(); % (I1 x I2 x 1)
+                [Xi, Zi] = dealfun(@(x)reshape(x,[1 size(x)]), Xi, Zi); % (1 x I1 x I2 x 1)
             end 
 
             % get the equivalent aperture width (one-sided) and pixel depth
-            if isa(us.rx, 'TransducerConvex') % convex array width and depth calculation
+            if any(us.rx.orientations) % non-planar array width and depth calculation
                 ae = swapdim(us.rx.orientations(), 2, 5); % angles of elements, in degrees
                 rp = hypot( Xi - Xn, Zi - Zn); % radii to scan points
                 ap = atan2d(Xi - Xn, Zi - Zn); % angles to scan points
                 d =     rp .* sind(ap - ae) ; % equivalent one-sided widths for points
                 z = abs(rp .* cosd(ap - ae)); % equivalent depth for points; take abs() to use same apodization calculation as linear arrays
-            else % linear array width and depth calculation
+            else % planar array width and depth calculation
                 d = Xn - Xi; % one-sided width where 0 is aligned with the pixel
                 z = Zi - 0; % depth w.r.t. beam origin (for linear xdcs)
             end
 
             % determine apodization 
-            apod = z > f * abs(2*d) ; % restrict the f-number
+            apod = z > f *  abs(2*d) ; % restrict the f-number
             apod = apod .* (abs(2*d) < Dmax); % also restrict the maximum aperture size
 
             % shift to (I1 x I2 x I3 x N x M)
