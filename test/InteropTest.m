@@ -71,14 +71,14 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             chds = [chd, permuteD(chd,[1,3,2,4])]; % swap tx/rx
             for chd = chds 
                 [uchd, uscn] = QUPS2USTB(us, chd, 0);
-                [uso, chd1] = UltrasoundSystem.UFF(uchd, uscn);
+                [~, chd1] = UltrasoundSystem.UFF(uchd, uscn);
                 chd2 = ChannelData.UFF(uchd);
                 for chdo = [chd1, chd2]
                 chdo.order(4) = 'F';
                 [~, ord] = ismember(chd.order, chdo.order);
-                chdo = permuteD(chdo, ord);
-                tst.assertThat(chdo.t0, IsEqualTo(chd.t0, "Within", AbsoluteTolerance(1e-3)));
-                tst.assertEqual(size(chdo.data), size(chd.data));
+                chd3 = permuteD(chdo, ord);
+                tst.assertThat(chd3.t0, IsEqualTo(chd.t0, "Within", AbsoluteTolerance(1e-3)));
+                tst.assertEqual(size(chd3.data), size(chd.data));
                 end
             end
         end

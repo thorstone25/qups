@@ -671,8 +671,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     k.setConstantMemory( 'QUPS_S', uint64(QS) ); % always set S
                     try k.setConstantMemory('QUPS_T', uint64(QT), ...
                             'QUPS_N', uint64(QN), 'QUPS_M', uint64(QM) ...
-                            ); end % already set by const compiler
-                    try k.setConstantMemory('QUPS_I', uint64(QI)); end % might be already set by const compiler
+                            ); %#ok<TRYNC> % already set by const compiler
+                    end 
+                    try k.setConstantMemory('QUPS_I', uint64(QI)); end %#ok<TRYNC> % might be already set by const compiler
                 elseif use_odev
                     k = oclKernel('greens.cl');
                     k.macros = [k.macros, "QUPS_"+["S","T","N","M","I"]+"="+uint64([QS,QT,QN,QM,QI])]; % set constants
@@ -1563,8 +1564,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % set options per Scatterers
             p = repmat(p, [1,1,1,numel(scat)]); % (1 x 1 x 1 x F)
             pxdc = arrayfun(@(scat) {getSIMUSParam(scat)}, scat); % properties per Scatterers
-            for f = 1:numel(scat), 
-                for fn = string(fieldnames(pxdc{f}))', 
+            for f = 1:numel(scat) 
+                for fn = string(fieldnames(pxdc{f}))' 
                     p(f).(fn) = pxdc{f}.(fn); % join the structs manually
                 end 
             end
@@ -1707,20 +1708,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % choose the cluster to operate on: avoid running on ThreadPools
             parenv = kwargs.parenv;
             if isempty(parenv), parenv = 0; end
-            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), 
+            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool') 
                 warning('QUPS:InvalidParenv','calc_scat_all cannot be run on a thread-based pool'); % Mex-files ...
                 parenv = 0; 
             end
 
             % splice
-            [M, F] = deal(us.seq.numPulse, numel(scat)); % number of transmits/frames
+            [~, F] = deal(us.seq.numPulse, numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_] = deal(gather(us.fs), us.tx, us.rx); % splice
             [c0, pos, amp] = arrayfun(@(t)deal(t.c0, {t.pos}, {t.amp}), scat); % splice
 
             % Make position/amplitude and transducers constants across the workers
-            if isa(parenv, 'parallel.Pool'), 
+            if isa(parenv, 'parallel.Pool') 
                 cfun = @parallel.pool.Constant;
-            else, 
+            else 
                 cfun = @(x)struct('Value', x);
                 [pos, amp] = deal({pos},{amp}); % for struct to work on cell arrays
             end
@@ -2960,8 +2961,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % nothing to do for (true) FSA acquisitions: all 0 delays
             % identity matrix apodization
-            switch seq.type, case 'FSA', 
-                if ~nnz(tau) && isequal(apod, eye(us.tx.numel)), return; end, 
+            switch seq.type, case 'FSA' 
+                if ~nnz(tau) && isequal(apod, eye(us.tx.numel)), return; end 
             end
 
             % resample only within the window where we currently have data.
@@ -2974,7 +2975,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             % legacy: pick new signal length
             L = kwargs.length;
-            if kwargs.interp == "freq",
+            if kwargs.interp == "freq"
                 if isempty(L),               L = chd.T; % default
                 elseif L == "min",           L = chd.T; % strategy
                 elseif L == "pow2",          L = 2^(nextpow2(chd.T)); % strategy
@@ -3116,7 +3117,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 chd (1,1) ChannelData
                 seq (1,1) Sequence = us.seq
                 kwargs.gamma (1,1) {mustBeNumeric} = (chd.N / 10)^2 % heuristically chosen
-                kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov"])} = "tikhonov"
+                kwargs.method (1,1) string {mustBeMember(kwargs.method, "tikhonov")} = "tikhonov"
             end
 
             % dispatch pagenorm/pagemrdivide function based on MATLAB version
@@ -3340,7 +3341,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % get the pixel positions
             D = gather(max([4, ndims(chd.data), ndims(chd.t0)])); % >= 4
             Pi = us.scan.positions();
-            Pi = swapdim(Pi, [1:4], [1, D+(1:3)]); % place I after data dims (3 x 1 x 1 x 1 x ... x [I])
+            Pi = swapdim(Pi, 1:4, [1, D+(1:3)]); % place I after data dims (3 x 1 x 1 x 1 x ... x [I])
             c0 = shiftdim(c0, -D); % 1 x 1 x 1 x 1 x ... x [I]
 
             % get the receive apodization, spliced if it can be applied

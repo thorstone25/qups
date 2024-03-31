@@ -223,7 +223,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % convert to patch structure {{2 x 2} x x/y/z/c} x 1 x N x E
             pc = permute(pc, [5,4,1,2,3]);  % 1 x 4 x x/y/z/c x N x E
             pc = reshape(pc, [2,2,size(pc,3:5)]); % 2 x 2 x x/y/z/c x N x E
-            pch = cellfun(@(pc) shiftdim(num2cell(pc, [1:2]),1), num2cell(pc, 1:3), 'UniformOutput',false);
+            pch = cellfun(@(pc) shiftdim(num2cell(pc, 1:2),1), num2cell(pc, 1:3), 'UniformOutput',false);
             pch = shiftdim(pch, 3);
                         
         end
@@ -602,20 +602,20 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             [gxv, gyv, gzv] = deal(single(scan.x), single(scan.y), single(scan.z)); % grid {dim} vector
             [gx0, gy0, gz0] = deal(scan.x(1), scan.y(1), scan.z(1)); % grid {dim} first point
             [gxd, gyd, gzd] = deal(single(scan.dx), single(scan.dy), single(scan.dz)); % grid {dim} delta
-            pg = scan.positions(); % 3 x Z x X x Y
+            % pg = scan.positions(); % 3 x Z x X x Y
             pdims = arrayfun(@(c){find(c == scan.order)}, 'XYZ'); % dimensions mapping
             [xdim, ydim, zdim] = deal(pdims{:});
             iord = arrayfun(@(d)find([pdims{:}] == d), [1,2,3]); % inverse mapping
 
             % get array sizing - size '1' and step 'inf' for sliced dimensions
-            [Nx, Ny, Nz] = deal(scan.nx, scan.ny, scan.nz);
+            [Nx, Ny, Nz] = deal(scan.nx, scan.ny, scan.nz); %#ok<ASGLU>
 
             % get local element size reference
-            [width_, height_, sz_] = deal(xdc.width, xdc.height, scan.size);
+            [width_, height_, sz_] = deal(xdc.width, xdc.height, scan.size); %#ok<ASGLU>
 
             % get regions for each receive transducer element
             el_cen = xdc.positions(); % center of each element
-            [theta, phi, el_dir, el_wid, el_ht] = xdc.orientations(); % orientations vectors for each element
+            [theta, phi, el_dir, el_wid, el_ht] = xdc.orientations(); %#ok<ASGLU> % orientations vectors for each element
 
             % reorder to map between kwave and conventional ultrasound coordinates
             % [el_dir, el_cen, el_wid, el_ht] = dealfun(@(v)v([3 1 2],:), el_dir, el_cen, el_wid, el_ht);
@@ -628,16 +628,17 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             p_patches = cellfun(@(pch) vec(cellfun(@(p)mean(p(:)), pch(1:3))), patches, 'UniformOutput', false);
 
             % send grid data to workers if we have a process pool
-            if(~isempty(gcp('nocreate')) && isa(gcp('nocreate'), 'parallel.ProcessPool')),
+            if(~isempty(gcp('nocreate')) && isa(gcp('nocreate'), 'parallel.ProcessPool'))
                 sendDataToWorkers = @parallel.pool.Constant;
-            else, sendDataToWorkers = @(x) struct('Value', x);
+            else
+                sendDataToWorkers = @(x) struct('Value', x);
             end
             [gxv, gyv, gzv] = dealfun(sendDataToWorkers, gxv, gyv, gzv);
 
             % get sensing map for all patches for all elements
             parfor el = 1:xdc.numel
                 % set variables for the element
-                [el_dir_, el_cen_, el_wid_, el_ht_, p_patches_] = deal(el_dir(:,el), el_cen(:,el), el_wid(:,el), el_ht(:,el), p_patches(:,el));
+                [el_dir_, el_cen_, el_wid_, el_ht_, p_patches_] = deal(el_dir(:,el), el_cen(:,el), el_wid(:,el), el_ht(:,el), p_patches(:,el)); %#ok<ASGLU>
 
                 % initialize
                 % mask{el} = false(sz_);
@@ -775,10 +776,10 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
             % convert to kWaveGrid coorindates: axial x lateral x elevation
             switch dim
-                case 2, % we only rotate in x-z plane
+                case 2 % we only rotate in x-z plane
                     [p, elrot] = deal(p([3,1  ],:), elrot(2,:));
                     [arr_off, arr_rot] = deal(-og(1:2), 0);
-                case 3,
+                case 3
                     [p, elrot] = deal(p([3,1,2],:), elrot([3,1,2],:)); % I think this is right?
                     [arr_off, arr_rot] = deal(-og(1:3), [0;0;0]);
             end
@@ -812,7 +813,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % removal.
         % 
         % See also ULTRASOUNDSYSTEM/FULLWAVESIM
-        function xdc_fw = getFullwaveTransducer(xdc, scan)
+        function xdc_fw = getFullwaveTransducer(xdc, scan) %#ok<INUSD,STOUT>
             error( ...
                 "QUPS:Transducer:notImplemented", ...
                 "Fullwave support is not implemented for a " + class(xdc) + "." ...

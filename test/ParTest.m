@@ -12,6 +12,8 @@ classdef ParTest < matlab.unittest.TestCase
         tlimit = 60; % if expected to exceed this many seconds, don't continue
     end
 
+    %#ok<*NASGU,*ASGLU> unused variables
+
     methods(TestClassSetup)
         function setupData(test)
             % setup data
@@ -161,7 +163,7 @@ classdef ParTest < matlab.unittest.TestCase
                     case "local",     parpool("local"       );
                     case "Processes", parpool("Processes"   );
                     case "Threads",   parpool("Threads"     );
-                    otherwise,        % parpool(parcluster()  ); % TODO: flag for parpool vs. parcluster input
+                    otherwise        % parpool(parcluster()  ); % TODO: flag for parpool vs. parcluster input
                 end
                 catch ME % error ...
                 end
@@ -172,7 +174,7 @@ classdef ParTest < matlab.unittest.TestCase
 
     % ---------------------------------------------- %
     methods
-        function penv = getPenv(test, par_prof)
+        function penv = getPenv(~, par_prof) 
             % get the penv
             par_prof = string(par_prof);
             switch par_prof
@@ -246,6 +248,7 @@ classdef ParTest < matlab.unittest.TestCase
                 't0', 0, 'fs', us_.fs ...
                 )); % fake sim
             S = 2 .^ ([6 7 8 9 10 11 12 log2(4096+[1024 2048]) Inf]); % pixel # rows/columns
+            dur = Inf(size(S));
             for i = 1:numel(S)
                 [us_.scan.nx, us_.scan.nz] = deal(S(i)); % set number of pixels
                 tst.log("Benchmarking " + func2str(f) + " method on device " + dev.Name + " with " + us_.scan.nPix + " pixels ("+N+" trials).");

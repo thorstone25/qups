@@ -2,6 +2,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
     % INITTEST - Initialization tests class
     %
     % This class test that all objects initialize properly
+
+    %#ok<*NASGU> unused variables
+
     properties(TestParameter)
         % all classes to test
         clss = cellstr([

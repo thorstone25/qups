@@ -3,6 +3,8 @@ classdef KernTest < matlab.unittest.TestCase
     %
     % This class test that all kernel functions operate properly
 
+    %#ok<*NASGU,*ASGLU> unused variables
+
      properties(TestParameter)
         prec = {'double', 'single'}%, 'halfT'}
         complexity = struct('real', 'real', 'complex', 'complex');
@@ -13,8 +15,8 @@ classdef KernTest < matlab.unittest.TestCase
          dargs % data arguments
      end
 
-    methods(TestMethodSetup)
-        % Setup for each test
+    methods(TestClassSetup)
+        % Setup for the entire class
         function set_data(test)
             % create random values for interpd
             [I, T, N, M, F] = deal(2^5, 2^8, 2, 3, 4);
