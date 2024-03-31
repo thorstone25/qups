@@ -1425,14 +1425,18 @@ classdef ChannelData < matlab.mixin.Copyable
             % TODO: validate size
             % TODO: warn or error if time axis is not regularly spaced
 
-            %  get the possible sampling freuqencies
-            fs_ = unique(diff(t,1,chd.tdim));
-
-            % choose the sampling frequency with the best adherence to the
-            % data
-            t0_ = sub(t, 1, chd.tdim);
-            m = arrayfun(@(fs) sum(abs((t0_ + swapdim((0 : numel(t) - 1),2,chd.tdim) ./ fs ) - t), 'all'), fs_);
-            fs_ = fs_(argmin(m,[],'all'));
+            % get the sampling interval
+            dt = uniquetol(diff(t,1,chd.tdim));
+            dt(isnan(dt)) = []; % remove NaN
+            fs_ = chd.fs; % keep sampling frequency by default
+            if isscalar(dt) % uniformly spaced
+                t0_ = sub(t, 1, chd.tdim);
+                fs_ = 1 / dt; % also modify sampling frequency
+            elseif isempty(dt) % t is scalar in tdim
+                t0_ = t;
+            else % not uniformly spaced
+                t0_ = sub(t, 1, chd.tdim) - swapdim(0 : chd.T - 1, 2, chd.tdim) ./ fs_;
+            end
 
             % set the time axis
             chd.t0 = t0_;
@@ -1516,7 +1520,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd = splice(chd, 4), % split over frames
             % chd(1), chd(2)
             % 
-            % See also CHANNELDATA/JOIN SUB
+            % See also CHANNELDATA.JOIN SUB
             
             arguments
                 chd ChannelData
@@ -1551,7 +1555,7 @@ classdef ChannelData < matlab.mixin.Copyable
             %
             % Example:
             % chd = ChannelData('data', rand([5,4,3,2]));
-            % chd.subD([1,3,5], 1)
+            % subD(chd, [1,3,5], 1)
             % 
             % See also SUB CHANNELDATA.PERMUTED
             if ~iscell(ind), ind = {ind}; end % enforce cell syntax
@@ -1591,13 +1595,10 @@ classdef ChannelData < matlab.mixin.Copyable
             chd.data = data_; % assign
 
         end
-        function chd = setOrder(chd, cord)
+        function set.order(chd, cord)
             assert(...
-                length(cord) >= ndims(chd.data),...
-                'Number of dimension labels must be greater than or equal to the number of data dimensions.'...
-                ); 
-            assert(...
-                all(ismember('TMN', cord)), ...
+                all(ismember('TMN', char(cord))), ...
+                "QUPS:ChannelData:OrderLabels", ...
                 "Dimension labels must contain 'T', 'N', and 'M'."...
                 );
             chd.order = cord; 
