@@ -1560,24 +1560,34 @@ classdef ChannelData < matlab.mixin.Copyable
             has_tdim = any(dim == chd.tdim); % whether we are indexing in the time dimension too
             if has_tdim 
                 n = tind{dim == chd.tdim}; % get the time indices
+                if islogical(n), n = find(n); end % convert to numeric indexing
                 if isnumeric(n)
                     assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
-                        'The temporal index must be a strictly increasing set of indices.');
-                elseif islogical(n)
-                    n = find(n);
-                    assert(issorted(n, 'strictascend') && all(n == round(n)), ... % check the index in time is sorted, continous
-                        'The temporal index must be a strictly increasing set of indices.');
-                else % not sure, but allow ...
+                        "QUPS:ChannelData:nonascendingTemporalIndexing", ...
+                        "The temporal index must be a strictly increasing set of indices." ...
+                        );
+                    dn = unique(diff(n)); % index step size
+                    assert(isscalar(dn), ...
+                        "QUPS:ChannelData:nonuniformTemporalIndexing", ...
+                        "Temporal indices must be uniformly spaced." ...
+                        );
+                else % not sure how, but allow ...
+                    warning( ...
+                        "QUPS:ChannelData:ambiguousTemporalIndexing", ...
+                        "Unable to verify temporal indexing" ...
+                        );
+                    dn = 1;
                 end
             end
             t0_   = sub(chd.t0, tind(dim ~= chd.tdim), dim(dim ~= chd.tdim)); % extract start time
             data_ = sub(chd.data, ind, dim); % extract data
             % get the new start time based on the starting index
             % should preserve type and size fo t0
-            if has_tdim && ~isempty(n), t0_(:) = t0_ + (n(1) - 1) / chd.fs; end 
+            if has_tdim && ~isempty(n), t0_(:) = t0_ + (n(1) - 1) / (chd.fs / dn); end 
             
             chd = copy(chd); % copy semantics
-            chd.t0 = t0_; % assign
+            chd.t0   = t0_;   % assign
+            chd.fs   = chd.fs / dn;   % assign
             chd.data = data_; % assign
 
         end
