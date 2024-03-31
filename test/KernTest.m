@@ -127,8 +127,8 @@ classdef KernTest < matlab.unittest.TestCase
                 clear z0;
                 for f = F:-1:1
                     for m = M:-1:1
-                        xf = num2cell(x  (:,:,:,f),1);
-                        tf = num2cell(tau(:,:,m,:),1);
+                        xf = num2cell(gather(x  (:,:,:,f)),1);
+                        tf = num2cell(gather(tau(:,:,m,:)),1);
                         z0(1,:,m,f) = cellfun(@(x,t) {interp1(x,1+t,terp_,0)}, xf, tf);
                     end
                 end
