@@ -94,7 +94,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             arguments, xdc Transducer {mustBeScalarOrEmpty}; end
             
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
-            s = struct(xdc); % convert self
+            s = struct(xdc); % convert xdc
             if ~isempty(s), s.impulse = obj2struct(s.impulse); end % convert impulse
             s.class = class(xdc); % append class info
             warning(W); % restore warnings
@@ -719,7 +719,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             %
             % [mask, el_weight, el_dist, el_ind] = ELEM2GRID(xdc, scan)
             % returns a binary mask and a set of indices, weights, and
-            % distances defined for each element give a Transducer self and
+            % distances defined for each element give a Transducer xdc and
             % a ScanCartesian scan. The element indicies are defined on the
             % vectorized non-zero indices of the mask i.e. on the indices
             % of `find(mask)`.
@@ -1103,22 +1103,22 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % dependent methods
     methods
-        function set.bw(self, b)
+        function set.bw(xdc, b)
             if(length(b) ~= 2)
                 error("bw must be a length 2 vector of the passband cutoff frequencies.");
             end
-            self.bw = b;
+            xdc.bw = b;
         end
 
-        function a = get.area(self), a = self.width * self.height; end
+        function a = get.area(xdc), a = xdc.width * xdc.height; end
 
-        function b = get.bw_frac(self), b = range(self.bw) ./ self.fc; end
+        function b = get.bw_frac(xdc), b = range(xdc.bw) ./ xdc.fc; end
 
-        function set.bw_frac(self, bf), self.bw = mean(self.fc) + mean(self.fc) * bf * ([-1 1] ./ 2); end
+        function set.bw_frac(xdc, bf), xdc.bw = mean(xdc.fc) + mean(xdc.fc) * bf * ([-1 1] ./ 2); end
 
-        function o = get.origin(self), o = - self.offset; end
+        function o = get.origin(xdc), o = - xdc.offset; end
 
-        function set.origin(self, o), self.offset = -o; end
+        function set.origin(xdc, o), xdc.offset = -o; end
     end
 
     % heterogeneous support
@@ -1156,21 +1156,21 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % plot functions
     methods
-        function hp = patch(self, varargin, patch_args, xdc_args)
+        function hp = patch(xdc, varargin, patch_args, xdc_args)
             % PATCH - Overload of patch for a transducer
             %
-            % PATCH(self) plots the aperture from its patch representation.
+            % PATCH(xdc) plots the aperture from its patch representation.
             % It overloads the patch function so that arguments valid for
             % patch are valid here.
             %
-            % PATCH(self, el_sub_div) specifices element subdivisions.
+            % PATCH(xdc, el_sub_div) specifices element subdivisions.
             %
-            % PATCH(self, el_sub_div, ax) plots on the axes ax.
+            % PATCH(xdc, el_sub_div, ax) plots on the axes ax.
             %
-            % PATCH(self, el_sub_div, ..., Name, Value, ...) passes
+            % PATCH(xdc, el_sub_div, ..., Name, Value, ...) passes
             % name-value pair arguments to patch.
             %
-            % hp = PATCH(self, ...) returns a patch object handle
+            % hp = PATCH(xdc, ...) returns a patch object handle
             %
             % Inputs
             %   - el_sub_div:    2 x 1 vector of element subdivisions
@@ -1178,7 +1178,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % See also PATCH
 
             arguments
-                self (1,1) Transducer
+                xdc (1,1) Transducer
             end
             arguments(Repeating)
                 varargin
@@ -1198,7 +1198,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             end
 
             % get the aperture as a cell array of {x,y,z,c} pairs
-            el_patches = self.patches(xdc_args.el_sub_div);
+            el_patches = xdc.patches(xdc_args.el_sub_div);
 
             % map point ordering to generate a square with patch; the
             % corners must be specified in sequential order
@@ -1234,7 +1234,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             
         end
 
-        function varargout = plot(self, varargin, plot_args)
+        function varargout = plot(xdc, varargin, plot_args)
             % PLOT - overload the plot function
             %
             % PLOT(xdc) plots the locations of the Transducer xdc.
@@ -1252,7 +1252,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % See also TRANSDUCER.PATCH 
 
             arguments
-                self (1,1) Transducer
+                xdc (1,1) Transducer
             end
             arguments(Repeating)
                 varargin
@@ -1271,7 +1271,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             end
 
             % get positions
-            p = self.positions();
+            p = xdc.positions();
 
             % plot
             plot_args = struct2nvpair(plot_args);

@@ -22,7 +22,7 @@ classdef TransducerConvex < Transducer
     
     % constructor and get/set methods
     methods(Access=public)
-        function self = TransducerConvex(array_args, xdc_args)
+        function xdc = TransducerConvex(array_args, xdc_args)
             % TRANSDUCERCONVEX - TransducerConvex constructor
             %
             % xdc = TRANSDUCERCONVEX(Name, Value, ...) constructs a
@@ -45,35 +45,35 @@ classdef TransducerConvex < Transducer
 
             % initialize the Transducer
             xdc_args = struct2nvpair(xdc_args);
-            self@Transducer(xdc_args{:})
+            xdc@Transducer(xdc_args{:})
 
             % initialize the TransducerConvex
             for f = string(fieldnames(array_args))'
                 if f == "pitch", continue; end % set this last
-                self.(f) = array_args.(f);
+                xdc.(f) = array_args.(f);
             end
-            if isfield(array_args, "pitch"), self.pitch = array_args.pitch; end
+            if isfield(array_args, "pitch"), xdc.pitch = array_args.pitch; end
 
             % if kerf not set, default it to 0
-            if isempty(self.pitch), self.kerf = 0; end
+            if isempty(xdc.pitch), xdc.kerf = 0; end
         end
     end
     
     % manipulation
     methods
         % scaling
-        function self = scale(self, kwargs)
+        function xdc = scale(xdc, kwargs)
             arguments
-                self Transducer
+                xdc Transducer
                 kwargs.dist (1,1) double
                 kwargs.time (1,1) double
             end
             args = struct2nvpair(kwargs); % get the arguments as Name/Value pairs
-            self = scale@Transducer(self, args{:}); % call superclass method
+            xdc = scale@Transducer(xdc, args{:}); % call superclass method
             if isfield(kwargs, 'dist')
                 w = kwargs.dist;
                 % scale distance (e.g. m -> mm)
-                [self.radius, self.center] = deal(w*self.radius, w*self.center);
+                [xdc.radius, xdc.center] = deal(w*xdc.radius, w*xdc.center);
                 
             end
         end
@@ -104,18 +104,18 @@ classdef TransducerConvex < Transducer
 
     % SIMUS conversion functions
     methods
-        function p = getSIMUSParam(self)
-            arguments, self TransducerConvex {mustBeNonempty}, end
-            p = arrayfun(@(self) struct( ... 
-                'fc', self.fc, ...
-                'pitch', self.pitch, ...
-                'width', self.width, ...
-                'height', self.height, ...
-                'Nelements', self.numel, ...
-                'radius', self.radius, ...
-                'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in %
-                'focus', self.el_focus ... elevation focus
-                ), self);
+        function p = getSIMUSParam(xdc)
+            arguments, xdc TransducerConvex {mustBeNonempty}, end
+            p = arrayfun(@(xdc) struct( ... 
+                'fc', xdc.fc, ...
+                'pitch', xdc.pitch, ...
+                'width', xdc.width, ...
+                'height', xdc.height, ...
+                'Nelements', xdc.numel, ...
+                'radius', xdc.radius, ...
+                'bandwidth', 100*xdc.bw_frac, ... 2-way 6dB fractional bandwidth in %
+                'focus', xdc.el_focus ... elevation focus
+                ), xdc);
             if isempty(p), p = struct.empty; end
             % TODO: error if origin not at 0.
         end
@@ -155,23 +155,23 @@ classdef TransducerConvex < Transducer
     
     % USTB conversion function
     methods
-        function probe = QUPS2USTB(self)
-            arguments, self TransducerConvex, end
-            probe = arrayfun(@(self) uff.curvilinear_array(...
-                'N', self.numel, ...
-                'pitch', self.pitch, ...
-                'radius', self.radius, ...
-                'element_width', self.width, ...
-                'element_height', self.height, ...
-                'origin', uff.point('xyz', self.offset(:)') ...
-                ), self);
+        function probe = QUPS2USTB(xdc)
+            arguments, xdc TransducerConvex, end
+            probe = arrayfun(@(xdc) uff.curvilinear_array(...
+                'N', xdc.numel, ...
+                'pitch', xdc.pitch, ...
+                'radius', xdc.radius, ...
+                'element_width', xdc.width, ...
+                'element_height', xdc.height, ...
+                'origin', uff.point('xyz', xdc.offset(:)') ...
+                ), xdc);
             if isempty(probe), probe = reshape(uff.curvilinear_array.empty, size(probe)); end
         end
     end
 
     % Fullwave functions (in-house)
     methods
-        function xdc = getFullwaveTransducer(self, sscan)
+        function xdco = getFullwaveTransducer(xdc, sscan)
             
             [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size
             [X0, Y0]= deal(sscan.x(1), sscan.z(1)); % first value
@@ -181,32 +181,32 @@ classdef TransducerConvex < Transducer
             
 
             % define variables
-            xdc_.npx     = self.numel; % number of elements
-            xdc_.dTheta  = self.angular_pitch; % atan2(xdc.ptch,xdc.rad); % angular pitch (radians)
-            xdc_.thetas  = self.orientations(); % xdc.dTheta*((-(xdc.npx-1)/2):((xdc.npx-1)/2)); % the thetas defining the transmit elements
+            xdc_.npx     = xdc.numel; % number of elements
+            xdc_.dTheta  = xdc.angular_pitch; % atan2(xdc_.ptch,xdc_.rad); % angular pitch (radians)
+            xdc_.thetas  = xdc.orientations(); % xdc_.dTheta*((-(xdc_.npx-1)/2):((xdc_.npx-1)/2)); % the thetas defining the transmit elements
             
             % legacy
-            % xdc.rad     = self.radius / dY; % 4.957e-2;  % radius of the transducer (pixels)
+            % xdc_.rad     = self.radius / dY; % 4.957e-2;  % radius of the transducer (pixels)
             % zero_offset = 12.4e-3;      % (deprecated) offset of transducer face, how much it comes into the grid (m)
-            % xdc.ptch    = sind(self.angular_pitch) * self.radius / dY; % spatial pitch of the transducer (pixels)
-            % xdc.cen     = [(self.offset(1) - X0)/dX, (self.offset(3) - self.radius - Y0)/dY]; % center of the transducer in grid indices
+            % xdc_.ptch    = sind(self.angular_pitch) * self.radius / dY; % spatial pitch of the transducer (pixels)
+            % xdc_.cen     = [(self.offset(1) - X0)/dX, (self.offset(3) - self.radius - Y0)/dY]; % center of the transducer in grid indices
             
             %% Make incoords and outcoords curves
 
             % define the thetas at the center of each element
             % evenly space, centered at 0deg
-            % for n=1:xdc.npx, xdc.thetas(n)=n*xdc.dTheta; end
-            % xdc.thetas = xdc.thetas-mean(xdc.thetas);
+            % for n=1:xdc_.npx, xdc_.thetas(n)=n*xdc_.dTheta; end
+            % xdc_.thetas = xdc_.thetas-mean(xdc_.thetas);
 
             % get x-axis and y-axis
             x = X0 + (0:nX-1) * dX; % 1 x X
             y = Y0 + (0:nY-1) * dY; % 1 x Y
 
             % Make a circle that defines the transducer surface
-            inmap = (hypot(x' - self.center(1), y - self.center(3))) < self.radius; % X x Y
+            inmap = (hypot(x' - xdc.center(1), y - xdc.center(3))) < xdc.radius; % X x Y
             outmap = zeros(nX,nY);
             % inmap(hypot(x+self.offset(1),y+self.offset(3)-self.radius) < self.radius) = true;
-            % inmap(circleIdx(size(inmap),xdc.cen,xdc.rad/dY)) = 1;
+            % inmap(circleIdx(size(inmap),xdc_.cen,xdc_.rad/dY)) = 1;
 
             % Grab the coords on edge of the circle - larger circle for outcoords
             for i=1:nX
@@ -236,11 +236,11 @@ classdef TransducerConvex < Transducer
             xdc_.outcoords = xdc_.outcoords(idcr,:);
 
             %% assign which transducer number each incoord is assigned to
-            % xdc.thetas_in  = atan2(xdc.incoords(:,1)-xdc.cen(1),xdc.incoords(:,2)-xdc.cen(2));
-            % xdc.thetas_out = atan2(xdc.outcoords(:,1)-xdc.cen(1),xdc.outcoords(:,2)-xdc.cen(2));
+            % xdc_.thetas_in  = atan2(xdc_.incoords(:,1)-xdc_.cen(1),xdc_.incoords(:,2)-xdc_.cen(2));
+            % xdc_.thetas_out = atan2(xdc_.outcoords(:,1)-xdc_.cen(1),xdc_.outcoords(:,2)-xdc_.cen(2));
 
-            xdc_.thetas_in   = atan2d(x(1+xdc_.incoords (:,1)) - self.center(1),y(1+xdc_.incoords (:,2))-self.center(3));
-            xdc_.thetas_out  = atan2d(x(1+xdc_.outcoords(:,1)) - self.center(1),y(1+xdc_.outcoords(:,2))-self.center(3));
+            xdc_.thetas_in   = atan2d(x(1+xdc_.incoords (:,1)) - xdc.center(1),y(1+xdc_.incoords (:,2))-xdc.center(3));
+            xdc_.thetas_out  = atan2d(x(1+xdc_.outcoords(:,1)) - xdc.center(1),y(1+xdc_.outcoords(:,2))-xdc.center(3));
 
             % get location of the center of each element (in pixels)
             xdc_.outcoords2 = zeros(0,2);
@@ -253,27 +253,27 @@ classdef TransducerConvex < Transducer
             for tt=1:xdc_.npx
 
                 % find which incoords are assigned to tt
-                % less_than_max    = xdc.thetas_in < (xdc.thetas(tt) + xdc.dTheta/2);
-                % greater_than_min = xdc.thetas_in > (xdc.thetas(tt) - xdc.dTheta/2);
+                % less_than_max    = xdc_.thetas_in < (xdc_.thetas(tt) + xdc_.dTheta/2);
+                % greater_than_min = xdc_.thetas_in > (xdc_.thetas(tt) - xdc_.dTheta/2);
                 % idtheta = find( less_than_max & greater_than_min);
                 idtheta = abs(xdc_.thetas_in - xdc_.thetas(tt)) < xdc_.dTheta/2;
                 xdc_.incoords(idtheta,4) = tt;
 
                 % find center of tt tx element - do each dim separate cause sometimes idtheta is just one value
-                % xdc.incoords2(tt,1) = mean(xdc.incoords(idtheta,1));
-                % xdc.incoords2(tt,2) = mean(xdc.incoords(idtheta,2));
+                % xdc_.incoords2(tt,1) = mean(xdc_.incoords(idtheta,1));
+                % xdc_.incoords2(tt,2) = mean(xdc_.incoords(idtheta,2));
                 xdc_.incoords2(tt,1:2) = mean(xdc_.incoords(idtheta,1:2),1);
 
                 % find which outcoords are assigned to tt
-                % less_than_max    = xdc.thetas_out < (xdc.thetas(tt) + xdc.dTheta/2);
-                % greater_than_min = xdc.thetas_out > (xdc.thetas(tt) - xdc.dTheta/2);
+                % less_than_max    = xdc_.thetas_out < (xdc_.thetas(tt) + xdc_.dTheta/2);
+                % greater_than_min = xdc_.thetas_out > (xdc_.thetas(tt) - xdc_.dTheta/2);
                 % idtheta = find( less_than_max & greater_than_min);
                 idtheta = abs(xdc_.thetas_out - xdc_.thetas(tt)) < xdc_.dTheta/2;
                 xdc_.outcoords(idtheta,4) = tt;
 
                 % find center of tt rx element - do each dim separate cause sometimes
-                % xdc.outcoords2(tt,1) = mean(xdc.outcoords(idtheta,1));
-                % xdc.outcoords2(tt,2) = mean(xdc.outcoords(idtheta,2));
+                % xdc_.outcoords2(tt,1) = mean(xdc_.outcoords(idtheta,1));
+                % xdc_.outcoords2(tt,2) = mean(xdc_.outcoords(idtheta,2));
                 xdc_.outcoords2(tt,1:2) = mean(xdc_.outcoords(idtheta,1:2),1);
 
             end
@@ -287,10 +287,10 @@ classdef TransducerConvex < Transducer
             xdc_.nInPx  = size(xdc_.incoords,1);
 
             %     figure(2); clf;
-            %     plot(xdc.incoords(:,1),xdc.incoords(:,2),'.'), hold on
-            %     plot(xdc.incoords2(:,1),xdc.incoords2(:,2),'.')
-            %     plot(xdc.outcoords(:,1),xdc.outcoords(:,2),'.')
-            %     plot(xdc.outcoords2(:,1),xdc.outcoords2(:,2),'.'), hold off
+            %     plot(xdc_.incoords(:,1),xdc_.incoords(:,2),'.'), hold on
+            %     plot(xdc_.incoords2(:,1),xdc_.incoords2(:,2),'.')
+            %     plot(xdc_.outcoords(:,1),xdc_.outcoords(:,2),'.')
+            %     plot(xdc_.outcoords2(:,1),xdc_.outcoords2(:,2),'.'), hold off
 
             % make vector which labels where the transducer surface is in pixels in
             % y across x
@@ -311,7 +311,7 @@ classdef TransducerConvex < Transducer
             % consistency)
             args = cellstr(["npx", "inmap", "nInPx", "nOutPx", "incoords", "outcoords", "incoords2", "outcoords2", "surf"]);
             for a = 1:numel(args), args{2,a} = xdc_.(args{1,a}); end
-            xdc = struct(args{:});
+            xdco = struct(args{:});
         end
     end
 
@@ -319,31 +319,31 @@ classdef TransducerConvex < Transducer
     % dependent variable methods
     methods
         % get the pitch
-        function p = get.pitch(self), p = 2 * self.radius * sind(self.angular_pitch / 2); end
+        function p = get.pitch(xdc), p = 2 * xdc.radius * sind(xdc.angular_pitch / 2); end
         
         % set the pitch
-        function set.pitch(self, p), self.angular_pitch = 2 * asind(p / 2 / self.radius); end
+        function set.pitch(xdc, p), xdc.angular_pitch = 2 * asind(p / 2 / xdc.radius); end
         
         % get the kerf
-        function k = get.kerf(self), k = self.pitch - self.width; end
+        function k = get.kerf(xdc), k = xdc.pitch - xdc.width; end
         
         % set the kerf
-        function set.kerf(self, k)
-           self.pitch = self.width + k; 
-           if self.angular_pitch < 0
+        function set.kerf(xdc, k)
+           xdc.pitch = xdc.width + k; 
+           if xdc.angular_pitch < 0
                warning('The interelement angular spacing is less than 0!');
            end
         end
         
         % get the aperture size
-        function a = get.angular_aperture_size(self), a = (self.numel - 1) * self.angular_pitch; end
+        function a = get.angular_aperture_size(xdc), a = (xdc.numel - 1) * xdc.angular_pitch; end
 
         % get the center of the transducer
-        function p = get.center(self), p = - [0; 0; self.radius] + self.offset; end
+        function p = get.center(xdc), p = - [0; 0; xdc.radius] + xdc.offset; end
 
         % set the center of the transducer
-        function set.center(self, p)
-            self.offset(1:numel(p)) = p + sub([0; 0; self.radius], 1:numel(p));
+        function set.center(xdc, p)
+            xdc.offset(1:numel(p)) = p + sub([0; 0; xdc.radius], 1:numel(p));
         end
     end
     

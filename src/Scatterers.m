@@ -126,7 +126,7 @@ classdef Scatterers < matlab.mixin.Copyable
     
     % constructor and get/set methods
     methods
-        function self = Scatterers(kwargs)
+        function scat = Scatterers(kwargs)
             % SCATTERERS - Construct a Scatterers object
             %
             % scat = SCATTERERS('pos', pos) constructs a Scatterers
@@ -162,33 +162,33 @@ classdef Scatterers < matlab.mixin.Copyable
             end
             
             % Name/Value initialization
-            for f = string(fieldnames(kwargs))', self.(f) = kwargs.(f); end
+            for f = string(fieldnames(kwargs))', scat.(f) = kwargs.(f); end
 
             % whether data was set
             [Sa, Sp] = deal(isfield(kwargs, 'amp'), isfield(kwargs, 'pos'));
 
             % data sizing
-            [Na, Np] = deal(size(self.amp,2), size(self.pos,2));
+            [Na, Np] = deal(size(scat.amp,2), size(scat.pos,2));
 
             % check/default amplitudes / positions
             if      Sp &&  Sa % both set: validate
                 if Np ~= Na
-                    if     Np == 1, self.pos = repmat(self.pos, [1,Na]);
-                    elseif Na == 1, self.amp = repmat(self.amp, [1,Np]);
+                    if     Np == 1, scat.pos = repmat(scat.pos, [1,Na]);
+                    elseif Na == 1, scat.amp = repmat(scat.amp, [1,Np]);
                     else,           error('Number of scatterers must match!');
                     end
                 end 
             elseif  Sp && ~Sa % pos set: default amplitude
-                self.amp = ones([1,Np]);
+                scat.amp = ones([1,Np]);
             elseif ~Sp &&  Sa % amp set: default positions
-                self.pos = zeros([3,Na]);
+                scat.pos = zeros([3,Na]);
             else % ~Sp && ~Sa % none set: default pos and amp
-                self.pos = [0;0;30e-3];
-                self.amp = 1;
+                scat.pos = [0;0;30e-3];
+                scat.amp = 1;
             end
         end
         
-        function self = scale(self, kwargs)
+        function scat = scale(scat, kwargs)
             % SCALE - Scale units
             %
             % scat = SCALE(scat, 'dist', factor) scales the distance of the
@@ -210,21 +210,21 @@ classdef Scatterers < matlab.mixin.Copyable
             %
 
             arguments
-                self Scatterers
+                scat Scatterers
                 kwargs.dist (1,1) double
                 kwargs.time (1,1) double
             end
-            self = copy(self); % copy semantics
+            scat = copy(scat); % copy semantics
             cscale = 1; % speed scaling
             if isfield(kwargs, 'dist') % scale distance (e.g. m -> mm)
-                self.pos    = self.pos    * kwargs.dist;
+                scat.pos    = scat.pos    * kwargs.dist;
                 cscale      = cscale      * kwargs.dist; % scale speed
             end
             if isfield(kwargs, 'time')
                 cscale = cscale / kwargs.time; % scale speed
             end
-            self.c0     = self.c0     * cscale; % scale speed
-            self.alpha0 = self.alpha0 / cscale; % scale attenuation
+            scat.c0     = scat.c0     * cscale; % scale speed
+            scat.alpha0 = scat.alpha0 / cscale; % scale attenuation
         end
     end
 
@@ -256,12 +256,12 @@ classdef Scatterers < matlab.mixin.Copyable
 
     % plot methods
     methods 
-        function h = plot(self, varargin, plot_args)
+        function h = plot(scat, varargin, plot_args)
             % PLOT - overload the plot function
             % 
-            % PLOT(self) plots the locations of the Scatterers self.
+            % PLOT(scat) plots the locations of the Scatterers scat.
             %
-            % PLOT(self, ax) uses the axes ax instead of the current axes.
+            % PLOT(scat, ax) uses the axes ax instead of the current axes.
             % 
             % PLOT(..., Name, Value, ...) passes name-value pair arguments
             % to the built-in plot function so that name value pairs that 
@@ -278,7 +278,7 @@ classdef Scatterers < matlab.mixin.Copyable
             % 
             % See also MEDIUM/IMAGESC
             arguments
-                self (1,1) Scatterers
+                scat (1,1) Scatterers
             end 
             arguments(Repeating)
                 varargin
@@ -299,7 +299,7 @@ classdef Scatterers < matlab.mixin.Copyable
 
             % plot
             plot_args = struct2nvpair(plot_args);
-            h = plot(axs, self.pos(1,:), self.pos(3,:), varargin{:}, plot_args{:});
+            h = plot(axs, scat.pos(1,:), scat.pos(3,:), varargin{:}, plot_args{:});
         end        
     end
 
@@ -352,30 +352,31 @@ classdef Scatterers < matlab.mixin.Copyable
 
     % internal type checking convenience methods
     methods(Hidden)
-        function tf = prop_match(self, other)
+        function tf = prop_match(this, that)
             % PROP_MATCH - Property matching utility
             %
-            % tf = PROP_MATCH(self, other) returns true if the set of 
-            % propertiesrequired to combine the objects self and other 
+            % tf = PROP_MATCH(this, that) returns true if the set of 
+            % properties required to combine the objects this and that 
             % match or false if otherwise.
             % 
-            % This means that properties that must be identical to
-            % meaningfully combine two objects.
-            %
-            % For Scatterers, this is the c0 and alpha0 properties
-            %
+            % For Scatterers, the c0 and alpha0 properties must match.
             %
             arguments
-                self Scatterers
-                other Scatterers
+                this Scatterers
+                that Scatterers
             end
             
-            tf = true; 
-            % require that c0 matches
-            tf = tf && isequaln(self.c0, other.c0);
-
-            % require the alpha0 matches
-            tf = tf && isequaln(self.alpha0, other.alpha0);
+            % explicit broadcast to full size
+            dims = 1:max(ndims(this), ndims(that));
+            this = repmat(this, max(1,size(that,dims) ./ size(this,dims)));
+            that = repmat(that, max(1,size(this,dims) ./ size(that,dims)));
+            
+            % check properties
+            tf = true;
+            for f = ["c0", "alpha0"]
+                tf = tf & cellfun(@isequaln, {this.(f)}, {that.(f)});
+            end
+            tf = reshape(tf, size(this));
         end
     end
 
@@ -520,13 +521,13 @@ classdef Scatterers < matlab.mixin.Copyable
     
     % dependent variables
     methods
-        function S = get.numScat(self)
-            S = unique([size(self.amp,2), size(self.pos,2)]);
+        function S = get.numScat(scat)
+            S = unique([size(scat.amp,2), size(scat.pos,2)]);
             assert(isscalar(S), 'Cannot infer number of scatterers - check input sizes!');
         end
-        function b = get.bounds(self), b = cat(1, self.xb, self.yb, self.zb); end
-        function b = get.xb(self), b = [min(self.pos(1,:)), max(self.pos(1,:))]; end
-        function b = get.yb(self), b = [min(self.pos(2,:)), max(self.pos(2,:))]; end
-        function b = get.zb(self), b = [min(self.pos(3,:)), max(self.pos(3,:))]; end
+        function b = get.bounds(scat), b = cat(1, scat.xb, scat.yb, scat.zb); end
+        function b = get.xb(scat), b = [min(scat.pos(1,:)), max(scat.pos(1,:))]; end
+        function b = get.yb(scat), b = [min(scat.pos(2,:)), max(scat.pos(2,:))]; end
+        function b = get.zb(scat), b = [min(scat.pos(3,:)), max(scat.pos(3,:))]; end
     end    
 end

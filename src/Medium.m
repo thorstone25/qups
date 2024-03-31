@@ -82,7 +82,7 @@ classdef Medium < matlab.mixin.Copyable
     end
     methods
         % constructor
-        function self = Medium(kwargs)
+        function med = Medium(kwargs)
             % MEDIUM - MEDIUM constructor
             %
             % med = MEDIUM(...,'c0', c0) constructs a medium with an
@@ -122,14 +122,14 @@ classdef Medium < matlab.mixin.Copyable
             
             % Name/Value pair initialization
             for f = string(fieldnames(kwargs))'
-                self.(f) = kwargs.(f);
+                med.(f) = kwargs.(f);
             end
         end
         
-        function [c, rho, BoA, alpha] = props(self, scan, prop) %#ok<STOUT> 
+        function [c, rho, BoA, alpha] = props(med, scan, prop) %#ok<STOUT> 
             % PROPS - Return the properties of the medium
             %
-            % c = PROPS(self, scan) returns the sound speed of the Medium
+            % c = PROPS(med, scan) returns the sound speed of the Medium
             % defined on the Scan scan.
             % 
             % [c, rho] = PROPS(...) also returns the density of the Medium.
@@ -141,7 +141,7 @@ classdef Medium < matlab.mixin.Copyable
             % [c, rho, BoA, alpha] = PROPS(...) also returns the
             % attenuation parameter alpha.
             % 
-            % [p1, p2, ...] = PROPS(self, scan, PROP) returns the requested
+            % [p1, p2, ...] = PROPS(med, scan, PROP) returns the requested
             % properties of PROP only. PROP must be a string array
             % containing the names of the output property variables 
             % (e.g. ["c", "rho"]).
@@ -160,7 +160,7 @@ classdef Medium < matlab.mixin.Copyable
             % See also MEDIUM.SAMPLED
 
             arguments
-                self Medium
+                med Medium
                 scan Scan
                 prop (1,:) string {mustBeMember(prop, ["c", "rho", "BoA", "alpha"])} = ["c", "rho", "BoA", "alpha"]
             end
@@ -172,7 +172,7 @@ classdef Medium < matlab.mixin.Copyable
             % output)
             nms = ["c", "rho", "BoA", "alpha"]; % property names
             prps(1,:) = cellstr(nms);
-            [prps{2,:}] = getPropertyMap(self, pts); % values, positions are scaled
+            [prps{2,:}] = getPropertyMap(med, pts); % values, positions are scaled
             prps = struct(prps{:});  %#ok<NASGU> % make a struct for easier output mapping
 
             % remap outputs based on prop input
@@ -212,7 +212,7 @@ classdef Medium < matlab.mixin.Copyable
             % med = Medium.Sampled(scan, c, rho); % defined in meters
             %
             % % Scale the values to millimiters
-            % med_mm = scale(med, 'dist', 1e3);
+            % med_mm  = scale(med , 'dist', 1e3);
             % scan_mm = scale(scan, 'dist', 1e3);
             %
             % % Display the Mediums
@@ -259,7 +259,7 @@ classdef Medium < matlab.mixin.Copyable
 
     methods(Access=private)
         % get properties map - private call that's a lot more involved
-        function [c, rho, BoA, alpha] = getPropertyMap(self, points)
+        function [c, rho, BoA, alpha] = getPropertyMap(med, points)
             
             
             assert(size(points,1) == 3) % points is 3 x N x ...
@@ -267,31 +267,31 @@ classdef Medium < matlab.mixin.Copyable
             % preallocate output matrix
             sz = size(points);
             sz(1) = 1; % functions collapse points in dimension 1
-            c      = repmat(self.c0,       sz);
-            rho    = repmat(self.rho0,     sz);
-            BoA    = repmat(self.BoA0,     sz);
-            alpha  = repmat(self.alpha0,   sz);
+            c      = repmat(med.c0,       sz);
+            rho    = repmat(med.rho0,     sz);
+            BoA    = repmat(med.BoA0,     sz);
+            alpha  = repmat(med.alpha0,   sz);
             
-            if ~isempty(self.pertreg)
+            if ~isempty(med.pertreg)
                 % check if for any region, the properties should be
                 % changed
                 nfout_max = 0;
-                for reg = 1:numel(self.pertreg)
-                    if isa(self.pertreg{reg}, 'cell') && numel(self.pertreg{reg}) == 2 % this is a masked region
+                for reg = 1:numel(med.pertreg)
+                    if isa(med.pertreg{reg}, 'cell') && numel(med.pertreg{reg}) == 2 % this is a masked region
                         % get points within region
-                        fun = self.pertreg{reg}{1};
-                        ind = gather(fun(self.pscale * points));
+                        fun = med.pertreg{reg}{1};
+                        ind = gather(fun(med.pscale * points));
                         
                         % modify the property
-                        nfout = length(self.pertreg{reg}{2});
-                        if nfout >= 1, c  (  ind) = self.pertreg{reg}{2}(1) * self.cscale; end
-                        if nfout >= 2, rho(  ind) = self.pertreg{reg}{2}(2) * self.rscale; end
-                        if nfout >= 3, BoA(  ind) = self.pertreg{reg}{2}(3)              ; end
-                        if nfout >= 4, alpha(ind) = self.pertreg{reg}{2}(4) / self.cscale; end
+                        nfout = length(med.pertreg{reg}{2});
+                        if nfout >= 1, c  (  ind) = med.pertreg{reg}{2}(1) * med.cscale; end
+                        if nfout >= 2, rho(  ind) = med.pertreg{reg}{2}(2) * med.rscale; end
+                        if nfout >= 3, BoA(  ind) = med.pertreg{reg}{2}(3)              ; end
+                        if nfout >= 4, alpha(ind) = med.pertreg{reg}{2}(4) / med.cscale; end
 
-                    elseif isa(self.pertreg{reg}, 'function_handle') % this is a functional region
+                    elseif isa(med.pertreg{reg}, 'function_handle') % this is a functional region
                         % get the values corresponding to the input points
-                        fun = self.pertreg{reg};
+                        fun = med.pertreg{reg};
 
                         % MATLAB does not promise the number of outputs,
                         % nor provide a convenient way of figuring that out
@@ -300,7 +300,7 @@ classdef Medium < matlab.mixin.Copyable
                         for nfout = 4:-1:1
                             out = cell(1, nfout);
                             try
-                                [out{:}] = fun(self.pscale * points);
+                                [out{:}] = fun(med.pscale * points);
                                 break;
                             catch
                             end
@@ -315,10 +315,10 @@ classdef Medium < matlab.mixin.Copyable
                         
                         % set the value for valid points
                         ind = cellfun(@isnan, {c_r, rho_r, BoA_r, alpha_r}, 'UniformOutput', false);
-                        if nfout >= 1, c(    ~ind{1}) = c_r(    ~ind{1}) * self.cscale; end
-                        if nfout >= 2, rho(  ~ind{2}) = rho_r(  ~ind{2}) * self.rscale; end
+                        if nfout >= 1, c(    ~ind{1}) = c_r(    ~ind{1}) * med.cscale; end
+                        if nfout >= 2, rho(  ~ind{2}) = rho_r(  ~ind{2}) * med.rscale; end
                         if nfout >= 3, BoA(  ~ind{3}) = BoA_r(  ~ind{3})              ; end
-                        if nfout >= 4, alpha(~ind{4}) = alpha_r(~ind{4}) / self.cscale; end
+                        if nfout >= 4, alpha(~ind{4}) = alpha_r(~ind{4}) / med.cscale; end
                     end
 
                     % update the number of arguments modified
@@ -340,21 +340,21 @@ classdef Medium < matlab.mixin.Copyable
 
     % fullwave interface
     methods
-        function maps = getFullwaveMap(self, scan)
+        function maps = getFullwaveMap(med, scan)
             % GETFULLWAVEMAP - Get Fullwave compatible map structure
             %
-            % maps = getFullwaveMap(self, scan) returns a map sampled on
+            % maps = getFullwaveMap(med, scan) returns a map sampled on
             % the Scan scan.
             %
             % See also SCANCARTESIAN MEDIUM/PROPS
 
             arguments
-                self Medium
+                med Medium
                 scan Scan
             end
 
             % sample all maps on the grid points
-            [c, rho, BoA, alpha] = props(self, scan);
+            [c, rho, BoA, alpha] = props(med, scan);
 
             % set the map properties
             eta = 1 + BoA./2;
@@ -369,21 +369,21 @@ classdef Medium < matlab.mixin.Copyable
 
     % k-Wave interface
     methods
-        function kmedium = getMediumKWave(self, scan)
+        function kmedium = getMediumKWave(med, scan)
             % GETMEDIUMKWAVE - Get a kWave compatible medium struct
             %
-            % kmedium = GETMEDIUMKWAVE(self, scan) creates a kWave
-            % compatible struct from the Medium self and the ScanCartesian
+            % kmedium = GETMEDIUMKWAVE(med, scan) creates a kWave
+            % compatible struct from the Medium med and the ScanCartesian
             % scan.
             %
             %
             arguments
-                self Medium
+                med Medium
                 scan Scan
             end
 
             % get properties in original dimensions
-            [c, rho, BoA, alpha] = self.props(scan);
+            [c, rho, BoA, alpha] = med.props(scan);
 
             % get k-Wave order
             ord = arrayfun(@(d) find(d == scan.order), 'ZXY'); % place in this order for kWave
@@ -398,8 +398,8 @@ classdef Medium < matlab.mixin.Copyable
 
             % set alpha power if alpha coefficient is set
             if isfield(kmedium, 'alpha_coeff')
-                kmedium.alpha_power = self.alpha_power;
-                if self.alpha_power == 1
+                kmedium.alpha_power = med.alpha_power;
+                if med.alpha_power == 1
                     warning( ...
                         "QUPS:getMediumKWave:noDispersion", ...
                         "Deactivating dispersion for an exponential coefficient of 1." ...
@@ -648,13 +648,13 @@ classdef Medium < matlab.mixin.Copyable
 
     % visualization methods
     methods
-        function h = imagesc(self, scan, varargin, im_args, kwargs)
+        function h = imagesc(med, scan, varargin, im_args, kwargs)
             % IMAGESC - Image the Medium (without scatterers)
             %
-            % h = IMAGESC(self, scan) plots the Medium on the region
+            % h = IMAGESC(med, scan) plots the Medium on the region
             % defined by the Scan (currently just the sound speed).
             %
-            % h = IMAGESC(self, scan, ax) uses the axes ax for plotting
+            % h = IMAGESC(med, scan, ax) uses the axes ax for plotting
             % instead of the current axes
             %
             % h = IMAGESC(..., 'props', props) plots the properties in the string 
@@ -681,7 +681,7 @@ classdef Medium < matlab.mixin.Copyable
             % 
             % See also SCAN/IMAGESC IMAGESC LINKAXES
             arguments
-                self (1,1) Medium
+                med (1,1) Medium
                 scan (1,1) Scan
             end
             arguments(Repeating)
@@ -701,7 +701,7 @@ classdef Medium < matlab.mixin.Copyable
             end
 
             % compute the properties on the grid
-            [c, rho, BoA, alpha] = self.props(scan);
+            [c, rho, BoA, alpha] = med.props(scan);
 
             % place properties into a cell array of plot objects
             x = {}; % init

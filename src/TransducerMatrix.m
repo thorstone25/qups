@@ -18,7 +18,7 @@ classdef TransducerMatrix < Transducer
         
     % constructor 
     methods(Access=public)
-        function self = TransducerMatrix(kwargs)
+        function xdc = TransducerMatrix(kwargs)
             % TRANSDUCERMATRIX - TransducerMatrix constructor
             %
             % xdc = TRANSDUCERMATRIX(Name, Value, ...) constructs a
@@ -60,28 +60,28 @@ classdef TransducerMatrix < Transducer
             % initialize the Transducer
             rmflds = intersect(fieldnames(kwargs), ["numd", "pitch"]);
             args = struct2nvpair(rmfield(kwargs, rmflds));
-            self@Transducer(args{:}) 
+            xdc@Transducer(args{:}) 
             
             % if numd was not set, make it a resonably guessed breakdown
             if ~isfield(kwargs, 'numd')
                 % use product of every other factor -
                 % this is a heuristic breakdown that is guaranteed to be
                 % the square root if N has a square
-                f = factor(self.numel); % factors (sorted)
+                f = factor(xdc.numel); % factors (sorted)
                 kwargs.numd = [prod(f(1:2:end)), prod(f(2:2:end))]; % heuristic
             end
-            self.numd = kwargs.numd;
+            xdc.numd = kwargs.numd;
 
             % if neither width/height set, make width==height==the smaller of the two
             if ~isfield(kwargs,'width') && ~isfield(kwargs,'height')
-                [self.width, self.height] = deal(min(self.width, self.height));
+                [xdc.width, xdc.height] = deal(min(xdc.width, xdc.height));
             end
 
             % if pitch was not set, ensure width/height <= pitch
             if isfield(kwargs, 'pitch')
-                self.pitch = kwargs.pitch;
+                xdc.pitch = kwargs.pitch;
             elseif ~isfield(kwargs, 'pitch') % && (isfield(kwargs, 'width') || isfield(kwargs, 'height'))
-                self.pitch = max(self.pitch, [self.width, self.height]);
+                xdc.pitch = max(xdc.pitch, [xdc.width, xdc.height]);
             end
         end
     end
@@ -89,7 +89,7 @@ classdef TransducerMatrix < Transducer
     % manipulation
     methods
         % scaling
-        function self = scale(self, kwargs)
+        function xdc = scale(xdc, kwargs)
             % SCALE - Scale units
             %
             % xdc = SCALE(xdc, 'dist', factor) scales the distance of the
@@ -111,15 +111,15 @@ classdef TransducerMatrix < Transducer
             %
 
             arguments
-                self Transducer
+                xdc Transducer
                 kwargs.dist (1,1) double
                 kwargs.time (1,1) double
             end
             args = struct2nvpair(kwargs); % get the arguments as Name/Value pairs
-            self = scale@Transducer(self, args{:}); % call superclass method
+            xdc = scale@Transducer(xdc, args{:}); % call superclass method
             if isfield(kwargs, 'dist') % scale distance (e.g. m -> mm)
-                self.pitch = self.pitch * kwargs.dist;
-                self.mux_offset = self.mux_offset * kwargs.dist;
+                xdc.pitch = xdc.pitch * kwargs.dist;
+                xdc.mux_offset = xdc.mux_offset * kwargs.dist;
             end
         end
     end
@@ -151,15 +151,15 @@ classdef TransducerMatrix < Transducer
     % SIMUS conversion functions
     methods
         % MUST only supports linear arrays or curvilinear arrays
-        function p = getSIMUSParam(self), 
-            arguments, self TransducerMatrix, end
-            p = arrayfun(@(self) struct( ...
-                'fc', self.fc, ...
-                'elements', sub(self.positions(),1:2,1), ...
-                'width', self.width, ...
-                'height', self.height, ...
-                'bandwidth', 100*self.bw_frac ...
-                ), self);
+        function p = getSIMUSParam(xdc), 
+            arguments, xdc TransducerMatrix, end
+            p = arrayfun(@(xdc) struct( ...
+                'fc', xdc.fc, ...
+                'elements', sub(xdc.positions(),1:2,1), ...
+                'width', xdc.width, ...
+                'height', xdc.height, ...
+                'bandwidth', 100*xdc.bw_frac ...
+                ), xdc);
             if isempty(p), p = struct.empty; end
         end
     end
@@ -199,17 +199,17 @@ classdef TransducerMatrix < Transducer
     
     % USTB conversion function
     methods
-        function probe = QUPS2USTB(self)
-            arguments, self TransducerMatrix, end
-            probe = arrayfun(@(self) uff.matrix_array(...
-                'N_x', self.numd(1), ...
-                'N_y', self.numd(end), ...
-                'pitch_x', self.pitch( 1 ), ...
-                'pitch_y', self.pitch(end), ...
-                'element_width', self.width, ...
-                'element_height', self.height, ...
-                'origin', uff.point('xyz', self.offset(:)') ...
-                ), self);
+        function probe = QUPS2USTB(xdc)
+            arguments, xdc TransducerMatrix, end
+            probe = arrayfun(@(xdc) uff.matrix_array(...
+                'N_x', xdc.numd(1), ...
+                'N_y', xdc.numd(end), ...
+                'pitch_x', xdc.pitch( 1 ), ...
+                'pitch_y', xdc.pitch(end), ...
+                'element_width', xdc.width, ...
+                'element_height', xdc.height, ...
+                'origin', uff.point('xyz', xdc.offset(:)') ...
+                ), xdc);
             if isempty(probe), probe = reshape(uff.matrix_array.empty, size(probe)); end
         end
     end

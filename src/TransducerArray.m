@@ -18,7 +18,7 @@ classdef TransducerArray < Transducer
     
     % constructor 
     methods(Access=public)
-        function self = TransducerArray(array_args, xdc_args)
+        function xdc = TransducerArray(array_args, xdc_args)
             % TRANSDUCERARRAY - TransducerArray constructor
             %
             % xdc = TRANSDUCERARRAY(Name, Value, ...) constructs a
@@ -38,22 +38,22 @@ classdef TransducerArray < Transducer
             
             % initialize the Transducer
             xdc_args = struct2nvpair(xdc_args);
-            self@Transducer(xdc_args{:}) 
+            xdc@Transducer(xdc_args{:}) 
             
             % initialize the TransducerArray 
             for f = string(fieldnames(array_args))'
-                self.(f) = array_args.(f);
+                xdc.(f) = array_args.(f);
             end
 
             % if kerf not set, default it to 0
-            if isempty(self.pitch), self.kerf = 0; end
+            if isempty(xdc.pitch), xdc.kerf = 0; end
         end
     end
     
     % manipulation
     methods
         % scaling
-        function self = scale(self, kwargs)
+        function xdc = scale(xdc, kwargs)
             % SCALE - Scale units
             %
             % xdc = SCALE(xdc, 'dist', factor) scales the distance of the
@@ -75,16 +75,16 @@ classdef TransducerArray < Transducer
             %
 
             arguments
-                self Transducer
+                xdc Transducer
                 kwargs.dist (1,1) double
                 kwargs.time (1,1) double
             end
             args = struct2nvpair(kwargs); % get the arguments as Name/Value pairs
-            self = scale@Transducer(self, args{:}); % call superclass method
+            xdc = scale@Transducer(xdc, args{:}); % call superclass method
             if isfield(kwargs, 'dist')
                 w = kwargs.dist;
                 % scale distance (e.g. m -> mm)
-                [self.pitch] = deal(w*self.pitch);
+                [xdc.pitch] = deal(w*xdc.pitch);
             end
         end
     end
@@ -111,18 +111,18 @@ classdef TransducerArray < Transducer
     
     % SIMUS conversion functions
     methods
-        function p = getSIMUSParam(self)
-            arguments, self TransducerArray, end
-            p = arrayfun(@(self) struct( ...
-                'fc', self.fc, ...
-                'pitch', self.pitch, ...
-                'width', self.width, ...
-                'height', self.height, ...
-                'Nelements', self.numel, ...
+        function p = getSIMUSParam(xdc)
+            arguments, xdc TransducerArray, end
+            p = arrayfun(@(xdc) struct( ...
+                'fc', xdc.fc, ...
+                'pitch', xdc.pitch, ...
+                'width', xdc.width, ...
+                'height', xdc.height, ...
+                'Nelements', xdc.numel, ...
                 'radius', inf, ...
-                'bandwidth', 100*self.bw_frac, ... 2-way 6dB fractional bandwidth in % 
-                'focus', self.el_focus ... elevation focus
-                ), self);
+                'bandwidth', 100*xdc.bw_frac, ... 2-way 6dB fractional bandwidth in % 
+                'focus', xdc.el_focus ... elevation focus
+                ), xdc);
             if isempty(p), p = struct.empty; end
             % TODO: error if origin not at 0.
         end
@@ -159,22 +159,22 @@ classdef TransducerArray < Transducer
     
     % USTB conversion function
     methods
-        function probe = QUPS2USTB(self)
-            arguments, self Transducer, end
-            probe = arrayfun(@(self) uff.linear_array(...
-                'N', self.numel, ...
-                'pitch', self.pitch, ...
-                'element_width', self.width, ...
-                'element_height', self.height, ...
-                'origin', uff.point('xyz', self.offset(:)') ...
-                ), self);
+        function probe = QUPS2USTB(xdc)
+            arguments, xdc Transducer, end
+            probe = arrayfun(@(xdc) uff.linear_array(...
+                'N', xdc.numel, ...
+                'pitch', xdc.pitch, ...
+                'element_width', xdc.width, ...
+                'element_height', xdc.height, ...
+                'origin', uff.point('xyz', xdc.offset(:)') ...
+                ), xdc);
             if isempty(probe), probe = reshape(uff.linear_array.empty, size(probe)); end
         end
     end
 
     % Fullwave functions
     methods(Hidden)
-        function xdc = getFullwaveTransducer(self, sscan)
+        function xdco = getFullwaveTransducer(xdc, sscan)
 
             [dX, dY] = deal(sscan.dx, sscan.dz); % simulation grid step size
             [X0, Y0]= deal(sscan.x(1), sscan.z(1)); % first value
@@ -183,27 +183,27 @@ classdef TransducerArray < Transducer
             % map (X, Z) -> (X, Y)
             
             % define variables
-            xdc_.npx     = self.numel; % number of elements
-            % xdc.thetas  = self.orientations(); % xdc.dTheta*((-(xdc.npx-1)/2):((xdc.npx-1)/2)); % the thetas defining the transmit elements
+            xdc_.npx     = xdc.numel; % number of elements
+            % xdc_.thetas  = xdc.orientations(); % xdc_.dTheta*((-(xdc_.npx-1)/2):((xdc_.npx-1)/2)); % the thetas defining the transmit elements
 
             % legacy
             % zero_offset = 12.4e-3;      % (deprecated) offset of transducer face, how much it comes into the grid (m)
-            % xdc.ptch    = self.pitch; % sind(self.angular_pitch) * self.radius; % angular pitch of the transducer (pixels)
-            % xdc.cen     = [(self.offset(1) - X0)/dX, (self.offset(3) - self.radius - Y0)/dY]; % center of the transducer in grid indices
+            % xdc_.ptch    = xdc.pitch; % sind(xdc.angular_pitch) * xdc.radius; % angular pitch of the transducer (pixels)
+            % xdc_.cen     = [(xdc.offset(1) - X0)/dX, (xdc.offset(3) - xdc.radius - Y0)/dY]; % center of the transducer in grid indices
 
             %% Make incoords and outcoords curves
 
             % define the thetas at the center of each element
             % evenly space, centered at 0deg
-            % for n=1:xdc.npx, xdc.thetas(n)=n*xdc.dTheta; end
-            % xdc.thetas = xdc.thetas-mean(xdc.thetas);
+            % for n=1:xdc_.npx, xdc_.thetas(n)=n*xdc_.dTheta; end
+            % xdc_.thetas = xdc_.thetas-mean(xdc_.thetas);
 
             % get x-axis and y-axis
             x = X0 + (0:nX-1) * dX; % 1 x X
             y = Y0 + (0:nY-1) * dY; % 1 x Y
 
             % Make a rectangle that defines the transducer surface
-            pb = self.bounds;
+            pb = xdc.bounds;
             inmap  = pb(1,1) < x' & x' < pb(1,2) & y < pb(3,2);
             outmap = zeros(nX,nY);
 
@@ -234,7 +234,7 @@ classdef TransducerArray < Transducer
             xdc_.outcoords = xdc_.outcoords(idcr,:);
 
             %% assign which transducer number each incoord is assigned to
-            xn = self.positions();
+            xn = xdc.positions();
             xn = xn(1,:); % x-positions of the transmit elements
 
             % get location of the center of each element (in pixels)
@@ -251,7 +251,7 @@ classdef TransducerArray < Transducer
                 % less_than_max    = xdc.thetas_in < (xdc.thetas(tt) + xdc.dTheta/2);
                 % greater_than_min = xdc.thetas_in > (xdc.thetas(tt) - xdc.dTheta/2);
                 % idtheta = find( less_than_max & greater_than_min);
-                idxn = abs(x(xdc_.incoords(:,1)) - xn(tt)) < self.pitch/2; % x is in-bounds
+                idxn = abs(x(xdc_.incoords(:,1)) - xn(tt)) < xdc.pitch/2; % x is in-bounds
                 xdc_.incoords(idxn,4) = tt; % assign
 
                 % find center of tt tx element - do each dim separate cause sometimes idtheta is just one value
@@ -263,7 +263,7 @@ classdef TransducerArray < Transducer
                 % less_than_max    = xdc.thetas_out < (xdc.thetas(tt) + xdc.dTheta/2);
                 % greater_than_min = xdc.thetas_out > (xdc.thetas(tt) - xdc.dTheta/2);
                 % idtheta = find( less_than_max & greater_than_min);
-                idxn = abs(x(xdc_.outcoords(:,1)) - xn(tt)) < self.pitch/2; % x is in-bounds
+                idxn = abs(x(xdc_.outcoords(:,1)) - xn(tt)) < xdc.pitch/2; % x is in-bounds
                 xdc_.outcoords(idxn,4) = tt; % assign
 
                 % find center of tt rx element - do each dim separate cause sometimes
@@ -301,7 +301,7 @@ classdef TransducerArray < Transducer
             % consistency)
             args = cellstr(["npx", "inmap", "nInPx", "nOutPx", "incoords", "outcoords", "incoords2", "outcoords2", "surf"]);
             for a = 1:numel(args), args{2,a} = xdc_.(args{1,a}); end
-            xdc = struct(args{:});
+            xdco = struct(args{:});
 
         end
     end
@@ -309,18 +309,18 @@ classdef TransducerArray < Transducer
     % dependent variable methods
     methods
         % get the kerf
-        function k = get.kerf(self), k = self.pitch - self.width; end
+        function k = get.kerf(xdc), k = xdc.pitch - xdc.width; end
         
         % set the kerf
-        function set.kerf(self, k)
-           self.pitch = self.width + k; 
-           if self.pitch < 0
+        function set.kerf(xdc, k)
+           xdc.pitch = xdc.width + k; 
+           if xdc.pitch < 0
                warning('The interelement spacing is less than 0!');
            end
         end
         
         % get the aperture size
-        function a = get.aperture_size(self), a = self.numel * self.pitch; end
+        function a = get.aperture_size(xdc), a = xdc.numel * xdc.pitch; end
     end
     
     methods(Static)
