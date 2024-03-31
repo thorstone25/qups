@@ -1515,7 +1515,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % title('Estimated frequency per transmit');
             % legend({'True', 'Estimated'});
             % 
-            % Example:
+            % % Example 2:
             % chd = ChannelData('data', rand([5,4,3,2]));
             % chd = splice(chd, 4), % split over frames
             % chd(1), chd(2)
