@@ -132,27 +132,27 @@ classdef ScanSpherical < Scan
 
             error("Not implemented.");
 
-            % create an output scan if one not given
-            if nargin < 3, scanC = ScanCartesian(self); end
-
-            % get the cartesian points for the output scan
-            [X, Y, Z] = scanC.getImagingGrid();
-            
-            % convert to spherical
-            og = self.origin;
-            [A, E, R] = cart2sph(Z - og(3), X - og(1), Y - og(2));
-
-            % sample the data at these coordinates
-            % TODO: handle different data orders / dimensionality via 
-            % permution / page functions
-            assert(self.order == "RAE", "Data must be in order 'RAE'.");
-            [RG, AG, EG] = ndgrid(self.r, deg2rad(self.a), deg2rad(self.e)); % use interp2 for compatibility
-            b_cart = cellfun(@(b) {interp2(AG, RG, b, A, R, 'linear', nan)}, num2cell(b_pol, [1,2]));
-            b_cart = reshape(cat(3, b_cart{:}), [size(A,1:2), size(b_pol, 3:max(3,ndims(b_pol)))]); %#ok<CPROPLC> 
-            % b_cart = interp3(RG, AG, YG, b_pol, R, A, Y, 'linear', nan); % use interp3 for compatibility
-
-            % let nans be nans? or make zero?
-            % b_cart(isnan(b_cart)) = 0;
+            % % create an output scan if one not given
+            % if nargin < 3, scanC = ScanCartesian(self); end
+            % 
+            % % get the cartesian points for the output scan
+            % [X, Y, Z] = scanC.getImagingGrid();
+            % 
+            % % convert to spherical
+            % og = self.origin;
+            % [A, E, R] = cart2sph(Z - og(3), X - og(1), Y - og(2));
+            % 
+            % % sample the data at these coordinates
+            % % TODO: handle different data orders / dimensionality via 
+            % % permution / page functions
+            % assert(self.order == "RAE", "Data must be in order 'RAE'.");
+            % [RG, AG, EG] = ndgrid(self.r, deg2rad(self.a), deg2rad(self.e)); % use interp2 for compatibility
+            % b_cart = cellfun(@(b) {interp2(AG, RG, b, A, R, 'linear', nan)}, num2cell(b_pol, [1,2]));
+            % b_cart = reshape(cat(3, b_cart{:}), [size(A,1:2), size(b_pol, 3:max(3,ndims(b_pol)))]); %#ok<CPROPLC> 
+            % % b_cart = interp3(RG, AG, YG, b_pol, R, A, Y, 'linear', nan); % use interp3 for compatibility
+            % 
+            % % let nans be nans? or make zero?
+            % % b_cart(isnan(b_cart)) = 0;
         end
 
         function scan = ScanCartesian(self)

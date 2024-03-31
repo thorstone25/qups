@@ -196,8 +196,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
                 ); % E1 x E2
             [dxs, dys] = deal(1 / sub_div(1), 1 / sub_div(2)); % sub difference
 
-            E = prod(sub_div);
-
             % reshape to E x 4
             dx = dx(:); dy = dy(:);
             dx = [dx, dx + dxs, dx      , dx + dxs];
@@ -532,6 +530,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % SIMUS functions
     methods
+        function getSIMUSParam(xdc)
         % GETSIMUSPARAM - Create a MUST compatible parameter struct
         %
         % p = GETSIMUSPARAM(xdc) returns a structure with properties
@@ -543,7 +542,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         % p = xdc.getSIMUSParam();
         % 
         % See also ULTRASOUNDSYSTEM/SIMUS
-        function p = getSIMUSParam(xdc)
             error( ...
                 "QUPS:Transducer:unsupportedTransducer", ...
                 "SIMUS does not support a " + class(xdc) + "." ...
@@ -568,146 +566,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
                 case 'uff.probe',            xdc = TransducerGeneric.UFF(probe);
                 otherwise,                   xdc = TransducerGeneric.UFF(probe);
             end
-        end
-    end
-
-    % kWave functions (old)
-    methods(Hidden)
-        function [ksensor, ksensor_ind, sens_map] = getKWaveSensor(xdc, kgrid, kgrid_origin, el_sub_div)
-            % GETKWAVESENSOR - Get a kWave compatible sensor struct
-            % 
-            % ksensor = GETKWAVESENSOR(xdc, kgrid, kgrid_origin)
-            % 
-            % TODO: doc this function: it gives you a k-Wave ready sensor
-            % structure
-            %             arguments
-            %                 xdc (1,1)
-            %                 kgrid (1,1) kWaveGrid
-            %                 kgrid_origin
-            %                 el_sub_div (1,2) double = [1,1];
-            %             end
-            if nargin < 4, el_sub_div = [1,1]; end
-
-            % get the sensor and source masks. This is the hard part: how do I do this
-            % for a convex probe on a grid surface?
-
-            % cast grid points to single type for efficiency and base grid on the origin
-            [gxo, gyo, gzo] = deal(kgrid_origin(1), kgrid_origin(2), kgrid_origin(3)); % grid {dim} origin
-            [gxv, gyv, gzv] = deal(single(gxo + kgrid.x_vec), single(gyo + kgrid.y_vec), single(gzo + kgrid.z_vec)); % grid {dim} vector
-            [gx0, gy0, gz0] = deal(gxv(1), gyv(1), gzv(1)); % grid {dim} first point
-            [gxd, gyd, gzd] = deal(single(kgrid.dx), single(kgrid.dy), single(kgrid.dz)); % grid {dim} delta
-
-            % get array sizing - make size '1' and step 'inf' for sliced dimensions
-            [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz);
-            if gxd == 0, gxd = inf; end
-            if gyd == 0, gyd = inf; end
-            if gzd == 0, gzd = inf; end
-
-            % get local element size reference
-            [width_, height_] = deal(xdc.width, xdc.height);
-
-            % get regions for each receive transducer element
-            el_cen = xdc.positions(); % center of each element
-            [theta, phi, el_dir, el_wid, el_ht] = xdc.orientations(); % orientations vectors for each element
-
-            % reorder to map between kwave and conventional ultrasound coordinates
-            [el_dir, el_cen, el_wid, el_ht] = dealfun(@(v)v([3 1 2],:), el_dir, el_cen, el_wid, el_ht);
-
-            % get edges in x/y/z (i.e. patches) for each sub element
-            patches = xdc.patches(el_sub_div)'; % (E x N)
-            nSub = size(patches, 1); % number of subelements
-
-            % convert to cell array of points with x/y/z in 1st dimension
-            % in kgrid order
-            p_patches = cellfun(@(pch) vec(cellfun(@(p)mean(p(:)), pch([3 1 2]))), patches, 'UniformOutput', false);
-
-            % send grid data to workers if we have a parallel pool
-            if(isvalid(gcp('nocreate'))), sendDataToWorkers = @parallel.pool.Constant;
-            else, sendDataToWorkers = @(x) struct('Value', x);
-            end
-            [gxv, gyv, gzv] = dealfun(sendDataToWorkers, gxv, gyv, gzv);
-
-            % initialize
-            ksensor_all = false([Nx, Ny, Nz]);
-
-            % get sensing map for all patches for all elements
-            fprintf('\n');
-            parfor el = 1:xdc.numel
-                tt = tic;
-                % set variables for the element
-                [el_dir_, el_cen_, el_wid_, el_ht_, p_patches_] = deal(el_dir(:,el), el_cen(:,el), el_wid(:,el), el_ht(:,el), p_patches(:,el));
-
-                % initialize
-                ksensor{el} = struct('mask', false([Nx, Ny, Nz]));
-
-                for i = nSub:-1:1
-                    % get the center of the subelement
-                    pcen = p_patches_{i};
-
-                    % get zero crossing indices
-                    xind = 1 + (pcen(1) - gx0) / gxd;
-                    yind = 1 + (pcen(2) - gy0) / gyd;
-                    zind = 1 + (pcen(3) - gz0) / gzd;
-
-                    % get index on both sides
-                    [xind, yind, zind] = dealfun(@(n) vec(unique([floor(n); ceil(n)])), xind, yind, zind);
-
-                    % shift to appropriate dimensions
-                    xind = shiftdim(xind,  0); % in first dimension
-                    yind = shiftdim(yind, -1); % in second dimension
-                    zind = shiftdim(zind, -2); % in third dimension
-
-                    % get outer product expansion for all sets of indices
-                    [xind, yind, zind] = ndgrid(xind, yind, zind);
-
-                    % vectorize
-                    [xind, yind, zind] = dealfun(@vec, xind, yind, zind);
-
-                    % [xind, yind, zind] = msk_fun_neighbors(pcen);
-                    ind_msk = sub2ind([Nx, Ny, Nz], xind, yind, zind);
-
-                    % get vector from element to the grid pixels
-                    vec_ = gather([gxv.Value(xind), gyv.Value(yind), gzv.Value(zind)]') - pcen; %#ok<PFBNS> % 3 x J;
-
-                    % get plane wave phase shift distance as the inner product
-                    % sign is whether in front or behind
-                    d = (el_dir_' * vec_);
-
-                    % get subelement apodization accounting for cosine
-                    % distribution along the transducer surface
-                    % I don't ... actually know how to do this ...
-                    a = cosd(90 * 2 * el_wid_' * (pcen - el_cen_) / width_ ) ...
-                        * cosd(90 * 2 * el_ht_'  * (pcen - el_cen_) / height_);
-                    a = 1; %%% DEBUG %%%
-
-                    % save indices, distances, and normal to the sensitivity map
-                    sens_map(i,el) = struct(...
-                        'amp', a, ...
-                        'dist', vec(d),...
-                        'mask_indices', ind_msk,...
-                        'element_dir', el_dir_ ...
-                        );
-
-                    % set the overall mask for each element
-                    ksensor{el}.mask(ind_msk) = true;
-                end
-
-                % reduce to make full recording sensor mask
-                ksensor_all = ksensor_all | ksensor{el}.mask;
-
-                % report computation timing
-                fprintf('Processed %i subelements for element %i in %0.5f seconds.\n', nSub, el, toc(tt));
-            end
-
-            % get the translation map for sensor to receiver element
-            ind_full_sensor = find(ksensor_all);
-            parfor (el = 1:xdc.numel, 0)
-                [~, ksensor_ind{el}] = ismember(find(ksensor{el}.mask), ind_full_sensor);
-            end
-
-            % ensure results on the host
-            ksensor_ind  = cellfun(@gather, ksensor_ind, 'UniformOutput', false);
-            ksensor = cellfun(@(k)struct('mask',gather(k.mask)), ksensor, 'UniformOutput', false);
         end
     end
 
@@ -1279,67 +1137,13 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % return
             if nargout > 0, varargout{1} = hp; end
         end
-
-        function varargout = surf(self, varargin)
-            % SURF - Alias for patch
-            % 
-            % See also TRANSDUCER/PATCH
-            varargout = cell([1, nargout]);
-            [varargout{:}] = patch(self, varargin{:});
-        end
     end
 
     % to be deprecated functions
     methods(Static, Access=private)
-        function [y] = cgauspuls(t,fc,bw,bwr)
-            %{
-             % implement this, but with less checking and shaping
-            [yi, yq] = gauspuls(varargin{:});
-            y = complex(yi, yq);
-            %}
-
-            % defaults
-            [bwrI, bwI, fcI] = deal(-6, 0.5, 1e3);
-
-            % set inputs
-            if nargin >= 4 && ~isempty(bwr), bwrI = bwr; end
-            if nargin >= 3 && ~isempty(bw),  bwI = bw; end
-            if nargin >= 2 && ~isempty(fc),  fcI = fc; end
-
-            % Determine Gaussian mean and variance in the
-            % frequency domain to match specifications:
-            % r = 10.^(bwrI/20);             % Ref level (fraction of max peak)
-            % fv = -bwI*bwI*fcI*fcI/(8*log(r)); % variance is fv, mean is fc
-
-            % Determine corresponding time-domain parameters:
-            % tv = 1./(4*pi*pi*fv);  % variance is tv, mean is 0
-
-            % Compute time-domain pulse envelope, normalized by sqrt(2*pi*tv):
-            % ye = exp(-t.*t./(2*tv));
-
-            % Modulate envelope to form in-phase and quadrature components:
-            % yc = ye .* cospi(2*fcI*t);  % In-phase
-            % ys = ye .* sinpi(2*fcI*t);  % Quadrature
-
-            % tv = ;  % variance is tv, mean is 0
-            y = exp(-t.*t./(2*(1./(4*pi*pi*(-bwI*bwI*fcI*fcI/(8*log(10.^(bwrI/20)))))))) ...
-                .* (cospi(2*fcI*t) + 1i .* sinpi(2*fcI*t));
-
-            % gauspuls converges to 0 at Inf
-            y(isinf(t)) = 0;
-            % idxInf = isinf(t);
-            % yc(idxInf) = 0;
-            % ys(idxInf) = 0;
-
-        end
-
         function f = cgauspulsfun(fc, bw, bwr)
             isig = ((4*pi*pi*(-bw*bw*fc*fc / (8*log(10.^(bwr/20))))) ./ 2);
             f = @(t) exp(-t .* t .* isig) .* (cospi(2*fc*t) + 1i .* sinpi(2*fc*t));
-        end
-        function f =  gauspulsfun(fc, bw, bwr)
-            isig = ((4*pi*pi*(-bw*bw*fc*fc / (8*log(10.^(bwr/20))))) ./ 2);
-            f = @(t) exp(-t .* t .* isig) .* (cospi(2*fc*t)                      );
         end
     end
     methods
@@ -1349,6 +1153,3 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
         end
     end
 end
-
-% helper functions
-function x = vec(x), x = x(:); end

@@ -141,24 +141,6 @@ classdef ScanCartesian < Scan
                 end
             end % pack if 1 output requested
         end
-                    
-        function setImageGridOnSequence(self, seq)
-            % setImageGridOnSequence - Align Scan to a Sequence
-            %
-            % setImageGridOnSequence(self, seq) modifies the Scan so that
-            % it aligns with the virtual source Sequence seq. 
-            %
-
-            % soft validate the transmit sequence type: it should be focused
-            styps = ["VS", "FC", "DV"]; % valid sequence types
-            if all(us.seq.type ~= styps), warning(...
-                    "Expected a Sequence of type " + join(styps, " or ") + ...
-                    ", but instead got a Sequence of type " + us.seq.type + ": This may produce unexpected results." ...
-                    );
-            end
-
-            self.x = sub(seq.focus,1,1); % use these x-values
-        end
     end
 
    % dependent methods
