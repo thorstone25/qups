@@ -204,7 +204,7 @@ classdef ScanPolar < Scan
     % 
     methods(Hidden)
         function scan = scanCartesian(scan)
-            warning("QUPS:ScanPolar:deprecatedSyntax","'scanCartesian' is deprecated: please use 'ScanCartesian' instead.");
+            warning("QUPS:ScanPolar:syntaxDeprecated","'scanCartesian' is deprecated: use 'ScanCartesian' instead.");
             scan = ScanCartesian(scan); 
         end
     end

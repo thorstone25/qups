@@ -185,7 +185,7 @@ classdef ScanSpherical < Scan
     % 
     methods(Hidden)
         function scan = scanCartesian(scan)
-            warning("QUPS:ScanSpherical:deprecatedSyntax","'scanCartesian' is deprecated: please use 'ScanCartesian' instead.");
+            warning("QUPS:ScanSpherical:syntaxDeprecated","'scanCartesian' is deprecated: please use 'ScanCartesian' instead.");
             scan = ScanCartesian(scan); 
         end
     end
