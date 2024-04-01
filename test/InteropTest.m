@@ -1,5 +1,7 @@
 classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.unittest.TestCase
-    % INTEROPTEST - Test interoperability for extension packages (FieldII, USTB, etc.)
+    % INTEROPTEST - Test interoperability for extension packages (FieldII, USTB, Verasonics)
+
+    %#ok<*ASGLU,*NASGU> ignore unused outputs
     properties(TestParameter)
         xdcs = struct( ...
             "Linr", TransducerArray("numel", 3), ...
@@ -20,8 +22,57 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             "Sphr", scale(ScanSpherical('e',-5:5:5,'r',0:5:10,'a',-5:5:5),'dist', 1e-3) ...
         );
     end
+    properties(TestParameter)
+        vsx_files % VSX - Verasonics data structs
+    end
 
-    methods(TestClassSetup)
+    methods(Static, TestParameterDefinition)
+        function vsx_files = loadVSXData()
+            % load files in data/VSX-*.mat into the class
+            prj = currentProject();
+            vfls = dir(fullfile(prj.RootFolder, "data","VSX-test","**","*.mat")); % VSX test files
+            val = false(size(vfls));
+            % vs = {};
+            for i = 1 : numel(vfls)
+                fl = vfls(i);
+
+                % lazy load
+                dat = matfile(fullfile(fl.folder, fl.name), 'Writable',false);
+
+                % verify
+                flds = string(fieldnames(dat));
+                val(i) = all(ismember(["Trans", "TW", "TX", "Receive", "PData", "Resource"], flds)); % req'd for testing
+                val(i) = val(i) && any(ismember(flds, ["RcvData", "RData"])); % need one or the other
+
+                % check for specific post-processed properties
+                val(i) = val(i) && any(isfield(dat.TW, "TriLvlWvfm"+["","_Sim"]));
+                val(i) = val(i) &&     isfield(dat.Receive, "demodFrequency");
+
+                % import
+                if val(i)
+                    % move RData to RcvData
+                    if isfield(dat, "RData")
+                        if ~isfield(dat, "RcvData")
+                            dat.RcvData = {dat.RData};
+                        else
+                            warning( ...
+                                "QUPS:ExampleTest:duplicateData", ...
+                                "Found 'RData' and 'RcvData' in file " + fl.name +...
+                                " - RData will be ignored." ...
+                                );
+                        end
+                    end
+
+                    % only save specified properties
+                    % dat = rmfield(dat, setdiff(flds, ["Trans", "TW", "TX", "Receive", "PData", "Resource", "RcvData"]));
+
+                    % save
+                    % vs{i} = dat;
+                end
+            end
+            vsx_files = cellstr(string(fullfile({vfls(val).folder},{vfls(val).name})));
+            if isempty(vsx_files), vsx_files = {''}; end
+        end
     end
     methods(Test)
         function fieldII_xdc(tst, xdcs)
@@ -133,6 +184,58 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             xdc = Transducer.UFF(uxdc);
             tst.assertEqual(xdc.positions()', uxdc.geometry(:,1:3), "Conversion from " + class(xdc) + " to " + class(uxdc) + " failed.");
             tst.assertEqual(uxdc.geometry(:,1:3), xdc.QUPS2USTB().geometry(:,1:3), "Conversion from " + class(uxdc) + " to " + class(xdc) + " failed.");
+
+        end
+        function vsx_ext(~, vsx_files)
+            % check if valid
+            if isempty(vsx_files), return; end % nothing to test
+
+            % select and extract data
+            v = load(vsx_files);
+            c0 = v.Resource.Parameters.speedOfSound;
+
+            % enforce RcvData property from RData
+            if ~isfield(v, "RcvData"), v.RcvData = {v.RData}; end
+
+            % TODO: identify multiplexing
+
+            % US loader
+            opts = reshape({'c0', c0, 'PData', v.PData, 'Receive', v.Receive, 'RcvData', v.RcvData},2,[]);
+            N = size(opts, 2); % number of options
+            for i = uint64(0 : 2 ^ N - 1) % for each option permutation
+                j = logical(bitget(i, 1:N)); % use bit mask to select options permutation
+                [us, chd] = UltrasoundSystem.Verasonics(v.Trans, v.TX,       opts{:,j}); % should run
+                [us, chd] = UltrasoundSystem.Verasonics(v.Trans, v.TX, v.TW, opts{:,j}); % should run
+            end
+
+            % Chd loader
+            opts = reshape({'frames', 2, 'insert0s', false},2,[]);
+            N = size(opts, 2); % number of options
+            for i = uint64(0 : 2 ^ N - 1) % for each option permutation
+                j = logical(bitget(i, 1:N)); % use bit mask to select options permutation
+                [chd, fmod, smode] = ChannelData.Verasonics(v.RcvData, v.Receive,          opts{:,j});
+                [chd, fmod, smode] = ChannelData.Verasonics(v.RcvData, v.Receive, v.Trans, opts{:,j});
+            end
+
+            % Sequence loader
+            opts = reshape({'c0', c0, 'xdc', us.xdc},2,[]);
+            N = size(opts, 2); % number of options
+            for i = uint64(0 : 2 ^ N - 1) % for each option permutation
+                j = logical(bitget(i, 1:N)); % use bit mask to select options permutation
+                [seq, t0] = Sequence.Verasonics(v.TX, v.Trans,       opts{:,j});
+                [seq, t0] = Sequence.Verasonics(v.TX, v.Trans, v.TW, opts{:,j});
+            end
+
+            % Transudcer
+            xdc = Transducer.Verasonics(v.Trans);
+            xdc = Transducer.Verasonics(v.Trans, c0);
+
+            % Scan
+            scan = Scan.Verasonics(v.PData, c0 / xdc.fc);
+
+            % Waveform
+            [wvtri, wvm1wy, wvm2wy] = Waveform.Verasonics(v.TW);
+
 
         end
     end
