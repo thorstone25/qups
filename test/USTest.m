@@ -65,7 +65,7 @@ classdef USTest < matlab.unittest.TestCase
     end
 
     % github settings
-    methods(Test, ParameterCombination="pairwise", TestTags = ["Github"])
+    methods(Test, ParameterCombination="pairwise", TestTags = ["Github","syntax"])
         function simgeneric_github(testCase, tx, rx, seq, simulator)
             simgeneric(       testCase, tx, rx, seq, simulator);
         end
@@ -125,9 +125,14 @@ classdef USTest < matlab.unittest.TestCase
             us = UltrasoundSystem('tx', tx, 'rx', rx, 'seq', seq,'recompile',false,'fs',single(4*rx.fc));
             [lb, ub] = bounds([tx.bounds, rx.bounds], 2);
             scat = Scatterers("pos", (lb+ub)./2 + [0 0 50*us.lambda]');
-            switch func2str(simulator)
+            simname = func2str(simulator);
+            switch simname
                 case {"greens", "calc_scat_multi","calc_scat_all","simus"} % point target
                     chd = simulator(us, scat);
+                    if simname == "greens"
+                        chd = simulator(us, scat, 'device', 0, 'tall', 0);
+                        chd = simulator(us, scat, 'device', 0, 'tall', 1);
+                    end
                 case {"kwave", "fullwave"} % medium
                     pb = [rx.bounds, tx.bounds]; pb = [min(pb,[],2), max(pb,[],2)];
                     grid = ScanCartesian('xb', pb(1,:),'zb',pb(3,:),'yb',pb(2,:));
@@ -135,6 +140,12 @@ classdef USTest < matlab.unittest.TestCase
                     med = Medium("c0",scat.c0);
                     med.pertreg{1} = {@(p)argmin(vecnorm(p - scat.pos,2,1)), [scat.c0, 2*med.rho0]}; % point target
                     chd = simulator(us, med, grid);
+                    switch simname
+                        case "kwave"
+                            for elm = ["nearest", "linear", "karray-direct", "karray-depend"]
+                                us.kspaceFirstOrder(med, grid, "ElemMapMethod", elm, "binary",bf);
+                            end
+                    end
             end
         end
 
@@ -173,16 +184,46 @@ classdef USTest < matlab.unittest.TestCase
                 switch func2str(beamformer)
                     case "bfMigration" % "lin-pw" only
                         if us.seq.type ~= "PW" || ~any(arrayfun(@(s)isa(us.seq.xdc,s), "Transducer"+["Array","Matrix"]))
-                            return; % compatibility
+                            return; % incompatible - should draw an error
+                        else
+                            [b, bscan] = beamformer(us,chd,'apod',a); % works
+                            b = test.assertWarning(@() beamformer(us,chd), ...
+                                "QUPS:bfMigration:artefacts"); % draw a warning for no second output
                         end
-                        [b, bscan] = beamformer(us,chd,'apod',a);
                     case "bfEikonal" % fsa only, grid
                         if us.seq.type ~= "FSA", return; end % compatibility
                         if nnz(grid.size > 1) == 3, return; end % segfaults in 3D
                         b = beamformer(us,chd,Medium(),grid,'apod',a);
+                        [~, tn, tm] = beamformer(us); % should work too
+                        test.assertWarning(@()beamformer(us), ... why would you even ...
+                            "QUPS:bfEikonal:"+["unexpectedOutput","emptyChannelData"]);
+
                     case "bfDASLUT"
-                        [~, tn, tm] = bfDAS(us, chd, 'delay_only',true);
-                        b = beamformer(us,chd,tn,tm,'apod',a);
+                        [~, tn, tm] = bfDAS(us, 'delay_only', true); % should draw empty chd default
+                        b = beamformer(us, chd, tn, tm,'apod', a); % works
+                        if us.seq.type == "FSA" && chd.N == chd.mag2db
+                            b = beamformer(us,chd,tn ,'apod',a); % shoudl work too
+                        end
+
+                        % fail if any dim is sub-indexed wrong
+                        for d = [1 2 4]
+                            test.assertFail(@()beamformer(us,chd,sub(tn,1:2,d), tm,'apod',a), ...
+                                "QUPS:UltrasoundSystem:bfDASLUT:incompatibleReceiveDelayTable" ...
+                                ); % bad sizing on rx
+                        end
+                        for d = [1 2 5]
+                            test.assertFail(@()beamformer(us,chd,tn, sub(tm,1:2,d),'apod',a), ...
+                                "QUPS:UltrasoundSystem:bfDASLUT:incompatibleTransmitDelayTable" ...
+                                ); % bad sizing on tx
+                        end
+                        % fail if chd changes size
+                        test.assertFail(@()beamformer(us,subD(chd,1:2,chd.ndim),tn,tm,'apod',a), ...
+                            "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueReceiverSize" ...
+                            ); % bad sizing on rx
+                        test.assertFail(@()beamformer(us,subD(chd,1:2,chd.mdim),tn,tm,'apod',a), ...
+                            "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueTransmitSize" ...
+                            ); % bad sizing on tx
+
                     otherwise
                         b = beamformer(us,chd,'apod',a);
                 end
