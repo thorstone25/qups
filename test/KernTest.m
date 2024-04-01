@@ -51,8 +51,8 @@ classdef KernTest < matlab.unittest.TestCase
         function github_runinterpd(test, prec, complexity, dev)
             runinterpd(test, prec, complexity, dev)
         end
-        function github_apred(test, dev, complexity)
-            aperture_reduction(test, dev, complexity);
+        function github_apred(test, dev, prec)
+            aperture_reduction(test, dev, prec);
         end
         function github_correlator(test, prec, complexity, dev)
             correlator(test, prec, complexity, dev);
