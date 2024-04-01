@@ -142,19 +142,34 @@ classdef USTest < matlab.unittest.TestCase
                     chd = simulator(us, med, grid);
                     switch simname
                         case "kwave"
+                            binfls = fullfile(getkWavePath('binaries'), ["kspaceFirstOrder-OMP","kspaceFirstOrder-CUDA"]);
+                            binfnd = all(arrayfun(@(f)exist(f,'file'), binfls));
+                            for bf = unique([false, binfnd])
                             for elm = ["nearest", "linear", "karray-direct", "karray-depend"]
-                                us.kspaceFirstOrder(med, grid, "ElemMapMethod", elm, "binary",bf);
+                                us.kspaceFirstOrder(med, grid, "ElemMapMethod", elm, "binary", bf);
+                            end
                             end
                     end
             end
         end
 
-        function bfusgeneric(testCase, tx, rx, seq, scan, beamformer)
+        function bfusgeneric(test, tx, rx, seq, scan, beamformer)
             scan = copy(scan);
             seq = copy(seq);
 
             % enforce sequence length
-            if seq.type == "FSA", seq.numPulse = tx.numel; end
+            if seq.type == "FSA"
+                seq.numPulse = tx.numel; 
+            elseif seq.type == "PW"
+                th = [-25 0 25];
+                seq.focus = [sind(th); 0*th; cosd(th)];
+            elseif seq.type ~= "DV"
+                th = [-25 0 25];
+                seq.focus = 50e-3 * [sind(th); 0*th; cosd(th)];
+            else
+                th = [-25 0 25];
+                seq.focus = -5e-3 * [sind(th); 0*th; cosd(th)];                
+            end
 
             % shrink image size
             scan.size = [15 15 1];
@@ -206,21 +221,23 @@ classdef USTest < matlab.unittest.TestCase
                         end
 
                         % fail if any dim is sub-indexed wrong
-                        for d = [1 2 4]
-                            test.assertFail(@()beamformer(us,chd,sub(tn,1:2,d), tm,'apod',a), ...
+                        dn = find(size(tn) > 2);
+                        dm = find(size(tm) > 2);
+                        for d = dn(:)'
+                            test.assertError(@()beamformer(us,chd,sub(tn,1:2,d),tm,'apod',a), ...
                                 "QUPS:UltrasoundSystem:bfDASLUT:incompatibleReceiveDelayTable" ...
                                 ); % bad sizing on rx
                         end
-                        for d = [1 2 5]
-                            test.assertFail(@()beamformer(us,chd,tn, sub(tm,1:2,d),'apod',a), ...
+                        for d = dm(:)'
+                            test.assertError(@()beamformer(us,chd,tn, sub(tm,1:2,d),'apod',a), ...
                                 "QUPS:UltrasoundSystem:bfDASLUT:incompatibleTransmitDelayTable" ...
                                 ); % bad sizing on tx
                         end
                         % fail if chd changes size
-                        test.assertFail(@()beamformer(us,subD(chd,1:2,chd.ndim),tn,tm,'apod',a), ...
+                        test.assertError(@()beamformer(us,[chd, subD(chd,1:2,chd.ndim)],tn,tm,'apod',a), ...
                             "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueReceiverSize" ...
                             ); % bad sizing on rx
-                        test.assertFail(@()beamformer(us,subD(chd,1:2,chd.mdim),tn,tm,'apod',a), ...
+                        test.assertError(@()beamformer(us,[chd, subD(chd,1:2,chd.mdim)],tn,tm,'apod',a), ...
                             "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueTransmitSize" ...
                             ); % bad sizing on tx
 
@@ -232,7 +249,7 @@ classdef USTest < matlab.unittest.TestCase
             % imagesc(us.scan, b);
 
             % TODO: add verification
-            testCase.assertEqual(size(b,1:3), double(bscan.size));
+            test.assertEqual(size(b,1:3), double(bscan.size));
             % testCase.verifyFail("Unimplemented test");
         end
     
@@ -333,7 +350,7 @@ classdef USTest < matlab.unittest.TestCase
 
             % try to make apodization
             f = str2func(apod);
-            try ap = f(us); % success!
+            try ap = f(us); % success?!
             catch ME % failure - QUPS should tell the user
                 warning(ME.identifier, '%s', ME.message);
                 testCase.assertTrue(any(ME.identifier == [ ... any of the following errors are fine
@@ -345,7 +362,10 @@ classdef USTest < matlab.unittest.TestCase
                 return;
             end
 
-            testCase.assertTrue(all(any(size(ap,1:5) == [[us.scan.size, us.xdc.numel, us.seq.numPulse]; ones(1,5)],1),2));
+            dsz = [us.scan.size, us.xdc.numel, us.seq.numPulse]; % data size
+            testCase.assertTrue(all(size(ap,1:5) == dsz | size(ap,1:5) == 1), ...
+                "The output apodization of size ("   + join(string(size(ap,1:5)), " x ") +") "+... 
+                " is not compatible with the data (" +join(string(dsz), " x ") +").");
 
             % TODO: apply
             end
