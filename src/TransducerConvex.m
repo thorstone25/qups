@@ -7,8 +7,8 @@
 
 classdef TransducerConvex < Transducer
     
+    % verasonics C5-2V defaults
     properties
-        % verasonics C5-2V defaults
         radius = 50e-3          % inner radius of curvature
         angular_pitch = 0.5872  % the interelement angular distance (deg)
     end
