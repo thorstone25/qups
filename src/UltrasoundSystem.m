@@ -1200,7 +1200,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % to store temporary simulation files. The default is a folder
             % in the working directory.
             %
-            % chd = FULLWAESIM(..., 'parcluster', clu) uses the
+            % chd = FULLWAESIM(..., 'parenv', clu) uses the
             % parallel.Cluster clu to compute each pulse. The simulation
             % directory must be accesible by the parallel.Cluster clu.
             % 
@@ -1238,8 +1238,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 us (1,1) UltrasoundSystem
                 medium Medium
                 sscan ScanCartesian = us.scan
-                kwargs.parcluster (1,1) parallel.Cluster = parcluster() % parallel cluster
-                kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim'); % simulation directory
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
+                kwargs.simdir (1,1) string = tempname(us.tmp_folder); % simulation directory
                 kwargs.f0 (1,1) {mustBeNumeric} = us.tx.fc; % center frequency of the transmit / simulation
                 kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
                 kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["discrete", "continuous", "interpolate"])} = 'interpolate';
@@ -1250,14 +1250,30 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             conf_args_ = struct2nvpair(conf_args);
             conf = fullwaveConf(us, medium, sscan, conf_args_{:});
 
-            % create a job to process it
-            job = UltrasoundSystem.fullwaveJob(conf, kwargs.parcluster, 'simdir', kwargs.simdir);
+            % dispatch
+            if isa(kwargs.parenv, "parallel.Cluster")
+                % create a job to process it
+                job = UltrasoundSystem.fullwaveJob(conf, kwargs.parenv, 'simdir', kwargs.simdir);
+                submit(job); % submit the job
+                wait(job); % wait for it to finish
+            else % run local
+                simdir = kwargs.simdir;
+                if ~exist(simdir, "dir"), mkdir(simdir); end
 
-            % submit the job
-            submit(job);
+                penv = kwargs.parenv;
+                if isa(penv, "parallel.ThreadPool"), penv = 0; end % no thread pools for system call
+                prj_rt = fullfile(fileparts(mfilename('fullpath')), '..'); % QUPS root
+               
+                % Write Simulation Files
+                write_fullwave_sim(simdir, conf.sim{:}); % all the .dat files
+                copyfile(fullfile(prj_rt, 'bin', 'fullwave2_executable'), simdir); % the executable must be here
 
-            % wait for it to finish
-            wait(job);
+                % run sim per tx
+                wvtx = conf.tx; % splice
+                parfor(n = 1:size(wvtx,3), penv)
+                    runFullwaveTx(wvtx(:,:,n), simdir, fullfile(simdir, string(n))); 
+                end
+            end
 
             % read in the data
             chd = UltrasoundSystem.readFullwaveSim(kwargs.simdir, conf);
