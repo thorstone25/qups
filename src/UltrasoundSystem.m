@@ -1048,6 +1048,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % transmit delays. This method offers more compute performance
             % while sacrificing much less accuracy.
             % 
+            % Note: This functionality is not publicly supported.
+            % 
             % Example:
             % 
             % % Setup a system
@@ -1205,31 +1207,32 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % [chd, conf] = FULLWAVESIM(...) also returns the configuration
             % structure used to launch the simulation.
             %
+            % Note: This functionality is not publicly supported.
+            % 
             % Example:
             % 
             % % Setup a system
-            % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
-            % );
-            % xdc = TransducerArray();
+            % grid = ScanCartesian('x', 1e-3*[-35, 35], 'z', 1e-3*[-12, 27]);
+            % xdc = TransducerConvex.C5_2v();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('scan', grid, 'xdc', xdc, 'seq', seq);
+            % [grid.dx, grid.dz] = deal(us.lambda / 4);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % pg = grid.positions();
+            % rho(argmin(vecnorm(pg - [0 0 20e-3]',2,1))) = 1000*2; % double the density
+            % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % chd = fullwaveSim(us, med, sscan);
+            % chd = fullwaveSim(us, med, grid);
             % 
             % % Display the ChannelData
             % figure;
-            % imagesc(real(chd));
+            % imagesc(hilbert(chd));
+            % dbr echo 60;
             % 
-            % See also ULTRASOUNDSYSTEM/KSPACEFIRSTORDERND
+            % See also ULTRASOUNDSYSTEM.KSPACEFIRSTORDER
             
             arguments
                 us (1,1) UltrasoundSystem
@@ -1257,7 +1260,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             wait(job);
 
             % read in the data
-            chd = UltrasoundSystem.readFullwaveSim(kwargs.simdir);
+            chd = UltrasoundSystem.readFullwaveSim(kwargs.simdir, conf);
         end
     end
     methods(Static,Hidden)
@@ -1276,6 +1279,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % job = ULTRASOUNDSYSTEM.FULLWAVEJOB(..., 'simdir', dir) 
             % uses the directory dir to store the simulation inputs and outputs.
             %
+            % Note: This functionality is not publicly supported.
+            % 
             % Example:
             % 
             % % Setup a system
@@ -1346,6 +1351,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % chd = ULTRASOUNDSYSTEM.READFULLWAVESIM(simdir, conf) uses the configuration file conf
             % rather than loading one from the simulation directory.
             %
+            % Note: This functionality is not publicly supported.
+            % 
             % Example:
             % 
             % % Setup a system
@@ -1379,11 +1386,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % See also RUNFULLWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
             arguments
                 simdir (1,1) string
-                conf (1,1) struct
+                conf struct {mustBeScalarOrEmpty} = struct.empty
             end
 
             % see if we can find a conf file in the directory if not given to us
-            if nargin < 2
+            if isempty(conf)
                 cfile = fullfile(simdir, 'conf.mat');
                 if exist(cfile, 'file'), conf = load(cfile, 'fs', 't0', 'tstart', 'outmap');
                 else, error('Unable to find configuration file.'); end
