@@ -95,6 +95,12 @@ classdef ExampleTest < matlab.unittest.TestCase
             if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "mex",:) = []; 
             end
+            % fullwave executable must exist in 'bin' folder under this name
+            kerns = ["fullwave2_executable"];
+            if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns)) ...
+                    && exist("mapToCoords", "file")
+                bl_fcn(bl_fcn(:,1) == "fullwave",:) = []; 
+            end            
 
             % filter by gpu compiler availability (system not available on thread pools)
             % (not quite working - seems the environment changes?)
