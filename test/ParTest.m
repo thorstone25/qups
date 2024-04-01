@@ -310,8 +310,8 @@ classdef ParTest < matlab.unittest.TestCase
         end
     end
 
-    methods(Test, TestTags=["full", "build"])
-        function constGreens(tst)
+    methods(Test, TestTags=["full", "build", "syntax"])
+        function const_compile(tst)
             % test we can compile for constant data size
             defs = [tst.us.getDASConstCudaDef(tst.cd), tst.us.getGreensConstCudaDef(tst.sct)];
             tst.us.recompileCUDA(defs, "compute_60")
