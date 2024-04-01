@@ -961,13 +961,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % dependent methods
     methods
-        function set.bw(xdc, b)
-            if(length(b) ~= 2)
-                error("bw must be a length 2 vector of the passband cutoff frequencies.");
-            end
-            xdc.bw = b;
-        end
-
         function a = get.area(xdc), a = xdc.width * xdc.height; end
 
         function b = get.bw_frac(xdc), b = range(xdc.bw) ./ xdc.fc; end
@@ -983,32 +976,6 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
     methods (Static,Sealed,Access = protected)
         function xdc = getDefaultScalarElement()
             xdc = TransducerGeneric(); % default heterogeneous instance
-        end
-    end
-    methods(Sealed, Access=protected, Hidden)
-        function propgroups = getPropertyGroups(obj)
-            propgroups = getPropertyGroups@matlab.mixin.CustomDisplay(obj);
-        end
-        % Heterogenous display support functions - must be sealed manually
-        function header = getHeader(obj)
-            header = getHeader@matlab.mixin.CustomDisplay(obj);
-        end
-        function footer = getFooter(obj)
-            footer = getFooter@matlab.mixin.CustomDisplay(obj);
-        end
-        function displayNonScalarObject(obj)
-            displayNonScalarObject@matlab.mixin.CustomDisplay(obj);
-        end
-        % Do not override this method: a 'Scan' is Abstract and therefore
-        % cannot be instanstiated.
-        function displayScalarObject(obj)
-            displayScalarObject@matlab.mixin.CustomDisplay(obj);
-        end
-        function displayEmptyObject(obj)
-            displayEmptyObject@matlab.mixin.CustomDisplay(obj);
-        end
-        function displayScalarHandleToDeletedObject(obj)
-            displayScalarHandleToDeletedObject@matlab.mixin.CustomDisplay(obj);
         end
     end
 
