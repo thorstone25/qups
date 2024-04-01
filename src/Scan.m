@@ -66,7 +66,6 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
                 case 'uff.sector_scan',         scan = ScanPolar.UFF(uscan);
                 case 'uff.linear_3D_scan',      scan = ScanGeneric.UFF(uscan);
                 case 'uff.linear_scan_rotated', scan = ScanGeneric.UFF(uscan);
-                case 'uff.scan',                scan = ScanGeneric.UFF(uscan);
                 otherwise,                      scan = ScanGeneric.UFF(uscan);
             end
         end
@@ -177,7 +176,7 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
             %
             %
             arguments
-                scan ScanGeneric
+                scan Scan
                 kwargs.dist (1,1) double
             end
             if kwargs.dist ~= 1

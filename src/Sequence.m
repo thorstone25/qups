@@ -1131,10 +1131,10 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % based on it's type. 
             % 
             % If the Sequence type is 'PW', the foci are interpreted as
-            % normal vectors and are plotted via quiver. Otherwise, the 
+            % normal vectors and are plotted via `quiver`. Otherwise, the 
             % foci are plotted as points.
             %
-            % PLOT(xdc, ax) uses the axes ax instead of the current axes.
+            % PLOT(seq, ax) uses the axes ax instead of the current axes.
             %
             % PLOT(..., Name, Value, ...) passes name-value pair arguments
             % to the built-in plot function so that name value pairs that
@@ -1144,6 +1144,10 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             %
             % Plots only the x-z slice.
             %
+            % Example:
+            % seq = SequenceRadial('angles', -45 : 5 : 45);
+            % plot(seq)
+            % 
             % See also TRANSDUCER/PATCH QUIVER
 
             arguments

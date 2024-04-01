@@ -2179,8 +2179,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Create a Medium to simulate
             % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
             % [Xg, ~, Zg] = grid.getImagingGrid();
-            % rho(Xg == 0 & Zg == 10e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(grid, c, rho);
+            % rho(Xg == 0 & Zg == 10e-3) = 1000*2; % add a density scatterer
+            % med = Medium.Sampled(grid, c, rho, 'c0', 1500, 'rho0', 1000);
             % 
             % % Simulate the ChannelData
             % chd = kspaceFirstOrder(us, med, grid);
@@ -4594,6 +4594,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % shift to (I1 x I2 x I3 x N x M)
             apod = reshape(apod, size(apod,2:6));
         end
+        
         function apod = apTxParallelogram(us, theta, phi)
             % apTxParallelogram - Plane-wave illumination apodization
             %
@@ -4716,7 +4717,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             if us.tx == us.rx
                 x = us.rx;
             else
-                error("Call to 'xdc' ambiguous; transmitter and receiver are not the same.");
+                error( ...
+                    "QUPS:UltrasoundSystem:ambiguousTransducer", ...
+                    "Call to 'xdc' ambiguous; transmitter and receiver are not the same." ...
+                    );
             end
         end
         function set.xdc(us, xdc), [us.tx, us.rx] = deal(xdc); end

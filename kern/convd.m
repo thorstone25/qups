@@ -122,9 +122,9 @@ end
 
 % dispatch based on device (native vs. kernel)
 if use_gdev || use_odev
-    % if complex, eshiftdimnsure both all arguments complex
-    if complex_type && isreal(x), x = complex(x); end
-    if complex_type && isreal(y), y = complex(y); end
+    % if complex, ensure both all arguments complex
+    if complex_type, x = complex(x); end
+    if complex_type, y = complex(y); end
 
     % ensure all have dtype type
     x = dfun(x); 

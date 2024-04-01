@@ -1021,18 +1021,22 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % It overloads the patch function so that arguments valid for
             % patch are valid here.
             %
-            % PATCH(xdc, el_sub_div) specifices element subdivisions.
+            % PATCH(xdc, ax) plots on the axes ax.
             %
-            % PATCH(xdc, el_sub_div, ax) plots on the axes ax.
+            % PATCH(..., 'sub_div', sub_div) specifices the number of
+            % element subdivisions in width and height. The default is 
+            % [1 1]. 
             %
-            % PATCH(xdc, el_sub_div, ..., Name, Value, ...) passes
-            % name-value pair arguments to patch.
+            % PATCH(..., Name, Value, ...) passes Name/Value pair arguments
+            % to patch.
             %
-            % hp = PATCH(xdc, ...) returns a patch object handle
+            % h = PATCH(...) returns a patch object handle
             %
-            % Inputs
-            %   - el_sub_div:    2 x 1 vector of element subdivisions
-            %
+            % Example:
+            % xdc = TransducerMatrix.PO1921();
+            % xdc.rot = [30, 15]
+            % patch(xdc)
+            % 
             % See also PATCH
 
             arguments
