@@ -44,15 +44,18 @@ classdef KernTest < matlab.unittest.TestCase
 
     % dispatch
     % Github test routine
-    methods(Test, ParameterCombination = 'exhaustive', TestTags={'Github','syntax'})
-        function github_runconvd(test, prec, complexity)
-            runconvd(test, prec, complexity, "none")% forward remaing
+    methods(Test, ParameterCombination = 'pairwise', TestTags={'Github','syntax'})
+        function github_runconvd(test, prec, complexity, dev)
+            runconvd(test, prec, complexity, dev)
         end
-        function github_runinterpd(test, prec, complexity)
-            runinterpd(test, prec, complexity, "none")
+        function github_runinterpd(test, prec, complexity, dev)
+            runinterpd(test, prec, complexity, dev)
         end
-        function github_apred(test, dev)
-            aperture_reduction(test, dev, "single");
+        function github_apred(test, dev, complexity)
+            aperture_reduction(test, dev, complexity);
+        end
+        function github_correlator(test, prec, complexity, dev)
+            correlator(test, prec, complexity, dev);
         end
     end
 
@@ -60,7 +63,8 @@ classdef KernTest < matlab.unittest.TestCase
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'full', 'build'})
         function full_convd(test, prec, complexity, dev), runconvd(test, prec, complexity, dev); end % forward all
         function full_interpd(test, prec, complexity, dev), runinterpd(test, prec, complexity, dev); end % forward all
-        function full_apred(test, prec, dev), aperture_reduction(test, dev, prec); end % forward all
+        function full_apred(test, dev, prec), aperture_reduction(test, dev, prec); end % forward all
+        function full_correlator(test, prec, complexity, dev); correlator(test, prec, complexity, dev); end
     end
 
 
@@ -83,21 +87,27 @@ classdef KernTest < matlab.unittest.TestCase
                 case "halfT" , tol = 1e2;
             end
             switch complexity, case "real", [A,B] = deal(real(A), real(B)); end
+            switch dev, case "gpu", [A,B] = dealfun(@gpuArray, A,B); end
 
             % check each type of argument
             % TODO: move this to setup params
             shapes = ["full", "same", "valid"];
             dims = [1,2,3]; 
 
-            % convolve and check
+            % check that defaults and options work
+            convd(A, B);
+            convd(B, A, 'lowmem', true);
+
+            % convolve and check outputs
             for s = shapes, for d = dims %#ok<ALIGN> 
-                z1 = cell2mat(cellfun(@(A,B) {conv(A, B, char(s))}, num2cell(A,1), num2cell(B,1)));
+                z1 = cell2mat(cellfun(@(A,B) {gather(conv(A, B, char(s)))}, num2cell(A,1), num2cell(B,1)));
                 z2 = gather(convd(shiftdim(A,1-d),shiftdim(B,1-d),d,s,'gpu',dev == "gpu", 'ocl', dev == "ocl"));
                 test.assertThat(...
                     double(shiftdim(z2,d-1)), ...
                     IsEqualTo(double(z1), 'Using', NumericComparator('Within', RelativeTolerance(tol*double(eps(max(z1(:))))))) ...
                     );
             end,end
+
         end
         function runinterpd(test, prec, complexity, dev)
             % test the interpd fuction behaves like interp1 but better
@@ -119,6 +129,11 @@ classdef KernTest < matlab.unittest.TestCase
                 case "halfT" , tol = 1e4;
             end
             switch complexity, case "real", x = real(x); end
+
+            % test defaults, options run
+            interpd(x, tau);
+            interpd(x, tau, 1, "cubic");
+            interpd(x, tau, 1, "lanczos3");            
 
             % cast data
             for terp_ = terp
@@ -160,14 +175,46 @@ classdef KernTest < matlab.unittest.TestCase
                 m = dmas(b, d);
                 r = cohfac(b, d);
             end
+            test.assertError(@()pcf(real(b)), "QUPS:pcf:realInput"); % should fail
             
             if dev ~= "ocl"
                 z = slsc(repmat(b,[ones(1,6),2]), 4, 2, "ensemble", 7);
             end
         end
+        function correlator(test, prec, complexity, dev)
+            x = test.dargs{3}{2};
+            x = x + randn([1 1 4 1]); % unique expansion in dim 3
+            if dev == "gpu", x = gpuArray(x); end
+            switch complexity, case "real", x = real(x); end
+            f = str2func(prec);
+            x = f(x);
+
+            % all permutations
+            switch prec
+                case "double", tol = 1e12;
+                case "single", tol = 1e5;
+                case "halfT" , tol = 1e4;
+            end
+
+            % test all sets of arguments
+            L = 2;
+            fargs = {'pad', 'zero', 'norm', 'tdim', 'ndim'};
+            for ord = perms(1:2)'
+            for i = uint64(0 : 2 ^ 3 - 1)
+            for md = ["neighbor", "center", "x0"]
+                fargs(2,:) = [num2cell(logical(bitget(i, 1:3))), num2cell(ord')];
+                [tdim, ndim] = deal(fargs{2,4:5});
+                y = pwznxcorr(x,L,'stride',2,"ref",md,"x0",sub(x,1,ndim),'ldim',5,fargs{:});
+                test.assertNotEmpty(y, "Value return from pwznxcorr was empty (" + join(string(size(y))," x ") + ")");
+                % test.assertFalse(anynan(y), "Deteced NaN value(s) ("+nnz(isnan(y))+").");
+            end
+            end
+            end
+        end
+    
     end
 
-    methods(Test)
+    methods(Test, TestTags={'full', 'build', 'syntax', 'Github'})
         function imag_util_test(test)
             % test animate, dbr
             % 
@@ -203,7 +250,38 @@ classdef KernTest < matlab.unittest.TestCase
             
             close(hf)
         end
+        function wbilerp_test(test, dev)
 
+            % Create a grid
+            [x , y ] = deal(-5:5, -4:4);
+            [xa, ya] = deal( -4 ,  +1 );
+            [xb, yb] = deal( +3 ,  -2 );
+
+            % implicit move to gpu
+            if dev == "gpu"
+                [xa, ya, xb, xa] = dealfun(@gpuArray, xa, ya, xb, xa); 
+            end
+            wfuns = {@wbilerp};
+            if dev ~= "none", wfuns{end+1} = @wbilerpg;
+
+            for swp = [false, true], if swp
+                    [x, xa, xb, y, ya, yb] = ...
+                deal(y, ya, yb, x, xa, xb); 
+            end
+            for wfun = wfuns
+            for i = uint64(0 : 2^4 - 1) % for all directions of the lines
+                s = -1+2*double(bitget(i, 1:4)); % sign
+                [cxy, ixo, iyo] = wfun{1}(x, y, ...
+                    s(1)*xa, ...
+                    s(2)*ya, ...
+                    s(3)*xb, ...
+                    s(4)*yb ...
+                    );
+            end
+            end
+            end
+            end
+        end
     end
 end
 
