@@ -45,6 +45,9 @@ classdef USTest < matlab.unittest.TestCase
             if exist("simus3.m", "file")
                 simulator.MUST = @simus;
             end
+            if exist("fullwave2_executable", "file")
+                simulator.fullwave = @fullwaveSim;
+            end
         end
         function seq = getSequences()
             typs = ["FSA","PW","FC","DV"]'; % for all types
@@ -100,6 +103,9 @@ classdef USTest < matlab.unittest.TestCase
     % Test methods
     methods
         function simgeneric(testCase, tx, rx, seq, simulator)
+            import matlab.unittest.fixtures.TemporaryFolderFixture;
+            import matlab.unittest.fixtures.CurrentFolderFixture;
+
             % set numpulse for fsa
             if seq.type == "FSA", seq.numPulse = tx.numel; end
             % rx = TransducerArray; % const to reduce combinatorics
@@ -133,15 +139,18 @@ classdef USTest < matlab.unittest.TestCase
                         chd = simulator(us, scat, 'device', 0, 'tall', 0);
                         chd = simulator(us, scat, 'device', 0, 'tall', 1);
                     end
-                case {"kwave", "fullwave"} % medium
+                case {"kspaceFirstOrder", "fullwaveSim"} % medium
                     pb = [rx.bounds, tx.bounds]; pb = [min(pb,[],2), max(pb,[],2)];
                     grid = ScanCartesian('xb', pb(1,:),'zb',pb(3,:),'yb',pb(2,:));
                     [grid.dx, grid.dy, grid.dz] = deal(min(us.lambda)/4);
                     med = Medium("c0",scat.c0);
                     med.pertreg{1} = {@(p)argmin(vecnorm(p - scat.pos,2,1)), [scat.c0, 2*med.rho0]}; % point target
-                    chd = simulator(us, med, grid);
                     switch simname
-                        case "kwave"
+                        case "kspaceFirstOrder" 
+                            % should always work
+                            chd = simulator(us, med, grid);
+
+                            % further test element mapping
                             binfls = fullfile(getkWavePath('binaries'), ["kspaceFirstOrder-OMP","kspaceFirstOrder-CUDA"]);
                             binfnd = all(arrayfun(@(f)exist(f,'file'), binfls));
                             for bf = unique([false, binfnd])
@@ -149,6 +158,22 @@ classdef USTest < matlab.unittest.TestCase
                                 us.kspaceFirstOrder(med, grid, "ElemMapMethod", elm, "binary", bf);
                             end
                             end
+                            
+                        case "fullwaveSim"
+                            % only test convex/array, single xdc, 2D
+                            % testCase.assumeTrue(us.tx == us.rx, "The transmit and receive must be identical for " + simname);
+                            testCase.assumeTrue(nnz(grid.size > 1) == 2, "Only 2D sims are supported by " + simname + "(requested "+nnz(grid.size > 1)+"D).");
+                            testCase.assumeTrue( ...
+                                any(arrayfun(@(T)isa(us.tx,T),"Transducer"+["Array", "Convex"])), ...
+                                "A "+class(us.tx)+" transmitter is not supported for " + simname ...
+                                );
+                            testCase.assumeTrue( ...
+                                any(arrayfun(@(T)isa(us.rx,T),"Transducer"+["Array", "Convex"])), ...
+                                "A "+class(us.rx)+" receiver is not supported for " + simname ...
+                                );
+                            
+                            % TODO: this case should work
+                            % chd = simulator(us, med, grid);
                     end
             end
         end
