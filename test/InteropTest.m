@@ -236,6 +236,17 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             % Waveform
             [wvtri, wvm1wy, wvm2wy] = Waveform.Verasonics(v.TW);
 
+            % Scatterers
+            if isfield(v, 'Media')
+                sct = Scatterers.Verasonics(v.Media, "c0",c0, "scale", c0 / xdc.fc);
+                Scatterers.Verasonics(v.Media);
+                if ~isfield(v.Media, 'attenuation')
+                    v.Media.attenuation = 0;
+                    Scatterers.Verasonics(v.Media);
+                    v.Media.attenuation = 0.5;
+                    Scatterers.Verasonics(v.Media);
+                end
+            end
 
         end
     end
