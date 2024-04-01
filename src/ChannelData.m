@@ -1562,6 +1562,7 @@ classdef ChannelData < matlab.mixin.Copyable
             tind = ind; % separate copy for the time indices
             tind(size(chd.time,dim) == 1) = {1}; % set singleton where t0 is sliced
             has_tdim = any(dim == chd.tdim); % whether we are indexing in the time dimension too
+            dn = 1; % temporal downsampling ratio
             if has_tdim 
                 n = tind{dim == chd.tdim}; % get the time indices
                 if islogical(n), n = find(n); end % convert to numeric indexing
@@ -1580,7 +1581,6 @@ classdef ChannelData < matlab.mixin.Copyable
                         "QUPS:ChannelData:ambiguousTemporalIndexing", ...
                         "Unable to verify temporal indexing" ...
                         );
-                    dn = 1;
                 end
             end
             t0_   = sub(chd.t0, tind(dim ~= chd.tdim), dim(dim ~= chd.tdim)); % extract start time
