@@ -41,32 +41,38 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@(xdc) scale(xdc, 'dist', 1e3, 'time', 1e6), xdcs, "UniformOutput",false); % can scale
             arrayfun(@obj2struct, xdcs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, xdcs); % supports plotting
-            arrayfun(@patch, xdcs); % supports surface
+            arrayfun(@patch, xdcs); % supports patch
+            arrayfun(@(x)patch(x, nexttile(), 'el_sub_div', [2 2]), xdcs); % supports args
             xdcs(end+2) = xdcs(1), %#ok<NOPRT> implicit empty value, display
             arrayfun(@disp, xdcs) % display scalar
             arrayfun(@(x)disp(x([])), xdcs) % display empty
             x = copy(xdcs); x.delete(); x, arrayfun(@disp, x); % display deleted
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
+            [xdcs.origin] = deal([0 0 -10e-3]); % offset (to be deprecated?)
+            [xdcs.rot] = deal([20 -10]); % offset (to be deprecated?)
 
-       end
+        end
         function initseq(test)
             % INITSEQ - Assert that Sequence constructors initialize
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
             typs = ["FSA","PW","FC","DV","VS"];
             seqs = [arrayfun(@(t) Sequence(      "type",t), typs(1:end)), ...
-                    arrayfun(@(t) SequenceRadial("type",t), typs(2:end)), ...
-                                  SequenceGeneric(), ...
-                    ];
+                arrayfun(@(t) SequenceRadial("type",t), typs(2:end)), ...
+                SequenceGeneric(), ...
+                SequenceGeneric('apd', ones(4), 'del', zeros(4)), ...
+                ];
             [seqs([seqs.type] == "FSA").numPulse] = deal(1);
             arrayfun(@(seq) test.assertThat(seq, IsInstanceOf('Sequence')), seqs);
-            arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale            
+            arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale
             seqs(end+2) = seqs(1), %#ok<NOPRT> implicit empty value, display
+            seqs(end-1).numPulse = 1; % fix implicit seq
             s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, seqs, 'UniformOutput',false); % supports plotting
             cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
             arrayfun(@disp, seqs) % display scalar
             arrayfun(@(x)disp(x([])), seqs) % display empty
+            arrayfun(@splice, seqs, 'UniformOutput', false); % can splice
             x = copy(seqs); x.delete(); x, arrayfun(@disp, x); % display deleted
 
             % polar: manipulate range/angles
@@ -77,6 +83,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             seq = SequenceRadial("angles",-1:1, "ranges",[1 1 1]); % fine
             seq = SequenceRadial("angles",   0, "ranges",[1 1 1]); % fine
             seq = SequenceRadial("angles",-1:1, "ranges",[1]); % fine
+            seq.angles = [-5 0 5]; % fine
+            seq.ranges = [2 3 2]; % fine
             test.assertError(@()SequenceRadial("focus",[0 0 1]',"angles",0),""); % bad
             test.assertError(@()SequenceRadial("focus",[0 0 1]',"ranges",1),""); % bad
             seq = SequenceRadial("angles",-1:1, "ranges",2*[1 1 1]); % fine
@@ -91,10 +99,10 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             test.assertWarning(@()setfield(seq,'apodization_',zeros(4)), "QUPS:Sequence:DeprecatedProperty")
             test.assertWarning(@()seq.delays_                          , "QUPS:Sequence:DeprecatedProperty")
             test.assertWarning(@()seq.apodization_                     , "QUPS:Sequence:DeprecatedProperty")
-            
+
             % on construction only?
             test.assertWarning(@()Sequence('type','VS')                , "QUPS:Sequence:DeprecatedValue"   )
-            
+
         end
         function initscan(test)
             % INITSCAN - Assert that Scan constructors initialize
@@ -110,10 +118,10 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@disp, scns) % display scalar
             arrayfun(@(x)disp(x([])), scns) % display empty
             x = copy(scns); x.delete(); x, arrayfun(@disp, x); % display deleted
-            
+
             % supports req'd overload methods
-            [~,~,~] = arrayfun(@getImagingGrid, scns, "UniformOutput",false); 
-            [~]     = arrayfun(@positions     , scns, "UniformOutput",false); 
+            [~,~,~] = arrayfun(@getImagingGrid, scns, "UniformOutput",false);
+            [~]     = arrayfun(@positions     , scns, "UniformOutput",false);
 
             % test assigning / retrieving sizing
             dvars = 'XYZRUVW'; % dist
@@ -126,7 +134,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
                     if a == 'r',                      bd = [  0 40]; % range
                     elseif ismember(upper(a), dvars), bd = [-20 20]; % dist
                     elseif ismember(upper(a), avars), bd = [ -5  5]; % ang
-                    else,                             bd = [ -5  5]; 
+                    else,                             bd = [ -5  5];
                     end
                     scn.(a+"b") = bd;
                     test.assertTrue(isalmostn(scn.(a+"b"), bd), "Setting the scan boundaries failed for a " + class(scn) + "!");
@@ -149,14 +157,14 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             import matlab.unittest.constraints.IsInstanceOf;
             wv = Waveform(); % init
             test.assertThat(wv, IsInstanceOf('Waveform'));
-            
+
             % multiple ways to init
             dt = 1/8;
             fc = 1/2;
             t = 0 : dt : 1;
             f = @(t)sinpi(2*fc*t);
             x = f(t);
-            wv = Waveform(); 
+            wv = Waveform();
             wv = Waveform("samples", x, "t",  t);
             wv = Waveform("samples", x, "t0", t(1), "dt", dt  , "tend",t(end));
             wv = Waveform("samples", x, "t0", t(1), "fs", 1/dt, "tend",t(end));
@@ -189,25 +197,33 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             import matlab.unittest.constraints.IsInstanceOf;
             us = UltrasoundSystem(), %#ok<NOPRT> implicit display
             test.assertThat(us, IsInstanceOf('UltrasoundSystem'));
-            us = scale(us, "dist",1e3, "time",1e6);
+
             fld = us.tmp_folder;
             test.assertTrue(logical(exist(fld,"dir")));
             UltrasoundSystem('copybin',  true);
             UltrasoundSystem('recompile',true);
-            plot(us); % supports plotting
-            s = obj2struct(us);
-            flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
-            arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
-            
+
+            us.xdc; % should be same
+            usb = copy(us); usb.rx = copy(usb.tx); % switch to bistatic aperture
+            for us = [us usb]
+                scale(us, "dist",1e3, "time",1e6);
+                plot(us); % supports plotting
+                s = obj2struct(us);
+                flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
+                arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
+                test.assertSize(us.fc, [1 1], "The 'fc' property should be scalar for identical frequency transducers.")
+            end
+            test.assertError(@() usb.xdc, "QUPS:UltrasoundSystem:ambiguousTransducer")
+
             uss = copy([us us us]); % array
             uss(end+2) = copy(us); % implicit creation
             arrayfun(@disp, uss) % display scalar
             arrayfun(@(x)disp(x([])), uss) % display empty
-            
+
             % deprecation
             test.assertWarning(@()setfield(us,'sequence',Sequence()),"QUPS:UltrasoundSystem:syntaxDeprecated")
             test.assertWarning(@()us.sequence                       ,"QUPS:UltrasoundSystem:syntaxDeprecated")
-            
+
             % destroy
             clear us;
         end
