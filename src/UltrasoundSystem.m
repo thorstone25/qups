@@ -1240,7 +1240,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 medium Medium
                 sscan ScanCartesian = us.scan
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
-                kwargs.simdir (1,1) string = tempname(us.tmp_folder); % simulation directory
+                kwargs.simdir (1,1) string = tempname(); % simulation directory
                 kwargs.f0 (1,1) {mustBeNumeric} = us.tx.fc; % center frequency of the transmit / simulation
                 kwargs.CFL_max (1,1) {mustBeReal, mustBePositive} = 0.5 % maximum CFL
                 kwargs.txdel (1,1) string {mustBeMember(kwargs.txdel, ["discrete", "continuous", "interpolate"])} = 'interpolate';
@@ -1333,12 +1333,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments
                 conf (1,1) struct
                 clu (1,1) parallel.Cluster = parcluster()
-                kwargs.simdir (1,1) string = fullfile(pwd, 'fwsim')
+                kwargs.simdir (1,1) string = tempname()
             end
 
             % make simulation directory
             simdir = kwargs.simdir;
-            if ~exist(simdir, 'dir'), mkdir(simdir); end
+            mkdir(simdir);
 
             % Write Simulation Files
             write_fullwave_sim(simdir, conf.sim{:}); % all the .dat files
