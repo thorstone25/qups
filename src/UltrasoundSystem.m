@@ -1052,34 +1052,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Note: This functionality is not publicly supported.
             % 
             % Example:
-            % 
-            % % Setup a system
-            % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
-            % );
-            % xdc = TransducerArray();
+            % grid = ScanCartesian('x', 1e-3*[-35, 35], 'z', 1e-3*[-12, 27]);
+            % xdc = TransducerConvex.C5_2v();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('scan', grid, 'xdc', xdc, 'seq', seq);
+            % [grid.dx, grid.dz] = deal(us.lambda / 4);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % pg = grid.positions();
+            % rho(argmin(vecnorm(pg - [0 0 20e-3]',2,1))) = 1000*2; % double the density
+            % med = Medium.Sampled(grid, c, rho);
             % 
-            % % Simulate the ChannelData
-            % simdir = fullfile(pwd, 'fwsim'); % simulation directory
-            % conf = fullwaveConf(us, med, sscan, 'CFL_max', 0.5); % configure the sim
-            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir); % create a job
-            % submit(job); % submit the job
-            % ... do other things
-            % wait(job); % wait for the job to finish processing
-            % chd = UltrasoundSystem.readFullwaveSim(simdir); % extract the ChannelData
-            % 
-            % % Display the ChannelData
-            % figure;
-            % imagesc(real(chd));
+            % % Create a configuration struct
+            % conf = fullwaveConf(us, med, grid, 'CFL_max', 0.5), % configure the sim
             % 
             % See also ULTRASOUNDSYSTEM/FULLWAVEJOB
 
@@ -1187,16 +1173,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             conf.outmap = rxfw.outcoords(:,4); % 4th column maps pixels to elements
         end
         
-        function [chd, conf] = fullwaveSim(us, medium, sscan, kwargs)
+        function [chd, conf] = fullwaveSim(us, medium, grid, kwargs)
             % FULLWAVESIM - Simulate channel data via Fullwave
             %
-            % chd = FULLWAVESIM(us, medium, sscan) simulates the Medium 
-            % medium on the simulation grid sscan and returns a ChannelData
-            % object chd. The simulation scan should be large and fine 
-            % enough that all elements of the Transducer can be placed.
+            % chd = FULLWAVESIM(us, medium, grid) simulates the Medium 
+            % medium on the simulation grid grid and returns a ChannelData
+            % object chd. The simulation grid should be large and fine 
+            % enough such that all elements of the Transducer can be placed
+            % onto the grid.
             %
             % chd = FULLWAVESIM(us, medium) uses us.scan as the
-            % simulation scan sscan.
+            % simulation grid.
             %
             % chd = FULLWAESIM(..., 'simdir', dir) uses the directory dir
             % to store temporary simulation files. The default is a folder
@@ -1227,7 +1214,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % chd = fullwaveSim(us, med, grid);
+            % chd = fullwaveSim(us, med);
             % 
             % % Display the ChannelData
             % figure;
@@ -1239,7 +1226,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments
                 us (1,1) UltrasoundSystem
                 medium Medium
-                sscan ScanCartesian = us.scan
+                grid ScanCartesian = us.scan
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
                 kwargs.simdir (1,1) string = tempname(); % simulation directory
                 kwargs.f0 (1,1) {mustBeNumeric} = us.tx.fc; % center frequency of the transmit / simulation
@@ -1250,7 +1237,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % create the configuration
             conf_args = rmfield(kwargs, setdiff(fieldnames(kwargs), {'f0', 'CFL_max', 'txdel'}));
             conf_args_ = struct2nvpair(conf_args);
-            conf = fullwaveConf(us, medium, sscan, conf_args_{:});
+            conf = fullwaveConf(us, medium, grid, conf_args_{:});
 
             % dispatch
             if isa(kwargs.parenv, "parallel.Cluster")
@@ -1302,24 +1289,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Example:
             % 
             % % Setup a system
-            % sscan = ScanCartesian(...
+            % grid = ScanCartesian(...
             % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
             % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
             % );
             % xdc = TransducerArray();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('scan', grid, 'xdc', xdc, 'seq', seq);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % [Xg, ~, Zg] = grid.getImagingGrid();
             % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % simdir = fullfile(pwd, 'fwsim'); % simulation directory
-            % conf = fullwaveConf(us, med, sscan, 'CFL_max', 0.5); % configure the sim
-            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir); % create a job
+            % time_stamp = string(datetime('now'), 'yyyy-MM-dd_HH-mm-ss');
+            % simdir = fullfile(pwd, "fwsim", time_stamp); % simulation directory
+            % conf = fullwaveConf(us, med, grid, 'CFL_max', 0.5); % configure the sim
+            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir), % create a job
             % submit(job); % submit the job
             % ... do other things
             % wait(job); % wait for the job to finish processing
@@ -1327,9 +1315,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Display the ChannelData
             % figure;
-            % imagesc(real(chd));
+            % imagesc(hilbert(chd));
+            % dbr echo 60;
             % 
-            % See also FULLWAVECONF PARCLUSTER PARALLEL.CLUSTER
+            % See also READFULLWAVESIM FULLWAVECONF PARCLUSTER PARALLEL.CLUSTER
 
             arguments
                 conf (1,1) struct
@@ -1374,32 +1363,28 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Example:
             % 
             % % Setup a system
-            % sscan = ScanCartesian(...
-            % 'x', 1e-3*linspace(-20, 20, 1+40*2^3), ...
-            % 'z', 1e-3*linspace(-02, 58, 1+60*2^3) ...
-            % );
-            % xdc = TransducerArray();
+            % grid = ScanCartesian('x', 1e-3*[-35, 35], 'z', 1e-3*[-12, 27]);
+            % xdc = TransducerConvex.C5_2v();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', sscan, 'xdc', xdc, 'seq', seq);
+            % us = UltrasoundSystem('scan', grid, 'xdc', xdc, 'seq', seq);
+            % [grid.dx, grid.dz] = deal(us.lambda / 4);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(sscan.size), 1000*ones(sscan.size));
-            % [Xg, ~, Zg] = sscan.getImagingGrid();
-            % rho(Xg == 0 & Zg == 30e-3) = 1000*2; % double the density
-            % med = Medium.Sampled(sscan, c, rho);
+            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
+            % pg = grid.positions();
+            % rho(argmin(vecnorm(pg - [0 0 20e-3]',2,1))) = 1000*2; % double the density
+            % med = Medium.Sampled(grid, c, rho);
             % 
             % % Simulate the ChannelData
-            % simdir = fullfile(pwd, 'fwsim'); % simulation directory
-            % conf = fullwaveConf(us, med, sscan, 'CFL_max', 0.5); % configure the sim
-            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir); % create a job
-            % submit(job); % submit the job
-            % ... do other things
-            % wait(job); % wait for the job to finish processing
+            % time_stamp = string(datetime('now'), 'yyyy-MM-dd_HH-mm-ss');
+            % simdir = fullfile(pwd, "fwsim", time_stamp); % simulation directory
+            % fullwaveSim(us, med, 'simdir', simdir); % run a simulation
             % chd = UltrasoundSystem.readFullwaveSim(simdir); % extract the ChannelData
             % 
             % % Display the ChannelData
             % figure;
-            % imagesc(real(chd));
+            % imagesc(hilbert(chd));
+            % dbr echo 60;
             % 
             % See also RUNFULLWAVETX ULTRASOUNDSYSTEM/FULLWAVEJOB
             arguments
