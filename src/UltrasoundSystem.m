@@ -1106,6 +1106,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             dT   = (1/fs_)/modT;    % simulation sampling interval
             cfl  = c0 * dT / dX;    % Courant-Friedrichs-Levi condition
             ppw  = c0 / kwargs.f0 / dX; % points per wavelength - determines grid spacing
+            dur  = ceil(dur / dT) * dT; % snap duration to temporal grid
             
 
             % DEBUG 1: this must be consistent with itself!!!
@@ -1124,7 +1125,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             tau_tx = -us.seq.delays(us.tx); % M x V
 
             % forward to all subelement delays, synchronized
-            tau_tx_pix = zeros([xdcfw.nInPx, us.seq.numPulse]);
+            tau_tx_pix = zeros([xdcfw.nInPx, size(tau_tx,2)]);
             i = logical(xdcfw.incoords(:,4)); % find non-zero indices - they map to an element
             tau_tx_pix(i,:) = tau_tx(xdcfw.incoords(i,4),:); % apply synchronized delays
 
@@ -1176,7 +1177,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             for f = string(fieldnames(maps))', maps.(f) = permute(maps.(f), ord); end
 
             %% Store the configuration variables
-            conf.sim = {c0,omega0,dur,ppw,cfl,maps,xdcfw,nTic,modT}; % args for full write function
+            conf.sim = {c0,omega0,dur,ppw,cfl,maps,rxfw,nTic,modT}; % args for full write function
             conf.tx  = real(icmat);  % transmit data
             conf.t0  = shiftdim(t0_xdc, -1); % time delay offset (1 x 1 x M)
             conf.f0  = kwargs.f0;     % simulation frequency
@@ -1337,7 +1338,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % make simulation directory
             simdir = kwargs.simdir;
-            mkdir(simdir);
+            if ~exist(simdir, 'dir'), mkdir(simdir); end
 
             % Write Simulation Files
             write_fullwave_sim(simdir, conf.sim{:}); % all the .dat files
