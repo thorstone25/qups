@@ -68,7 +68,7 @@ classdef USTest < matlab.unittest.TestCase
     end
 
     % github settings
-    methods(Test, ParameterCombination="pairwise", TestTags = ["Github","syntax"])
+    methods(Test, ParameterCombination="pairwise", TestTags = ["Github","syntax", "build"])
         function simgeneric_github(testCase, tx, rx, seq, simulator)
             simgeneric(       testCase, tx, rx, seq, simulator);
         end
@@ -78,14 +78,13 @@ classdef USTest < matlab.unittest.TestCase
         function bfordgeneric_github(testCase, rx, scan, beamformer)
                  bfordgeneric(       testCase, rx, scan, beamformer)
         end
-        % Not ready ...
         function apgen_github(testCase, rx, scan, seq, apod)
                  apgen(       testCase, rx, scan, seq, apod)
         end
     end
 
     % full settings
-    methods(Test, ParameterCombination="exhaustive", TestTags = ["full", "build"])
+    methods(Test, ParameterCombination="exhaustive", TestTags = ["full"])
         function simgeneric_full(testCase, tx, rx, seq, simulator)
                  simgeneric(     testCase, tx, rx, seq, simulator);
         end
@@ -105,33 +104,29 @@ classdef USTest < matlab.unittest.TestCase
         function simgeneric(testCase, tx, rx, seq, simulator)
             import matlab.unittest.fixtures.TemporaryFolderFixture;
             import matlab.unittest.fixtures.CurrentFolderFixture;
+            simname = func2str(simulator); % alias
 
             % set numpulse for fsa
             if seq.type == "FSA", seq.numPulse = tx.numel; end
             % rx = TransducerArray; % const to reduce combinatorics
 
             % shift transducers
-            [tx.offset, rx.offset] = deal([-2 0 0]*1e-3, [2 0 0]*1e-3);
+            [tx.offset, rx.offset] = deal([-1 0 0]*1e-3, [1 0 0]*1e-3);
 
-            % filter incompatible transducer
-            for ap = [tx, rx] % do for tx, rx
-                if isa(ap, 'TransducerGeneric') && func2str(simulator) == "simus", return; end % incompatible
-            end
-            
             % filter for identical transducer where required
-            if func2str(simulator) == "simus"
+            if simname == "simus"
                 if string(class(tx)) ~= string(class(rx))
                     return; % incompatible
                 else
                     tx = rx; % enforce identical
                 end
+               if isa(tx, 'TransducerGeneric'), return; end % incompatible
             end
 
             % construct each tx, rx, seq, scan
             us = UltrasoundSystem('tx', tx, 'rx', rx, 'seq', seq,'recompile',false,'fs',single(4*rx.fc));
             [lb, ub] = bounds([tx.bounds, rx.bounds], 2);
             scat = Scatterers("pos", (lb+ub)./2 + [0 0 50*us.lambda]');
-            simname = func2str(simulator);
             switch simname
                 case {"greens", "calc_scat_multi","calc_scat_all","simus"} % point target
                     chd = simulator(us, scat);
@@ -140,40 +135,43 @@ classdef USTest < matlab.unittest.TestCase
                         chd = simulator(us, scat, 'device', 0, 'tall', 1);
                     end
                 case {"kspaceFirstOrder", "fullwaveSim"} % medium
-                    pb = [rx.bounds, tx.bounds]; pb = [min(pb,[],2), max(pb,[],2)];
-                    grid = ScanCartesian('xb', pb(1,:),'zb',pb(3,:),'yb',pb(2,:));
-                    [grid.dx, grid.dy, grid.dz] = deal(min(us.lambda)/4);
+                    pb = [rx.bounds, tx.bounds]; pb = [min(pb,[],2), max(pb,[],2)]; % transducer boundaries
+                    pb = pb + [-1 1] .* us.lambda; % tolerance in x/y/z
+                    pb(3,2) = max(pb(3,2),2*us.lambda); % add depth
+                    if ~(isa(us.tx, "TransducerMatrix") || isa(us.rx, "TransducerMatrix")), pb(2,:) = 0; end % unless actually 3D ...
+                    zero2nan = @(x) x.*(x./x); % HACK
+                    dp = min(arrayfun(@(ap) min(zero2nan(vecnorm(ap.positions - swapdim(ap.positions,2,3),2,1)),[],'all','omitnan'), [us.tx, us.rx])); % min element spacing
+                    grid = ScanCartesian('x', pb(1,:),'z',pb(3,:),'y',pb(2,:));
+                    [grid.dx, grid.dy, grid.dz] = deal(min([us.lambda, dp])/4),
+                    us.scan = grid; % same
                     med = Medium("c0",scat.c0);
                     med.pertreg{1} = {@(p)argmin(vecnorm(p - scat.pos,2,1)), [scat.c0, 2*med.rho0]}; % point target
                     switch simname
                         case "kspaceFirstOrder" 
                             % should always work
-                            chd = simulator(us, med, grid);
+                            us.fs = 2*us.fc; % unstable, but faster
+                            chd = simulator(us, med, "CFL_max", 10);
 
                             % further test element mapping
-                            binfls = fullfile(getkWavePath('binaries'), ["kspaceFirstOrder-OMP","kspaceFirstOrder-CUDA"]);
-                            binfnd = all(arrayfun(@(f)exist(f,'file'), binfls));
-                            for bf = unique([false, binfnd])
                             for elm = ["nearest", "linear", "karray-direct", "karray-depend"]
-                                us.kspaceFirstOrder(med, grid, "ElemMapMethod", elm, "binary", bf);
-                            end
+                                kspaceFirstOrder(us, med, "CFL_max", 10, "ElemMapMethod", elm, "parenv", 0);
                             end
                             
                         case "fullwaveSim"
                             % only test convex/array, single xdc, 2D
+                            typ = "Transducer"+["Convex","Array",];
                             % testCase.assumeTrue(us.tx == us.rx, "The transmit and receive must be identical for " + simname);
                             testCase.assumeTrue(nnz(grid.size > 1) == 2, "Only 2D sims are supported by " + simname + "(requested "+nnz(grid.size > 1)+"D).");
                             testCase.assumeTrue( ...
-                                any(arrayfun(@(T)isa(us.tx,T),"Transducer"+["Array", "Convex"])), ...
+                                any(arrayfun(@(T)isa(us.tx,T), typ)), ...
                                 "A "+class(us.tx)+" transmitter is not supported for " + simname ...
                                 );
                             testCase.assumeTrue( ...
-                                any(arrayfun(@(T)isa(us.rx,T),"Transducer"+["Array", "Convex"])), ...
+                                any(arrayfun(@(T)isa(us.rx,T), typ)), ...
                                 "A "+class(us.rx)+" receiver is not supported for " + simname ...
                                 );
                             
-                            % TODO: this case should work
-                            % chd = simulator(us, med, grid);
+                            chd = simulator(us, med, "CFL_max", 10); % supported
                     end
             end
         end
