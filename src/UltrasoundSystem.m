@@ -2355,6 +2355,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     el_map_grd = sparse((1:nnz(mask))' == el_ind(:)'); % matrix mapping (J' x J'')
 
                     % apply to transmit signal: for each element
+                    if ap == "tx"
                     [del, apod, t_tx] = dealfun(@(x)shiftdim(x, -1), del, apod, t_tx); % (1 x M x V), (1 x 1 x 1 x T')
                     V = size(del,3); % number of transmits
                     B = min(V,kwargs.bsize); % block size for processing
@@ -2373,6 +2374,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     end
                     end
                     psig = reshape(psig, [size(psig,1:3), 1 3]);
+                    end
 
                 case {'karray-direct', 'karray-depend'}
                     karray_args.BLIType = char(karray_args.BLIType);
@@ -2392,7 +2394,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                             elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:us.(ap).numel);  % (J x {M})
                             elem_weights = cat(2, elem_weights{:}); % (J x M)
                             elem_weights = elem_weights(mask(:),:); % (J' x M)
-                            psig = pagemtimes(full(elem_weights), 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
+                            if ap == "tx"
+                                psig = pagemtimes(full(elem_weights), 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
+                            end
 
                             % get the offgrid source sizes
                             elem_meas = arrayfun(@(i)karray.elements{i}.measure, 1:us.(ap).numel);
@@ -2401,12 +2405,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                             elem_weights = elem_weights ./ elem_norm; 
 
                         case 'karray-depend' % compute one at a time and apply casting rules
+                            if ap == "tx"
+
                             psig = cellfun(@(x) ...
                                 {cast(karray.getDistributedSourceSignal(kgrid, x.'), 'like', x)}, ...
                                 num2cell(real(txsamp), [1,2]) ...
                                 );
                             psig = cat(3, psig{:}); % (J' x T' x V)
+                            end
                     end
+                    
             end
 
             if (ap == "rx" || ap == "xdc")
