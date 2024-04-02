@@ -202,6 +202,23 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             test.assertTrue(logical(exist(fld,"dir")));
             UltrasoundSystem('copybin',  true);
             UltrasoundSystem('recompile',true);
+            us2 = copy(us); fld2 = us2.tmp_folder; % new instance
+            test.assertFalse(fld == fld2); % different folders
+            clear us2; test.assertFalse(logical(exist(fld2,'dir'))); % deleted on clear
+            us2 = copy(us); fld2 = us2.tmp_folder; % new instance
+            copyfile(which("Qups.prj"), fld2); % dirty
+            test.addTeardown(@()delete(fullfile(fld2,"Qups.prj"))); % cleanup
+            try clear us2 % should error
+                [~, lid] = lastwarn;
+                test.assertTrue(lid == "MATLAB:class:DestructorError", ...
+                    "Attempt to clear " + class(us) + " did not produce a warning." ...
+                    );
+                % test.assertFail("Attempt to clear " + class(us) + " did not produce an error.");
+            catch ME
+               test.assertTrue(ME.identifier == "QUPS:UltrasoundSystem:dirtyDirectory", ...
+                   "Attempt to clear " + class(us) + " did not produce an error." ...
+                   );
+            end
 
             us.xdc; % should be same
             usb = copy(us); usb.rx = copy(usb.tx); % switch to bistatic aperture
