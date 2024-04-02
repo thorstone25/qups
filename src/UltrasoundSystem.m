@@ -2103,7 +2103,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % thumb for a stable simulation is 0.3. A lesser CFL will be
             % more numerically stable whereas a greater CFL will be faster
             % to compute, but will be less numerically accurate and may
-            % lead to instability.
+            % lead to instability. The default is 0.25.
             % 
             % chd = KSPACEFIRSTORDER(..., 'ElemMapMethod', method) 
             % specifies the computational method used for mapping 
@@ -2337,6 +2337,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     [Nx, Ny, Nz] = dealfun(@(n) n + (n==0), kgrid.Nx, kgrid.Ny, kgrid.Nz); % kwave sizing ( 1 if sliced )
                     mask = false(Nx, Ny, Nz); % grid size
                     assert(all(size(mask,1:3) == sscan.size), 'kWave mask and Scan size do not correspond.');
+                    clear ind; % init
                     for n = us.(ap).numel:-1:1 % get nearest pixel for each element
                         ind(n) = argmin(vecnorm(pn(:,n) - pg,2,1),[],'all', 'linear');
                     end
