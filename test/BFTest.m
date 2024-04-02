@@ -91,7 +91,7 @@ classdef BFTest < matlab.unittest.TestCase
             % make a Cartesian Scan around the point target for imaging
             if ismat, Npixd = 2^5; else, Npixd = 2^7; end
             lbda = c0 / xdc.fc;
-            dp = (lbda/4) * ((0:Npixd-1) - floor(Npixd/2));
+            dp = (lbda/8) * ((0:Npixd-1) - floor(Npixd/2));
             p0 = mean(scat.pos,2);
             
             scanc = ScanCartesian('x', p0(1)+dp, 'z', p0(3)+dp); % X x Z scan
@@ -110,6 +110,7 @@ classdef BFTest < matlab.unittest.TestCase
                 case "TransducerConvex"
                     r = scat.pos - xdc.center; % radial vector to scat
                     th = xdc.orientations;
+                    th = linspace(th(1), th(end), 4*xdc.numel-1);
                     scan = ScanPolar("origin",xdc.center,"r", vecnorm(r,2,1) + dp, "a", th + mean(atan2d(r(1,:),r(3,:))));
                 otherwise
                     scan = copy(scanc);
@@ -147,10 +148,10 @@ classdef BFTest < matlab.unittest.TestCase
 
             % baseband the data
             if baseband
-                fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency
-                ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
                 chd = downmix(chd, us.xdc.fc); % downmix
-                chd = downsample(chd, ratio); % downsample
+                % fmod_max = max(abs(us.xdc.fc - us.xdc.bw)); % maximum demodulated frequency
+                % ratio = floor(us.fs / fmod_max / 2); % discrete downsampling factor
+                % chd = downsample(chd, ratio); % downsample
                 fmod = us.xdc.fc;
             else
                 fmod = 0;
@@ -240,7 +241,7 @@ classdef BFTest < matlab.unittest.TestCase
             if ~apodization, apod = 1; end % apodization not applied
 
             % make an equivalent medium - assume density scatterers
-            med = Medium('c0', scat.c0);
+            med = Medium('c0', scat.c0, 'rho0', 1.020);
 
             % exceptions
             % for the Eikonal beamformer, pass if not given FSA delays
