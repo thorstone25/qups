@@ -88,10 +88,11 @@ classdef Waveform < matlab.mixin.Copyable
         % TLIM is the maximum size of the time axis. A larger sized time
         % axis will produce an error when calling the time function. This
         % is meant to prevent dependent properties from producing
-        % unreasonably large temporary results, such as if for example the 
-        % sampling frequency is temporarily set to be 1e6 times larger than
-        % it's final state.
-        Tlim (1,1) double = 2^13; % limit on size of time axes 
+        % unreasonably large temporary results, such as if, for example,
+        % the sampling frequency is temporarily set to be 1e6 times larger
+        % than it's final state. The default is 2^15 == 32768.
+        %
+        Tlim (1,1) double = 2^15; % limit on size of time axes 
     end
     properties(Dependent, Hidden)
         T % size of the time axis
@@ -428,7 +429,7 @@ classdef Waveform < matlab.mixin.Copyable
                 k = (floor((this.t0+that.t0)*fs) : ceil((this.tend+that.tend)*fs)) / fs; % 1 x K
                 f = @(t) reshape(this.sample(t(:) - k) * that.sample(k'), size(t));
             end
-            wv = Waveform('fun', f, 't0', this.t0 + that.t0, 'tend', this.tend + that.tend, 'fs', max([this.fs, that.fs]));
+            wv = Waveform('fun', f, 't0', this.t0 + that.t0, 'tend', this.tend + that.tend, 'fs', fs);
         end
     end
     
