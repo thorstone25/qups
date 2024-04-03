@@ -1378,8 +1378,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Simulate the ChannelData
             % time_stamp = string(datetime('now'), 'yyyy-MM-dd_HH-mm-ss');
             % simdir = fullfile(pwd, "fwsim", time_stamp); % simulation directory
-            % fullwaveSim(us, med, 'simdir', simdir); % run a simulation
-            % chd = UltrasoundSystem.readFullwaveSim(simdir); % extract the ChannelData
+            % conf = fullwaveConf(us, med, grid, 'CFL_max', 0.5); % configure the sim
+            % job = UltrasoundSystem.fullwaveJob(conf, 'simdir', simdir), % create a job
+            % submit(job); % submit the job
+            % ... do other things
+            % wait(job); % wait for the job to finish processing
+            % chd = UltrasoundSystem.readFullwaveSim(simdir), % extract the ChannelData
             % 
             % % Display the ChannelData
             % figure;
