@@ -1128,7 +1128,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             tx_apod(i,:) = apod(xdcfw.incoords(i,4),:); % apply synchronized delays
 
             %% Define the Transmit Pulse
-            t0_xdc = min(min(tau_tx_pix,[],1)); % reference true start time (1 x M)
+            t0_xdc = min(min(tau_tx_pix(i,:),[],1)); % reference true start time (1 x M)
             tau_tx_pix = (tau_tx_pix - t0_xdc); % 0-base the delays for the sim (I x M)
             tau_tx_max = ceil(max(tau_tx_pix, [],'all') / dT) .* dT; % maxmium additional delay
             wv_tx = conv(us.tx.impulse, us.seq.pulse, 10/dT); % get the waveform transmitted into the medium
