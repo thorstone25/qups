@@ -147,11 +147,11 @@ bool list_add(double ** listval, int *listprop, double val) {
         list_lengthmax=list_lengthmax*2;
         for (i=list_orde; i>0; i--) {
             listval[i]=listval[i-1];
-            double * dptr = (double *) realloc(listval[i], p2x(i+1)*sizeof(double));
+            double * dptr = (double *) mxRealloc(listval[i], p2x(i+1)*sizeof(double));
             if(dptr != NULL) listval[i] = dptr; else {return false;}
             for(j=p2x(i); j<p2x(i+1); j++) { listval[i][j]=listINF;  }
         }
-        double * dptr = (double *) malloc(2*sizeof(double));
+        double * dptr = (double *) mxMalloc(2*sizeof(double));
         if(dptr != NULL) listval[0] = dptr; else {return false;}
         listval[0][0]=min(listval[1][0], listval[1][1]);
         listval[0][1]=listINF;
@@ -276,7 +276,7 @@ void list_remove_replace(double ** listval, int *listprop, int index) {
         for (i=0; i<list_orde; i++) {
             listval[i]=listval[i+1];
             /* Resize arrays to their new shorter size */
-            listval[i] = (double *)realloc(listval[i], templ*sizeof(double));
+            listval[i] = (double *)mxRealloc(listval[i], templ*sizeof(double));
             templ*=2;
         }
     }
@@ -310,7 +310,7 @@ void listupdate(double **listval, int *listprop, int index, double val) {
 }
 
 __inline bool expand_list(double ** neg_list, int neg_free){
-    double * pdb = (double *) realloc(*neg_list, neg_free*sizeof(double) );
+    double * pdb = (double *) mxRealloc(*neg_list, neg_free*sizeof(double) );
     if(pdb != NULL)
         *neg_list = pdb; 
     else 

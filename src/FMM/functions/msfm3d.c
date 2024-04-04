@@ -300,6 +300,7 @@ void mexFunction( int nlhs, mxArray *plhs[],
     bool *useseconda, *usecrossa;
     bool usesecond=true;
     bool usecross=true;
+    bool success = true;
     
     /* The output distance image */
     double *T;
@@ -415,34 +416,44 @@ void mexFunction( int nlhs, mxArray *plhs[],
     }
     
     /* Pixels which are processed and have a final distance are frozen */
-    Frozen = (bool*)malloc( npixels* sizeof(bool) );
-    for(q=0;q<npixels;q++){Frozen[q]=0; T[q]=-1;}
-    if(Ed) {
-        for(q=0;q<npixels;q++){Y[q]=-1;}
-    }
+    Frozen = (bool*)mxCalloc( npixels, sizeof(bool) );
     
     
     /*Free memory to store neighbours of the (segmented) region */
     neg_free = 100000;
     neg_pos=0;
     
-    neg_listx = (double *)malloc( neg_free*sizeof(double) );
-    neg_listy = (double *)malloc( neg_free*sizeof(double) );
-    neg_listz = (double *)malloc( neg_free*sizeof(double) );
-    if(Ed) {
-        neg_listo = (double *)malloc( neg_free*sizeof(double) );
-        for(q=0;q<neg_free;q++) { neg_listo[q]=0; }
-    }
+           neg_listx = (double *)mxMalloc( neg_free*sizeof(double) );
+           neg_listy = (double *)mxMalloc( neg_free*sizeof(double) );
+           neg_listz = (double *)mxMalloc( neg_free*sizeof(double) );
+    if(Ed) neg_listo = (double *)mxCalloc( neg_free,sizeof(double) );
+    
     
     /* List parameters array */
-    listprop=(int*)malloc(3* sizeof(int));
+    listprop=(int*)mxMalloc(3* sizeof(int));
     /* Make jagged list to store a maximum of 2^64 values */
-    listval= (double **)malloc( 64* sizeof(double *) );
+    listval= (double **)mxMalloc( 64* sizeof(double *) );
     
+    // validate memory allocation
+    success = (Frozen != NULL) && (neg_listx != NULL) && (neg_listy != NULL) && (neg_listz != NULL) && (listprop != NULL) && ((listval != NULL) && (listval[0] != NULL));
+    if(Ed) success = success && (neg_listo != NULL);
+    if(!success){ // cleanup on failure
+        destroy_list(listval, listprop);
+        if(neg_listx != NULL) mxFree(neg_listx);
+        if(neg_listy != NULL) mxFree(neg_listy);
+        if(Ed) if(neg_listo != NULL) mxFree(neg_listo);
+        if(Frozen != NULL) mxFree(Frozen);
+        mexErrMsgTxt("Unable to allocate sufficient memory.");
+    }
+    
+    // initialize the pixels
+           for(q=0;q<npixels;q++) T[q]=-1;
+    if(Ed) for(q=0;q<npixels;q++) Y[q]=-1;
+ 
     /* Initialize parameter list */
     initialize_list(listval, listprop);
     neg_listv=listval[listprop[1]-1];
-    
+
     
     /*(There are 3 pixel classes: */
     /*  - frozen (processed) */
@@ -495,14 +506,14 @@ void mexFunction( int nlhs, mxArray *plhs[],
                     /*If running out of memory at a new block */
                     if(neg_pos>=neg_free) {
                         neg_free+=100000;
-                        neg_listx = (double *)realloc(neg_listx, neg_free*sizeof(double) );
-                        neg_listy = (double *)realloc(neg_listy, neg_free*sizeof(double) );
-                        neg_listz = (double *)realloc(neg_listz, neg_free*sizeof(double) );
-                        if(Ed) {
-                            neg_listo = (double *)realloc(neg_listo, neg_free*sizeof(double) );
-                        }
+                            success = success && expand_list(&neg_listx, neg_free);
+                            success = success && expand_list(&neg_listy, neg_free);
+                            success = success && expand_list(&neg_listz, neg_free);
+                     if(Ed) success = success && expand_list(&neg_listo, neg_free);
                     }
-                    list_add(listval, listprop, Tt);
+                    success = success && list_add(listval, listprop, Tt);
+                    if(!success) break;
+
                     neg_listv=listval[listprop[1]-1];
                     neg_listx[neg_pos]=i;
                     neg_listy[neg_pos]=j;
@@ -567,16 +578,16 @@ void mexFunction( int nlhs, mxArray *plhs[],
                 }
                 else {
                     /*If running out of memory at a new block */
-                    if(neg_pos>=neg_free) {
+                     if(neg_pos>=neg_free) {
                         neg_free+=100000;
-                        neg_listx = (double *)realloc(neg_listx, neg_free*sizeof(double) );
-                        neg_listy = (double *)realloc(neg_listy, neg_free*sizeof(double) );
-                        neg_listz = (double *)realloc(neg_listz, neg_free*sizeof(double) );
-                        if(Ed) {
-                            neg_listo = (double *)realloc(neg_listo, neg_free*sizeof(double) );
-                        }
+                            success = success && expand_list(&neg_listx, neg_free);
+                            success = success && expand_list(&neg_listy, neg_free);
+                            success = success && expand_list(&neg_listz, neg_free);
+                     if(Ed) success = success && expand_list(&neg_listo, neg_free);
                     }
-                    list_add(listval, listprop, Tt);
+                    success = success && list_add(listval, listprop, Tt);
+                    if(!success) break;
+
                     neg_listv=listval[listprop[1]-1];
                     neg_listx[neg_pos]=i; neg_listy[neg_pos]=j; neg_listz[neg_pos]=k;
                     if(Ed) {
@@ -593,10 +604,10 @@ void mexFunction( int nlhs, mxArray *plhs[],
     /* Free memory */
     /* Destroy parameter list */
     destroy_list(listval, listprop);
-    free(neg_listx);
-    free(neg_listy);
-    free(neg_listz);
-    free(Frozen);
+    mxFree(neg_listx);
+    mxFree(neg_listy);
+    mxFree(neg_listz);
+    mxFree(Frozen);
 }
 
 
