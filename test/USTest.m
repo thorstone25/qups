@@ -45,7 +45,8 @@ classdef USTest < matlab.unittest.TestCase
             if exist("simus3.m", "file")
                 simulator.MUST = @simus;
             end
-            if exist("fullwave2_executable", "file")
+            if exist("fullwave2_executable", "file") ...
+            && exist("mapToCoords", "file")
                 simulator.fullwave = @fullwaveSim;
             end
         end
@@ -105,6 +106,8 @@ classdef USTest < matlab.unittest.TestCase
             import matlab.unittest.fixtures.TemporaryFolderFixture;
             import matlab.unittest.fixtures.CurrentFolderFixture;
             simname = func2str(simulator); % alias
+
+            [tx, rx, seq] = dealfun(@copy, tx, rx, seq); % copy semantics
 
             % set numpulse for fsa
             if seq.type == "FSA", seq.numPulse = tx.numel; end
