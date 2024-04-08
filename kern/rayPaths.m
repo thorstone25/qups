@@ -163,11 +163,11 @@ for j = numel(js):-1:1
             [ c1,  c2] = deal(zeros(josz, 'like', iw));
 
             % use no parpool on GPU, default parpool on CPU, 
-            if kwargs.gpu, pul = {0}; x0 = gpuArray(x0); z0 = gpuArray(z0);
-            else, pul = {}; end
+            if kwargs.gpu, pul = 0; x0 = gpuArray(x0); z0 = gpuArray(z0);
+            else, pul = Inf; end
             
             % Get the interpolation weights for each part of the line
-            parfor (k = 1 : Kmax, pul{:})
+            parfor (k = 1 : Kmax, pul)
             % for k = 1:Kmax/2
                 [c1k, ix1k, iz1k, c2k, ix2k, iz2k] ...
                     = arrayfun(@xiaolinwu_k_scaled, ...
