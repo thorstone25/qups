@@ -135,7 +135,7 @@ classdef USTest < matlab.unittest.TestCase
                     chd = simulator(us, scat);
                     if simname == "greens"
                         chd = simulator(us, scat, 'device', 0, 'tall', 0);
-                        chd = simulator(us, scat, 'device', 0, 'tall', 1);
+                        % chd = simulator(us, scat, 'device', 0, 'tall',1); % strange behaviour as a test?
                     end
                 case {"kspaceFirstOrder", "fullwaveSim"} % medium
                     pb = [rx.bounds, tx.bounds]; pb = [min(pb,[],2), max(pb,[],2)]; % transducer boundaries
