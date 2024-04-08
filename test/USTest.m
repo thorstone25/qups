@@ -69,7 +69,7 @@ classdef USTest < matlab.unittest.TestCase
     end
 
     % github settings
-    methods(Test, ParameterCombination="pairwise", TestTags = ["Github","syntax", "build"])
+    methods(Test, ParameterCombination="pairwise", TestTags = ["Github", "build"])
         function simgeneric_github(testCase, tx, rx, seq, simulator)
             simgeneric(       testCase, tx, rx, seq, simulator);
         end

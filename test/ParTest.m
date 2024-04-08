@@ -310,9 +310,10 @@ classdef ParTest < matlab.unittest.TestCase
         end
     end
 
-    methods(Test, TestTags=["full", "build", "syntax"])
+    methods(Test, TestTags=["full", "build"])
         function const_compile(tst)
             % test we can compile for constant data size
+            tst.assumeFalse(isMATLABReleaseOlderThan("R2023a")) % compilation via mexcuda
             defs = [tst.us.getDASConstCudaDef(tst.cd), tst.us.getGreensConstCudaDef(tst.sct)];
             tst.us.recompileCUDA(defs, "compute_60")
         end
