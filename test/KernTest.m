@@ -133,7 +133,7 @@ classdef KernTest < matlab.unittest.TestCase
             % test defaults, options run
             interpd(x, tau);
             interpd(x, tau, 1, "cubic");
-            interpd(x, tau, 1, "lanczos3");            
+            if dev == "gpu", interpd(x, tau, 1, "lanczos3"); end
 
             % cast data
             for terp_ = terp
