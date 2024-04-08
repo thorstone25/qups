@@ -5,7 +5,7 @@ classdef ExampleTest < matlab.unittest.TestCase
         run_file (1,1) logical  = true; % set false to only write to file
         delete_file (1,1) logical = true; % whether to delete the file after running
         scat_lim (1,1) double % limit of scatterers
-        pulse_lim (1,1) double % max number of pulses to sim in k-Wave
+        pulse_lim (1,2) double % max number of pulses to sim in k-Wave, greens
     end
     
     % blacklists
@@ -188,7 +188,7 @@ classdef ExampleTest < matlab.unittest.TestCase
         end
         function limitSims(test)
             if gpuDeviceCount()
-                test.pulse_lim = 30; else, test.pulse_lim = 3; 
+                test.pulse_lim = [30 200]; else, test.pulse_lim = [3 64]; 
             end
             if gpuDeviceCount() || (exist('oclDeviceCount', 'file') && oclDeviceCount())
                 test.scat_lim = 1e4; else, test.scat_lim = 1e2;
@@ -381,7 +381,12 @@ classdef ExampleTest < matlab.unittest.TestCase
             filterBlacklist(test, code, blk, fls);
 
             % assume less than a limit with simulator functions
-            args = { 2, "numScat","greens";  1, "seq.numPulse","kspaceFirstOrder"};
+            % {argument index, class property, method}
+            args = { ...
+                2, "numScat","greens"; ...
+                1, "seq.numPulse","kspaceFirstOrder"; ...
+                1, "seq.numPulse","greens"; ...
+                };
             L = [test.scat_lim, test.pulse_lim];
             for l = 1:size(args,1)
                 S = check_num_prop(code, args{l,:}); % size
