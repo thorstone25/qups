@@ -28,8 +28,8 @@ jobs:
             setup cache; addpath build;
             res = runProjectTests("verbosity", "Verbose"), 
             i = find([res.Failed]); res(i).Name, 
-            dt = [res(i).Details]; dg = [dt.DiagnosticRecord]; 
-            dg.Report,
+            rep = arrayfun(@(r) r.Details.DiagnosticRecord.Report, res(i), 'UniformOutput', false);
+            rep{:}
             assertSuccess(res);
 
       - name: Upload MEX files
