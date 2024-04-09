@@ -125,12 +125,13 @@ arguments
     kwargs.ndim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = 2
     kwargs.ldim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = ndims(x) + 1;
 end
-
+% alias
+x0 = kwargs.x0; 
 
 % verify that w/W operates in the correct dimensions
 wsz = size(W);
 if any(wsz(setdiff(1:numel(wsz),[kwargs.tdim, kwargs.ndim])) ~= 1)
-    error("QUPS:pwzncc:incompatibleWeightSize", ...
+    error("QUPS:pwznxcorr:incompatibleWeightSize", ...
         "The filter weights w must be scalar in all dimensions except time (" ...
         +kwargs.tdim+") and channel ("+kwargs.ndim+")." ...
         );
@@ -145,7 +146,7 @@ if isscalar(W)
     wsz(kwargs.tdim) = W; % window size is 1 x ... x W 
     w = ones(wsz, 'like', x); % averaging window (no need to scale)
 else % W is the window itself
-    [w, W] = deal(W, numel(W));
+    [w, W] = deal(W, numel(W)); %#ok<ASGLU> (for debug)
 end
 
 % vector accumulation function
@@ -164,6 +165,9 @@ if kwargs.pad && ~isiflt
     psz = size(x,1:D); % data dimensions
     psz(kwargs.tdim) = P; % pad in this dimension
     x = cat(kwargs.tdim, x, zeros(psz, 'like', x)); % 0-pad at end
+    psz = size(x0,1:D); % data dimensions
+    psz(kwargs.tdim) = P; % pad in this dimension
+    x0 = cat(kwargs.tdim, x0, zeros(psz, 'like', x)); % 0-pad at end
 end
 
 % chose which method selects the reference channel for correlation
@@ -187,7 +191,7 @@ switch kwargs.ref
         % TODO: validate data size / cast type etc.
         % use a reference channel to correlate against
         xl = x; % (T x [1|N] x ...)
-        xr = kwargs.x0; % ([1|T] x N x ...)
+        xr = x0; % ([1|T] x N x ...)
 end
 
 % splice 
@@ -199,37 +203,44 @@ tdim = kwargs.tdim; % operation dimension
 if CEN,  xlz = xl - kernfun(xl); else,  xlz = xl; end 
 if NORM, xln = kernfun(real(xlz .* conj(xlz))); end % normalization power
 
+% windowed inner product for each lag
+% function y = windowed_inner_lag(lag)
+for i = numel(lags) : -1 : 1
+    % get the lag for this iteration
+    lag = lags(i);
+    
+    % delay right channel by lag
+    xr_l = conj(circshift(xr, -lag, tdim));
+
+    % mean centering for Z(N)CC
+    if CEN, xrz_l = xr_l - kernfun(xr_l); %   0-centered
+    else,   xrz_l = xr_l;                 % non-centered
+    end
+
+    % non-normalized correlation
+    y = kernfun(xlz .* xrz_l); % (T x [N|N-S] x ...)
+
+    % normalization for (Z)NCC
+    if NORM
+        % normalization for the lagged right channels
+        xrn_l = kernfun(real(xrz_l .* conj(xrz_l)));
+
+        % normalization denominator - complex for (garbage) negative amplitudes
+        r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)); % denom
+
+        % normalize
+        y = y ./ r;
+    end
+
+    % store
+    yi{i} = y;
+end
+
 % compute for all lags and unpack
-y = arrayfun(@windowed_inner_lag, lags, 'UniformOutput', false);
-y = cast(cat(kwargs.ldim, y{:}), 'like', x); % (T x [N|N-S] x ... x lags)
+% y = arrayfun(@windowed_inner_lag, lags, 'UniformOutput', false);
+y = cast(cat(kwargs.ldim, yi{:}), 'like', x); % (T x [N|N-S] x ... x lags)
 
 % undo manual 0-padding
 if kwargs.pad && ~isiflt, y = sub(y, 1:size(y,kwargs.tdim)-P, kwargs.tdim); end
 
-%% Helper function(s)
-% windowed inner product for each lag
-    function y = windowed_inner_lag(lag)
-        % delay right channel by lag
-        xr_l = conj(circshift(xr, -lag, tdim));
 
-        % mean centering for Z(N)CC
-        if CEN, xrz_l = xr_l - kernfun(xr_l); %   0-centered
-        else,   xrz_l = xr_l;                 % non-centered
-        end
-
-        % non-normalized correlation
-        y = kernfun(xlz .* xrz_l); % (T x [N|N-S] x ...)
-
-        % normalization for (Z)NCC
-        if NORM
-            % normalization for the lagged right channels
-            xrn_l = kernfun(real(xrz_l .* conj(xrz_l)));
-
-            % normalization denominator - complex for (garbage) negative amplitudes
-            r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)); % denom
-
-            % normalize 
-            y = y ./ r;
-        end
-    end
-end
