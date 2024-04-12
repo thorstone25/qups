@@ -39,15 +39,17 @@ All classes have data visualization support, making it far easier to share and v
 To facilitate data acquisition, `QUPS` provides tools to import data from [Verasonics Vantage](https://verasonics.com/vantage-systems/) ultrasound research scanners, which uses a flexible yet highly complex data standard. Similarly, to facilitate data generation, `QUPS` also interfaces with multiple popular free ultrasound field simulators including `FieldII`[@Jensen1996], `MUST`[@Garcia2021], and `k-Wave`[@Treeby2010]. Simulations can be batched on a compute cluster via MATLAB's parallel server toolbox.
 
 Alternatively, when a coarse but fast approximation is preferable, `QUPS` offers a hardware accelerated simulator with minimal complexity. This method uses a green's function to simulate ideal isotropic point sources (transmitters), point receivers, and point scatterers with radial propagation loss using the equation
-\begin{equation}\label={eq:greens}
-x_{mn}(t) = \sum_s \frac{v(t - c_0^{-1} \left( ||\mathbf{p}_s - \mathbf{q}_m|| + ||\mathbf{p}_s - \mathbf{r}_n|| \right) )}{||\mathbf{p}_s - \mathbf{q}_m|| \cdot ||\mathbf{p}_s - \mathbf{r}_n||}
-\end{equation} 
+
+$$x_{mn}(t) = \sum_s \frac{v(t - c_0^{-1} \left( ||\mathbf{p}_s - \mathbf{q}_m|| + ||\mathbf{p}_s - \mathbf{r}_n|| \right) )}{||\mathbf{p}_s - \mathbf{q}_m|| \cdot ||\mathbf{p}_s - \mathbf{r}_n||}$$
+
 where $v(\cdot)$ is the transmit waveform, $m$, $n$, and $s$ are the transmit, receive, and scatterer indices, $\mathbf{q}_m$ and $\mathbf{r}_n$ $\mathbf{p}_s$ is the location of scatterer $s$, and $x_{mn}(\cdot)$ is the received echo waveform as a function of time.
-\autoref{eq:greens} is embarassingly parallel over $m$ and $n$, and can be further accelerated with a branch-and-bound approach used to minimize unnecessary computation. Both of these aspects are exploited in native MATLAB, as well as in CUDA and OpenCL kernels.
+This expression is embarassingly parallel over $m$ and $n$, and can be further accelerated with a branch-and-bound approach used to minimize unnecessary computation. Both of these aspects are exploited in native MATLAB, as well as in CUDA and OpenCL kernels.
 
 Broadcasting conventions are employed throughout to reduce the memory footprint while offering significant flexibility. 
 For example, for delay-and-sum beamforming, one of the most common operations in ultrasound imaging, `QUPS` provides a GPU-enabled method employing the equation
+
 $$ b_{ijkf} = \sum_m \sum_n \alpha_{ijknm} \cdot x_{mnf}(||\mathbf{p}_{ijk} - \mathbf{r}_n|| + (-1)^{s(\mathbf{p}_{ijk}, \mathbf{q}_m)} \cdot ||\mathbf{p}_{ijk} - \mathbf{q}_m|| - t_m) $$
+
 where $m$, $n$, and $f$ are the transmit, receive and frame indices, $i$, $j$, and $k$ are the voxel (or pixel) indices, $x_{mnf}(\cdot)$ is the voltage signal (trace) as a function of time, $t_m$ is the start time for transmit $m$, $\mathbf{p}_{ijk}$ are the voxel positions in 3D cartesian coordinates, $\mathbf{q}_m$ and $\mathbf{r}_n$ are the virtual transmit and receiver positions, and $s(\cdot,\cdot)$ is a threshold function based on the relation between the virtual transmit position and the imaging voxel position. 
 Rather than require the user to specify the full five dimensional tensor $\alpha_{ijknm}$, any subset of these dimensions may be singular to efficiently form e.g. a transmit by lateral weighting (apodization) scheme or a receiver by depth weighting scheme.
 Permutations of the input data e.g. $x_{nfm}$ or $\mathbf{p}_{kji}$ are handled via properties specifying the indices rather than by enforcing a convention, which may lead to costly memory operations.
