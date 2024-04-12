@@ -1,5 +1,5 @@
 ---
-Title: 'QUPS: A MATLAB Toolbox for Ultrasound Imaging Prototyping'
+title: 'QUPS: A MATLAB Toolbox for Ultrasound Imaging Prototyping'
 tags:
   - MATLAB
   - ultrasound
@@ -9,12 +9,11 @@ tags:
   - 'signal processing'
   - CUDA
   - OpenCL
-
 authors:
   - name:
+      first: Thurston 
+      surname: Brevett
     orcid: 0000-0002-0720-6955
-    first: Thurston 
-    surname: Brevett
     affiliation: 1
 affiliations:
   - name: Stanford University
