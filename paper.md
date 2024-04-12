@@ -39,8 +39,8 @@ All classes have data visualization support, making it far easier to share and v
 To facilitate data acquisition, `QUPS` provides tools to import data from [Verasonics Vantage](https://verasonics.com/vantage-systems/) ultrasound research scanners, which uses a flexible yet highly complex data standard. Similarly, to facilitate data generation, `QUPS` also interfaces with multiple popular free ultrasound field simulators including `FieldII`[@Jensen1996], `MUST`[@Garcia2021], and `k-Wave`[@Treeby2010]. Simulations can be batched on a compute cluster via MATLAB's parallel server toolbox.
 
 Alternatively, when a coarse but fast approximation is preferable, `QUPS` offers a hardware accelerated simulator with minimal complexity. This method uses a green's function to simulate ideal isotropic point sources (transmitters), point receivers, and point scatterers with radial propagation loss using the equation
-\begin{equation} \label={eq:greens}
-x_{mn}(t) = \sum_s \frac{v(t - c_0^{-1} \left( ||\mathbf{p}_s - \mathbf{q}_m|| + ||\mathbf{p}_s - \mathbf{r}_n|| \right) )}{||\mathbf{p}_s - \mathbf{q}_m|| \cdot ||\mathbf{p}_s - \mathbf{r}_n||}
+\begin{equation}
+x_{mn}(t) = \sum_s \frac{v(t - c_0^{-1} \left( ||\mathbf{p}_s - \mathbf{q}_m|| + ||\mathbf{p}_s - \mathbf{r}_n|| \right) )}{||\mathbf{p}_s - \mathbf{q}_m|| \cdot ||\mathbf{p}_s - \mathbf{r}_n||} \label={eq:greens}
 \end{equation} 
 where $v(\cdot)$ is the transmit waveform, $m$, $n$, and $s$ are the transmit, receive, and scatterer indices, $\mathbf{q}_m$ and $\mathbf{r}_n$ $\mathbf{p}_s$ is the location of scatterer $s$, and $x_{mn}(\cdot)$ is the received echo waveform as a function of time.
 \autoref{eq:greens} is embarassingly parallel over $m$ and $n$, and can be further accelerated with a branch-and-bound approach used to minimize unnecessary computation. Both of these aspects are exploited in native MATLAB, as well as in CUDA and OpenCL kernels.
