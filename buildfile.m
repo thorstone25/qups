@@ -389,6 +389,20 @@ for fl = fls
     writelines(txt, fl); % save modified file
 end
 
+% if recording pressure vs. time on gpu, keep storage on CPU when
+% allocating memory
+fl = dir(fullfile(fld, '**', "kspaceFirstOrder_createStorageVariables.m"));
+fl = string(fullfile({fl.folder}, {fl.name}));
+pat = "        sensor_data.p = castZeros([num_sensor_points, num_recorded_time_points]);";
+rep = join([
+    "        sensor_data.p = castZeros([num_sensor_points, 1]);", ...
+    "        if isa(sensor_data.p, 'gpuArray'), sensor_data.p = gather(sensor_data.p); end % always retain on CPU", ...
+    "        sensor_data.p = repmat(sensor_data.p, [1, num_recorded_time_points]);", ...
+    ], newline);
+txt = string(readlines(fl));
+txt = replace(txt, pat, rep); % find & replace
+writelines(txt, fl); % save modified file
+
 end
 
 function benchmarkTask(context)
