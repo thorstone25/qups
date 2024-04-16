@@ -571,17 +571,17 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
     % FDTD functions
     methods
-        function [mask, el_weight, el_dist, el_ind] = elem2grid(xdc, scan, el_sub_div)
+        function [mask, el_weight, el_dist, el_ind] = elem2grid(xdc, grid, el_sub_div)
             % ELEM2GRID - Transducer element to grid mapping
             %
-            % [mask, el_weight, el_dist, el_ind] = ELEM2GRID(xdc, scan)
+            % [mask, el_weight, el_dist, el_ind] = ELEM2GRID(xdc, grid)
             % returns a binary mask and a set of indices, weights, and
             % distances defined for each element give a Transducer xdc and
-            % a ScanCartesian scan. The element indicies are defined on the
+            % a ScanCartesian grid. The element indicies are defined on the
             % vectorized non-zero indices of the mask i.e. on the indices
             % of `find(mask)`.
             %
-            % [...] = ELEM2GRID(xdc, scan, el_sub_div) subdivides the
+            % [...] = ELEM2GRID(xdc, grid, el_sub_div) subdivides the
             % elements in width and height by el_sub_div. The default is
             % [1,1].
             % 
@@ -589,7 +589,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
 
             arguments
                 xdc (1,1) Transducer
-                scan (1,1) ScanCartesian
+                grid (1,1) ScanCartesian
                 el_sub_div (1,2) {mustBeInteger, mustBePositive} = [1,1]
             end
 
@@ -599,19 +599,19 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             vec = @(x)x(:); % define locally for compatibility
 
             % cast grid points to single type for efficiency and base grid on the origin
-            [gxv, gyv, gzv] = deal(single(scan.x), single(scan.y), single(scan.z)); % grid {dim} vector
-            [gx0, gy0, gz0] = deal(scan.x(1), scan.y(1), scan.z(1)); % grid {dim} first point
-            [gxd, gyd, gzd] = deal(single(scan.dx), single(scan.dy), single(scan.dz)); % grid {dim} delta
+            [gxv, gyv, gzv] = deal(single(grid.x), single(grid.y), single(grid.z)); % grid {dim} vector
+            [gx0, gy0, gz0] = deal(grid.x(1), grid.y(1), grid.z(1)); % grid {dim} first point
+            [gxd, gyd, gzd] = deal(single(grid.dx), single(grid.dy), single(grid.dz)); % grid {dim} delta
             % pg = scan.positions(); % 3 x Z x X x Y
-            pdims = arrayfun(@(c){find(c == scan.order)}, 'XYZ'); % dimensions mapping
+            pdims = arrayfun(@(c){find(c == grid.order)}, 'XYZ'); % dimensions mapping
             [xdim, ydim, zdim] = deal(pdims{:});
             iord = arrayfun(@(d)find([pdims{:}] == d), [1,2,3]); % inverse mapping
 
             % get array sizing - size '1' and step 'inf' for sliced dimensions
-            [Nx, Ny, Nz] = deal(scan.nx, scan.ny, scan.nz); %#ok<ASGLU>
+            [Nx, Ny, Nz] = deal(grid.nx, grid.ny, grid.nz); %#ok<ASGLU>
 
             % get local element size reference
-            [width_, height_, sz_] = deal(xdc.width, xdc.height, scan.size); %#ok<ASGLU>
+            [width_, height_, sz_] = deal(xdc.width, xdc.height, grid.size); %#ok<ASGLU>
 
             % get regions for each receive transducer element
             el_cen = xdc.positions(); % center of each element
@@ -701,7 +701,7 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             assert(~any(cellfun(@isempty, mask_ind), 'all'), 'Unable to assign all (sub-)elements to the grid.');
 
             % reduce to make full recording sensor mask
-            mask = false(scan.size);
+            mask = false(grid.size);
             mask(unique(cat(1, mask_ind{:}))) = true;
 
             % get the translation map for grid mask index to receiver element

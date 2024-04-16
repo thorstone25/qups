@@ -1,14 +1,15 @@
 function [C, lags] = convd(x, y, dim, shape, kwargs)
 % CONVD - GPU-enabled Convolution in one dimension
 %
-% C = CONVD(A, B) computes the convolution of A with B in dimension 1. A 
-% and B may differ in size in dimension 1 only. All other dimensions must
-% be of equal size.
+% C = CONVD(A, B) computes the convolution of A with B in the first
+% non-singleton dimension. A and B must have compatible dimensions.
 % 
-% C = CONVD(A, B, dim) executes in dimension "dim" instead of dimension 1
+% C = CONVD(A) computes the auto-correlation i.e. B = conj(flip(A));
+% 
+% C = CONVD(A, B, dim) executes in dimension dim instead of dimension 1
 % 
 % C = CONVD(A, B, dim, shape) selects the shape of the output. Must be one 
-% of {'full'*|'same'|'valid'}. The default is 'full'.
+% of {'full', 'same', 'valid'}. The default is 'full'.
 % 
 % C = CONVD(..., 'gpu', true) selects whether to use a gpu. A ptx-file will 
 % be used if compiled. The default is true if x or y is a gpuArray.
@@ -52,7 +53,7 @@ function [C, lags] = convd(x, y, dim, shape, kwargs)
 
 arguments
     x {mustBeFloat}
-    y {mustBeFloat}
+    y {mustBeFloat} = conj(flip(x))
     dim (1,1) {mustBePositive, mustBeInteger} = findSingletonDim(x, y)
     shape (1,1) string {mustBeMember(shape, ["full", "same", "valid"])} = 'full'
     kwargs.gpu (1,1) logical = isa(x, 'gpuArray') || isa(y, 'gpuArray')
@@ -69,8 +70,18 @@ idim = setdiff(1:max(D, dim), dim); % inverse (not) dim
 % check data sizes
 sz_x = size(x, 1:D);
 sz_y = size(y, 1:D);
-assert(numel(sz_x) == numel(sz_y) && all(sz_x(idim) == sz_y(idim)),...
+assert(all(sz_x(idim) == sz_y(idim) | sz_x(idim) == 1 | sz_y(idim) == 1),...
     "Incompatible sizes [" + join(string((sz_x))+",") + "], and [" + join(string((sz_y))+",") + "].");
+
+% explicit broadcast
+i = sz_x(idim) ~= sz_y(idim) & sz_x(idim) == 1;
+j = sz_y(idim) ~= sz_x(idim) & sz_y(idim) == 1;
+[xrp, yrp] = deal(ones(1,D)); % replication sizes
+xrp(idim(i)) = sz_y(idim(i));
+yrp(idim(j)) = sz_x(idim(j));
+if any(xrp ~= 1), x = repmat(x, xrp); sz_x = size(x, 1:D); end
+if any(yrp ~= 1), y = repmat(y, yrp); sz_y = size(y, 1:D); end
+assert(isequal(size(x, idim), size(y, idim)));
 
 % get computation/output data type and precision
 complex_type = ~isreal(x) || ~isreal(y);

@@ -389,12 +389,14 @@ classdef ChannelData < matlab.mixin.Copyable
                     ysz = size(x);
                     ysz(3) = Trans.numelements;
                     y = zeros(ysz, 'like', x);
+                    N = 256; % max number of channels - modulo for matrix arrays
+                    mod1 = @(x,N) mod(x-1,N)+1; % convert 0-based to 1-based modulo
 
                     % load into output
                     for a = unique(as)' % for each aperture
                         j = a == as; % matching aperture
                         k = aps(:,a); % channel indices
-                        y(:,j,k~=0,:) = x(:,j,k(k~=0),:); % load
+                        y(:,j,k~=0,:) = x(:,j,mod1(k(k~=0),N),:); % load
                     end
                     x = y; % (time x acq x elem x frame)
                 end

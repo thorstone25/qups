@@ -312,7 +312,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments, self (1,1) UltrasoundSystem, end % always scalar in            
             other = copyElement@matlab.mixin.Copyable(self); % shallow copy handle
             other.tmp_folder = tempname(); % new temp dir
-            copyfile(self.tmp_folder, other.tmp_folder); % copy binaries over
+            if exist(self.tmp_folder, 'dir')
+                copyfile(self.tmp_folder, other.tmp_folder); % copy binaries over
+            else
+                mkdir(other.tmp_folder); % create empty
+            end
             addpath(other.tmp_folder); % add to path
             % disp("[DEBUG]: Adding path " + other.tmp_folder + " with " + (numel(dir(other.tmp_folder)) - 2) + " files.");
         end
@@ -920,13 +924,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             arguments
                 uchannel_data (1,1) uff.channel_data
-                uscan (1,1) uff.scan
+                uscan uff.scan {mustBeScalarOrEmpty} = uff.scan.empty
             end
             fs = uchannel_data.sampling_frequency; % sampling frequency
             seq = Sequence.UFF(uchannel_data.sequence, uchannel_data.sound_speed); % Sequence
             xdc = Transducer.UFF(uchannel_data.probe); % Transducer
             us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'fs', fs);
-            if nargin >= 2, us.scan = Scan.UFF(uscan); end
+            if ~isempty(uscan), us.scan = Scan.UFF(uscan); end
             if nargout >= 2, chd = ChannelData.UFF(uchannel_data, us.seq, us.xdc); end % data
         end
     end
@@ -2206,7 +2210,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM PARALLEL.JOB/FETCHOUTPUTS
             arguments % required arguments
                 us (1,1) UltrasoundSystem
-                med Medium
+                med (1,1) Medium = Medium("c0", us.seq.c0, "rho0", us.seq.c0 / 1.5);
                 sscan (1,1) ScanCartesian = us.scan
             end
             arguments(Repeating)
@@ -2225,9 +2229,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.gpu (1,1) logical = logical(gpuDeviceCount()) % whether to employ gpu during pre-processing
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
-                karray_args.UpsamplingRate (1,1) double =  10, ...
-                karray_args.BLITolerance (1,1) double = 0.05, ...
-                karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc', ... stencil - exact or sinc
+                karray_args.UpsamplingRate (1,1) double =  10
+                karray_args.BLITolerance (1,1) double = 0.05
+                karray_args.BLIType (1,1) string {mustBeMember(karray_args.BLIType, ["sinc", "exact"])} = 'sinc' % stencil - exact or sinc
             end
             arguments % kWave 1.1 arguments - these are passed to kWave
                 kwave_args.BinaryPath (1,1) string = getkWavePath('binaries')
@@ -2358,10 +2362,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                         psigv = sample(txsig, psigv); % sample the time delays (J''' x M x T' x V)
                         psigv = wnorm .* el_weight .* swapdim(apodv,3,4) .* psigv; % per sub-element transmit waveform (J''' x M x T' x V x 3)
                         psigv = reshape(psigv, [prod(size(psigv,1:2)), size(psigv,3:4), 1, size(psigv,5)]); % per element transmit waveform (J'' x T' x V x 1 x 3)
-                        psigvproto = psigv(1);
                         psigv = double(psigv); % in-place ?
                         psigv = reshape(el_map_grd * psigv(:,:), [size(el_map_grd,1), size(psigv,2:5)]); % per grid-point transmit waveform (J' x T' x V x 1 x 3)
-                        psigv = cast(psigv, 'like', psigvproto); % in-place ?
+                        psigv = cast(psigv, 'like', psigv([])); % in-place ?
                         psig(:,:,v+b,:,:) = gather(psigv); % store
                     end
                     end
@@ -4864,18 +4867,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 arch (:,1) string {mustBeScalarOrEmpty, mustBeArch(arch)} = nvarch()
             end
             
-            % src file folder
-            src_folder = UltrasoundSystem.getSrcFolder();
-            
             % compile each
             for i = numel(defs):-1:1
                 d = defs(i);
                 % make full command
                 com(i) = join(cat(1,...
                     "nvcc ", ...
-                    "--ptx " + fullfile(src_folder, d.Source), ...
+                    "--ptx " + which(string(d.Source)), ...
                     "-arch=" + arch + " ", ... compile for active gpu
-                    "-o " + fullfile(us.tmp_folder, strrep(d.Source, '.cu', '.ptx')), ...
+                    "-o " + fullfile(us.tmp_folder, argn(2, @fileparts, d.Source) + ".ptx"), ...
                     join("--" + d.CompileOptions),...
                     join("-I" + d.IncludePath), ...
                     join("-L" + d.Libraries), ...
