@@ -312,7 +312,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments, self (1,1) UltrasoundSystem, end % always scalar in            
             other = copyElement@matlab.mixin.Copyable(self); % shallow copy handle
             other.tmp_folder = tempname(); % new temp dir
-            copyfile(self.tmp_folder, other.tmp_folder); % copy binaries over
+            if exist(self.tmp_folder, 'dir')
+                copyfile(self.tmp_folder, other.tmp_folder); % copy binaries over
+            else
+                mkdir(other.tmp_folder); % create empty
+            end
             addpath(other.tmp_folder); % add to path
             % disp("[DEBUG]: Adding path " + other.tmp_folder + " with " + (numel(dir(other.tmp_folder)) - 2) + " files.");
         end
