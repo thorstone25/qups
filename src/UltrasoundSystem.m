@@ -924,13 +924,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             arguments
                 uchannel_data (1,1) uff.channel_data
-                uscan (1,1) uff.scan
+                uscan uff.scan {mustBeScalarOrEmpty} = uff.scan.empty
             end
             fs = uchannel_data.sampling_frequency; % sampling frequency
             seq = Sequence.UFF(uchannel_data.sequence, uchannel_data.sound_speed); % Sequence
             xdc = Transducer.UFF(uchannel_data.probe); % Transducer
             us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'fs', fs);
-            if nargin >= 2, us.scan = Scan.UFF(uscan); end
+            if ~isempty(uscan), us.scan = Scan.UFF(uscan); end
             if nargout >= 2, chd = ChannelData.UFF(uchannel_data, us.seq, us.xdc); end % data
         end
     end
