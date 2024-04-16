@@ -95,8 +95,12 @@ classdef KernTest < matlab.unittest.TestCase
             dims = [1,2,3]; 
 
             % check that defaults and options work
+            test.assertTrue(isalmostn(convd(A), xcorr(A)));
             convd(A, B);
             convd(B, A, 'lowmem', true);
+
+            % broadcasting
+            test.assertTrue( all(convd(cat(4,A,A), B) == convd(A, B), 'all') );
 
             % convolve and check outputs
             for s = shapes, for d = dims %#ok<ALIGN> 
