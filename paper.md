@@ -64,7 +64,7 @@ Throughout the toolbox, `QUPS` provides reasonable defaults that abstract and si
 When these choices do become critical as is the case for researchers and experts, such users can engage with the toolbox at a lower level, or simply use the available functionality as a template to be modified to suit their needs.
 
 # Acknowledgements
-This material is based upon work supported by the National Science Foundation Graduate Research Fellowship under Grant No. XXXXXXXX
+This material is based upon work supported by the National Science Foundation Graduate Research Fellowship under Grant No. DGE-1656518.
 
 # References
 
