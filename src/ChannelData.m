@@ -877,7 +877,6 @@ classdef ChannelData < matlab.mixin.Copyable
             end
             chd = copy(chd); % copy semantics
             chd = subD(chd, 1:ratio:chd.T, chd.tdim); % sub-index
-            chd.fs(:) = chd.fs / ratio; % reduce sampling frequency
         end
         function chd = resample(chd, fs, varargin)
             % RESAMPLE - Resample the data in time
