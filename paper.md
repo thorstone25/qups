@@ -1,5 +1,5 @@
 ---
-title: 'QUPS: A MATLAB Toolbox for Ultrasound Imaging Prototyping'
+title: 'QUPS: A MATLAB Toolbox for Rapid Prototyping of Ultrasound Beamforming and Imaging Techniques'
 tags:
   - MATLAB
   - ultrasound
@@ -23,8 +23,7 @@ bibliography: paper.bib
 
 # Summary:
 
-Medical ultrasound encompasses a rapidly developing field of research with many potential applications from diagnostics to therapeutics. Public data initiatives
-and recent industry trends have reduced the cost and complexity to engage in research via publicly available data, on-board data acquisition functions, and commercial off the shelf (COTS) imaging systems. However, terminology, data formatting standards, and computing practices tend to be highly fragmented throughout the ultrasound research field, leading to a high barrier of entry that hinders communication, code reuse, and shareability. 
+Medical ultrasound encompasses a rapidly developing field of research with many potential applications from diagnostics to therapeutics. Public data initiatives and recent industry trends have reduced the cost and complexity to engage in research via publicly available data, on-board data acquisition functions, and commercial off the shelf (COTS) imaging systems. However, terminology, data formatting standards, and computing practices tend to be highly fragmented throughout the ultrasound research field, leading to a high barrier of entry that hinders communication, code reuse, and shareability. 
 
 `QUPS` aims to facilitate ultrasound research by offering a flexible, performant, modular, and intuitive toolbox that can be used by experienced researchers as well as curious students for data acquisition, generation, representation, and processing. It pursues this goal by offering tools designed to reduce the burden of common computational tasks involved in the scientific process by standardizing data formats and offering hardware accelerated functionality.
 
@@ -64,7 +63,7 @@ Throughout the toolbox, `QUPS` provides reasonable defaults that abstract and si
 When these choices do become critical as is the case for researchers and experts, such users can engage with the toolbox at a lower level, or simply use the available functionality as a template to be modified to suit their needs.
 
 # Acknowledgements
-This material is based upon work supported by the National Science Foundation Graduate Research Fellowship under Grant No. DGE-1656518.
+This material is based upon work supported by the National Institutes of Health under award number R01EB027100 and by the National Science Foundation Graduate Research Fellowship under Grant No. DGE-1656518. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
 
 # References
 
