@@ -573,6 +573,9 @@ classdef ChannelData < matlab.mixin.Copyable
                 end                
             end
         end
+    
+        function chd = uminus(chd), chd = applyFun2Data(chd, @uminus); end
+        function c = minus(a, b), c = a + (-b); end
     end
 
     % DSP overloads 
@@ -925,6 +928,50 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = deg2rad(chd) , chd = applyFun2Data(chd, @deg2rad); end
         function chd = mag2db(chd)  , chd = applyFun2Data(chd, @mag2db); end
         function chd = mod2db(chd)  , chd = applyFun2Data(chd, @mod2db); end
+        function chd = convt(chd, wv, shape)
+            % CONVT - Temporal convolution
+            %      
+            % chdw = convn(chd, wv) performs the temporal convolution of
+            % the ChannelData chd and the Waveform wv. The sampling
+            % frequency of the Waveform is set to match the sampling
+            % frequency of the ChannelData i.e. `wv.fs = chd.fs`
+            % 
+            % chdw = convn(chd, wv, shape) controls the size of the output:
+            %   'full'   - (default) returns the full N-D convolution
+            %   'same'   - returns the central part of the convolution that
+            %            is the same size as A.
+            %   'valid'  - returns only the part of the result that can be
+            %            computed without assuming zero-padded arrays.
+            %            chdw.T = max([chd.T-max(0,numel(wv.samples)-1)],0).
+            %
+            %
+            % See also WAVEFORM.REVERSE CONVD
+            
+            % TODO: account for swapped inputs (h, chd) -> (chd, h) 
+            if nargin < 3, shape = 'full'; end
+
+            % copy semantics
+            chd = copy(chd);
+            wv = copy(wv);
+
+            % get samples and offset
+            wv.fs = chd.fs; % match sampling frequency
+            h = swapdim(wv.samples, 1, chd.tdim); % in time dimension
+
+            % adjust time axes
+            t0_ = wv.t0 + chd.t0;
+            H = numel(h);
+            switch shape
+                case 'full' % pass
+                case 'same',  t0_ = t0_ + ceil((H-1) / 2) ./ chd.fs; % central
+                case 'valid', t0_ = t0_ + ceil((H-1) / 1) ./ chd.fs; % offset
+            end
+
+            % convolve data
+            chd.data = convn(chd.data, h, shape); 
+            chd.t0 = t0_;
+        end
+
     end
 
     % DSP helpers

@@ -33,7 +33,7 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
 
             % tall, sparse
             chdo = tall(chd);
-            sparse(ChannelData('data', randn([16 32])))
+            sparse(ChannelData('data', randi([0 1], [16 32])))
 
             % unit conversion check
             chdo = angle(complex(chd));
@@ -49,7 +49,7 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             underlyingType(chd);
         end
 
-        function freqDomainCheck(~)
+        function freqDomainCheck(tst)
             [T, N, M, F] = deal(128, 8, 4, 2);
             chd = ChannelData('data', randn([T M N F], 'single'), 't0', randn([1 1 N F]), 'fs', 1, 'order', 'TMNF');
 
@@ -70,6 +70,8 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
 
             % sampling
             downsample(downmix(resample(chd,5), 1/4), 2);
+            
+
         end
 
         function arithmetic(tst)
@@ -86,10 +88,16 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             5 .* a; %#ok<VUNUS>
             a .* 5; %#ok<VUNUS>
             a .* b; %#ok<VUNUS>
+            -a - b; %#ok<VUNUS>
+            a - b ; %#ok<VUNUS>
+            a - 5 ; %#ok<VUNUS>
+            5 - a ; %#ok<VUNUS>
 
             % should fail
             tst.assertError(@() a  + c , "");
             tst.assertError(@() a  + d , "");
+            tst.assertError(@() a  - c , "");
+            tst.assertError(@() a  - d , "");
             tst.assertError(@() a .* c , "");
             tst.assertError(@() a .* d , "");
         end
@@ -102,6 +110,14 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             chd.rectifyt0();
             chd.alignInt();
             chd.time = randn(size(chd.t0)) + swapdim((0 : chd.T - 1) ./ chd.fs, 2, chd.tdim);
+
+            % time reversal and convolution
+            wv = Waveform('t0', -1/32, 'tend', 1/8, 'fs', chd.fs, 'fun', @(t) cospi(2j*pi*100*t));
+            wvr = reverse(wv); 
+            tst.assertEqual(-wvr.tend, wv.t0);
+            tst.assertEqual(-wv.tend, wvr.t0);
+            tst.assertEqual(wv.samples, reverse(reverse(wv)).samples);
+            for s = ["full", "same", "valid"], convt(chd, wv, s), end
             
             % join/splice
             ChannelData.empty().join(4)
@@ -117,6 +133,12 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             tst.assertEqual(chd.data , chdi.data );
             tst.assertEqual(chd.t0   , chdi.t0   );
 
+            % sampling
+            tst.assertEqual(downsample(chd,2).fs, chd.fs/2);
+            tst.assertEqual(subD(chd, 1:2:chd.T, chd.tdim).fs, chd.fs/2);
+            tst.assertEqual(subD(chd, {1:4:chd.T, [2,3,4]}, [chd.tdim, chd.ndim]).fs, chd.fs/4);
+
+            tst.assertError(@() subD(chd, {[1 2 4 7]}, chd.tdim), 'QUPS:ChannelData:nonuniformTemporalIndexing'); % bad spacing
 
         end
     end
