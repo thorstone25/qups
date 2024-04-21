@@ -526,10 +526,10 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd2. The time axes of chd1 and chd2 must be compatible.
             %
             % Example:
-            % chds = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
-            % chds = chds + (- mean(chds.data,'all')); % de-bias
-            % chds = splice(chds, 4); % split into frames
-            % 2.*chds(1) + (-1).*chds(2), % scale and add over the 2 frames
+            % chd = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
+            % chd = chd - mean(chd.data,'all'); % de-bias
+            % chds = splice(chd, 4); % split into frames
+            % thi = 2 .* chds(1) - chds(2), % scale and add over the 2 frames
             % 
             % See also ChannelData.plus
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
@@ -539,6 +539,38 @@ classdef ChannelData < matlab.mixin.Copyable
             else % if both are ChannelData, we check that the time axis is identical
                 if all(a.order == b.order) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
                     c = copy(a); c.data = times(a.data, b.data);
+                else
+                    error('ChannelData does not match - cannot perform arithmetic')
+                end                
+            end
+        end
+    
+        function c = rdivide(a, b)
+            % RDIVIDE - Divide ChannelData data
+            %
+            % chd ./ a divides the data property of the ChannelData chd by 
+            % the ND-array a and returns a ChannelData object.
+            %
+            % a ./ chd divides the ND-array a by the ChannelData chd and
+            % returns a ChannelData object.
+            % 
+            % chd1 ./ chd2 divides the data of the ChannelDatas chd1 and
+            % chd2. The time axes of chd1 and chd2 must be compatible.
+            %
+            % Example:
+            % chd = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
+            % chdn = chd ./ max(chd.data,[],'all'); % normalized data. 
+            % chds = splice(chd, 4); % split into frames
+            % chdr = chds(1) ./ chds(2); % sample-wise ratio over the 2 frames
+            % 
+            % See also ChannelData.plus
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                c = copy(a); c.data = rdivide(a.data, b);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                c = copy(b); c.data = rdivide(a, b.data);
+            else % if both are ChannelData, we check that the time axis is identical
+                if all(a.order == b.order) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
+                    c = copy(a); c.data = rdivide(a.data, b.data);
                 else
                     error('ChannelData does not match - cannot perform arithmetic')
                 end                
@@ -574,8 +606,10 @@ classdef ChannelData < matlab.mixin.Copyable
             end
         end
     
-        function chd = uminus(chd), chd = applyFun2Data(chd, @uminus); end
         function c = minus(a, b), c = a + (-b); end
+        function c = ldivide(a, b), c = rdivide(b, a); end
+        function chd = uminus(chd), chd = applyFun2Data(chd, @uminus); end
+        function chd = uplus(chd),  chd = applyFun2Data(chd, @uplus);  end
     end
 
     % DSP overloads 
@@ -920,6 +954,7 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs, chd.data] = tmp{:};
 
         end
+        function chd = conj(chd)    , chd = applyFun2Data(chd, @conj); end
         function chd = real(chd)    , chd = applyFun2Data(chd, @real); end
         function chd = imag(chd)    , chd = applyFun2Data(chd, @imag); end
         function chd = abs(chd)     , chd = applyFun2Data(chd, @abs); end

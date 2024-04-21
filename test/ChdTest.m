@@ -4,8 +4,8 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
     %#ok<*NASGU> The outputs will not be televised
 
     methods(Test)
-        function typeCheck(~)
-            chd = ChannelData('data', randn([16 8 4 2], 'single'));
+        function typeCheck(tst)
+            chd = ChannelData('data', complex(randn([16 8 4 2], 'single'),randn([16 8 4 2], 'single')));
 
             % all precision types
             chdo = doubleT(chd);
@@ -42,11 +42,17 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             chdo = mod2db(    chd );
             chdo = real(imag(complex(chd)));
 
+            % apply fun to data same as apply fun directly
+            tst.assertEqual(conj(chd.data)  , conj(chd).data);
+            tst.assertEqual(mod2db(chd.data), mod2db(chd).data);
+
             % qualifiers
             isreal(chd); 
             istall(chd);
             classUnderlying(chd);
             underlyingType(chd);
+
+
         end
 
         function freqDomainCheck(tst)
@@ -80,26 +86,25 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             b = ChannelData('data', rand([T M N F]), 't0', a.t0            , 'order', 'TMNF');
             c = copy(a); c.t0 = c.t0 + rand(size(c.t0)); % incompatible
             d = copy(b); d.fs = d.fs * 2; % incompatible
+            v = randn([T 1 1 1]);
+            u = randn([T 1 N 1]);
+
+            for f = {@plus, @minus, @times, @rdivide, @ldivide}
+                % should work
+                f{1}(5, a);
+                f{1}(a, 5);
+                f{1}(a, b);
+
+                % should fail
+                tst.assertError(@() f{1}(a, c), "");
+                tst.assertError(@() f{1}(a, d), "");
+            end
 
             % should work
-            5  + a; %#ok<VUNUS>
-            a  + 5; %#ok<VUNUS>
-            a  + b; %#ok<VUNUS>
-            5 .* a; %#ok<VUNUS>
-            a .* 5; %#ok<VUNUS>
-            a .* b; %#ok<VUNUS>
-            -a - b; %#ok<VUNUS>
-            a - b ; %#ok<VUNUS>
-            a - 5 ; %#ok<VUNUS>
-            5 - a ; %#ok<VUNUS>
+            -a;  +b; %#ok<VUNUS>
+           
 
             % should fail
-            tst.assertError(@() a  + c , "");
-            tst.assertError(@() a  + d , "");
-            tst.assertError(@() a  - c , "");
-            tst.assertError(@() a  - d , "");
-            tst.assertError(@() a .* c , "");
-            tst.assertError(@() a .* d , "");
         end
 
         function transforming(tst)
