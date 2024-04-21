@@ -431,6 +431,14 @@ classdef Waveform < matlab.mixin.Copyable
             end
             wv = Waveform('fun', f, 't0', this.t0 + that.t0, 'tend', this.tend + that.tend, 'fs', fs);
         end
+
+        function wv = reverse(wv)
+            wv = copy(wv); 
+            [wv.tend, wv.t0] = deal(-wv.t0, -wv.tend);
+            f = wv.fun; % extract
+            wv.fun = @(t) f(-t); % replace
+        end
+
     end
     
     methods
@@ -464,7 +472,7 @@ classdef Waveform < matlab.mixin.Copyable
             %
             % wvtri = Waveform.Verasonics(TW, fc) creates a Waveform wvtri
             % of the voltage excitation signal from the transmit waveform
-            % struct TW and the central frequency in Hz fc.
+            % struct TW and the Transducer central frequency fc in Hz. 
             %
             % wvtri = Waveform.Verasonics(TW) where TW represents all
             % Parametric waveforms uses the frequency from the Parametric
