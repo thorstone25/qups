@@ -144,9 +144,9 @@ classdef ChannelData < matlab.mixin.Copyable
             end
             chd = copy(chd);
             if isfield(kwargs, 'time')
-                w = kwargs.time;
-                % scale time (e.g. s -> us / Hz -> MHz)
-                [chd.fs, chd.t0] = deal(chd.fs/w, w*chd.t0);
+                w = kwargs.time; % scale time (e.g. s -> us / Hz -> MHz)
+                [chd.fs] = dealfun(@(fs) fs / w, chd.fs);
+                [chd.t0] = dealfun(@(t0) t0 * w, chd.t0);
             end
         end
         
