@@ -2351,7 +2351,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     el_map_grd = sparse((1:nnz(mask))' == el_ind(:)'); % matrix mapping (J' x J'')
 
                     % apply to transmit signal: for each element
-                    if ap == "tx"
+                    if (ap == "tx" || ap == "xdc")
                     [del, apod, t_tx] = dealfun(@(x)shiftdim(x, -1), del, apod, t_tx); % (1 x M x V), (1 x 1 x 1 x T')
                     V = size(del,3); % number of transmits
                     B = min(V,kwargs.bsize); % block size for processing
@@ -2389,7 +2389,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                             elem_weights = arrayfun(@(i){sparse(vec(karray.getElementGridWeights(kgrid, i)))}, 1:us.(ap).numel);  % (J x {M})
                             elem_weights = cat(2, elem_weights{:}); % (J x M)
                             elem_weights = elem_weights(mask(:),:); % (J' x M)
-                            if ap == "tx"
+                            if (ap == "tx" || ap == "xdc")
                                 psig = pagemtimes(full(elem_weights), 'none', txsamp, 'transpose'); % (J' x M) x (T' x M x V) -> (J' x T' x V)
                             end
 
@@ -2400,7 +2400,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                             elem_weights = elem_weights ./ elem_norm; 
 
                         case 'karray-depend' % compute one at a time and apply casting rules
-                            if ap == "tx"
+                            if (ap == "tx" || ap == "xdc")
 
                             psig = cellfun(@(x) ...
                                 {cast(karray.getDistributedSourceSignal(kgrid, x.'), 'like', x)}, ...
