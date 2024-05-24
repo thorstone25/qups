@@ -2974,7 +2974,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.length string {mustBeScalarOrEmpty} = string.empty;
                 kwargs.buffer (1,1) {mustBeNumeric, mustBeInteger} = 0
-                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,seq.numPulse)
+                kwargs.bsize (1,1) {mustBePositive, mustBeInteger} = max(1,seq.numPulse*us.tx.numel)
                 kwargs.verbose (1,1) logical = false;
             end
 
@@ -2982,17 +2982,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd = copy(chd);
 
             % dist/time to receiver
-            tau  = - seq.delays(us.tx); % M x M'
-            apod =   seq.apodization(us.tx); % [1|M] x [1|M']
+            tau = - seq.delays(     us.tx); %    M  x    M'
+            apd =   seq.apodization(us.tx); % [1|M] x [1|M']
 
             % nothing to do for (true) FSA acquisitions: all 0 delays
             % identity matrix apodization
             switch seq.type, case 'FSA' 
-                if ~nnz(tau) && isequal(apod, eye(us.tx.numel)), return; end 
+                if ~nnz(tau) && isequal(apd, eye(us.tx.numel)), return; end 
             end
 
             % resample only within the window where we currently have data.
-            i = logical(apod) | false(size(tau)); % non-zero apodization indices (broadcasted)
+            i = logical(apd) | false(size(tau)); % non-zero apodization indices (broadcasted)
             nmin = floor(min(tau(i),[],'all','omitnan') .* chd.fs); % minimum sample time
             nmax =  ceil(max(tau(i),[],'all','omitnan') .* chd.fs); % maximum sample time
             chd.t0 = chd.t0 + nmin / chd.fs; % shift time axes forwards to meet minimum sample time
@@ -3018,10 +3018,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % align dimensions
             D = 1+max([3,ndims(chd.data), ndims(chd.t0)]); % get a free dimension for M'
             assert(D > chd.mdim, "Transmit must be in the first 3 dimensions (" + chd.mdim + ").");
-            tau  = swapdim(tau ,[1 2],[chd.mdim D]); % move data
-            apod = swapdim(apod,[1 2],[chd.mdim D]); % move data
+            tau = swapdim(tau,[1 2],[chd.mdim D]); % move data
+            apd = swapdim(apd,[1 2],[chd.mdim D]); % move data
+            
+            % splicing
             B = max(1, floor(kwargs.bsize / us.tx.numel)); % simultaneous blocks of TxN, as best we can manage
-            id   = num2cell((1:B)' + (0:B:seq.numPulse-1),1); % output sequence indices
+            id  = num2cell((1:B)' + (0:B:seq.numPulse-1),1); % output sequence indices
             id{end}(id{end} > seq.numPulse) = []; % delete OOB indices
 
             if kwargs.verbose
@@ -3030,7 +3032,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % sample and store
             for i = numel(id):-1:1
-                z{i} = chd.sample2sep(chd.time, - sub(tau,id{i},D), kwargs.interp, sub(apod,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
+                z{i} = chd.sample2sep(chd.time, - sub(tau,id{i},D), kwargs.interp, sub(apd,id{i},D), chd.mdim); % sample ({perm(T' x N x 1) x F x ...} x M')
                 z{i} = swapdim(z{i}, chd.mdim, D); % replace transmit dimension (perm({T' x N} x M') x {F x ...})
             end
             z = cat(chd.mdim, z{:}); % unpack transmit dimension (perm(T' x N x M') x F x ...)
