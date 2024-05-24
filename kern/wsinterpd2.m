@@ -48,6 +48,7 @@ function y = wsinterpd2(x, t1, t2, dim, w, sdim, interp, extrapval, omega)
 %
 
 %% validate dimensions
+persistent k dsz prc0; % cache prior kernel calls
 if nargin < 9 || isempty(omega),     omega = 0; end
 if nargin < 8 || isempty(extrapval), extrapval = nan; end
 if nargin < 7 || isempty(interp),    interp = 'linear'; end
@@ -95,8 +96,6 @@ dsizes = [max(size(t1,1),size(t2,1)), max([size(t1,2:S); size(t2,2:S); size(x,2:
 % function to determine type
 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
-if exist('oclDeviceCount','file') && oclDeviceCount(), ocl_dev = oclDevice(); else, ocl_dev = []; end % get oclDevice if supported
-
 use_gdev = exist('interpd.ptx', 'file') ...
         && ( isa(x, 'gpuArray') || isa(t1, 'gpuArray') || isa(t2, 'gpuArray') || isa(x, 'halfT') && x.gtype) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
@@ -104,7 +103,11 @@ use_gdev = exist('interpd.ptx', 'file') ...
 
 use_odev = exist('interpd.cl', 'file') ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
-        && real(omega) == 0 ... 
+        && real(omega) == 0;
+
+if use_odev && ~use_gdev && exist('oclDeviceCount','file') && oclDeviceCount(), ocl_dev = oclDevice(); else, ocl_dev = []; end % get oclDevice if supported
+
+use_odev = use_odev ... 
         && ~isempty(ocl_dev) && ...
         (  (isftype(x,'double') && ocl_dev.SupportsDouble) ...
         || (isftype(x,'single')                          ) ... always supported
@@ -167,20 +170,18 @@ if use_gdev || use_odev
             y_ = zeros(osz, 'like', x_); % pre-allocate output
     end
     % zeros: uint16(0) == storedInteger(half(0)), so this is okay
-
-    if use_gdev
+    if isscalar(k) && isvalid(k) && all(dsz == [I T S N F]) && (prc == prc0)
+        % pass - use the cached kernel
+    elseif use_gdev
         % grab the kernel reference
-        d = gpuDevice();
         k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'wsinterpd2' + suffix);
         k.setConstantMemory( ...
             'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
             'QUPS_N', uint64(N), 'QUPS_F', uint64(F) ...
             );
-        cargs = {flagnum, imag(omega)}; % constant arguments
     elseif use_odev
         % get the kernel reference
         k = oclKernel(which('interpd.cl'), 'wsinterpd2');
-        d = k.Device;
 
         % set the data types
         switch prc, case 16, t = 'uint16'; case 32, t = 'single'; case 64, t = 'double'; end
@@ -192,14 +193,17 @@ if use_gdev || use_odev
             + "=" + ["0."+suffix, flagnum, imag(omega)]]; % input constants
         k.macros(end+1) = "QUPS_PRECISION="+prc;
         % k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable"];
-        cargs = {}; 
     end
+
+    % constant arguments
+    if use_gdev, d = gpuDevice(); cargs = {flagnum, imag(omega)}; else, d = k.Device; cargs = {}; end 
 
     % kernel sizing
     K = d.MaxGridSize(2);
     L = max(1,min(k.MaxThreadsPerBlock, ceil(N / K)));
     k.ThreadBlockSize = [min(I,floor(k.MaxThreadsPerBlock / L)), L, 1]; % local group size
     k.GridSize = max(1,ceil([I, min(N,K*L), N/(K*L)] ./ k.ThreadBlockSize));
+    [dsz, prc0] = deal([I T S N F], prc); % record the data size / precision
 
     % index label flags
     iflags = zeros([1 maxdims], 'uint8'); % increase index i
