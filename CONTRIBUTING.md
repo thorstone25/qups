@@ -1,4 +1,4 @@
-# Contributing to QUPS
+## Contributing to QUPS
 ### Identifying a Bug
 Not every unexpected result or error is a bug - before confirming that you've found a bug, check for the following gotchas:
 - [ ] Are the units correct? For example, are *all* units in meters / seconds / Hertz ? Hint: use `UltrasoundSystem.plot()` as a quick sanity check!
@@ -30,11 +30,13 @@ If you have implemented a new feature and would like for it to be incorporated, 
 For a new feature to be accepted, it should conform to the appropriate [class structure](src/README.md#class-structure) and [data format](src/README.md#data-format) conventions to maximize compatibility.
 
 ### Examples & How-tos 
-QUPS is a toolbox, not a library: for most applications there is some assembly required. 
-Example scripts that clarify syntax, applications, principles, or concepts are more than welcome! 
+QUPS is a toolbox, not a library: for most applications, there is some assembly required.
+It's assumed that users have sufficient domain knowledge to identify tools from the available documentation.
+If you are unsure about the meaning of a particular function, you may need to consult other resources for a more detailed explanation of ultrasound terminology, methods, and practices.
+
+Example scripts that clarify syntax, applications, principles, or concepts are more than welcome!
 If you believe an example would be useful to the community, please feel free to create an issue to solicit an example, or a pull request to contribute one.
 
 Example scripts should clearly demonstrate one or two ideas and complete in a few minutes at most.
 If required, contributed examples should either create data from within QUPS (e.g. using `UltrasoundSystem.greens()`) or reference a downloadable public dataset.
-Submissions which include data will be rejected.
-
+Pull requests which include large datasets will be rejected.
