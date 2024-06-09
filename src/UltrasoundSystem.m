@@ -540,7 +540,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
             end
             arguments
-                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDeviceCount','file') && logical(oclDeviceCount())))
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["double","parallel.Pool","parallel.Cluster"])} = gcp('nocreate');
                 kwargs.tall (1,1) logical = false; % whether to use a tall type
@@ -699,10 +699,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
                 % get the computational bounds
                 sblk = (0 : k.GridSize - 1)' * k.ThreadBlockSize(1); % block starting time index
-                sblocks = sblk <= [-inf, sb(2,:), inf]; % point at which we are in bounds
-                sbk = cellfun(@(x)find(x,1,'first'), num2cell(diff(sblocks,1,2), 2)); % get transition point
-                eblocks = (sblk + k.ThreadBlockSize(1)) < [-inf, sb(1,:), inf]; % point at which we are in bounds
-                ebk = cellfun(@(x)find(x,1,'last'), num2cell(diff(eblocks,1,2), 2)); % get transition point
+                blocks = sblk <= [-inf, sb(2,:), inf]; % point at which we are in bounds
+                blocks = blocks(:,2:end) - blocks(:,1:end-1); % detect change
+                sbk = cellfun(@(x) find(x,1,'first'), num2cell(blocks,2)); % get transition point
+                blocks = (sblk + k.ThreadBlockSize(1)) < [-inf, sb(1,:), inf]; % point at which we are in bounds
+                blocks = blocks(:,2:end) - blocks(:,1:end-1); % detect change 
+                ebk = cellfun(@(x) find(x,1,'last'), num2cell(blocks,2)); % get transition point
                 
                 % call the kernel
                 if kwargs.verbose, tt = tic; fprintf("Computing for " + gather(sum((ebk - sbk) + 1)) + " blocks."); end
@@ -971,6 +973,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % load('my_VSX_data.mat')
             % c0 = Resource.Parameters.speedOfSound;
             % us = UltrasoundSystem.Verasonics(Trans, TX, TW, 'c0', c0);
+            %
+            % d = load('my_other_data.mat'); % load into a struct
+            % [us, chd] = UltrasoundSystem.Verasonics(...
+            %     d.Trans, d.TX, d.TW ... required
+            %     , 'c0', d.Resource.Parameters.speedOfSound ... Matching sound speed
+            %     , 'Receive', d.Receive, 'RcvData', d.RcvData ... Import ChannelData
+            %     , 'PData', d.PData ... Import Scan
+            % );
+            % chd = singleT(chd); % int16 -> single
             % 
             % See also CHANNELDATA.VERASONICS TRANSDUCER.VERASONICS
             % SEQUENCE.VERASONICS SCAN.VERASONICS
@@ -2223,9 +2234,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])} = gcp('nocreate'), % parallel environment for running simulations
                 kwargs.ElemMapMethod (1,1) string {mustBeMember(kwargs.ElemMapMethod, ["nearest","linear","karray-direct", "karray-depend"])} = 'nearest', % one of {'nearest'*,'linear','karray-direct', 'karray-depend'}
                 kwargs.el_sub_div (1,2) double = max(us.tx.getLambdaSubDiv(med.c0), us.rx.getLambdaSubDiv(med.c0)), % element subdivisions (width x height)
-                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = us.seq.numPulse
+                kwargs.bsize (1,1) double {mustBeInteger, mustBePositive} = us.seq.numPulse % block size
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
-                kwargs.isosub (1,1) logical = false; % whether to subtract the background using and isoimpedance sim
+                kwargs.isosub (1,1) logical = false; % whether to subtract the background using an isoimpedance sim
                 kwargs.gpu (1,1) logical = logical(gpuDeviceCount()) % whether to employ gpu during pre-processing
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
@@ -2825,7 +2836,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 c0(:,:,:,1,1) {mustBeNumeric} = us.seq.c0
                 kwargs.fmod (1,1) {mustBeNumeric} = 0 
                 kwargs.prec (1,1) string {mustBeMember(kwargs.prec, ["single", "double", "halfT"])} = "single"
-                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDevice','file') && ~isempty(oclDevice())))
+                kwargs.device (1,1) {mustBeInteger} = -1 * (logical(gpuDeviceCount()) || (exist('oclDeviceCount','file') && logical(oclDeviceCount())))
                 kwargs.apod {mustBeNumericOrLogical} = 1
                 kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "next", "previous", "spline", "pchip", "cubic", "makima", "freq", "lanczos3"])} = 'cubic'
                 kwargs.keep_tx (1,1) logical = false
@@ -3043,15 +3054,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % REFOCUS - Recreate full-synthetic aperture data
             %
             % chd = refocus(us, chd) refocuses the ChannelData chd
-            % captured with the UltrasoundSystem us into a data focused
-            % according to seq into FSA data.
+            % captured with the UltrasoundSystem us into FSA data.
             %
             % [chd, Hi] = refocus(...) additionally returns the decoding
             % matrix Hi. Hi is of size (V x M x T) where V is the number
             % of transmit pulses, M is the number of transmit elements, and
             % T is the number of time samples.
             % 
-            % chd = refocus(us, chd, seq) refocuses the ChannelData chd0
+            % chd = refocus(us, chd, seq) refocuses the ChannelData chd
             % assuming that the ChannelData chd was captured using Sequence
             % seq instead of the Sequence us.seq.
             %
