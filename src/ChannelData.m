@@ -36,7 +36,7 @@
 classdef ChannelData < matlab.mixin.Copyable
 
     properties
-        data    % channel data (T x N x M x F x ...)
+        data = zeros(0,0,0) % channel data (T x N x M x F x ...)
         t0 = 0  % start time (1 x 1 x [1|M] x [1|F] x ...)
         fs = 1  % sampling frequency (scalar)
     end
