@@ -516,6 +516,46 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % math overloads
     methods
+        function chd = mtimes(a, b)
+            % MTIMES - Matrix multiply ChannelData
+            %
+            % chd * A right multiplies the ChannelData chd by the matrix A
+            % along the transmit dimension. The matrix A and the underlying
+            % data of chd must be  supported by pagemtimes
+            % 
+            % A * chd left multiplies the matrix A by the 1st dimension of
+            % the ChannelData chd e.g. the time dimension if 
+            % chd.order(1) == 'T'. Use ChannelData.swapdimD to change the
+            % first dimension.
+            % 
+            % Example:
+            % chd = ChannelData('data', rand([8,6,4,2],'single'));
+            % 
+            % % Right multiply for tx encoding/decoding
+            % chd * hadamard(chd.M), % hadamard encoding/decoding
+            % 
+            % % Left multiply to apply to first dimension (Time by default)
+            % assert(chd.order(1) == 'T'); % ensure time axes is 1st
+            % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
+            % H' * chd % apply 
+            % 
+            % % Sparse left multiplication is supported
+            % sparse(H)' * doubleT(chd) % (sparse multiplication requires double type)
+            % 
+            % % Swap dimensions to apply hadamard over rx
+            % hadamard(chd.N) * swapdimD(chd, chd.ndim, 1)
+            % 
+            % See also pagemtimes ChannelData.times ChannelData.swapdimD
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
+                chd.data = reshape(pagemtimes(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), A), [sz(1:d-1),size(A,2),sz(d+1:end)]);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                chd = copy(b); A = a; sz = size(chd.data); sz(1) = size(A,1);
+                chd.data = reshape(A * chd.data(:,:), sz);
+            else % if both are ChannelData, this is currently undefined
+                error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
+            end
+        end
         function c = times(a, b)
             % TIMES - Multiply ChannelData data
             %
@@ -531,7 +571,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % chds = splice(chd, 4); % split into frames
             % thi = 2 .* chds(1) - chds(2), % scale and add over the 2 frames
             % 
-            % See also ChannelData.plus
+            % See also ChannelData.mtimes ChannelData.plus
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
                 c = copy(a); c.data = times(a.data, b);
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
@@ -607,9 +647,23 @@ classdef ChannelData < matlab.mixin.Copyable
         end
     
         function c = minus(a, b), c = a + (-b); end
+        % MINUS - Subtract ChannelData data (see PLUS)
         function c = ldivide(a, b), c = rdivide(b, a); end
+        % LDIVIDE - Divide ChannelData data (see RDIVIDE)
         function chd = uminus(chd), chd = applyFun2Data(chd, @uminus); end
+        % UMINUS - Negate ChannelData data
+        %
+        % -chd negates the underlying data of the ChannelData. It is
+        % equivalent to `chd.data = -chd.data`.
+        %
+        % See also ChannelData.uplus ChannelData.minus 
         function chd = uplus(chd),  chd = applyFun2Data(chd, @uplus);  end
+        % UPLUS - Unary plus for a ChannelData data
+        %
+        % +chd calls the unary plus operator on the underlying data of the 
+        % ChannelData. It is equivalent to `chd.data = +chd.data`.
+        %
+        % See also ChannelData.uminus ChannelData.plus
     end
 
     % DSP overloads 
