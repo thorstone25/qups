@@ -102,9 +102,10 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
 
             % should work
             -a;  +b; %#ok<VUNUS>
-           
+            
 
             % should fail
+            tst.assertError(@() a * a, "QUPS:ChannelData:OperationUndefined");
         end
 
         function transforming(tst)
