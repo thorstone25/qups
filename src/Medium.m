@@ -340,7 +340,7 @@ classdef Medium < matlab.mixin.Copyable
 
     % fullwave interface
     methods
-        function maps = getFullwaveMap(med, scan)
+        function maps = getFullwaveMap(med, grd)
             % GETFULLWAVEMAP - Get Fullwave compatible map structure
             %
             % maps = getFullwaveMap(med, scan) returns a map sampled on
@@ -375,11 +375,11 @@ classdef Medium < matlab.mixin.Copyable
 
             arguments
                 med Medium
-                scan Scan
+                grd ScanCartesian
             end
 
             % sample all maps on the grid points
-            [c, rho, BoA, alpha] = props(med, scan);
+            [c, rho, BoA, alpha] = props(med, grd);
 
             % set the map properties
             eta = 1 + BoA./2;
@@ -394,7 +394,7 @@ classdef Medium < matlab.mixin.Copyable
 
     % k-Wave interface
     methods
-        function kmedium = getMediumKWave(med, scan)
+        function kmedium = getMediumKWave(med, grd, kwargs)
             % GETMEDIUMKWAVE - Get a kWave compatible medium struct
             %
             % kmedium = GETMEDIUMKWAVE(med, scan) creates a kWave
@@ -429,14 +429,14 @@ classdef Medium < matlab.mixin.Copyable
             % See also ULTRASOUNDSYSTEM.KSPACEFIRSTORDER MEDIUM.PROPS
             arguments
                 med Medium
-                scan Scan
+                grd ScanCartesian
             end
 
             % get properties in original dimensions
-            [c, rho, BoA, alpha] = med.props(scan);
+            [c, rho, BoA, alpha] = med.props(grd);
 
             % get k-Wave order
-            ord = arrayfun(@(d) find(d == scan.order), 'ZXY'); % place in this order for kWave
+            ord = arrayfun(@(d) find(d == grd.order), 'ZXY'); % place in this order for kWave
 
             % move to k-Wave dimensions
             [kmedium.sound_speed, kmedium.density, kmedium.BonA, kmedium.alpha_coeff] = ...
@@ -588,11 +588,11 @@ classdef Medium < matlab.mixin.Copyable
             medium.pertreg = [{@(p) dealret(p, cfun, rfun, bfun, afun)}, medium.pertreg];
         end
     
-        function med = Diffuse(us, grid, kwargs)
+        function med = Diffuse(us, grd, kwargs)
             % DIFFUSE - Generate a diffuse (density) scattering Medium
             %
-            % med = DIFFUSE(us, grid) generates a diffuse scaterring Medium
-            % med on the ScanCartesian grid for the UltrasoundSystem us.
+            % med = DIFFUSE(us, grd) generates a diffuse scaterring Medium
+            % med on the ScanCartesian grd for the UltrasoundSystem us.
             %
             % rho = DIFFUSE(..., 'scat_per_cell', n) sets the number of
             % scatterers per resolution voxel. A rule of thumb minimum is 12. The
@@ -613,22 +613,22 @@ classdef Medium < matlab.mixin.Copyable
             % med = Medium();
             %
             % % Get a simulation region
-            % grid = copy(us.scan);
-            % [grid.dx, grid.dy, grid.dz] = deal(us.lambda / 8); % set grid resolution
+            % grd = copy(us.scan);
+            % [grd.dx, grd.dy, grd.dz] = deal(us.lambda / 8); % set grid resolution
             %
             % % Create a diffuse scattering distribution
-            % med = Medium.Diffuse(us, grid);
+            % med = Medium.Diffuse(us, grd);
             %
             % % display
             % figure;
-            % him = imagesc(med, grid, "props", ["c",     "rho"    ]);
+            % him = imagesc(med, grd, "props", ["c",     "rho"    ]);
             % arrayfun(@title,    [him.Parent], ["Speed", "Density"]);
             % arrayfun(@colormap, [him.Parent], ["jet",   "parula" ]);
             % 
             % See also Medium.Sampled
             arguments
                 us UltrasoundSystem
-                grid ScanCartesian
+                grd ScanCartesian
                 kwargs.rho0 (1,1) {mustBeFloat} = us.seq.c0 / 1.5 % heuristic
                 kwargs.c0 (1,1) {mustBeFloat} = us.seq.c0
                 kwargs.?Medium
@@ -663,36 +663,36 @@ classdef Medium < matlab.mixin.Copyable
 
             % resolution cell size (minimum?)
             res_cell = [ ...
-                (lambda / D) * (range(grid.xb) / grid.dx), ...
-                (lambda / H) * (range(grid.yb) / grid.dy), ...
-                (lambda / 2) * (    ncycles    / grid.dz) ...
+                (lambda / D) * (range(grd.xb) / grd.dx), ...
+                (lambda / H) * (range(grd.yb) / grd.dy), ...
+                (lambda / 2) * (    ncycles   / grd.dz) ...
                 ];
 
             % total number of scatterers
-            S = round(kwargs.scat_per_cell * grid.nPix ./ prod(res_cell(res_cell > 0)));
+            S = round(kwargs.scat_per_cell * grd.nPix ./ prod(res_cell(res_cell > 0)));
             
             %}
 
             % number of voxels per dim
-            wvl = range([grid.xb; grid.yb; grid.zb], 2) ./ us.lambda;
+            wvl = range([grd.xb; grd.yb; grd.zb], 2) ./ us.lambda;
             S = kwargs.scat_per_cell * prod(wvl(wvl > 0));
 
             % generate uniform random positions and normally distributed amplitudes
-            N   = arrayfun(@(p) grid.("n"+p), lower(grid.order)); % size in each dimension
+            N   = arrayfun(@(p) grd.("n"+p), lower(grd.order)); % size in each dimension
             ind = arrayfun(@(N) {randi(N, [S,1], 'like', rho0([]))}, N); % position indices
             as  =                rand(    [S,1], 'like', rho0([]));      % amplitude values
 
             % assign perturbation
-            rho = zeros(grid.size, 'like', rho0);
-            rho(sub2ind(grid.size, ind{:})) = as;
+            rho = zeros(grd.size, 'like', rho0);
+            rho(sub2ind(grd.size, ind{:})) = as;
 
             % add to base
             rho = rho0 + db2pow(kwargs.ampdB) * rho0 * rho;
-            c = c0 * ones(grid.size);
+            c = c0 * ones(grd.size);
 
             % sample the Medium on the grid
             args = namedargs2cell(rmfield(kwargs, ["scat_per_cell","ampdB"]));
-            med = Medium.Sampled(grid, c, rho, args{:});
+            med = Medium.Sampled(grd, c, rho, args{:});
         end
     end
 
