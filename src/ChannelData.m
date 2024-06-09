@@ -1048,7 +1048,7 @@ classdef ChannelData < matlab.mixin.Copyable
             h = swapdim(wv.samples, 1, chd.tdim); % in time dimension
 
             % adjust time axes
-            t0_ = wv.t0 + chd.t0;
+            t0_ = -wv.tend + chd.t0;
             H = numel(h);
             switch shape
                 case 'full' % pass
