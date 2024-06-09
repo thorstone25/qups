@@ -805,6 +805,9 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 seq.del = tautx;
             end
 
+            % scalarize if practically identical across transmits
+            if isscalar(uniquetol(t0)), t0 = mean(t0); end % (1 x S) -> (1 x 1)
+
             % import waveform
             if isscalar(TW), seq.pulse = Waveform.Verasonics(TW, fc); 
             else,            seq.pulse = Waveform.Delta();
