@@ -857,7 +857,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             if kwargs.verbose, disp("Done!"); toc(tt); end
             
             % make a channel data object (T x N x M)
-            x = reshape(x, size(x,2:ndims(x))); % same as shiftdim(x,1), but without memory copies on GPU
+            x = reshape(x, size(x,[2:ndims(x) 1])); % same as shiftdim(x,1), but without memory copies on GPU
             chd(f) = ChannelData('t0', sub(t,1,1) ./ us.fs, 'fs', us.fs, 'data', x);
 
             % truncate the data if possible
