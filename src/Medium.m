@@ -394,7 +394,7 @@ classdef Medium < matlab.mixin.Copyable
 
     % k-Wave interface
     methods
-        function kmedium = getMediumKWave(med, grd, kwargs)
+        function kmedium = getMediumKWave(med, grd)
             % GETMEDIUMKWAVE - Get a kWave compatible medium struct
             %
             % kmedium = GETMEDIUMKWAVE(med, scan) creates a kWave
