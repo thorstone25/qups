@@ -261,7 +261,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % returns an array the sample modes for each buffer.
             %
             % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
-            % frames. The default is unique([Receive.framenum]).
+            % frames. f = [] imports all frames of the RcvData within the
+            % matching buffer. The default is unique([Receive.framenum]).
             %
             % [...] = ChannelData.Verasonics(..., 'buffer', b) specfies
             % the buffer indices b corresponding to each element of
@@ -295,7 +296,8 @@ classdef ChannelData < matlab.mixin.Copyable
             for i = B:-1:1
                 % get relevant receive info
                 b = kwargs.buffer(i);
-                Rx = Receive((b == [Receive.bufnum]) & ismember([Receive.framenum], kwargs.frames)); % filter by buffer and frame
+                Rx = Receive((b == [Receive.bufnum])); % filter by buffer and frame
+                if any(kwargs.frames), Rx = Rx(ismember([Receive.framenum], kwargs.frames)); end
                 if isempty(Rx) 
                     warning("No data found for buffer " + kwargs.buffer(i) + "."); 
                     [smode(i), fmod(i), chd(i)] = deal("N/A", nan, ChannelData('order','TMNF'));
@@ -347,7 +349,10 @@ classdef ChannelData < matlab.mixin.Copyable
 
                 % load data (time x acq x channel x frame)
                 if ~isempty(RcvData)
-                    x = RcvData{i}(j,:,fr); % only extract the filled portion
+                    % only extract the filled portion
+                    if any(kwargs.frames), x = RcvData{i}(j,:,fr); 
+                    else                 , x = RcvData{i}(j,:,: ); 
+                    end
                 else
                     % guess the number of channels this Vantage system has
                     if isempty(Trans) 
