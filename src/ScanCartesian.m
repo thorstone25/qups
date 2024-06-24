@@ -166,9 +166,9 @@ classdef ScanCartesian < Scan
         function set.zb(self, b), self.z = linspace(min(b), max(b), self.nz); end
 
         % get step size - Inf for scalar axes, NaN if not regularly spaced
-        function d = get.dx(self), d = uniquetol(diff(self.x)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.dy(self), d = uniquetol(diff(self.y)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.dz(self), d = uniquetol(diff(self.z)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dx(self), d = uniquetol(diff(self.x), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dy(self), d = uniquetol(diff(self.y), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dz(self), d = uniquetol(diff(self.z), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
         % set step size - preserve/expand the image bounds, but gaurantee
         % spacing - also gaurantee passes through zero

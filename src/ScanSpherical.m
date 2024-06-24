@@ -213,9 +213,9 @@ classdef ScanSpherical < Scan
         function set.eb(self, b), self.e = linspace(min(b), max(b), self.ne); end
 
         % get step size - Inf for scalar axes, NaN if not regularly spaced
-        function d = get.dr(self), d = uniquetol(diff(self.r)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.da(self), d = uniquetol(diff(self.a)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.de(self), d = uniquetol(diff(self.e)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dr(self), d = uniquetol(diff(self.r), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.da(self), d = uniquetol(diff(self.a), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.de(self), d = uniquetol(diff(self.e), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
         % set step size - preserve/expand the image bounds, but gaurantee
         % spacing - also gaurantee passes through zero
