@@ -240,7 +240,7 @@ for i = numel(lags) : -1 : 1
         xrn_l = kernfun(real(xrz_l .* conj(xrz_l)));
 
         % normalization denominator - complex for (garbage) negative amplitudes
-        r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)); % denom
+        r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)) .* sqrt(wsz(kwargs.ndim)) ; % denom
 
         % normalize
         y = y ./ r;
