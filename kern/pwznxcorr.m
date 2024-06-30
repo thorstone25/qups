@@ -135,7 +135,7 @@ end
 x0 = kwargs.x0; 
 
 % verify that w/W operates in the correct dimensions
-wsz = size(W);
+wsz = size(W,1:max(kwargs.tdim, kwargs.ndim));
 if any(wsz(setdiff(1:numel(wsz),[kwargs.tdim, kwargs.ndim])) ~= 1)
     error("QUPS:pwznxcorr:incompatibleWeightSize", ...
         "The filter weights w must be scalar in all dimensions except time (" ...
