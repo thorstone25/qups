@@ -170,7 +170,7 @@ if use_gdev || use_odev
             y_ = zeros(osz, 'like', x_); % pre-allocate output
     end
     % zeros: uint16(0) == storedInteger(half(0)), so this is okay
-    if isscalar(k) && isvalid(k) && all(dsz == [I T S N F]) && (prc == prc0)
+    if isscalar(k) && isvalid(k) && (~use_gdev || existsOnGPU(k)) && all(dsz == [I T S N F]) && (prc == prc0)
         % pass - use the cached kernel
     elseif use_gdev
         % grab the kernel reference
