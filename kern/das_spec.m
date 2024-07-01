@@ -91,7 +91,7 @@ function [y, k, pre_args, post_args] = das_spec(fun, Pi, Pr, Pv, Nv, x, t0, fs, 
 VS = true; % whither plane wave
 DV = false; % whither diverging wave
 interp_type = 'linear'; 
-apod = 1;
+apod = cell(1,0);
 isType = @(c,T) isa(c, T) || isa(c, 'gpuArray') && strcmp(classUnderlying(c), T);
 if isType(x, 'single')
     idataType = 'single';
@@ -131,9 +131,9 @@ while (n <= nargs)
         case 'interp'
             n = n + 1;
             interp_type = varargin{n};
-        case 'apod',
+        case 'apod'
             n = n + 1; 
-            apod = varargin{n};
+            apod{end+1} = varargin{n};
         case 'modulation'
             n = n + 1;
             fmod = varargin{n};
@@ -155,6 +155,9 @@ if (nargin < 8 || isempty(fs))
         error('Undefined sampling rate.');
     end
 end
+
+% ensure non-empty
+if isempty(apod), apod = {1}; end
 
 % init
 [k, pre_args, post_args] = deal({});
@@ -187,6 +190,11 @@ end
 % dispatch
 if device && (gdev || odev)
 
+    % ocl requires exactly this many separable apodization matrices
+    AMAX = 1; % can be modified by modifying the kernel
+    if ~gdev && numel(apod) > AMAX, error("QUPS:das_spec:OpenCLApodizationSupport","OpenCL only supports up to "+AMAX+" apodization matrices."); end
+    if ~gdev, [apod{end+1:AMAX}] = deal(1); end
+    
     % warn if non-linear interp was requested
     switch interp_type
         case "nearest", flagnum = 0;
@@ -218,7 +226,7 @@ if device && (gdev || odev)
         inps = {Pi, Pr, Pv, Nv, x, t0, fs, cinv};
         oclass = cellfun(@class, inps, per_cell{:}); 
         tmp = cellfun(@gather, inps, per_cell{:});
-        g = gpuDevice(device); 
+        % g = gpuDevice(device); 
         tmp = cellfun(@(inp, cls)cast(inp, cls), tmp, oclass, per_cell{:});
         [Pi, Pr, Pv, Nv, x, t0, fs, cinv] = deal(tmp{:});
     end
@@ -232,9 +240,9 @@ if device && (gdev || odev)
         if odev, ptypefun = @(x)          single(x) ; end
         dtypefun = @(x) complex(halfT(x));
     end
-    [x, apod] = dealfun(dtypefun, x, apod);
+    [x, apod{:}] = dealfun(dtypefun, x, apod{:});
     [Pi, Pr, Pv, Nv, cinv] = dealfun(ptypefun, Pi, Pr, Pv, Nv, cinv);
-    
+
     % expand all inputs to 3D
     expand_inputs();
     
@@ -242,12 +250,13 @@ if device && (gdev || odev)
     [T, N, M] = size(x, 1:3);
     Isz = size(Pi, 2:4); % I1 x I2 x I3 == I
     I = prod(Isz);
+    S = numel(apod);
 
     % get stride for apodization and sound speed
-    Iasz = size(apod,1:5);
-    Icsz = size(cinv,1:5);
-    astride = [1, cumprod(Iasz(1:end-1))] .* (Iasz ~= 1);
-    cstride = [1, cumprod(Icsz(1:end-1))] .* (Icsz ~= 1);
+    Icsz = size(cinv,1:5)';
+    Iasz = cell2mat(cellfun(@(a){size(a,1:5)'}, apod));
+    cstride = [[        1; cumprod(Icsz(1:end-1  ),1)] .* (Icsz ~= 1); 0                                    ];
+    astride = [[ones(1,S); cumprod(Iasz(1:end-1,:),1)] .* (Iasz ~= 1); sub(cumsum([0 prod(Iasz,1)],2),1:S,2)];
     
     % get kernel and frame sizing
     switch fun
@@ -277,13 +286,13 @@ if device && (gdev || odev)
             ['DAS', postfix]); % use the same kernel, just modify the flag here.
 
         % constant arg type casting
-        tmp = cellfun(@uint64, {T,M,N,I,Isz}, per_cell{:});
-        [T, M, N, I, Isz] = deal(tmp{:});
+        tmp = cellfun(@uint64, {T,M,N,I,Isz,S}, per_cell{:});
+        [T, M, N, I, Isz, S] = deal(tmp{:});
 
         % set constant args
         k.setConstantMemory('QUPS_I', I); % gauranteed
-        try k.setConstantMemory('QUPS_T', T); end % if not const compiled with ChannelData
-        try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end % if not const compiled
+        try k.setConstantMemory('QUPS_T', T); end %#ok<TRYNC> % if not const compiled with ChannelData
+        try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_S', S, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end %#ok<TRYNC> % if not const compiled
 
         % kernel sizes
         k.ThreadBlockSize(1) = k.MaxThreadsPerBlock; % threads per block
@@ -311,8 +320,8 @@ if device && (gdev || odev)
         k.defineTypes(repmat(idataType,[1,3]), ["V","T","U"]); % time / data / position
 
         % set constant args
-        k.macros = [k.macros, ("QUPS_" + ["I","T","M","N","VS","DV","I1","I2","I3"] + "=" + [I,T,M,N,VS,DV,Isz])];
-        k.macros = [k.macros, ("QUPS_" + ["F","S"] + "=" + [1,M])]; % unused ...
+        k.macros = [k.macros, ("QUPS_" + ["I","T","M","N","S","VS","DV","I1","I2","I3"] + "=" + [I,T,M,N,S,VS,DV,Isz])];
+        k.macros = [k.macros, ("QUPS_" + ["F"] + "=" + [1])]; % unused ...
         k.macros = [k.macros, ("QUPS_BF_" + ["FLAG"] + "=" + [flagnum])];
         k.macros(end+1) = "QUPS_PRECISION="+prc;
         k.opts = ["-cl-mad-enable"];%, "-cl-fp32-correctly-rounded-divide-sqrt", "-cl-opt-disable"];
@@ -326,7 +335,14 @@ if device && (gdev || odev)
 
         % expand inputs to 4D - in  OpenCL, all 3D vectors interpreted are 4D underlying
         [Pi(4,:), Pr(4,:), Pv(4,:), Nv(4,:)] = deal(0);
-    end 
+    end
+
+    % vectorize (combine) all apodization matrices for CUDA
+    if gdev
+        [apod{:}] = dealfun(@(x) x(:), apod{:});
+        apod = {dtypefun(cat(1, apod{:}))};
+    end
+
     
     % allocate output data buffer
     osize = cat(2, {I}, osize);
@@ -337,7 +353,7 @@ if device && (gdev || odev)
     % single
     if idataType == "halfT"
         [Pi, Pr, Pv, Nv] = dealfun(@single, Pi, Pr, Pv, Nv);
-        [yg, apod, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod, x);
+        [yg, apod{:}, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod{:}, x);
     end
 
     % combine timing info with the transmit positions
@@ -352,7 +368,7 @@ if device && (gdev || odev)
             if ~isreal(obufproto), yg = complex(yg); end % force complex if x is
             % I [x N [x M]] x 1 x 1 x {F x ...}
             for f = F:-1:1 % beamform each data frame
-                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride], x(:,:,:,f), flagnum, [fs, fmod]);
+                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod{:}, cinv, [cstride, astride], x(:,:,:,f), flagnum, [fs, fmod]);
             end
             % unpack frames
             y = cat(6, y{:});
@@ -368,7 +384,7 @@ if device && (gdev || odev)
 
     % save the pre/post arguments if requested
     if nargout > 1
-        pre_args = {yg, Pi, Pr, Pv, Nv, apod, cinv, [astride, cstride]};
+        pre_args = [{yg, Pi, Pr, Pv, Nv}, apod, {cinv, [cstride, astride]}];
         post_args = {flagnum, [fs, fmod]};
     end
 else
@@ -397,7 +413,7 @@ else
     Pv = swapdim(Pv, 2, 6); % 3 x 1 x 1 x 1 x 1 x M
     Nv = swapdim(Nv, 2, 6); % 3 x 1 x 1 x 1 x 1 x M
     t0 = swapdim(t0(:), 1, 5); % 1 x 1 x 1 x 1 x M
-    t0 = repmat(t0,[ones(1,4), M / size(t0,5)]); % implicit broadcast
+    t0 = repmat(t0,[ones(1,4), M / size(t0,5)]); % explicit broadcast
     
     % transmit sensing vector
     rv = Pi - Pv; % 3 x I1 x I2 x I3 x 1 x M
@@ -412,8 +428,8 @@ else
     dr = vecnorm(Pi - Pr, 2, 1); % 1 x I1 x I2 x I3 x N x 1
     
     % bring to I1 x I2 x I3 x N x M == [I] x N x M
-    dv = shiftdim(dv, 1); 
-    dr = shiftdim(dr, 1);
+    dv = reshape(dv, size(dv, [2:ndims(dv),1])); 
+    dr = reshape(dr, size(dr, [2:ndims(dr),1]));
     
     % apply modulation frequency
     if fmod       
@@ -424,6 +440,7 @@ else
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3,6:ndims(x)]); % pack for I, F
     osz = [Isz,1,1,fsz]; % interp1 output size (unsqueeze)
+    S = numel(apod);
 
     switch fun
         case 'delays'
@@ -432,25 +449,28 @@ else
         case 'DAS'
             y = dtypefun(zeros([Isz, 1, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x 1 x M)
+            drn = num2cell(dr, [1:3]); % ({I} x N x 1)
             xmn = shiftdim(num2cell(x,  [1,6:ndims(x)]),1); % ({T} x N x M x 1 x 1 x {F x ...})
-            amn = shiftdim(num2cell(apod, [1:3]),3); % ({I} x N x M)
             cinvmn = shiftdim(num2cell(cinv, [1:3]),3); % ({I} x [1|N] x [1|M])
-            amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
-            Na = size(amn,1); % apodization size over receives
+            for s = S:-1:1
+                amn = swapdim(num2cell(apod{s}, [1:3]),[4 5]); % ({I} x [1|N] x [1|M])
+                asnm(s,:,:) = swapdim(repmat(amn, [double([N M]) ./ size(amn)]),[1,2],[2,3]); % broadcast to 1 x [1|N] x M
+            end
             parfor m = 1:M
                 yn = dtypefun(zeros([Isz, 1, 1]));
-                drn = num2cell(dr, [1:3]); % ({I} x N x 1)
+                asn = asnm(:,:,m);
                 if size(cinvmn,5) == 1, cinvn = cinvmn; else, cinvn = cinvmn(:,m); end % ({I} x [1|N] x 1)
                 for n = 1:N
                     if isscalar(cinvn), cinv_ = cinvn{1}; else, cinv_ = cinvn{n}; end % ({I} x 1 x 1)
                     % time delay (I x 1 x 1)
-                    tau = cinv_ .* (dvm{m} + drn{n}) - t0(m);
+                    tau = cinv_ .* (dvm{m} + drn{n}) - t0(m); %#ok<PFBNS>
 
                     % extract apodization
-                    a = sub(amn(:,m), min(n,Na), 1); % amn(n,m) || amn(1,m)
+                    % a = an{min(n,Na)}; % amn(n,m) || amn(1,m)
+                    a = asn{end,n}; for s=1:S-1, a=a.*asn{s,n}; end % reduce apodizations
                     
                     % sample and output (I x 1 x 1)
-                    yn = yn + a{1} .* (...
+                    yn = yn + a .* (...
                         reshape(interp1(xmn{n,m}, 1 + tau * fs, interp_type, 0), osz) ...
                        );
                 end
@@ -461,22 +481,27 @@ else
             y = dtypefun(zeros([Isz, 1, M]));
             drn = num2cell(dr, [1:3]); % ({I} x  N  x 1)
             xn  = num2cell(swapdim(x,3,5),  [1,5,6:ndims(x)]); % ({T} x N {x M x F x ...)
-            an = num2cell(apod, [1:3, 5]);
-            cinvn = num2cell(cinv, [1:4]); % ({I x N} x M)
-            an = repmat(an, double([ones(1,3),N]) ./ [ones(1,3), size(an,4)]); % broadcast to ({I} x N x {M})
+            cinvn = num2cell(cinv, [1:3 5]); % ({I} x N x {M})
+            for s = S:-1:1
+                an = num2cell(apod{s}, [1:3, 5]);
+                asn(s,:) = repmat(an, double([ones(1,3),N]) ./ [ones(1,3), size(an,4)]); % broadcast to ({I} x N x {M})
+            end
             parfor n = 1:N
                 % time delay (I x 1 x M)
                 if isscalar(cinvn), cinv_ = cinvn{1}; else, cinv_ = cinvn{n}; end % ([1|I] x 1 x [1|M])
                 tau = cinv_ .* (dv + drn{n}) - t0; 
 
                 % extract apodization
-                am = repmat(an{n}, double([ones(1,4), M]) ./ [ones(1,4), size(an{n},5)]);
-                
+                % am = repmat(an{n}, double([ones(1,4), M]) ./ [ones(1,4), size(an{n},5)]);
+                as = asn(:,n); % init
+                a = as{end}; for s = 1:S-1, a = a .* as{s}; end % accumulate
+                a = repmat(a, [ones(1,4), double(M ./ size(a,5))]); % broadcast
+
                 % sample and output (I x 1 x M)
                 ym = (cellfun(...
                     @(x, tau, a) ...
                     a .* reshape(interp1(x,  1 + tau * fs, interp_type, 0),osz), ...
-                    num2cell(xn{n},[1,6:ndims(xn{n})]), pck(tau), pck(am), per_cell{:})) ...
+                    num2cell(xn{n},[1,6:ndims(xn{n})]), pck(tau), pck(a), per_cell{:})) ...
                     ; %#ok<PFBNS>
                 ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym)), fsz]);
                 y = y + ym;
@@ -486,22 +511,27 @@ else
             y = dtypefun(zeros([Isz, N, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
             xm  = num2cell(swapdim(x,2,4),  [1,4,6:ndims(x)]); % ({T x N} x M x {F x ...)
-            am = num2cell(apod, [1:4]);
             cinvm = num2cell(cinv, [1:4]); % ({I x N} x M)
-            am = repmat(am, double([ones(1,4),M]) ./ [ones(1,4), size(am,5)]); % broadcast to ({I x N} x M)
+            for s = S:-1:1
+                am = num2cell(apod{s}, [1:4]);
+                asm(s,:) = repmat(am, double([ones(1,4),M]) ./ [ones(1,4), size(am,5)]); % broadcast to ({I x N} x M)
+            end
             parfor m = 1:M
                 % time delay (I x N x 1)
                 if isscalar(cinvm), cinv_ = cinvm{1}; else, cinv_ = cinvm{m}; end % ([1|I] x [1|N] x 1)
                 tau = cinv_ .* (dvm{m} + dr) - t0(m); 
 
                 % extract apodization
-                an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
-                
+                % an = repmat(am{m}, double([ones(1,3), N]) ./ [ones(1,3), size(am{m},4)]);
+                as = asm(:,m); % init
+                a = as{end}; for s = 1:S-1, a = a .* as{s}; end  % accumulate
+                a = repmat(a, [ones(1,3), double(N ./ size(a,4)), 1]); % broadcast
+
                 % sample and output (I x N x 1)
                 ym = (cellfun(...
                     @(x, tau, a) ...
                     a .* reshape(interp1(x,  1 + tau * fs, interp_type, 0),osz), ...
-                    num2cell(xm{m},[1,6:ndims(xm{m})]), pck(tau), pck(an), per_cell{:})) ...
+                    num2cell(xm{m},[1,6:ndims(xm{m})]), pck(tau), pck(a), per_cell{:})) ...
                     ; %#ok<PFBNS>
                 ym = reshape(cat(4,ym{:}), [Isz, size(ym,4:ndims(ym)), fsz]);
                 y = y + ym;
@@ -522,7 +552,7 @@ else
                 );
             y = cat(4, y{:}); % unpack
             y = reshape(y, [Isz N M fsz]); % resize
-            y = y .* apod; % apply weights
+            for s = 1:S, y = y .* apod{s}; end % apply weights
     end
 end
 
@@ -587,25 +617,29 @@ end
             [Mnv] = size(Nv,2);
             [Nr] = size(Pr,2);
             Isz = size(Pi, 2:4);
-            Iasz = size(apod, 1:5);
+            Iasz = cell2mat(cellfun(@(a){size(a, 1:5)}, apod(:)));
             Icsz = size(cinv, 1:5);
             I = prod(Isz);
+            S  = numel(apod);
 
             % expand vectors
             if Mv  == 1,   Pv = repmat(Pv,1,M);     Mv  = M; end
             if Mnv == 1,   Nv = repmat(Nv,1,M);     Mnv = M; end
             if Nr  == 1,   Pr = repmat(Pr,1,N);     Nr  = N; end
+
+            % check sizing
+            assert(all(Iasz(:,1:3) == 1 | Iasz(:,1:3) == Isz,'all'), 'Apodization data size inconsistent with pixel data size');
+            assert(all(Iasz(:, 4 ) == 1 | Iasz(:, 4 ) == N), 'Apodization data size inconsistent with receiver data size');
+            assert(all(Iasz(:, 5 ) == 1 | Iasz(:, 5 ) == M), 'Apodization data size inconsistent with transmit data size');
+            assert(all(Icsz(1:3) == 1 | Icsz(1:3) == Isz), 'Sound speed data size inconsistent with pixel data size');
+            assert(Icsz(4) == 1 || Icsz(4) == N, 'Sound speed data size inconsistent with receiver data size');
+            assert(Icsz(5) == 1 || Icsz(5) == M, 'Sound speed data size inconsistent with transmit data size');
+
         end
         
         % check sizing
         assert(Mv == Mnv || (M == Mv && M == Mnv), 'Inconsistent transmitter data size.');
         assert(N == Nr, 'Inconsistent receiver data size.');
-        assert(all(Iasz(1:3) == 1 | Iasz(1:3) == Isz), 'Apodization data size inconsistent with pixel data size');
-        assert(Iasz(4) == 1 || Iasz(4) == N, 'Apodization data size inconsistent with receiver data size');
-        assert(Iasz(5) == 1 || Iasz(5) == M, 'Apodization data size inconsistent with transmit data size');
-        assert(all(Icsz(1:3) == 1 | Icsz(1:3) == Isz), 'Sound speed data size inconsistent with pixel data size');
-        assert(Icsz(4) == 1 || Icsz(4) == N, 'Sound speed data size inconsistent with receiver data size');
-        assert(Icsz(5) == 1 || Icsz(5) == M, 'Sound speed data size inconsistent with transmit data size');
                 
         % expand to 3D: 1D -> x, 2D -> x,z, 4D -> x/w, y/w, z/w
         Pi = modDim(Pi);

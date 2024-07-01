@@ -53,11 +53,11 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     // const U t0   = t0fsfc[0]; // start time
     const U fs   = t0fsfc[0]; // sampling frequency
     const U fc   = t0fsfc[1]; // modulation frequency
-    const size_t * astride = acstride;
-    const size_t * cstride = acstride + 5;
+    const size_t * cstride = acstride;
+    const size_t * astride = acstride + 6;
 
     // rename for readability
-    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I, S = QUPS_S;
     const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3;
         
     // get starting index of this pixel
@@ -69,7 +69,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     const U3 * pr = reinterpret_cast<const U3*>(Pr); // 3 x N
     const U4 * pv = reinterpret_cast<const U4*>(Pv); // 4 x M
     const U3 * nv = reinterpret_cast<const U3*>(Nv); // 3 x M
-    
+
     // temp vars
     const U2 zero_v = {0, 0};
     U2 w = {1, 0};
@@ -78,12 +78,11 @@ void __device__ DAS_temp(U2 * __restrict__ y,
     U3 rv;
 
     // if valid pixel, for each tx/rx
-    for(size_t i = tid; i < I; i += kI){        
+    for(size_t i = tid; i < I; i += kI){
         // get image coordinates
         const size_t i1 = (i             % I1); // index in I1
         const size_t i2 = (i /  I1     ) % I2 ; // index in I2
         const size_t i3 = (i / (I1 * I2) % I3); // index in I3
-        const size_t abase = i1 * astride[0] + i2 * astride[1] + i3 * astride[2]; // base index for this pixel
         const size_t cbase = i1 * cstride[0] + i2 * cstride[1] + i3 * cstride[2]; // base index for this pixel
 
         // reset accumulator
@@ -111,10 +110,11 @@ void __device__ DAS_temp(U2 * __restrict__ y,
                 if (fc) {w.x = cospi(2*fc*tau); w.y = sinpi(2*fc*tau);}
 
                 // sample the trace
-                val = sample(&x[(n + m * N) * T], tau * fs, flag & 7, zero_v); // out of bounds: extrap 0
+                val = w * sample(&x[(n + m * N) * T], tau * fs, flag & 7, zero_v); // out of bounds: extrap 0
 
                 // apply apodization
-                val *= w * a[abase + n * astride[3] + m * astride[4]];
+                for(int s = 0; s < S; ++s)
+                    val *= a[astride[5+6*s] + i1 * astride[0+6*s] + i2 * astride[1+6*s] + i3 * astride[2+6*s] + n * astride[3+6*s] + m * astride[4+6*s]];
 
                 // choose the accumulation
                 const int sflag = flag & 24; // extract bits 5,4

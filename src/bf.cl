@@ -64,11 +64,11 @@ kernel void DAS(volatile global T2 * y,
     // const V t0   = t0fsfc[0]; // start time
     const V fs   = t0fsfc[0]; // sampling frequency
     const V fc   = t0fsfc[1]; // modulation frequency
-    const global ulong * astride = acstride;
-    const global ulong * cstride = acstride + 5;
+    const global ulong * cstride = acstride;
+    const global ulong * astride = acstride + 6;
 
     // rename for readability
-    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I, S = QUPS_S;
     const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3;
         
     // get starting index of this pixel
@@ -114,12 +114,12 @@ kernel void DAS(volatile global T2 * y,
                 if (fc) {w.x = cospi(2*fc*tau); w.y = sinpi(2*fc*tau);}
 
                 // sample the trace
-                val = sample(&x[(n + m * N) * T], tau * fs, flag & 7, zero_v); // out of bounds: extrap 0
+                val = cmul(w, sample(&x[(n + m * N) * T], tau * fs, flag & 7, zero_v)); // out of bounds: extrap 0
                 // const int t = (int) (tau * fs);
                 // val = (0 <= t & t < T) ? x[(size_t) (t + (n + m * N) * T)] : zero_v;
 
                 // apply apodization (requires complex multiplication)
-                val = cmul(val, cmul(w, a[abase + n * astride[3] + m * astride[4]]));
+                // val = cmul(val, a[abase + n * astride[3] + m * astride[4]]);
 
                 // choose the accumulation
                 const int sflag = ((int)QUPS_BF_FLAG) & 24; // extract bits 5,4
