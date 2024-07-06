@@ -190,11 +190,6 @@ end
 % dispatch
 if device && (gdev || odev)
 
-    % ocl requires exactly this many separable apodization matrices
-    AMAX = 1; % can be modified by modifying the kernel
-    if ~gdev && numel(apod) > AMAX, error("QUPS:das_spec:OpenCLApodizationSupport","OpenCL only supports up to "+AMAX+" apodization matrices."); end
-    if ~gdev, [apod{end+1:AMAX}] = deal(1); end
-    
     % warn if non-linear interp was requested
     switch interp_type
         case "nearest", flagnum = 0;
@@ -337,11 +332,9 @@ if device && (gdev || odev)
         [Pi(4,:), Pr(4,:), Pv(4,:), Nv(4,:)] = deal(0);
     end
 
-    % vectorize (combine) all apodization matrices for CUDA
-    if gdev
-        [apod{:}] = dealfun(@(x) x(:), apod{:});
-        apod = {dtypefun(cat(1, apod{:}))};
-    end
+    % vectorize (combine) all apodization matrices
+    [apod{:}] = dealfun(@(x) x(:), apod{:});
+    apod = dtypefun(cat(1, apod{:}));
 
     
     % allocate output data buffer
@@ -353,7 +346,7 @@ if device && (gdev || odev)
     % single
     if idataType == "halfT"
         [Pi, Pr, Pv, Nv] = dealfun(@single, Pi, Pr, Pv, Nv);
-        [yg, apod{:}, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod{:}, x);
+        [yg, apod, x] = dealfun(@(x)getfield(alias(x),'val'), yg, apod, x);
     end
 
     % combine timing info with the transmit positions
@@ -368,7 +361,7 @@ if device && (gdev || odev)
             if ~isreal(obufproto), yg = complex(yg); end % force complex if x is
             % I [x N [x M]] x 1 x 1 x {F x ...}
             for f = F:-1:1 % beamform each data frame
-                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod{:}, cinv, [cstride, astride], x(:,:,:,f), flagnum, [fs, fmod]);
+                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [cstride, astride], x(:,:,:,f), flagnum, [fs, fmod]);
             end
             % unpack frames
             y = cat(6, y{:});
@@ -384,7 +377,7 @@ if device && (gdev || odev)
 
     % save the pre/post arguments if requested
     if nargout > 1
-        pre_args = [{yg, Pi, Pr, Pv, Nv}, apod, {cinv, [cstride, astride]}];
+        pre_args = {yg, Pi, Pr, Pv, Nv, apod, cinv, [cstride, astride]};
         post_args = {flagnum, [fs, fmod]};
     end
 else

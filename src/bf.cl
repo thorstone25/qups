@@ -88,7 +88,6 @@ kernel void DAS(volatile global T2 * y,
         const size_t i1 = (i             % QUPS_I1); // index in I1
         const size_t i2 = (i /  QUPS_I1) % QUPS_I2 ; // index in I2
         const size_t i3 = (i / (I1 * I2) % QUPS_I3); // index in I3
-        const size_t abase = i1 * astride[0] + i2 * astride[1] + i3 * astride[2]; // base index for this pixel
         const size_t cbase = i1 * cstride[0] + i2 * cstride[1] + i3 * cstride[2]; // base index for this pixel
 
         // reset accumulator
@@ -119,7 +118,13 @@ kernel void DAS(volatile global T2 * y,
                 // val = (0 <= t & t < T) ? x[(size_t) (t + (n + m * N) * T)] : zero_v;
 
                 // apply apodization (requires complex multiplication)
-                // val = cmul(val, a[abase + n * astride[3] + m * astride[4]]);
+                #pragma unroll
+                for (int s=0; s < QUPS_S; ++s) // each apodization array
+                    val = cmul(val, a[ astride[5+6*s] // base offset
+                        + i1 * astride[0+6*s] + i2 * astride[1+6*s] + i3 * astride[2+6*s] // pixel stride
+                        +  n * astride[3+6*s] +  m * astride[4+6*s] // rx/tx stride
+                    ]); // base index for this pixel
+                
 
                 // choose the accumulation
                 const int sflag = ((int)QUPS_BF_FLAG) & 24; // extract bits 5,4
