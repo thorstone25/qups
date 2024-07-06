@@ -2075,7 +2075,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
     
     % k-Wave calls
     methods
-        function [chd, readfun, args] = kspaceFirstOrder(us, med, cgrd, varargin, kwargs, karray_args, kwave_args, kmedium_args, ksensor_args)
+        function [chd, readfun, args] = kspaceFirstOrder(us, med, cgrd, varargin, kwargs, karray_args, kwave_args, ksensor_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(us, med) simulates the Medium med 
