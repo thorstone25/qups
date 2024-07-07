@@ -534,7 +534,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % first dimension.
             % 
             % Example:
-            % chd = ChannelData('data', rand([8,6,4,2],'single'));
+            % chd = ChannelData('data', rand([16,8,4,2],'single'));
             % 
             % % Right multiply for tx encoding/decoding
             % chd * hadamard(chd.M), % hadamard encoding/decoding

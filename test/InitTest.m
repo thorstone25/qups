@@ -181,7 +181,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITCHD - Assert that a ChannelData constructor initializes
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            chd = ChannelData(), %#ok<NOPRT> implicit display
+            chd = ChannelData('data',0), %#ok<NOPRT> implicit display
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
             arrayfun(@obj2struct, chd, 'UniformOutput', false); % supports specialized struct conversion
