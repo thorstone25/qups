@@ -24,7 +24,7 @@
 % 
 % See also SEL SUBSREF SUBSASGN SUBSTRUCT
 
-function y = sub(x, ind, dim, expr)
+function x = sub(x, ind, dim, expr)
 if nargin < 3, dim = max([1, find(size(x) ~= 1, 1, 'first')]); end
 if nargin < 4, expr = false; end
 
@@ -38,13 +38,13 @@ assert(numel(ind) == numel(dim), "Must have as many dims as indices.")
 if isempty(ind) && isempty(dim), dim = 0; end
 
 % place ':' in all dimensions
-subs = cellstr(repmat(":", [1, max(gather(ndims(x)), max(dim))])); 
+subs = cellstr(repmat(":", [1, max(gather(ndims(x)), gather(max(dim)))])); 
 
 % replace ':' with index in selected dimensions
 for i = 1:numel(ind), subs{dim(i)} = ind{i}; end
 
 % get object indexing expression
-iy = substruct('()', subs);
+ix = substruct('()', subs);
 
 % return the indexed object, or the expression
-if expr, y = iy; else, y = subsref(x, iy); end
+if expr, x = ix; else, x = subsref(x, ix); end
