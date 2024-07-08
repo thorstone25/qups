@@ -3726,8 +3726,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % get cluster
             parenv = kwargs.parenv; % compute cluster/pool/threads
-            % travel times cannot use threadPool because mex call
-            if isempty(parenv) || isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'), parenv = 0; end
+            % travel times cannot use threadPool with mex call
+            if isempty(parenv) || (endsWith(which("msfm"+nnz(cgrd.size>1)+"d"),mexext()) && (isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool'))), parenv = 0; end
 
             % get worker transfer function - mark constant to save memory
             if isa(parenv, 'parallel.ProcessPool') && isscalar(gcp('nocreate')) && (parenv == gcp('nocreate')) 
