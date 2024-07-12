@@ -2898,12 +2898,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 % make sure t0 is a scalar in all dims except transmit
                 if ~all(size(chd.t0, setdiff(1:ndims(chd.t0), chd.mdim)) == 1), warning("Resampling data for a scalar t0."); chd = rectifyt0(chd); end
 
-                % data must be ordered T x N x M
-                ord = [chd.tdim, chd.ndim, chd.mdim];
-                if ~isequal(ord, 1:3), chd = rectifyDims(chd); end % reorder if necessary
+                % data must be ordered T x perm(N x M) x ...
+                if chd.tdim ~= 1, chd = rectifyDims(chd); end % reorder if necessary
 
                 % get the beamformer arguments
-                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'input-precision', kwargs.prec}; % data args
+                dat_args = {chd.data, gather(chd.t0), gather(chd.fs), c0, 'device', kwargs.device, 'input-precision', kwargs.prec, 'transpose', (chd.ndim>chd.mdim)}; % data args
                 if isfield(kwargs, 'interp'), interp_args = {'interp', kwargs.interp}; else,  interp_args = {}; end
                 ext_args = [interp_args, apod_args]; % extra args
     
@@ -2924,10 +2923,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 % request the CUDA kernel?
                 if nargout > 1, ext_ret = cell(1,3); else, ext_ret = {}; end
 
-                % beamform the data (I1 x I2 x I3 x N x M x F x ...)
+                % beamform the data (I1 x I2 x I3 x perm(N x M) x F x ...)
                 [b, ext_ret{:}] = das_spec(fun, pos_args{:}, dat_args{:}, ext_args{:});
 
-                % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x N x M)
+                % move data dimension, back down raise aperture dimensions (I1 x I2 x I3 x F x ... x perm(N x M))
                 b = permute(b, [1:3,6:(D+2),4:5]);
 
                 % store
@@ -5015,7 +5014,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 end
             end
         end
-        function def = getDASConstCudaDef(us, chd)
+        function def = getDASConstCudaDef(us, chd, varargin, kwargs)
             % GETDASCONSTCUDADEF - Constant size compilation definition for DAS
             %
             % def = GETDASCONSTCUDADEF(us) creates a compilation
@@ -5028,12 +5027,51 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % at the cost of compile time and flexibility.
             %
             % After compiling with this definition, calls with a different
-            % size of data will have unexpected results. Use
-            % UltrasoundSystem.recompileCUDA to reset the binaries to
-            % handle variable sizes. 
+            % input or output data size will have unexpected results. Use
+            % us.recompileCUDA() to reset the binaries to handle variable sizes. 
             % 
             % def = GETDASCONSTCUDADEF(us, chd) additionally uses a fixed
             % size ChannelData object.
+            % 
+            % def = GETDASCONSTCUDADEF(us, chd, a1, a2, ..., an)
+            % additionally sets the number of apodization matrices. If not
+            % included, the default number of apodization matrices is 0.
+            % 
+            % def = GETDASCONSTCUDADEF(..., 'keep_tx', true) preserves the transmit
+            % dimension.
+            %
+            % def = GETDASCONSTCUDADEF(..., 'keep_rx', true) preserves the receive
+            % dimension.
+            % 
+            % def = GETDASCONSTCUDADEF(..., 'interp', method) specifies the method for
+            % interpolation. Must be one of {'nearest', 'linear', 'cubic', 'lanczos3'}.
+            % The default is 'cubic'.
+            %
+            % def = GETDASCONSTCUDADEF(..., 'interp', 'none') avoids specifying the 
+            % interpolation method. Use this to also avoid specifying the preservation
+            % of the receive and transmit dimensions.
+            %
+            % def = GETDASCONSTCUDADEF(..., 'no_apod', true) avoids
+            % setting the number of apodization matrices. The default is
+            % false.
+            % 
+            % Example:
+            % % Setup the data
+            % us = UltrasoundSystem();
+            % sct = Scatterers();
+            % chd = greens(us, sct);
+            % apod = us.apAcceptanceAngle(30);
+            % 
+            % % Compile and extract
+            % def = getDASConstCudaDef(us, chd, apod, 'keep_rx', true);
+            % us.recompileCUDA(def);
+            % [b, k, PRE_ARGS, POST_ARGS] = DAS(us, chd, apod, 'keep_rx', true);
+            % 
+            % % Compute 
+            % F = size(chd.data(:,:,:,:),4); % frames
+            % for f = 1:F
+            %     b(:,:,:,f) = k.feval(PRE_ARGS{:}, chd.data(:,:,:,f), POST_ARGS{:}); 
+            % end
             % 
             % See also ULTRASOUNDSYSTEM.DAS ULTRASOUNDSYSTEM.GENCUDADEFS 
             % ULTRASOUNDSYSTEM.RECOMPILE
@@ -5041,6 +5079,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments
                 us (1,1) UltrasoundSystem
                 chd {mustBeScalarOrEmpty} = ChannelData.empty
+            end
+            arguments(Repeating)
+                varargin % apodization matrices
+            end
+            arguments
+                kwargs.no_apod (1,1) = false % don't set apodization sizes
+                kwargs.interp (1,1) string {mustBeMember(kwargs.interp, ["linear", "nearest", "cubic", "lanczos3", "none"])} = 'cubic'
+                kwargs.keep_tx (1,1) logical = false % whether to preserve transmit dimension
+                kwargs.keep_rx (1,1) logical = false % whether to preserve receive dimension
             end
             
             % get the other sizes for beamform.m
@@ -5053,6 +5100,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             % get all source code definitions
             def = UltrasoundSystem.genCUDAdefs('beamform');
+
+            % get options
+            switch kwargs.interp
+                case "nearest", flagnum = 0;
+                case "linear",  flagnum = 1;
+                case "cubic",   flagnum = 2;
+                case "lanczos3",flagnum = 3;
+                case "none",    flagnum = nan;
+                otherwise, error('Interp option not recognized: ' + string(interp));
+            end
+            flagnum = flagnum + 8*kwargs.keep_rx + 16*kwargs.keep_tx + 32*(chd.ndim>chd.mdim);
             
             % add the defined macros
             def.DefinedMacros = cat(1, ...
@@ -5066,6 +5124,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 "I2="+Isz(2),... pixel dim 2
                 "I3="+Isz(3) ... pixel dim 3
                 }');
+            if  kwargs.interp ~= "none"
+                def.DefinedMacros(end+1) = "QUPS_BF_FLAG="+flagnum; % interp / integration flag
+            end
+            if ~kwargs.no_apod
+                def.DefinedMacros(end+1) = "QUPS_S="+numel(varargin); % # of apod matrices
+            end
             
             % if T is provided, include it
             if isscalar(chd)

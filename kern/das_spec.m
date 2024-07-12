@@ -108,6 +108,7 @@ else
     device = 0; % CPU
 end
 fmod = 0; % modulation frequency
+tpose = false; % whether rx/tx is transposed
 
 % optional inputs
 nargs = int64(numel(varargin));
@@ -137,6 +138,9 @@ while (n <= nargs)
         case 'modulation'
             n = n + 1;
             fmod = varargin{n};
+        case 'transpose'
+            n = n + 1;
+            tpose = varargin{n};
         otherwise
             error('Unrecognized option');
     end
@@ -205,7 +209,8 @@ if device && (gdev || odev)
     % modify flag to choose whether to store rx / tx
     keep_rx = ismember(fun, {'SYN', 'BF'});
     keep_tx = ismember(fun, {'MUL', 'BF'});
-    flagnum = flagnum + 8 * keep_rx + 16 * keep_tx;
+    flagnum = flagnum + 8 * keep_rx + 16 * keep_tx + 32 * tpose;
+    flagnum = int32(flagnum);
 
     % load the kernel
     src_folder = fullfile(fileparts(mfilename('fullpath')), '..', 'src');
@@ -243,6 +248,7 @@ if device && (gdev || odev)
     
     % data sizing
     [T, N, M] = size(x, 1:3);
+    if tpose, [M, N] = deal(N, M); end
     Isz = size(Pi, 2:4); % I1 x I2 x I3 == I
     I = prod(Isz);
     S = numel(apod);
@@ -287,8 +293,10 @@ if device && (gdev || odev)
         % set constant args
         k.setConstantMemory('QUPS_I', I); % gauranteed
         try k.setConstantMemory('QUPS_T', T); end %#ok<TRYNC> % if not const compiled with ChannelData
-        try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_S', S, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end %#ok<TRYNC> % if not const compiled
-
+        try k.setConstantMemory('QUPS_M', M, 'QUPS_N', N, 'QUPS_VS', VS, 'QUPS_DV', DV, 'QUPS_I1', Isz(1), 'QUPS_I2', Isz(2), 'QUPS_I3', Isz(3)); end %#ok<TRYNC> % if not const compiled
+        try k.setConstantMemory('QUPS_S', S), end %#ok<TRYNC> % if not const compiled with apodization sizing
+        try k.setConstantMemory('QUPS_BF_FLAG', flagnum); end %#ok<TRYNC> % if not const compiled with flag sizing
+        
         % kernel sizes
         k.ThreadBlockSize(1) = k.MaxThreadsPerBlock; % threads per block
         k.GridSize(1) = min([...
@@ -361,7 +369,7 @@ if device && (gdev || odev)
             if ~isreal(obufproto), yg = complex(yg); end % force complex if x is
             % I [x N [x M]] x 1 x 1 x {F x ...}
             for f = F:-1:1 % beamform each data frame
-                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [cstride, astride], x(:,:,:,f), flagnum, [fs, fmod]);
+                y{f} = k.feval(yg, Pi, Pr, Pv, Nv, apod, cinv, [cstride, astride], x(:,:,:,f), [fs, fmod]);
             end
             % unpack frames
             y = cat(6, y{:});
@@ -394,6 +402,7 @@ else
     
     % data sizing
     [T, N, M] = size(x, 1:3);
+    if tpose, [M, N] = deal(N, M); end
     Isz = size(Pi,2:4);
     I = prod(Isz);
     
@@ -443,7 +452,8 @@ else
             y = dtypefun(zeros([Isz, 1, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x 1 x M)
             drn = num2cell(dr, [1:3]); % ({I} x N x 1)
-            xmn = shiftdim(num2cell(x,  [1,6:ndims(x)]),1); % ({T} x N x M x 1 x 1 x {F x ...})
+            xmn = swapdim(num2cell(x,  [1,6:ndims(x)]),2:ndims(x)); % ({T} x N x M x 1 x 1 x {F x ...})
+            if tpose, xmn = xmn'; end % transpose rx/tx
             cinvmn = shiftdim(num2cell(cinv, [1:3]),3); % ({I} x [1|N] x [1|M])
             for s = S:-1:1
                 amn = swapdim(num2cell(apod{s}, [1:3]),[4 5]); % ({I} x [1|N] x [1|M])
@@ -473,7 +483,7 @@ else
         case 'MUL'
             y = dtypefun(zeros([Isz, 1, M]));
             drn = num2cell(dr, [1:3]); % ({I} x  N  x 1)
-            xn  = num2cell(swapdim(x,3,5),  [1,5,6:ndims(x)]); % ({T} x N {x M x F x ...)
+            xn  = num2cell(swapdim(x,3-tpose,5),  [1,5,6:ndims(x)]); % ({T} x N {x M x F x ...)
             cinvn = num2cell(cinv, [1:3 5]); % ({I} x N x {M})
             for s = S:-1:1
                 an = num2cell(apod{s}, [1:3, 5]);
@@ -503,7 +513,7 @@ else
         case 'SYN'
             y = dtypefun(zeros([Isz, N, 1]));
             dvm = num2cell(dv, [1:3]); % ({I} x  1  x M)
-            xm  = num2cell(swapdim(x,2,4),  [1,4,6:ndims(x)]); % ({T x N} x M x {F x ...)
+            xm  = num2cell(swapdim(x,2+tpose,4),  [1,4,6:ndims(x)]); % ({T x N} x M x {F x ...)
             cinvm = num2cell(cinv, [1:4]); % ({I x N} x M)
             for s = S:-1:1
                 am = num2cell(apod{s}, [1:4]);
@@ -531,11 +541,12 @@ else
             end
             y = reshape(y, [Isz, N, 1, fsz]);
         case 'BF'
-            % time delay ([I] x N x M)
+            % time delay ([I] x perm(N x M))
+            if tpose, [dv, dr, cinv, t0] = dealfun(@(x)swapdim(x,4,5), dv, dr, cinv, t0); end
             tau = cinv .* (dv + dr) - t0;
 
             % set size of x
-            xmn = permute(x, [1,4,5,2,3,6:ndims(x)]); % (T x 1 x 1 x N x M x {F x ...})
+            xmn = swapdim(x, [1,4,5,2,3,6:ndims(x)]); % (T x 1 x 1 x perm(N x M) x {F x ...})
             
             % sample and output ([I] x N x M x F x ...)
             y = cellfun(... 
@@ -606,6 +617,7 @@ end
             if Mnv == 1, Nv   = repmat(Nv,1,M);     Mnv = M; end
         else
             [T, N, M] = size(x, 1:3);
+            if tpose, [M, N] = deal(N, M); end
             [Mv] = size(Pv,2);
             [Mnv] = size(Nv,2);
             [Nr] = size(Pr,2);
