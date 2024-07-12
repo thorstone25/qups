@@ -386,7 +386,7 @@ if device && (gdev || odev)
     % save the pre/post arguments if requested
     if nargout > 1
         pre_args = {yg, Pi, Pr, Pv, Nv, apod, cinv, [cstride, astride]};
-        post_args = {flagnum, [fs, fmod]};
+        post_args = {[fs, fmod]};
     end
 else
     
