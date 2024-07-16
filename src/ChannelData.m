@@ -1025,12 +1025,12 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = convt(chd, wv, shape)
             % CONVT - Temporal convolution
             %      
-            % chdw = convn(chd, wv) performs the temporal convolution of
+            % chdw = convt(chd, wv) performs the temporal convolution of
             % the ChannelData chd and the Waveform wv. The sampling
             % frequency of the Waveform is set to match the sampling
             % frequency of the ChannelData i.e. `wv.fs = chd.fs`
             % 
-            % chdw = convn(chd, wv, shape) controls the size of the output:
+            % chdw = convt(chd, wv, shape) controls the size of the output:
             %   'full'   - (default) returns the full N-D convolution
             %   'same'   - returns the central part of the convolution that
             %            is the same size as A.

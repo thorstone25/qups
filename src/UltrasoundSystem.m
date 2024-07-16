@@ -1067,20 +1067,21 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % Note: This functionality is not publicly supported.
             % 
             % Example:
-            % grid = ScanCartesian('x', 1e-3*[-35, 35], 'z', 1e-3*[-12, 27]);
+            % grd = ScanCartesian('x', 1e-3*[-35, 35], 'z', 1e-3*[-12, 27]);
             % xdc = TransducerConvex.C5_2v();
             % seq = SequenceRadial('angles', 0, 'ranges', 1); % plane-wave
-            % us = UltrasoundSystem('scan', grid, 'xdc', xdc, 'seq', seq);
-            % [grid.dx, grid.dz] = deal(us.lambda / 4);
+            % us = UltrasoundSystem('scan', grd, 'xdc', xdc, 'seq', seq);
+            % [grd.dx, grd.dz] = deal(us.lambda / 4);
             % 
             % % Create a Medium to simulate
-            % [c, rho] = deal(1500*ones(grid.size), 1000*ones(grid.size));
-            % pg = grid.positions();
+            % [c, rho] = deal(1500*ones(grd.size), 1000*ones(grd.size));
+            % pg = grd.positions();
             % rho(argmin(vecnorm(pg - [0 0 20e-3]',2,1))) = 1000*2; % double the density
-            % med = Medium.Sampled(grid, c, rho);
+            % med = Medium.Sampled(grd, c, rho);
             % 
             % % Create a configuration struct
-            % conf = fullwaveConf(us, med, grid, 'CFL_max', 0.5), % configure the sim
+            % us.scan = grd; % set the simulation grid
+            % conf = fullwaveConf(us, med), % configure the sim
             % 
             % See also ULTRASOUNDSYSTEM/FULLWAVEJOB
 
@@ -4909,8 +4910,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %
             % % change the source code ...
             % 
-            % % recompile the 2nd mex file manually
-            % args = cellstr(mcom(:,2)); % extract separated arguments
+            % % recompile the last mex file manually
+            % args = cellstr(mcom(:,end)); % extract separated arguments
             % mex(args{:}); % send to mex to compile
             % 
             % See also ULTRASOUNDSYSTEM.GENMEXDEFS ULTRASOUNDSYSTEM.RECOMPILE
@@ -5067,11 +5068,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % us.recompileCUDA(def);
             % [b, k, PRE_ARGS, POST_ARGS] = DAS(us, chd, apod, 'keep_rx', true);
             % 
-            % % Compute 
+            % % Compute
             % F = size(chd.data(:,:,:,:),4); % frames
             % for f = 1:F
-            %     b(:,:,:,f) = k.feval(PRE_ARGS{:}, chd.data(:,:,:,f), POST_ARGS{:}); 
+            %     bf{f} = k.feval(PRE_ARGS{:}, chd.data(:,:,:,f), POST_ARGS{:});
             % end
+            % bf = cat(6, bf{:}); % concatenate frames in the 6th dimension
             % 
             % See also ULTRASOUNDSYSTEM.DAS ULTRASOUNDSYSTEM.GENCUDADEFS 
             % ULTRASOUNDSYSTEM.RECOMPILE

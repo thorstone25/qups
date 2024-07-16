@@ -265,6 +265,10 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % positions as a 3 x N x E array of positions p, where 
             % E = prod(el_sub_div). The default is [1,1].
             %
+            % Example:
+            % xdc = TransducerArray();
+            % p = xdc.getBaryCenters(),
+            % 
             % See also PATCHES POSITIONS ORIENTATIONS
 
             arguments
@@ -851,6 +855,10 @@ classdef (Abstract) Transducer < matlab.mixin.Copyable & matlab.mixin.Heterogene
             % mathematical elements. The result is a (N x E) array where N
             % is the number elements and E is the number of subelements.
             %
+            % Example:
+            % xdc = TransducerArray();
+            % elp = xdc.getFieldIIPatches(),
+            % 
             % See also GETFIELDIIBARYCENTERS
             arguments
                 xdc Transducer
