@@ -5353,7 +5353,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             arguments
                 name (1,:) string {mustBeMember(name, ["all" , ...
                     "msfm2d", "msfm3d" ...
-                    ])} = "all"
+                    ])} = "msfm2d"
             end
             if isscalar(name) && name == "all"
                 name = ["msfm2d", "msfm3d"];
