@@ -31,16 +31,19 @@ end
 rang = str2double(rang); % interpret as a number
 
 colorbar; % always activate colorbar
-ax = gca; h = ax.Children(isa(ax.Children,'matlab.graphics.primitive.Image'));
-assert(isscalar(h), "Cannot identify the image for this axis."); % HACK - get the maximum value
+ax = gca; h = ax.Children( arrayfun(@(h) ...
+      isa(h,'matlab.graphics.primitive.Image'  ) ...
+    | isa(h,'matlab.graphics.primitive.Surface'), ...
+    ax.Children));
+assert(~isempty(h), "Cannot identify an image for this axis."); % HACK - get the maximum value
 % caxis auto; cmax = max(caxis); 
 if exist('clim', 'file'), clm = @clim; else, clm = @caxis; end %#ok<CAXIS> - backwards compatibility
-cmax = max(h.CData,[],'all', 'omitnan');
+cmax = max(cellfun(@(x) max(x,[],'all','omitnan'),{h.CData}),[],'all','omitnan');
 switch mode
-    case "b-mode", colormap(gca, 'gray'); clm(cmax + [-rang   0 ]);
-    case "echo"  , colormap(gca, 'jet' ); clm(cmax + [-rang   0 ]);
-    case "phase" , colormap(gca, 'hsv' ); clm(0    + [-rang rang]);
-    case "corr"  , colormap(gca, 'hot' ); clm(     + [rang    1 ]);
+    case "b-mode", colormap(ax, 'gray'); clm(cmax + [-rang   0 ]);
+    case "echo"  , colormap(ax, 'jet' ); clm(cmax + [-rang   0 ]);
+    case "phase" , colormap(ax, 'hsv' ); clm(0    + [-rang rang]);
+    case "corr"  , colormap(ax, 'hot' ); clm(     + [rang    1 ]);
 end
 
 function r = defaultRange(mode)
