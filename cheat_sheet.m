@@ -156,6 +156,17 @@ scan = ScanPolar('r',r,'a',a,'y',y);
 scan.dr = 0.1e-3;
 scan.da = 0.25;
 
+% setup a 3D spherical imaging region
+r =   0 : 0.2e-3 : 40e-3;
+a = -40 : 0.5    : 40   ;
+e = -40 : 0.5    : 40   ;
+scan = ScanSpherical('r',r,'a',a,'e',e);
+
+% set the resolution for a Spherical region
+scan.dr = 0.1e-3;
+scan.da = 0.25;
+scan.de = 0.25;
+
 % create a Generic Scan with an arbitrary axes-to-pixel transform function
 scan = ScanGeneric('u', 1:100, 'v', -90:90, 'w', 1 : 100);
 scan.trans = @(u,v,w) cat(1,u,cosd(v), exp(w));
@@ -163,9 +174,12 @@ scan.trans = @(u,v,w) cat(1,u,cosd(v), exp(w));
 %% Beamforming
 % create some example objects and data for this section
 us = UltrasoundSystem(); % default system
+seq = Sequence('type', 'FC', 'focus', [0 0 50e-3]' + [1 0 0]'*(-20:20));
 scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % point scatterer(s)
 med = Medium('c0', scat.c0); % FDTD medium
 chd = greens(us, scat); % get some data for this example 
+usf = setfield(copy(us),'seq',seq); % focused
+chdf = us.focusTx(chd, seq); % focused data
 
 % ------------- B-mode Images ----------------- %
 % standard delay-and-sum (DAS)
@@ -185,10 +199,10 @@ b = bfEikonal(us, chd, med);
 
 % eikonal equation beamformer with a high sound speed resolution grid
 % currently lambda/10 or finer recommended (FSA only)
-cscan = copy(us.scan); 
-cscan.dx = us.lambda / 10; 
-cscan.dz = us.lambda / 10;
-b = bfEikonal(us, chd, med, cscan);
+grd = copy(us.scan); 
+grd.dx = us.lambda / 10; 
+grd.dz = us.lambda / 10;
+b = bfEikonal(us, chd, med, grd);
 
 % frequency-domain adjoint Green's function beamformer
 % Note: you may get poor performance on virtual source ('FC'/'DV'/'VS')
@@ -219,12 +233,18 @@ bd = dmas(bn, ndim);
 % 45 deg acceptance angle weights on receive
 a = us.apAcceptanceAngle(45); 
 
-% set aperture growth to limit f# >= 1
-a = us.apApertureGrowth(1);
+% set aperture growth to limit f# >= 1.5
+a = us.apApertureGrowth(1.5);
+
+% use multi-line beamformer weights (focused transmits)
+am = usf.apMultiline();
 
 % apply apodization when beamforming 
 % (works in most cases with most beamformers)
-b = DAS(us, chd, 'apod', a);
+b = DAS(us, chd, a);
+
+% apply multiple apodization schemes simultaneously
+b = DAS(usf, chdf, a, am);
 
 %% Channel Data
 % This section demonstrates operations that can be efficiently done on
@@ -240,6 +260,7 @@ b = DAS(us, chd, 'apod', a);
 % create some example objects and data for this section
 us = UltrasoundSystem(); % default system
 seq = SequenceRadial('type','PW','angles',-10:10); % alternate pulse sequence
+wv = us.xdc.xdcImpulse(); % waveform
 scat = Scatterers('pos', [0;0;30e-3], 'c0', us.seq.c0); % point scatterer(s)
 chd_fsa = greens(us, scat); % get some FSA data for this example 
 chd = chd_fsa; % alias
@@ -277,7 +298,6 @@ y = sample(chd, tau);
 y = sample2sep(chd, tau_tx, tau_rx);
 
 % -------- signal processing ------------ %
-
 % use the hilbert transform to get the analytical signal
 chd = hilbert(chd);
 
@@ -306,6 +326,17 @@ D = chd.getPassbandFilter(us.xdc.bw);
 % filter the ChannelData
 chd = filter(chd, D);
 
+% convolve with a Waveform
+chdw = convt(chd, wv);
+
+% apply convolution matrix to time (first) dim
+H = convmtx([-1 2 -6 2 -1], size(chd.data,1));
+chd = H' * chd;
+
+% apply decoding matrix on transmit (Mth) dim
+H = hadamard(chd.M);
+chd = chd * H;
+
 % Create a custom digitalFilter directly
 % Note: running 'designfilt' without arguments launches a GUI to construct
 % a filter interactively
@@ -319,6 +350,9 @@ D = designfilt('bandpassfir', ...
     'PassbandRipple',1, ...
     'StopbandAttenuation2',60 ...
     );
+
+% arithmetic, complex numbers
+chd = 3 .* chd ./ 2 - 1j .* chd;
 
 % ------------ data typing --------------- %
 
@@ -384,21 +418,21 @@ imagesc(med, scan, 'props', 'rho');
 imagesc(real(chd));
 
 % show the channel data with log-magnitude scaling (when data is complex)
-imagesc(hilbert(chd));
+imagesc(complex(chd));
 
 % loop through transmits of channel data
-h = imagesc(hilbert(chd)); colormap(h.Parent, 'jet');
+h = imagesc(hilbert(chd)); dbr echo 60;
 animate(chd.data, h, 'loop', false);
 
 % display a b mode image
-h = imagesc(us.scan, b); colormap(h.Parent,'gray');
+h = imagesc(us.scan, b); dbr b-mode 60;
 
 % loop through frames/transmits/receives of images data
 animate(b, h, 'loop', false);
 
 % animate multiple plots together
-nexttile(); h(1) = imagesc(hilbert(chd)); colormap(h(1).Parent,'jet');
-nexttile(); h(2) = imagesc(us.scan, b  ); colormap(h(2).Parent,'gray');
+nexttile(); h(1) = imagesc(hilbert(chd)); dbr echo 60;
+nexttile(); h(2) = imagesc(us.scan, b  ); dbr b-mode 60;
 hmv = animate({chd.data, b}, h, 'loop', false);
 
 % save animation to a gif
@@ -447,7 +481,7 @@ us = UltrasoundSystem('fs', single(50e6)); % set output sampling frequency (affe
 scat = Scatterers('pos', [0;0;30e-3], 'c0', 1500);
 med = Medium('c0', scat.c0);
 dx = 2^(nextpow2(us.xdc.pitch*1e3) - 2); % (optional) compute < 1/2 pitch spacing
-cscan = ScanCartesian('x', 1e-3*(-20 : dx : 20), 'z', 1e-3*(-2 : dx : 43));
+grd = ScanCartesian('x', 1e-3*(-20 : dx : 20), 'z', 1e-3*(-2 : dx : 43));
 us.seq = SequenceRadial('type','PW','angles',[-10 0 10]);
 
 % simple lossless delayed signal
@@ -462,11 +496,11 @@ chd = calc_scat_multi(us, scat);
 chd = simus(us, scat);
 
 % k-Wave
-chd = kspaceFirstOrder(us, med, cscan);
+chd = kspaceFirstOrder(us, med, grd);
 
 % run simulations on a local or remote cluster
 clu = parcluster(); % your default cluster
-[job, rfun] = kspaceFirstOrder(us, med, cscan, 'parenv', clu);
+[job, rfun] = kspaceFirstOrder(us, med, grd, 'parenv', clu);
 % submit(job);
 % wait(job);
 % chd = rfun(job);
