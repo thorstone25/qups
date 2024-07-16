@@ -48,7 +48,7 @@ function y = wsinterpd2(x, t1, t2, dim, w, sdim, interp, extrapval, omega)
 %
 
 %% validate dimensions
-persistent k dsz prc0; % cache prior kernel calls
+persistent k prc0; % cache prior kernel calls
 if nargin < 9 || isempty(omega),     omega = 0; end
 if nargin < 8 || isempty(extrapval), extrapval = nan; end
 if nargin < 7 || isempty(interp),    interp = 'linear'; end
@@ -107,7 +107,7 @@ use_odev = exist('interpd.cl', 'file') ...
 
 if use_odev && ~use_gdev && exist('oclDeviceCount','file') && oclDeviceCount(), ocl_dev = oclDevice(); else, ocl_dev = []; end % get oclDevice if supported
 
-use_odev = use_odev ... 
+use_odev = use_odev && ~use_gdev ... 
         && ~isempty(ocl_dev) && ...
         (  (isftype(x,'double') && ocl_dev.SupportsDouble) ...
         || (isftype(x,'single')                          ) ... always supported
@@ -170,22 +170,31 @@ if use_gdev || use_odev
             y_ = zeros(osz, 'like', x_); % pre-allocate output
     end
     % zeros: uint16(0) == storedInteger(half(0)), so this is okay
-    if isscalar(k) && isvalid(k) && (~use_gdev || existsOnGPU(k)) && all(dsz == [I T S N F]) && (prc == prc0)
-        % pass - use the cached kernel
-    elseif use_gdev
+
+    % use a cached kernel (reduces likelihood of overloading OpenCL)?
+    use_cached = isscalar(k) && isvalid(k) && existsOnGPU(k) && (prc == prc0) ...
+            && (( use_gdev && isa(k,'parallel.gpu.CUDAKernel')) ...
+            || (  use_odev && isa(k,'oclKernel') && k.Device.Index == ocl_dev.Index) ...
+            );
+    % if use_cached, warning("Using cached " + class(k)), disp(k), end
+    if use_gdev
         % grab the kernel reference
+        if ~use_cached
         k = parallel.gpu.CUDAKernel('interpd.ptx', 'interpd.cu', 'wsinterpd2' + suffix);
+        end
         k.setConstantMemory( ...
             'QUPS_I', uint64(I), 'QUPS_T', uint64(T), 'QUPS_S', uint64(S), ...
             'QUPS_N', uint64(N), 'QUPS_F', uint64(F) ...
             );
     elseif use_odev
         % get the kernel reference
+        if ~use_cached
         k = oclKernel(which('interpd.cl'), 'wsinterpd2');
 
         % set the data types
         switch prc, case 16, t = 'uint16'; case 32, t = 'single'; case 64, t = 'double'; end
         k.defineTypes({t,t}); % all aliases are this type
+        end
 
         % configure the kernel sizing and options
         k.macros = "QUPS_" + ["I", "T", "S", "N", "F"] + "=" + uint64([I T S N F]); % size constants
@@ -193,6 +202,9 @@ if use_gdev || use_odev
             + "=" + ["0."+suffix, flagnum, imag(omega)]]; % input constants
         k.macros(end+1) = "QUPS_PRECISION="+prc;
         % k.opts = ["-cl-fp32-correctly-rounded-divide-sqrt", "-cl-mad-enable"];
+
+        % rebuild for this data size
+        k.build();
     end
 
     % constant arguments
