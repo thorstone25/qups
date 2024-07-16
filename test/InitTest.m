@@ -228,12 +228,15 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             us.xdc; % should be same
             usb = copy(us); usb.rx = copy(usb.tx); % switch to bistatic aperture
             for us = [us usb]
+            for seq = [Sequence('type', 'FSA'), SequenceRadial('type', 'PW'), Sequence('type','FC','focus',[0 0 us.lambda*100]')]
+                us.seq = seq; 
                 scale(us, "dist",1e3, "time",1e6);
                 plot(us); % supports plotting
                 s = obj2struct(us);
                 flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
                 arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
                 test.assertSize(us.fc, [1 1], "The 'fc' property should be scalar for identical frequency transducers.")
+            end
             end
             test.assertError(@() usb.xdc, "QUPS:UltrasoundSystem:ambiguousTransducer")
 

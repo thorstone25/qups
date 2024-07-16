@@ -197,8 +197,9 @@ classdef ParTest < matlab.unittest.TestCase
     methods (Test, TestTags=["full","build"], ParameterCombination='sequential')
         % test simulators can run on different devices
         function greens_das_dev(tst, dev)
-            % test that greens works
+            tst.setDev(dev); % set dev
             
+            % test that greens works
             tt = tic(); chd = greens(tst.us, tst.sct, 'device', -1*~isequal(dev, 0));
             tst.logTestCheck(chd, tt);
 

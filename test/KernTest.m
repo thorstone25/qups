@@ -5,15 +5,37 @@ classdef KernTest < matlab.unittest.TestCase
 
     %#ok<*NASGU,*ASGLU> unused variables
 
-     properties(TestParameter)
+    properties(TestParameter)
         prec = {'double', 'single'}%, 'halfT'}
         complexity = struct('real', 'real', 'complex', 'complex');
         dev = getdevs()
-     end
+    end
 
-     properties
-         dargs % data arguments
-     end
+    properties
+        dargs % data arguments
+    end
+    methods
+        function setDev(test, dev)
+            import matlab.unittest.fixtures.TemporaryFolderFixture;
+            import matlab.unittest.fixtures.CurrentFolderFixture;
+
+            % Create a temporary folder and make it the current working folder.
+            tempFolder = test.applyFixture(TemporaryFolderFixture);
+            test.applyFixture(CurrentFolderFixture(tempFolder.Folder));
+
+            % The test can now write files to the current working folder.
+            switch class(dev)
+                case "double",                  dtype = "none";
+                case "parallel.gpu.CUDADevice", dtype = "gpu";  gpuDevice(dev.Index);
+                case "oclDevice",               dtype = "ocl";  oclDevice(dev.Index);
+            end
+            odevs = setdiff(["gpu", "ocl"], dtype);
+            for odev = odevs
+                localwritelines("function n = "+odev+"DeviceCount(), n = 0;", odev+"DeviceCount.m");
+                test.addTeardown(@()delete(fullfile(pwd, odev+"DeviceCount.m")));
+            end
+        end
+    end
 
     methods(TestClassSetup)
         % Setup for the entire class
@@ -41,6 +63,8 @@ classdef KernTest < matlab.unittest.TestCase
             test.dargs{3} = {us, b};
         end
     end
+
+    methods function set_device(test, dev), test.setDev(dev); end end
 
     % dispatch
     % Github test routine
@@ -78,6 +102,11 @@ classdef KernTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.RelativeTolerance;
             if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
 
+            % device
+            test.set_device(dev);
+            isgpu = isa(dev, 'parallel.gpu.CUDADevice');
+            isocl = isa(dev, 'oclDevice');
+
             % random values
             [A, B, N, M] = deal(test.dargs{2}{:});
             [A,B] = dealfun(str2func(prec), A, B); % cast to type
@@ -87,7 +116,7 @@ classdef KernTest < matlab.unittest.TestCase
                 case "halfT" , tol = 1e2;
             end
             switch complexity, case "real", [A,B] = deal(real(A), real(B)); end
-            switch dev, case "gpu", [A,B] = dealfun(@gpuArray, A,B); end
+            if isgpu, [A,B] = dealfun(@gpuArray, A,B); end
 
             % check each type of argument
             % TODO: move this to setup params
@@ -105,7 +134,7 @@ classdef KernTest < matlab.unittest.TestCase
             % convolve and check outputs
             for s = shapes, for d = dims %#ok<ALIGN> 
                 z1 = cell2mat(cellfun(@(A,B) {gather(conv(A, B, char(s)))}, num2cell(A,1), num2cell(B,1)));
-                z2 = gather(convd(shiftdim(A,1-d),shiftdim(B,1-d),d,s,'gpu',dev == "gpu", 'ocl', dev == "ocl"));
+                z2 = gather(convd(shiftdim(A,1-d),shiftdim(B,1-d),d,s,'gpu', isgpu, 'ocl', isocl));
                 test.assertThat(...
                     double(shiftdim(z2,d-1)), ...
                     IsEqualTo(double(z1), 'Using', NumericComparator('Within', RelativeTolerance(tol*double(eps(max(z1(:))))))) ...
@@ -118,11 +147,12 @@ classdef KernTest < matlab.unittest.TestCase
             import matlab.unittest.constraints.NumericComparator;
             import matlab.unittest.constraints.IsEqualTo;
             import matlab.unittest.constraints.RelativeTolerance;
+            test.set_device(dev);
             if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
-            if prec == "halfT", test.assumeFalse(dev == "ocl"); end % not supported
+            if prec == "halfT", test.assumeFalse(isa(dev, 'oclDevice')); end % not supported
 
             [I, T, N, M, F, fc, t, x, tau] = deal(test.dargs{1}{:});
-            if dev == "gpu", [x, t, tau] = dealfun(@gpuArray, x, t, tau); end
+            if isa(dev, 'parallel.gpu.CUDADevice'), [x, t, tau] = dealfun(@gpuArray, x, t, tau); end
 
             % all permutations
             terp = ["nearest", "linear"];%, "cubic"];
@@ -137,7 +167,7 @@ classdef KernTest < matlab.unittest.TestCase
             % test defaults, options run
             interpd(x, tau);
             interpd(x, tau, 1, "cubic");
-            if dev == "gpu", interpd(x, tau, 1, "lanczos3"); end
+            if isa(dev, 'parallel.gpu.CUDADevice'), interpd(x, tau, 1, "lanczos3"); end
 
             % cast data
             for terp_ = terp
@@ -165,30 +195,33 @@ classdef KernTest < matlab.unittest.TestCase
             end
         end
         function aperture_reduction(test, dev, prec)
+            test.set_device(dev);
             if prec == "halfT", return; end % not supported
             [us, b] = deal(test.dargs{3}{:});
             f = str2func(prec); b = f(b);
-            if dev == "gpu", b = gpuArray(b); end
-            z = slsc(b, 'ocl', dev == "ocl");
+            if isa(dev, 'parallel.gpu.CUDADevice'), b = gpuArray(b); end
+            isocl = isa(dev, 'oclKernel');
+            z = slsc(b, 'ocl', isocl);
             w = pcf(b);
             m = dmas(b);
             r = cohfac(b);
             for d = [2 4]
-                z = slsc(b, d, [0 2], "ensemble", 'ocl', dev == "ocl");
+                z = slsc(b, d, [0 2], "ensemble", 'ocl', isocl);
                 w = pcf(b, d);
                 m = dmas(b, d);
                 r = cohfac(b, d);
             end
             test.assertError(@()pcf(real(b)), "QUPS:pcf:realInput"); % should fail
             
-            if dev ~= "ocl"
+            if ~isocl
                 z = slsc(repmat(b,[ones(1,6),2]), 4, 2, "ensemble", 7);
             end
         end
         function correlator(test, prec, complexity, dev)
+            test.set_device(dev);
             x = test.dargs{3}{2};
             x = x + randn([1 1 4 1]); % unique expansion in dim 3
-            if dev == "gpu", x = gpuArray(x); end
+            if isa(dev, 'parallel.gpu.CUDADevice'), x = gpuArray(x); end
             switch complexity, case "real", x = real(x); end
             f = str2func(prec);
             x = f(x);
@@ -215,7 +248,6 @@ classdef KernTest < matlab.unittest.TestCase
             end
             end
         end
-    
     end
 
     methods(Test, TestTags={'full', 'build', 'syntax', 'Github'})
@@ -263,6 +295,7 @@ classdef KernTest < matlab.unittest.TestCase
             animate(bs, hs, 'loop', false, 'fs', Inf);
         end
         function wbilerp_test(test, dev)
+            test.set_device(dev);
 
             % Create a grid
             [x , y ] = deal(-5:5, -4:4);
@@ -270,11 +303,11 @@ classdef KernTest < matlab.unittest.TestCase
             [xb, yb] = deal( +3 ,  -2 );
 
             % implicit move to gpu
-            if dev == "gpu"
+            if isa(dev, 'parallel.gpu.CUDADevice')
                 [xa, ya, xb, xa] = dealfun(@gpuArray, xa, ya, xb, xa); 
             end
             wfuns = {@wbilerp};
-            if dev ~= "none", wfuns{end+1} = @wbilerpg;
+            if ~isnumeric(dev), wfuns{end+1} = @wbilerpg; end
 
             for swp = [false, true], if swp
                     [x, xa, xb, y, ya, yb] = ...
@@ -292,20 +325,73 @@ classdef KernTest < matlab.unittest.TestCase
             end
             end
             end
+
+        end
+        function util_test(test)
+            import matlab.unittest.fixtures.TemporaryFolderFixture;
+            import matlab.unittest.fixtures.CurrentFolderFixture;
+
+            % Create a temporary folder and make it the current working folder.
+            temp_folder = test.applyFixture(TemporaryFolderFixture);
+            test.applyFixture(CurrentFolderFixture(temp_folder.Folder));
+ 
+             % sel.m
+            sz = 5:-1:1;
+            for d = 1:4
+                sz(1:d) = 1; % make scalar
+                x = rand(sz);
+                [y, ix] = max(x, [], 1);
+                test.assertEqual(y, sel(x,ix));
+                if canUseGPU()
+                    test.assertEqual(y, gather(sel(gpuArray(x),(ix))));
+                    test.assertEqual(y, gather(sel((x),gpuArray(ix))));
+                    test.assertEqual(y, gather(sel(gpuArray(x),gpuArray(ix))));
+                end
             end
+
+            % mod2db
+            mod2db(double(x));
+            mod2db(single(x));
+            mod2db(  half(x));
+            mod2db( int32(x));
+
+            % frame2gif
+            b = randn([4,4,4]);
+            fr = animate(b, 'fs', Inf, 'loop', false);
+            frame2gif(fr, 'tmp.gif', 'TransparentColor', 1, 'BackgroundColor', 0, 'dither', true, 'Comment',"test");
+
+            % animate
+            b = rand([4,4,3,2]);
+            [mv, mh] = animate(b, 'fs', Inf, 'loop', false);
+
+            % dealfun
+                      test.assertError(@() dealfun(@magic, 1,2), "QUPS:dealfun:narginNargoutMismatch", "`dealfun()` did not throw an error!");
+            [~]     = test.assertError(@() dealfun(@magic, 1,2), "QUPS:dealfun:narginNargoutMismatch", "`dealfun()` did not throw an error!");           
+            [~,~,~] = test.assertError(@() dealfun(@magic, 1,2), "QUPS:dealfun:narginNargoutMismatch", "`dealfun()` did not throw an error!");           
+            [a,b,c] = dealfun(@magic, 1,2,3); % works
         end
     end
 end
 
-% test GPU devices if we can
-function s = getdevs()
-s = "none";
-if gpuDeviceCount, s(end+1) = "gpu"; end
-if exist('oclDeviceCount', 'file') && oclDeviceCount()
-    devs = oclDeviceTable();
-    devs = sortrows(devs, ["Type", "MaxComputeUnits"]);
-    oclDevice(devs{end,"Index"}); % select best device
-    s(end+1) = "ocl";
+% test GPU/OpenCL devices if we can
+function dev = getdevs()
+dev = {0};
+if gpuDeviceCount
+    dev = [dev, arrayfun(@gpuDevice, 1:gpuDeviceCount(), 'UniformOutput', false)];
 end
-s = cellstr(s);
+if exist('oclDeviceCount', 'file') && oclDeviceCount()
+    dev = [dev, arrayfun(@oclDevice, 1:oclDeviceCount(), 'UniformOutput', false)];
+end
+[~, i] = unique(cellfun(@(d) string(d.Name)+"-"+class(d), dev(2:end)), 'stable');
+dev = [dev(1), dev(1+i)]; % uniquely named devices only
+end
+
+function localwritelines(txt, fl)
+if exist('writelines','file') % 2022a+
+    writelines(txt, fl);
+else
+    fid = fopen(fl, 'w+');
+    fwrite(fid, join(txt,newline));
+    fclose(fid);
+end
 end
