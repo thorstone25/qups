@@ -229,15 +229,16 @@ classdef KernTest < matlab.unittest.TestCase
             % dbr should work with default or specified options
 
             hf = figure('Visible', 'off');
+            test.addTeardown(@() close(hf))
             [us, b] = deal(test.dargs{3}{:}); % get data
             ftls = "Frm " + (1:size(b,4)); % frame titles
-            for tp = [true, false] % transpose
+            for ord = [1 2 3 4; 2 3 1 4]' % transpose
             for multi_image = [true, false] % multiple images
             for init_fig = [true, false] % initialize?
                 [b0, scn] = deal(b, copy(us.scan));
-                if tp, ord = [2,1,3,4]; b0=permute(b0,ord); scn.order=scn.order(ord(1:3)); end
                 if multi_image, bs = {b0,b0}; else, bs = {b0}; end
                 if init_fig, hs = {cellfun(@(b)imagesc(scn,b,nexttile()), bs)}; else, hs = {}; end
+                bs = cellfun(@(x){ ipermute(x,[ord', numel(ord)+1:ndims(x)]) }, bs); scn.order=scn.order(ord(1:3)); 
                 itls = "View " + (1:numel(bs)); % image titles
                 ttl_set = {"", ftls, ftls', itls, itls', ftls'+" | "+itls, ftls+" | "+itls'};
                 for ttl = ttl_set
@@ -252,7 +253,14 @@ classdef KernTest < matlab.unittest.TestCase
             imagesc(us.scan, b); dbr;
             arrayfun(@dbr, ["b-mode", "phase", "echo"])
             
-            close(hf)
+            % warn on ith argument
+            clf(hf);
+            [b0, scn] = deal(b, copy(us.scan));
+            ord = num2cell(perms(1:4),2);
+            bs = repmat({b0},size(ord)); 
+            hs = cellfun(@(b)imagesc(scn,b,nexttile()), bs);
+            bs = cellfun(@ipermute, bs, ord, 'UniformOutput', false);
+            animate(bs, hs, 'loop', false, 'fs', Inf);
         end
         function wbilerp_test(test, dev)
 

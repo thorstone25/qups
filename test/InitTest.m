@@ -50,7 +50,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
             [xdcs.origin] = deal([0 0 -10e-3]); % offset (to be deprecated?)
             [xdcs.rot] = deal([20 -10]); % offset (to be deprecated?)
-
+            for i =1:2, xdcs(i).kerf = 2*xdcs(i).kerf; end % can modify kerf (Array, Convex)
         end
         function initseq(test)
             % INITSEQ - Assert that Sequence constructors initialize
@@ -171,6 +171,11 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             wv = Waveform("fun"    , f, "t",  t);
             wv = Waveform("fun"    , f, "t0", t(1), "dt", dt  , "tend",t(end));
             wv = Waveform("fun"    , f, "t0", t(1), "fs", 1/dt, "tend",t(end));
+
+            % if sampled, support resampling
+            wv = Waveform("samples", x, "t",  t);
+            wv.samples = x.*x;
+            
 
             scale(wv, 'time', 1e6); % supports scaling
             obj2struct(wv); % supports specialized struct conversion

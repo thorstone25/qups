@@ -18,6 +18,9 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             chdo =  int32T(chd);
             chdo =  int16T(chd);
             chdo =   int8T(chd);
+            if exist('halfT', 'class')
+            chdo =   halfT(chd);
+            end
 
             % data types
             z = double(chd);
@@ -30,6 +33,9 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             z =  int32(chd);
             z =  int16(chd);
             z =   int8(chd);
+            if exist('half', 'class')
+            z =   half(chd);
+            end
 
             % tall, sparse
             chdo = tall(chd);
