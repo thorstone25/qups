@@ -424,7 +424,7 @@ else
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3,6:ndims(x)]); % pack for I, F
     osz = [Isz,1,1,fsz]; % interp1 output size (unsqueeze)
-
+    try
     switch fun
         case 'delays'
             y = cinv .* (dv + dr);
@@ -523,6 +523,10 @@ else
             y = cat(4, y{:}); % unpack
             y = reshape(y, [Isz N M fsz]); % resize
             y = y .* apod; % apply weights
+    end
+    catch E
+        msg = sprintf('dr class: %s; size: [%s]', class(dr), strjoin(string(size(dr))));
+        error('Problem occurred! %s\n%s', msg, getReport(E));
     end
 end
 
