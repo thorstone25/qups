@@ -52,7 +52,7 @@ jobs:
             c = parcluster('local'),
             fld = c.JobStorageLocation,
             fls = dir(fullfile(fld,'**','*.log*'));
-            fls = string({fls.folder}, {fls.name});
+            fls = string(fullfile({fls.folder}, {fls.name}));
             mkdir(wlogdir);
             arrayfun(@(s) copyfile(s, wlogdir), fls);
 
