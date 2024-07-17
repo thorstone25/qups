@@ -19,12 +19,6 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
       
-        # Enable tmate debugging of manually-triggered workflows if the input option was provided
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
-        timeout-minutes: 15
-
       - name: Set up MATLAB
         uses: matlab-actions/setup-matlab@v2
         with: 
@@ -35,14 +29,17 @@ jobs:
         uses: matlab-actions/run-command@v2
         with:
           command: |
-            clogdir = fullfile(pwd, 'logs','client');
-            wlogdir = fullfile(pwd, 'logs','workers');
+            clogdir = fullfile(pwd, 'logs','client'),
+            wlogdir = fullfile(pwd, 'logs','workers'),
             mkdir(clogdir);
+            mkdir(wlogdir);
+            
             parallel.internal.logging.enableClientLogging(clogdir, 6)
             setSchedulerMessageHandler(@disp);
             setenv('MDCE_DEBUG','true');
             pctconfig('preservejobs',true);
 
+            parpool local;
             setup cache; addpath build;
             res = runProjectTests("verbosity", "Verbose"), 
             i = find([res.Failed]); res(i).Name, 
@@ -51,14 +48,19 @@ jobs:
 
             c = parcluster('local'),
             fld = c.JobStorageLocation,
-            fls = dir(fullfile(fld,'**','*.log*'));
+            fls = dir(fullfile(fld,'**','*log*'));
             fls = string(fullfile({fls.folder}, {fls.name}));
-            mkdir(wlogdir);
             arrayfun(@(s) copyfile(s, wlogdir), fls);
 
       - name: Upload Logs
         uses: actions/upload-artifact@v4
         with:
           name: Logs-${{runner.os}}
-          path: logs/*/*.log*
+          path: logs/
+
+      # Enable tmate debugging of manually-triggered workflows if the input option was provided
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.debug_enabled }}
+        timeout-minutes: 15
 
