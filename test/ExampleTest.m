@@ -57,7 +57,7 @@ classdef ExampleTest < matlab.unittest.TestCase
                 'MUST',     "simus", ... MUST
                 'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
                 'mex',      ["bfEikonal", "msfm"+["","2d","3d"]], ... mex binaries required ... compilation (optional, requires CUDA)
-                'gpu',            "wbilerpg", ... CUDAKernel or oclKernel support required
+                'gpu',      ["wbilerpg","feval"], ... CUDAKernel or oclKernel support required
                 'comp',     ("recompile" + ["","Mex","CUDA"]), ... compilations setup required
                 'ext',      "vol3d", ... external functions
                 }, 2, [])'; % + "(";
@@ -89,7 +89,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             bl_fcn(i,:) = []; % Remove from blacklist if the project is installed.
 
             % filter by available binaries
-            kerns = ("wbilerp")+".ptx"; % require GPU binaries
+            kerns = ("wbilerp")+".ptx"; % require GPU binaries (pre-compiled)
             if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "gpu",:) = []; 
             end
@@ -110,7 +110,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             end
             % filter by gpu compiler availability (system not available on thread pools)
             % (not quite working - seems the environment changes?)
-            if ~isempty(argn(2, @system, "which nvcc"))
+            if ~isempty(argn(2, @system, "which nvcc")) && ~isempty(mex.getCompilerConfigurations("C++"))
                 bl_fcn(bl_fcn(:,1) == "comp",:) = [];
             end
         end
