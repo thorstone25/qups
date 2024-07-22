@@ -74,6 +74,7 @@ while i <= nargin % go through arguments sequentially
         case 'cache'
             us = UltrasoundSystem('recompile', false); % needs paths to have been added already
             us.recompile(); % attempt to recompile code
+            delete(fullfile(us.tmp_folder, "*msfm*."+mexext())); % blacklist msfm
             copyfile(us.tmp_folder, fullfile(base_path, "bin")); % copy it
             % addpath(fullfile(base_path, 'bin')); % add new cache path
         
@@ -85,7 +86,7 @@ while i <= nargin % go through arguments sequentially
                 if ~isfolder(p) % bin should have nvcc
                     p = "/usr/local/cuda/bin"; % linux default nvcc path
                 end                
-                if ~exist(fullfile(p, 'nvcc')), warning("nvcc not found at " + p); end
+                if ~exist(fullfile(p, 'nvcc'),'file'), warning("nvcc not found at " + p); end
             
             elseif ispc
                 % get all the windows drives, from A to Z
@@ -107,7 +108,7 @@ while i <= nargin % go through arguments sequentially
                 end
 
                 if isempty(p1),                          warning("nvcc not found.")
-                elseif ~exist(fullfile(p1, 'nvcc.exe')), warning("nvcc not found at " + p1); 
+                elseif ~exist(fullfile(p1, 'nvcc.exe'),'file'), warning("nvcc not found at " + p1); 
                 end
                 p1 = string(p1); % enforce string type for casting/sizing
                 
@@ -127,7 +128,7 @@ while i <= nargin % go through arguments sequentially
                 end
                 
                 if isempty(p2),                        warning("cl not found.");
-                elseif ~exist(fullfile(p2, 'cl.exe')), warning("cl not found at " + p2); end
+                elseif ~exist(fullfile(p2, 'cl.exe'),'file'), warning("cl not found at " + p2); end
                 p2 = string(p2); % enforce string type for casting/sizing
                 
                 % join nvcc and CUDA paths (if they exist)
