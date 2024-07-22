@@ -352,8 +352,9 @@ classdef KernTest < matlab.unittest.TestCase
             % mod2db
             mod2db(double(x));
             mod2db(single(x));
-            mod2db(  half(x));
             mod2db( int32(x));
+            if exist('half','class')
+            mod2db(  half(x)); end
 
             % frame2gif
             b = randn([4,4,4]);

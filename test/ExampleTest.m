@@ -53,12 +53,13 @@ classdef ExampleTest < matlab.unittest.TestCase
                 ... "bfAdjoint", ... QUPS (RAM)
                 'kWave',    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave (still too large)
                 'USTB',     ["QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern], ... USTB
-                'FieldII',  "calc_scat"+["","_all", "_multi"], ... FieldII
+                'FieldII',  ["calc_scat"+["","_all", "_multi"], "getFieldII"+["Aperture","Patches","Positions"]], ... FieldII
                 'MUST',     "simus", ... MUST
                 'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
                 'mex',      ["bfEikonal", "msfm"+["","2d","3d"]], ... mex binaries required ... compilation (optional, requires CUDA)
                 'gpu',            "wbilerpg", ... CUDAKernel or oclKernel support required
-                'comp',     ("recompile" + ["","Mex","CUDA"]) ... compilations setup required
+                'comp',     ("recompile" + ["","Mex","CUDA"]), ... compilations setup required
+                'ext',      "vol3d", ... external functions
                 }, 2, [])'; % + "(";
             bl_fcn(:,2) = cellfun(@(s){s+"("}, bl_fcn(:,2)); % append "("
 
@@ -102,7 +103,11 @@ classdef ExampleTest < matlab.unittest.TestCase
                     && exist("mapToCoords", "file")
                 bl_fcn(bl_fcn(:,1) == "fullwave",:) = []; 
             end            
-
+            % all functions must be added to the path somehow
+            kerns = extractBefore(bl_fcn{bl_fcn(:,1) == "ext", 2},"(");
+            if all(arrayfun(@(f)exist(f, 'file'), kerns))
+                bl_fcn(bl_fcn(:,1) == "ext",:) = []; 
+            end
             % filter by gpu compiler availability (system not available on thread pools)
             % (not quite working - seems the environment changes?)
             if ~isempty(argn(2, @system, "which nvcc"))
