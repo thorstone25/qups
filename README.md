@@ -27,7 +27,7 @@ This package can readily be used to develop new transducer array designs by spec
 - Performant:
     - Beamform a 1024 x 1024 image for 256 x 256 transmits/receives in < 2 seconds (RTX 3070)
     - Hardware acceleration via CUDA (Nvidia) or OpenCL (AMD, Apple, Intel, Nvidia), or natively via the [Parallel Computing Toolbox](https://www.mathworks.com/products/parallel-computing.html)
-    - Memory efficient classes and methods minimize data storage and computional load
+    - Memory efficient classes and methods such as separable beamforming delay and apodization ND-arrays minimize data storage and computational load
     - Batch simulations locally via [`parcluster`](https://www.mathworks.com/help/parallel-computing/parcluster.html) or scale to a cluster with the [MATLAB Parallel Server](https://www.mathworks.com/products/matlab-parallel-server.html) (optional) toolbox.
 
 - Modular:
@@ -38,14 +38,14 @@ This package can readily be used to develop new transducer array designs by spec
     - Export or import data between [USTB](https://www.ustb.no/) or [Verasonics](https://verasonics.com/vantage-advantage/) data structures
 
 - Intuitive:
-    - Native MATLAB semantics with tab auto-completion
+    - Native MATLAB semantics with [argument validation](https://www.mathworks.com/help/matlab/matlab_prog/function-argument-validation-1.html) and tab auto-completion
     - Overloaded `plot` and `imagesc` functions for data visualization
     - Documentation via `help` and `doc`
 
 
 ## Installation 
 ### MATLAB R2023b+ & git
-Starting in MATLAB R2023b+, QUPS and most of it's extension packages can be installed within MATLAB via [buildtool](https://www.mathworks.com/help/matlab/ref/buildtool.html) if you have setup [git for MATLAB](https://www.mathworks.com/help/matlab/matlab_prog/set-up-git-source-control.html).
+Starting in MATLAB R2023b+, QUPS and most of it's extension packages can be installed from within MATLAB via [buildtool](https://www.mathworks.com/help/matlab/ref/buildtool.html) if you have setup [git for MATLAB](https://www.mathworks.com/help/matlab/matlab_prog/set-up-git-source-control.html).
 1. Install qups
 ```
 gitclone("https://github.com/thorstone25/qups.git");
@@ -81,12 +81,12 @@ All extensions to QUPS are optional, but must be installed separately from their
 
 | Extension | Description | Installation Paths | Citation |
 | ------ | ------ | ------ | ---------- |
-| [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath path/to/fieldII`| [website](https://www.field-ii.dk/?background.html) |
-| [k-Wave](http://www.k-wave.org/index.php) | distributed medium simulator | `addpath path/to/kWave` | [website](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)  |
-| [kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources) | k-Wave transducer extension | `addpath path/to/kWaveArray` | [forum](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources), [paper](http://bug.medphys.ucl.ac.uk/papers/2019-Wise-JASA.pdf) |
-| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath path/to/MUST`| [website](https://www.biomecardio.com/MUST/documentation.html) |
-| [USTB](https://www.ustb.no/) | signal processing library and toolbox | `addpath path/to/USTB` | [website](https://www.ustb.no/citation/) |
-| [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md))| [website](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via MatCL) |
+| [FieldII](https://www.field-ii.dk/)   | point scatterer simulator | `addpath /path/to/fieldII`| [website](https://www.field-ii.dk/?background.html) |
+| [k-Wave](http://www.k-wave.org/index.php) | distributed medium simulator | `addpath /path/to/kWave` | [website](https://github.com/ucl-bug/k-wave?tab=readme-ov-file#license)  |
+| [kWaveArray](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources) | k-Wave transducer extension | `addpath /path/to/kWaveArray` | [forum](http://www.k-wave.org/forum/topic/alpha-version-of-kwavearray-off-grid-sources), [paper](http://bug.medphys.ucl.ac.uk/papers/2019-Wise-JASA.pdf) |
+| [MUST](https://www.biomecardio.com/MUST/documentation.html)  | point scatterer simulator | `addpath /path/to/MUST`| [website](https://www.biomecardio.com/MUST/documentation.html) |
+| [USTB](https://www.ustb.no/) | signal processing library and toolbox | `addpath /path/to/USTB` | [website](https://www.ustb.no/citation/) |
+| [Matlab-OpenCL](https://github.com/thorstone25/Matlab-OpenCL) | hardware acceleration | (see [README](https://github.com/thorstone25/Matlab-OpenCL/blob/main/README.md)) | [website](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via MatCL) |
 | [CUDA](https://docs.nvidia.com/cuda/cuda-quick-start-guide/index.html) | hardware acceleration | (see [CUDA Support](#cuda-support)) | |
 
 ## Quick Start
@@ -102,7 +102,7 @@ setup parallel CUDA cache; % setup the environment with any available accelerati
 3. Create an ultrasound system and point scatterer to simulate
 ```
 scat = Scatterers('pos', 1e-3*[0 0 30]'); % a single point scatterer at 20mm depth
-xdc = TransducerArray.L11_5v(); % simulate a Verasonics L11-5v transducer
+xdc = TransducerArray.P4_2v(); % simulate a Verasonics L11-5v transducer
 seq = Sequence('type', 'FSA', 'numPulse', xdc.numel); % full synthetic-aperture pulse sequence
 scan = ScanCartesian('x', 1e-3*[-10, 10], 'z', 1e-3*[25 35]); % set the image boundaries - we'll set the resolution later
 us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 4*xdc.fc); % create a system description
@@ -118,7 +118,7 @@ figure; plot(us); hold on; plot(scat, 'cx'); % plot the ultrasound system and th
 
 5. Simulate channel data
 ```
-chd = greens(us, scat); % create channel data using a shifted Green's function (OpenCL-enabled)
+chd = greens(us, scat); % create channel data using a shifted Green's function (CUDA/OpenCL-enabled)
 % chd = calc_scat_multi(us, scat); %  ... or with FieldII
 % chd = kspaceFirstOrder(us, scat); % ... or with k-Wave (CUDA-enabled)
 % chd = simus(us, scat); %            ... or with MUST   (CUDA-enabled)
@@ -126,9 +126,8 @@ chd = greens(us, scat); % create channel data using a shifted Green's function (
 ```
 6. Display the channel data 
 ```
-figure; imagesc(chd);
-colormap jet; colorbar;
-animate(chd.data);
+figure; imagesc(chd); dbr echo 60;
+animate(chd.data, 'loop', false, 'title', "Tx: "+(1:chd.M));
 ```
 ![](fig/README/channel_data.gif)
 
@@ -138,8 +137,7 @@ b = DAS(us, hilbert(chd));
 ```
 8. Display the B-mode image
 ```
-figure; imagesc(us.scan, b); % plot the image (in dB when b is complex)
-dbr b-mode 60; % ... with 60dB dynamic range
+figure; imagesc(us.scan, b); dbr b-mode 60;
 title('B-mode image');
 ```
 
@@ -169,17 +167,17 @@ If you use any of the extensions, please see their citation policies:
 * [USTB](https://www.ustb.no/citation/)
 
 ## Parallel Processing with External Packages
-Some QUPS methods, including most simulation and beamforming methods, can be parallelized natively by specifying a `parcluster` or launching a `parallel.ProcessPool` or a `parallel.ThreadPool`. However, restrictions apply. 
+Some QUPS methods, including most simulation and beamforming methods, can be parallelized natively by specifying a `parcluster` or launching a `parallel.ProcessPool` or  ideally a `parallel.ThreadPool`. However, restrictions apply. 
 
-Workers in a `parallel.ThreadPool` cannot call mex functions, use GUIs or user inputs, or perform any file operations (reading or writing). Workers in a `parallel.ProcessPool` or `parcluster` do not have these restrictions, but tend to be somewhat slower and require much more memory. All workers are subject to [race conditions](https://en.wikipedia.org/wiki/Race_condition). 
+Workers in a `parallel.ThreadPool` cannot call mex functions, use GUIs or user inputs, or perform any file operations (reading or writing) [before R2024a](https://www.mathworks.com/help/parallel-computing/release-notes.html#mw_c7230d70-f9e0-4600-8c6b-3e47ed5396c2). Workers in a `parallel.ProcessPool` or `parcluster` do not have these restrictions, but tend to be somewhat slower and require much more memory. All workers are subject to [race conditions](https://en.wikipedia.org/wiki/Race_condition). 
 
-Removing race conditions and inaccesible functions in the extension packages will enable native parallelization. The patches described below are applied automatically with the "patch" task via buildtool. Otherwise, you will need to apply the patches manually to enable parallelization.
+Removing race conditions and inaccesible functions in the extension packages will enable native parallelization. The patches described below are applied automatically with the "[patch](https://github.com/thorstone25/qups/edit/main/README.md#matlab-r2023b--git)" task via buildtool. Otherwise, you will need to apply the patches manually to enable parallelization.
 
 ### [FieldII](https://www.field-ii.dk/) 
 FieldII uses [mex](https://www.mathworks.com/help/matlab/call-mex-file-functions.html) functions for all calls, which requires file I/O. This **cannot** be used with a `parallel.ThreadPool`, but can easily be used with a `parallel.ProcessPool` or `parcluster`.
 
 ###  [k-Wave](http://www.k-wave.org/index.php) (with binaries)
-To enable simulating multiple transmits simultaneously using k-Wave binaries, the temporary filename race condition in `kspaceFirstOrder3DC.m` must be removed. 
+To enable simulating multiple transmits simultaneously using k-Wave binaries, the temporary filename race condition in `kspaceFirstOrder3DC.m` must be remedied. 
 Edit `kspaceFirstOrder3DC.m` and look for an expression setting the temporary folder `data_path = tempdir`. Replace this with `data_path = tempname; mkdir(data_path);` to create a new temporary directory for each worker. 
 You may also want to delete this folder after the temporary files are deleted. Record a variable `new_path = true;` if a new directory was created, and place `if new_path, rmdir(data_path); end` at the end of the function. Otherwise, the temporary drive is cleared when the system reboots.
 
