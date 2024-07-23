@@ -287,9 +287,9 @@ classdef ScanGeneric < Scan
         function set.wb(scan, b), scan.w = linspace(min(b), max(b), scan.nw); end
 
         % get step size - Inf for scalar axes, NaN if not regularly spaced
-        function d = get.du(scan), d = uniquetol(diff(scan.u)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.dv(scan), d = uniquetol(diff(scan.v)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.dw(scan), d = uniquetol(diff(scan.w)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.du(scan), d = uniquetol(diff(scan.u), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dv(scan), d = uniquetol(diff(scan.v), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dw(scan), d = uniquetol(diff(scan.w), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
         % set step size - preserve/expand the image bounds, but gaurantee
         % spacing - also gaurantee passes through zero

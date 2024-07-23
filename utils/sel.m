@@ -24,8 +24,10 @@ arguments
 end
 
 % create index axes for each dimension from ind
-i = arrayfun(@(I) {int32(1):I}, size(x)); % use int32 to save data?
-i{dim} = int32(1):size(ind, dim); % use dimensions of the indexing
+sz = size(x); % data size
+sz(dim) = size(ind,dim); % use dimensions of the indexing
+i = arrayfun(@(I) {(1):I}, sz); % use int32 to save data?
+if isa(x,'gpuArray') || isa(ind, 'gpuArray'), [i{:}] = dealfun(@gpuArray, i{:}); end % cast to GPU
 
 % expand grid to all dimensions in x (except dim)
 [i{:}] = ndgrid(i{:}); % implies [a, b, ...] = ndgrid(a, b, ...);

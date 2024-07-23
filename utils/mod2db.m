@@ -1,4 +1,4 @@
-function y = mod2db(x), y = mag2db(abs(x));
+function y = mod2db(x), if isinteger(x), x = double(x); end, y = mag2db(abs(x));
 % MOD2DB - modulus (magnitude) in dB
 %
 % y = mod2db(x) returns the modulus of x in dB. Underneath it calls the

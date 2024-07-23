@@ -431,6 +431,48 @@ classdef Waveform < matlab.mixin.Copyable
             end
             wv = Waveform('fun', f, 't0', this.t0 + that.t0, 'tend', this.tend + that.tend, 'fs', fs);
         end
+
+        function wv = conj(wv)
+            % CONJ - Conjugate the Waveform
+            % wv = conj(wv) conjugates the Waveform wv.
+            %
+            % Example:
+            % xdc = TransducerArray(); % default
+            % wv = xdc.xdcImpulse(); % impulse response
+            % wv.fs = 40*xdc.fc; % set sampling frequency @ ~10x Nyquist
+            % wvx = conv(wv, conj(reverse(wv))); % auto-correlation 
+            % 
+            % figure;
+            % nexttile(); plot(wv , '.-'); title('Impulse Response');
+            % nexttile(); plot(wvx, '.-'); title('Auto-correlation');
+            % 
+            % See also WAVEFORM.CONV WAVEFORM.REVERSE WAVEFORM.SAMPLE
+            arguments, wv (1,1) Waveform, end
+            [wv, f] = deal(copy(wv), wv.fun); % copy semantics / extract function
+            wv.fun = @(t) conj(f(t)); % conjugate
+        end
+
+        function wv = reverse(wv)
+            % REVERSE - Time reverse the Waveform
+            % wv = reverse(wv) reverses the time axis of the Waveform wv
+            % by reflection about t == 0.
+            %
+            % Example:
+            % xdc = TransducerArray(); % default
+            % wv = xdc.xdcImpulse(); % impulse response
+            % wv.fs = 40*xdc.fc; % set sampling frequency @ ~10x Nyquist
+            % wvx = conv(wv, conj(reverse(wv))); % auto-correlation 
+            % 
+            % figure;
+            % nexttile(); plot(wv , '.-'); title('Impulse Response');
+            % nexttile(); plot(wvx, '.-'); title('Auto-correlation');
+            % 
+            % See also WAVEFORM.CONV WAVEFORM.CONJ WAVEFORM.SAMPLE
+            arguments, wv (1,1) Waveform, end
+            [wv, f] = deal(copy(wv), wv.fun); % copy semantics / extract function
+            [wv.tend, wv.t0, wv.fun] = deal(-wv.t0, -wv.tend, @(t) f(-t)); % reverse
+        end
+
     end
     
     methods
@@ -464,7 +506,7 @@ classdef Waveform < matlab.mixin.Copyable
             %
             % wvtri = Waveform.Verasonics(TW, fc) creates a Waveform wvtri
             % of the voltage excitation signal from the transmit waveform
-            % struct TW and the central frequency in Hz fc.
+            % struct TW and the Transducer central frequency fc in Hz. 
             %
             % wvtri = Waveform.Verasonics(TW) where TW represents all
             % Parametric waveforms uses the frequency from the Parametric

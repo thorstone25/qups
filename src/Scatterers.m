@@ -299,7 +299,11 @@ classdef Scatterers < matlab.mixin.Copyable
 
             % plot
             plot_args = struct2nvpair(plot_args);
-            h = plot(axs, scat.pos(1,:), scat.pos(3,:), varargin{:}, plot_args{:});
+            if any(scat.pos(2,:))
+                h = plot3(axs, scat.pos(1,:), scat.pos(3,:), scat.pos(2,:), varargin{:}, plot_args{:});
+            else
+                h = plot( axs, scat.pos(1,:),                scat.pos(3,:), varargin{:}, plot_args{:});
+            end
         end        
     end
 

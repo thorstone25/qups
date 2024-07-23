@@ -64,6 +64,28 @@ classdef(TestTags = ["Github", "full", "build"]) interpTest < matlab.unittest.Te
     methods(TestMethodSetup)
         % Setup for each test
     end
+    methods
+        function setDev(test, dev)
+            import matlab.unittest.fixtures.TemporaryFolderFixture;
+            import matlab.unittest.fixtures.CurrentFolderFixture;
+
+            % Create a temporary folder and make it the current working folder.
+            tempFolder = test.applyFixture(TemporaryFolderFixture);
+            test.applyFixture(CurrentFolderFixture(tempFolder.Folder));
+
+            % The test can now write files to the current working folder.
+            switch class(dev)
+                case "double",                  dtype = "none";
+                case "parallel.gpu.CUDADevice", dtype = "gpu";  gpuDevice(dev.Index);
+                case "oclDevice",               dtype = "ocl";  oclDevice(dev.Index);
+            end
+            odevs = setdiff(["gpu", "ocl"], dtype);
+            for odev = odevs
+                localwritelines("function n = "+odev+"DeviceCount(), n = 0;", odev+"DeviceCount.m");
+                test.addTeardown(@()delete(fullfile(pwd, odev+"DeviceCount.m")));
+            end
+        end
+    end
     properties(TestParameter)
         % all permutations to test
         % ord = {[1,2,3,4], [1,3,2,4], [1,4,2,3]} % permute the data?

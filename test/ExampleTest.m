@@ -53,14 +53,16 @@ classdef ExampleTest < matlab.unittest.TestCase
                 ... "bfAdjoint", ... QUPS (RAM)
                 'kWave',    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave (still too large)
                 'USTB',     ["QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern], ... USTB
-                'FieldII',  "calc_scat"+["","_all", "_multi"], ... FieldII
+                'FieldII',  ["calc_scat"+["","_all", "_multi"], "getFieldII"+["Aperture","Patches","Positions"]], ... FieldII
                 'MUST',     "simus", ... MUST
                 'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
                 'mex',      ["bfEikonal", "msfm"+["","2d","3d"]], ... mex binaries required ... compilation (optional, requires CUDA)
-                'gpu',            "wbilerpg", ... CUDAKernel or oclKernel support required
-                'comp',     ("recompile" + ["","Mex","CUDA"]) ... compilations setup required
+                'gpu',      ["wbilerpg","feval"], ... CUDAKernel or oclKernel support required
+                'comp',     ("recompile" + ["","Mex","CUDA"]), ... compilations setup required
+                'ext',      "vol3d", ... external functions
                 }, 2, [])'; % + "(";
-            
+            bl_fcn(:,2) = cellfun(@(s){s+"("}, bl_fcn(:,2)); % append "("
+
             % reference or load Qups.prj if not loaded
             prj_rt = fullfile(mfilename("fullpath"),".."); % Qups directory
             try
@@ -87,12 +89,12 @@ classdef ExampleTest < matlab.unittest.TestCase
             bl_fcn(i,:) = []; % Remove from blacklist if the project is installed.
 
             % filter by available binaries
-            kerns = ("wbilerp")+".ptx"; % require GPU binaries
+            kerns = ("wbilerp")+".ptx"; % require GPU binaries (pre-compiled)
             if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "gpu",:) = []; 
             end
             kerns = ["msfm2d", "msfm3d"]+"."+mexext; % require mex binaries
-            if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
+            if 1||all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "mex",:) = []; 
             end
             % fullwave executable must exist in 'bin' folder under this name
@@ -101,12 +103,16 @@ classdef ExampleTest < matlab.unittest.TestCase
                     && exist("mapToCoords", "file")
                 bl_fcn(bl_fcn(:,1) == "fullwave",:) = []; 
             end            
-
+            % all functions must be added to the path somehow
+            kerns = extractBefore(bl_fcn{bl_fcn(:,1) == "ext", 2},"(");
+            if all(arrayfun(@(f)exist(f, 'file'), kerns))
+                bl_fcn(bl_fcn(:,1) == "ext",:) = []; 
+            end
             % filter by gpu compiler availability (system not available on thread pools)
             % (not quite working - seems the environment changes?)
-            % if ~isempty(argn(2, @system, "which nvcc"))
-                % bl_fcn(bl_fcn(:,1) == "comp",:) = [];
-            % end
+            if ~isempty(argn(2, @system, "which nvcc")) && ~isempty(mex.getCompilerConfigurations("C++"))
+                bl_fcn(bl_fcn(:,1) == "comp",:) = [];
+            end
         end
         function bl_file = generateBlacklistFiles()
             bl_file = [ ...
@@ -119,10 +125,7 @@ classdef ExampleTest < matlab.unittest.TestCase
     methods
         function filterBlacklist(test, code, blk, fls)
             % check for blacklisted variables or functions
-            for i = length(test.bl_fcn(:,1)):-1:1
-                m(:,i) = contains(code, test.bl_fcn{i,2} + "("); % lines x pcks
-            end
-            m   = [m    , contains(code, test.bl_var)]; % lines x (pcks+1)
+            m = cell2mat(cellfun(@(s) {contains(code, s)}, [test.bl_fcn(:,2); {test.bl_var}]')); % lines x (pcks+1)
             pkg = [string(test.bl_fcn(:,1))', "var"]; % packages
             l = any(m,2); % matching lines
             p = any(m,1); % matching packages
@@ -130,7 +133,7 @@ classdef ExampleTest < matlab.unittest.TestCase
                 join(rmmissing([ ...
                 "[blacklist] Filtering lines " + join(string(blk([1 end])),"-") + " in file " + fls + "." ...
                 ,"Matching line(s):" + newline + join(code(l), newline) ...
-                ,"Matching packages: " + join(string(pkg(p)), ", ") ...
+                ,"Matching packages: " + join(string(pkg(1,p)), ", ") ...
                 ]), newline));
         end
         function silenceAcceptableWarnings(testCase)

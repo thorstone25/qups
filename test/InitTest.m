@@ -50,7 +50,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
             [xdcs.origin] = deal([0 0 -10e-3]); % offset (to be deprecated?)
             [xdcs.rot] = deal([20 -10]); % offset (to be deprecated?)
-
+            for i =1:2, xdcs(i).kerf = 2*xdcs(i).kerf; end % can modify kerf (Array, Convex)
         end
         function initseq(test)
             % INITSEQ - Assert that Sequence constructors initialize
@@ -172,6 +172,11 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             wv = Waveform("fun"    , f, "t0", t(1), "dt", dt  , "tend",t(end));
             wv = Waveform("fun"    , f, "t0", t(1), "fs", 1/dt, "tend",t(end));
 
+            % if sampled, support resampling
+            wv = Waveform("samples", x, "t",  t);
+            wv.samples = x.*x;
+            
+
             scale(wv, 'time', 1e6); % supports scaling
             obj2struct(wv); % supports specialized struct conversion
             plot(wv); % supports plot
@@ -181,7 +186,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITCHD - Assert that a ChannelData constructor initializes
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            chd = ChannelData(), %#ok<NOPRT> implicit display
+            chd = ChannelData('data',0), %#ok<NOPRT> implicit display
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
             arrayfun(@obj2struct, chd, 'UniformOutput', false); % supports specialized struct conversion
@@ -223,12 +228,15 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             us.xdc; % should be same
             usb = copy(us); usb.rx = copy(usb.tx); % switch to bistatic aperture
             for us = [us usb]
+            for seq = [Sequence('type', 'FSA'), SequenceRadial('type', 'PW'), Sequence('type','FC','focus',[0 0 us.lambda*100]')]
+                us.seq = seq; 
                 scale(us, "dist",1e3, "time",1e6);
                 plot(us); % supports plotting
                 s = obj2struct(us);
                 flds = intersect(["tx","rx","xdc","seq","scan"], fieldnames(s)); % class properties
                 arrayfun(@(p) test.assertThat(s.(p), IsInstanceOf('struct')), flds); % sub-class conversion worked
                 test.assertSize(us.fc, [1 1], "The 'fc' property should be scalar for identical frequency transducers.")
+            end
             end
             test.assertError(@() usb.xdc, "QUPS:UltrasoundSystem:ambiguousTransducer")
 

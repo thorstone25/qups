@@ -55,21 +55,18 @@ kernel void DAS(volatile global T2 * y,
     const global U4 * pi, const global U4 * pr,
     const global U4 * pv, const global U4 * nv, 
     const global T2 * a,  const global V  * cinv, const global ulong * acstride, 
-    const global T2 * x, const int flag, const global V t0fsfc[2]) {
+    const global T2 * x,  const global V fsfc[2]) {
     
     // unpack inputs
-    #ifndef QUPS_BF_FLAG
-    const int QUPS_BF_FLAG = flag; // set only if not fixed at compile time
-    #endif
-    // const V t0   = t0fsfc[0]; // start time
-    const V fs   = t0fsfc[0]; // sampling frequency
-    const V fc   = t0fsfc[1]; // modulation frequency
-    const global ulong * astride = acstride;
-    const global ulong * cstride = acstride + 5;
+    const V fs = fsfc[0]; // sampling frequency
+    const V fc = fsfc[1]; // modulation frequency
+    const global ulong * cstride = acstride;
+    const global ulong * astride = acstride + 6;
 
     // rename for readability
-    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I;
+    const size_t N = QUPS_N, M = QUPS_M, T = QUPS_T, I = QUPS_I, S = QUPS_S;
     const size_t I1 = QUPS_I1, I2 = QUPS_I2, I3 = QUPS_I3;
+    const int flag = QUPS_BF_FLAG; // if fixed at compile time
         
     // get starting index of this pixel
     const size_t tid = get_global_id(0); // pixel index
@@ -88,7 +85,6 @@ kernel void DAS(volatile global T2 * y,
         const size_t i1 = (i             % QUPS_I1); // index in I1
         const size_t i2 = (i /  QUPS_I1) % QUPS_I2 ; // index in I2
         const size_t i3 = (i / (I1 * I2) % QUPS_I3); // index in I3
-        const size_t abase = i1 * astride[0] + i2 * astride[1] + i3 * astride[2]; // base index for this pixel
         const size_t cbase = i1 * cstride[0] + i2 * cstride[1] + i3 * cstride[2]; // base index for this pixel
 
         // reset accumulator
@@ -96,6 +92,9 @@ kernel void DAS(volatile global T2 * y,
 
         for(size_t m = 0; m < M; ++m){
             for(size_t n = 0; n < N; ++n){
+                // set element index
+                const size_t nm = (flag & 32) ? (m + n * M) : (n + m * N);
+
                 // 2-way virtual path distance
                 // const U3 pvm = {pv[m].x,pv[m].y,pv[m].z}; // declared for MSVC (2019)
                 rv.xyz = pi[i].xyz - pv[m].xyz; // (virtual) transmit to pixel vector
@@ -114,25 +113,31 @@ kernel void DAS(volatile global T2 * y,
                 if (fc) {w.x = cospi(2*fc*tau); w.y = sinpi(2*fc*tau);}
 
                 // sample the trace
-                val = sample(&x[(n + m * N) * T], tau * fs, flag & 7, zero_v); // out of bounds: extrap 0
+                val = cmul(w, sample(&x[nm * T], tau * fs, flag & 7, zero_v)); // out of bounds: extrap 0
                 // const int t = (int) (tau * fs);
                 // val = (0 <= t & t < T) ? x[(size_t) (t + (n + m * N) * T)] : zero_v;
 
                 // apply apodization (requires complex multiplication)
-                val = cmul(val, cmul(w, a[abase + n * astride[3] + m * astride[4]]));
+                #pragma unroll
+                for (int s=0; s < QUPS_S; ++s) // each apodization array
+                    val = cmul(val, a[ astride[5+6*s] // base offset
+                        + i1 * astride[0+6*s] + i2 * astride[1+6*s] + i3 * astride[2+6*s] // pixel stride
+                        +  n * astride[3+6*s] +  m * astride[4+6*s] // rx/tx stride
+                    ]); // base index for this pixel
+                
 
                 // choose the accumulation
-                const int sflag = ((int)QUPS_BF_FLAG) & 24; // extract bits 5,4
+                const int sflag = flag & 24; // extract bits 5,4
                 if(sflag == 8)
                     y[i + n*I] += val; // sum over tx, store over rx
                 else if (sflag == 16)
                     y[i + m*I] += val; // sum over rx, store over tx
                 else if (sflag == 24)
-                    y[i + n*I + m*N*I] = val; // store over tx/rx
+                    y[i + nm*I] = val; // store over tx/rx
                 else
                     pix += val; // sum over all
             }
         }
-        if (!(((int)QUPS_BF_FLAG) & 24)) y[i] = pix; // output value here if accumulating over all
+        if (!(flag & 24)) y[i] = pix; // output value here if accumulating over all
     }
 }

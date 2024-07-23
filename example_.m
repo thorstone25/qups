@@ -21,13 +21,14 @@
 % * Filter, downmix (demodulate), downsample (decimate), and resample channel 
 % data
 % * Define arbitrary apodization schemes across transmits, receives, and pixels, 
-% jointly
+% jointly or separably
 % * Beamform using traditional delay-and-sum, eikonal delays (via the FMM toolbox), 
 % an adjoint matrix method, or Stolt's migration
-% * Focus FSA data to some pulse sequence, or retrospectively refocus data back 
+% * Focus FSA data to some pulse sequence, or retrospectively REFoCUS data back 
 % to FSA
 % * Compute coherence based images with techniques including SLSC, DMAS, and 
 % coherence factor
+% * Import Verasonics Vantage data structures
 %% 
 % Please submit issues, feature requests or documentation requests via <https://github.com/thorstone25/qups/issues 
 % github>!
@@ -50,8 +51,8 @@ if isempty(prj) % if none-loaded ...
 end
 
 % CUDA hardware acceleration
-gpu = logical(gpuDeviceCount()); % set to false to remain on the cpu
-if gpu && ~ismac, setup CUDA; end % add default CUDA installation paths on Linux / Windows devices
+gpu = ~ismac && canUseGPU(); % set to false to remain on the cpu
+if gpu, setup CUDA; end % add default CUDA installation paths on Linux / Windows devices
 
 % OpenCL hardware acceleration if Matlab-OpenCL is installed
 if exist('oclDeviceCount', 'file') && oclDeviceCount()
@@ -76,13 +77,10 @@ switch "grid"
         target_depth = 1e-3 * 30;
         scat = Scatterers('pos', [0;0;target_depth], 'c0', 1500); % simple point target
     case 'grid'  
-        [~, px, py, pz] = ndgrid(0, -10:5:10, 0, 20:10:40); % grid in each axes
-        ps = [px; py; pz]; % form a grid of point targets
-        scat = Scatterers('pos', 1e-3 * ps(:,:), 'c0', 1500); % targets every 5mm
+        scat = Scatterers.Grid([5 1 5], 5e-3, [0 0 30e-3], 'c0', 1500); % form a grid of point targets every 5mm centered at (0,30) mm
     case 'diffuse', N = 1000; % number of random scatterers
-        sz = 1e-3*[40;10;60]; % rectangular region size
-        cen = [true;true;false]; % uniform distribution offset
-        scat = Scatterers('pos', sz.*(rand([3,N]) - 0.5*cen), 'amp', rand([1,N]), 'c0', 1500); % diffuse scattering
+        grd = ScanCartesian('x', 1e-3*[-20 20], 'y', 1e-3*[-5 5], 'z', 1e-3*[0 60]); % rectangular region size
+        scat = Scatterers.Diffuse(grd, N, 0, "c0", 1500); % diffuse scattering
 end
 % Choose a Transducer
 
@@ -93,18 +91,19 @@ switch "P4-2v"
     case 'C5-2v' , xdc = TransducerConvex.C5_2v();  % convex array
     case 'PO192O', xdc = TransducerMatrix.PO192O(); % matrix array
 end
+M = xdc.numel;
 % Define the Simulation Region
 
 if isa(xdc, 'TransducerMatrix')
-    tscan = ScanCartesian('x', 1e-3*(-10 : 1/16 : 10), 'z', 1e-3*(-5 : 1/16 : 50)); 
-    tscan.y = tscan.x; % 3D grid
+    grd = ScanCartesian('x', 1e-3*(-10 : 1/16 : 10), 'z', 1e-3*(-5 : 1/16 : 50)); 
+    grd.y = grd.x; % 3D grid
 else
-    tscan = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60)); % 2D grid
-    tscan.y = 0; % 2D grid
+    grd = ScanCartesian('x', 1e-3*(-50 : 1/16 : 50), 'z', 1e-3*(-20 : 1/16 : 60)); % 2D grid
+    grd.y = 0; % 2D grid
 end
 
 % point per wavelength - aim for >2 for a simulation
-ppw = scat.c0 / xdc.fc / min([tscan.dx, tscan.dy, tscan.dz], [], 'omitnan'); 
+ppw = scat.c0 / xdc.fc / min([grd.dx, grd.dy, grd.dz], [], 'omitnan'); 
 
 % Define the Transmit  Pulse Sequence
 
@@ -123,9 +122,10 @@ switch "FSA"
 %% 
 % Focused pulses:
 
-        zf = 60 ; xf = linspace( -10 ,  10 , 11 ); % Focused (VS) Sequence  
-        pf = 1e-3*([1,0,0]'.*xf + [0,0,zf]');
-        seq = Sequence('type', 'FC', 'focus', pf);
+        zf = 60 ; Nel = 16; % Focused (FC) Sequence  
+        apd = apWalking(Nel, M); % Walking aperture weights
+        pf = xdc.focActive(apd, zf); % Focused transmit locations
+        seq = Sequence('type', 'FC', 'focus', pf); % Focused (FC) sequence
     case 'Sector'
         
 %% 
@@ -183,7 +183,7 @@ rho0 = 1000;
 
 % make a scatterer, if not diffuse
 if scat.numScat < 500
-    s_rad = max([tscan.dx,tscan.dy,tscan.dz],[],'omitnan'); % scatterer radius
+    s_rad = max([grd.dx,grd.dy,grd.dz],[],'omitnan'); % scatterer radius
     ifun = @(p) any(vecnorm(p - swapdim(scat.pos,2,5),2,1) < s_rad, 5); % finds all points within scatterer radius
     med = Medium('c0', scat.c0, 'rho0', rho0, 'pertreg', {{ifun, [scat.c0, rho0*2]'}});
 else
@@ -203,7 +203,7 @@ if false, figure; plot(seq.pulse, '.-'); title('Transmit signal'); end
 figure; hold on; title('Geometry');
 
 % plot the medium
-imagesc(med, tscan, 'props', "c"); colorbar; % show the background medium for the simulation/imaging region
+imagesc(med, grd, 'props', "c"); colorbar; % show the background medium for the simulation/imaging region
 
 % Construct an UltrasoundSystem object, combining all of these properties
 fs = single(ceil(2.5*xdc.bw(end)/1e6)*1e6);
@@ -236,7 +236,7 @@ switch "Greens"
                     chd0 = calc_scat_multi(us, scat); % use FieldII to simulate sequence directly
     case 'SIMUS',   us.fs = 4 * us.fc; % to address a bug in early versions of MUST where fs must be a ~factor~ of 4 * us.fc
                     chd0 = simus(us, scat, 'periods', 1, 'dims', 3); % use MUST: note that we have to use a tone burst or LFM chirp, not seq.pulse
-    case 'kWave',   chd0 = kspaceFirstOrder(us, med, tscan, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
+    case 'kWave',   chd0 = kspaceFirstOrder(us, med, grd, 'CFL_max', 0.5, 'PML', [64 128], 'parenv', 0, 'PlotSim', true); % run locally, and use an FFT friendly PML size
 end
 toc; 
 chd0
@@ -308,30 +308,31 @@ end
 % Aperture Growth / Acceptance Angle <- Use either of these with any sequence 
 % to improve SNR throughtou the image
 
-apod = 1;
-if false, apod = apod .* apMultiline(us); end
-if false, apod = apod .* apScanline(us); end
-if false, apod = apod .* apTranslatingAperture(us, 32*scl); end
-if false, apod = apod .* apApertureGrowth(us, 2); end
-if false, apod = apod .* apAcceptanceAngle(us, 50); end
+apod = cell(1,0);
+if false, apod{end+1} = apMultiline(us); end
+if false, apod{end+1} = apScanline(us); end
+if false, apod{end+1} = apTxParallelogram(us, us.seq.angles, [-5 5]); end
+if false, apod{end+1} = apTranslatingAperture(us, 32*scl); end
+if false, apod{end+1} = apApertureGrowth(us, 2); end
+if false, apod{end+1} = apAcceptanceAngle(us, 50); end
 
 %% 
 % Choose a beamforming method
 
-bf_args = {'apod', apod, 'fmod', fmod}; % arguments for all beamformers
+bf_args = {'fmod', fmod}; % arguments for all beamformers
 bscan = us.scan; % default b-mode image scan
 switch "DAS"
     case "DAS-direct"
-        b = DAS(      us, chd, bf_args{:}); % use a specialized delay-and-sum beamformer
+        b = DAS(      us, chd, apod{:}, bf_args{:}); % use a specialized delay-and-sum beamformer
     case "DAS"
-        b = bfDAS(    us, chd, bf_args{:}); % use a generic delay-and-sum beamformer
+        b = bfDAS(    us, chd, apod{:}, bf_args{:}); % use a generic delay-and-sum beamformer
     case "DASLUT"
-        [~, tau_rx, tau_tx] = bfDAS(us, chd, 'delay_only', true); % pre-compute delays
-        b = bfDASLUT( us, chd, tau_rx, tau_tx, bf_args{:}); % use a look-up table with pre-computed delays
+        [~, tau_rx, tau_tx] = bfDAS(us, chd, apod{:}, 'delay_only', true); % pre-compute delays
+        b = bfDASLUT( us, chd, tau_rx, tau_tx, apod{:}, bf_args{:}); % use a look-up table with pre-computed delays
     case "Adjoint"
-        b = bfAdjoint(us, chd, bf_args{:}, 'fthresh', -20); % use an adjoint matrix method, top 20dB frequencies only
+        b = bfAdjoint(us, chd, apod{:}, bf_args{:}, 'fthresh', -20); % use an adjoint matrix method, top 20dB frequencies only
     case "Eikonal"
-        b = bfEikonal(us, chd, med, tscan, bf_args{:}); % use the eikonal equation
+        b = bfEikonal(us, chd, apod{:}, med, grd, bf_args{:}); % use the eikonal equation
     case "Migration"
         % Stolt's f-k Migrartion (no apodization accepted)
         % NOTE: this function works best with small-angle (< 10 deg) plane waves

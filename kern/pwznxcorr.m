@@ -1,4 +1,4 @@
-function y = pwznxcorr(x, lags, W, kwargs)
+function y = pwznxcorr(x, lags, W, U, kwargs)
 % PWZNXCORR - Pair-wise Windowed Zero-Normalized Cross-Correlation 
 % 
 % y = PWZNXCORR(x, lags) correlates pairs of channels in the ND-array x
@@ -29,6 +29,11 @@ function y = pwznxcorr(x, lags, W, kwargs)
 % non-scalar across the channel dimension, adjacent channels are used up to
 % the size of w in that dimension. The weights may be non-scalar only in
 % the time and channel dimensions.
+% 
+% y = PWZNXCORR(x, L, w, U) or y = PWZNXCORR(x, lags, w, U) upsamples the
+% comparison signal `v` by a factor U using 'pchip' interpolation prior to
+% computing the discrete lag. The lags are then scaled by 1/U. The default
+% is 1.
 % 
 % y = PWZNXCORR(..., 'zero', true) debiases the windowed vectors u and v
 % such that sum(u) == sum(v) == 0. The default is true.
@@ -115,6 +120,7 @@ arguments
     x {mustBeNumeric, mustBeFloat} % data
     lags (1,:) double {mustBeInteger, mustBeFinite} % lags
     W {mustBeNumeric} = max([ceil(max(abs(lags)) / 2), 1]) % window size or weighting vector
+    U (1,1) double {mustBeInteger, mustBePositive} = 1 % upsampling ratio
     kwargs.pad (1,1) logical  = true; % whether to zero-pad the data prior to correlation
     kwargs.zero (1,1) logical = true; % whether to 0-mean the data
     kwargs.norm (1,1) logical = true; % whether to normalize the data
@@ -129,7 +135,7 @@ end
 x0 = kwargs.x0; 
 
 % verify that w/W operates in the correct dimensions
-wsz = size(W);
+wsz = size(W,1:max(kwargs.tdim, kwargs.ndim));
 if any(wsz(setdiff(1:numel(wsz),[kwargs.tdim, kwargs.ndim])) ~= 1)
     error("QUPS:pwznxcorr:incompatibleWeightSize", ...
         "The filter weights w must be scalar in all dimensions except time (" ...
@@ -199,6 +205,11 @@ CEN  = kwargs.zero; % 0-mean
 NORM = kwargs.norm; % normalization
 tdim = kwargs.tdim; % operation dimension
 
+% upsample
+if U > 1, [xr, tr] = resample(xr, 1:size(xr,tdim), U, 'spline', 'Dimension', tdim); end
+T = size(xr, tdim);  % time samples
+assert(numel(1:U:T) == size(xl, tdim), "Sizing mismatch - this is a bug.");
+
 % normalization (with centering) for the left channels
 if CEN,  xlz = xl - kernfun(xl); else,  xlz = xl; end 
 if NORM, xln = kernfun(real(xlz .* conj(xlz))); end % normalization power
@@ -211,6 +222,9 @@ for i = numel(lags) : -1 : 1
     
     % delay right channel by lag
     xr_l = conj(circshift(xr, -lag, tdim));
+
+    % select portion
+    if U > 1, xr_l = sub(xr_l, 1:U:T, tdim); end
 
     % mean centering for Z(N)CC
     if CEN, xrz_l = xr_l - kernfun(xr_l); %   0-centered
@@ -226,7 +240,7 @@ for i = numel(lags) : -1 : 1
         xrn_l = kernfun(real(xrz_l .* conj(xrz_l)));
 
         % normalization denominator - complex for (garbage) negative amplitudes
-        r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)); % denom
+        r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)) .* sqrt(wsz(kwargs.ndim)) ; % denom
 
         % normalize
         y = y ./ r;

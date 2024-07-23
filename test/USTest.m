@@ -145,7 +145,7 @@ classdef USTest < matlab.unittest.TestCase
                     zero2nan = @(x) x.*(x./x); % HACK
                     dp = min(arrayfun(@(ap) min(zero2nan(vecnorm(ap.positions - swapdim(ap.positions,2,3),2,1)),[],'all','omitnan'), [us.tx, us.rx])); % min element spacing
                     grid = ScanCartesian('x', pb(1,:),'z',pb(3,:),'y',pb(2,:));
-                    [grid.dx, grid.dy, grid.dz] = deal(min([us.lambda, dp])/4),
+                    [grid.dx, grid.dy, grid.dz] = deal(min([us.lambda, dp])/4);
                     us.scan = grid; % same
                     med = Medium("c0",scat.c0);
                     med.pertreg{1} = {@(p)argmin(vecnorm(p - scat.pos,2,1)), [scat.c0, 2*med.rho0]}; % point target
@@ -227,48 +227,55 @@ classdef USTest < matlab.unittest.TestCase
                         if us.seq.type ~= "PW" || ~any(arrayfun(@(s)isa(us.seq.xdc,s), "Transducer"+["Array","Matrix"]))
                             return; % incompatible - should draw an error
                         else
-                            [b, bscan] = beamformer(us,chd,'apod',a); % works
+                            [b, bscan] = beamformer(us,chd); % works
                             b = test.assertWarning(@() beamformer(us,chd), ...
                                 "QUPS:bfMigration:artefacts"); % draw a warning for no second output
                         end
                     case "bfEikonal" % fsa only, grid
                         if us.seq.type ~= "FSA", return; end % compatibility
                         if nnz(grid.size > 1) == 3, return; end % segfaults in 3D
-                        b = beamformer(us,chd,Medium(),grid,'apod',a);
+                        b = beamformer(us,chd,Medium(),grid,a);
                         [~, tn, tm] = beamformer(us); % should work too
                         test.assertWarning(@()beamformer(us), ... why would you even ...
                             "QUPS:bfEikonal:"+["unexpectedOutput","emptyChannelData"]);
 
                     case "bfDASLUT"
                         [~, tn, tm] = bfDAS(us, 'delay_only', true); % should draw empty chd default
-                        b = beamformer(us, chd, tn, tm,'apod', a); % works
+                        b = beamformer(us, chd, tn, tm, a); % works
                         if us.seq.type == "FSA" && chd.N == chd.mag2db
-                            b = beamformer(us,chd,tn ,'apod',a); % shoudl work too
+                            b = beamformer(us,chd,tn ,a); % shoudl work too
                         end
 
                         % fail if any dim is sub-indexed wrong
                         dn = find(size(tn) > 2);
                         dm = find(size(tm) > 2);
                         for d = dn(:)'
-                            test.assertError(@()beamformer(us,chd,sub(tn,1:2,d),tm,'apod',a), ...
+                            test.assertError(@()beamformer(us,chd,sub(tn,1:2,d),tm,a), ...
                                 "QUPS:UltrasoundSystem:bfDASLUT:incompatibleReceiveDelayTable" ...
                                 ); % bad sizing on rx
                         end
                         for d = dm(:)'
-                            test.assertError(@()beamformer(us,chd,tn, sub(tm,1:2,d),'apod',a), ...
+                            test.assertError(@()beamformer(us,chd,tn, sub(tm,1:2,d),a), ...
                                 "QUPS:UltrasoundSystem:bfDASLUT:incompatibleTransmitDelayTable" ...
                                 ); % bad sizing on tx
                         end
                         % fail if chd changes size
-                        test.assertError(@()beamformer(us,[chd, subD(chd,1:2,chd.ndim)],tn,tm,'apod',a), ...
+                        test.assertError(@()beamformer(us,[chd, subD(chd,1:2,chd.ndim)],tn,tm,a), ...
                             "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueReceiverSize" ...
                             ); % bad sizing on rx
-                        test.assertError(@()beamformer(us,[chd, subD(chd,1:2,chd.mdim)],tn,tm,'apod',a), ...
+                        test.assertError(@()beamformer(us,[chd, subD(chd,1:2,chd.mdim)],tn,tm,a), ...
                             "QUPS:UltrasoundSystem:bfDASLUT:nonUniqueTransmitSize" ...
                             ); % bad sizing on tx
-
+                    case "DAS"
+                        if canUseGPU(), d = [0 gpuDevice().Index]; else, d = 0; end
+                        for d = d
+                            b = beamformer(us,chd,a, 'device',d);
+                            b = beamformer(us,chd,a, 'device',d,'keep_tx',1);
+                            b = beamformer(us,chd,a, 'device',d,'keep_rx',1);
+                            b = beamformer(us,chd,a, 'device',d,'keep_tx',1,'keep_rx',1);
+                        end
                     otherwise
-                        b = beamformer(us,chd,'apod',a);
+                        b = beamformer(us,chd,a);
                 end
             end
 
@@ -331,13 +338,13 @@ classdef USTest < matlab.unittest.TestCase
                     if nnz(grid.size > 1) == 3, return; end % segfaults in 3D
                     for j = 1:size(asz,1)
                         a = randn(asz(j,:),'single');
-                        b = beamformer(us,chd,Medium(),grid,'apod',a);
+                        b = beamformer(us,chd,Medium(),grid,a);
                     end
                 case "bfDASLUT"
                     [~, tn, tm] = bfDAS(us, chd, 'delay_only',true);
                     for j = 1:size(asz,1)
                         a = randn(asz(j,:),'single');
-                        b = beamformer(us,chd,tn,tm,'apod',a);
+                        b = beamformer(us,chd,tn,tm,a);
                     end
                 case "bfAdjoint"
                     s = asz == 1; % apd scalar
@@ -345,12 +352,12 @@ classdef USTest < matlab.unittest.TestCase
                     asz(~i,:) = []; % delete invalid
                     for j = 1:size(asz,1)
                         a = randn(asz(j,:),'single');
-                        b = beamformer(us,chd,'apod',a);
+                        b = beamformer(us,chd,a);
                     end
                 otherwise
                     for j = 1:size(asz,1)
                         a = randn(asz(j,:),'single');
-                        b = beamformer(us,chd,'apod',a);
+                        b = beamformer(us,chd,a);
                     end
             end
             end

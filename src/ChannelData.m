@@ -36,7 +36,7 @@
 classdef ChannelData < matlab.mixin.Copyable
 
     properties
-        data    % channel data (T x N x M x F x ...)
+        data = zeros(0,0,0) % channel data (T x N x M x F x ...)
         t0 = 0  % start time (1 x 1 x [1|M] x [1|F] x ...)
         fs = 1  % sampling frequency (scalar)
     end
@@ -144,9 +144,9 @@ classdef ChannelData < matlab.mixin.Copyable
             end
             chd = copy(chd);
             if isfield(kwargs, 'time')
-                w = kwargs.time;
-                % scale time (e.g. s -> us / Hz -> MHz)
-                [chd.fs, chd.t0] = deal(chd.fs/w, w*chd.t0);
+                w = kwargs.time; % scale time (e.g. s -> us / Hz -> MHz)
+                [chd.fs] = dealfun(@(fs) fs / w, chd.fs);
+                [chd.t0] = dealfun(@(t0) t0 * w, chd.t0);
             end
         end
         
@@ -261,7 +261,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % returns an array the sample modes for each buffer.
             %
             % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
-            % frames. The default is unique([Receive.framenum]).
+            % frames. f = [] imports all frames of the RcvData within the
+            % matching buffer. The default is unique([Receive.framenum]).
             %
             % [...] = ChannelData.Verasonics(..., 'buffer', b) specfies
             % the buffer indices b corresponding to each element of
@@ -295,7 +296,8 @@ classdef ChannelData < matlab.mixin.Copyable
             for i = B:-1:1
                 % get relevant receive info
                 b = kwargs.buffer(i);
-                Rx = Receive((b == [Receive.bufnum]) & ismember([Receive.framenum], kwargs.frames)); % filter by buffer and frame
+                Rx = Receive((b == [Receive.bufnum])); % filter by buffer and frame
+                if any(kwargs.frames), Rx = Rx(ismember([Receive.framenum], kwargs.frames)); end
                 if isempty(Rx) 
                     warning("No data found for buffer " + kwargs.buffer(i) + "."); 
                     [smode(i), fmod(i), chd(i)] = deal("N/A", nan, ChannelData('order','TMNF'));
@@ -347,7 +349,10 @@ classdef ChannelData < matlab.mixin.Copyable
 
                 % load data (time x acq x channel x frame)
                 if ~isempty(RcvData)
-                    x = RcvData{i}(j,:,fr); % only extract the filled portion
+                    % only extract the filled portion
+                    if any(kwargs.frames), x = RcvData{i}(j,:,fr); 
+                    else                 , x = RcvData{i}(j,:,: ); 
+                    end
                 else
                     % guess the number of channels this Vantage system has
                     if isempty(Trans) 
@@ -516,6 +521,46 @@ classdef ChannelData < matlab.mixin.Copyable
 
     % math overloads
     methods
+        function chd = mtimes(a, b)
+            % MTIMES - Matrix multiply ChannelData
+            %
+            % chd * A right multiplies the ChannelData chd by the matrix A
+            % along the transmit dimension. The matrix A and the underlying
+            % data of chd must be  supported by pagemtimes
+            % 
+            % A * chd left multiplies the matrix A by the 1st dimension of
+            % the ChannelData chd e.g. the time dimension if 
+            % chd.order(1) == 'T'. Use ChannelData.swapdimD to change the
+            % first dimension.
+            % 
+            % Example:
+            % chd = ChannelData('data', rand([16,8,4,2],'single'));
+            % 
+            % % Right multiply for tx encoding/decoding
+            % chd * hadamard(chd.M), % hadamard encoding/decoding
+            % 
+            % % Left multiply to apply to first dimension (Time by default)
+            % assert(chd.order(1) == 'T'); % ensure time axes is 1st
+            % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
+            % H' * chd % apply 
+            % 
+            % % Sparse left multiplication is supported
+            % sparse(H)' * doubleT(chd) % (sparse multiplication requires double type)
+            % 
+            % % Swap dimensions to apply hadamard over rx
+            % hadamard(chd.N) * swapdimD(chd, chd.ndim, 1)
+            % 
+            % See also pagemtimes ChannelData.times ChannelData.swapdimD
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
+                chd.data = reshape(pagemtimes(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), A), [sz(1:d-1),size(A,2),sz(d+1:end)]);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                chd = copy(b); A = a; sz = size(chd.data); sz(1) = size(A,1);
+                chd.data = reshape(A * chd.data(:,:), sz);
+            else % if both are ChannelData, this is currently undefined
+                error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
+            end
+        end
         function c = times(a, b)
             % TIMES - Multiply ChannelData data
             %
@@ -526,12 +571,12 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd2. The time axes of chd1 and chd2 must be compatible.
             %
             % Example:
-            % chds = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
-            % chds = chds + (- mean(chds.data,'all')); % de-bias
-            % chds = splice(chds, 4); % split into frames
-            % 2.*chds(1) + (-1).*chds(2), % scale and add over the 2 frames
+            % chd = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
+            % chd = chd - mean(chd.data,'all'); % de-bias
+            % chds = splice(chd, 4); % split into frames
+            % thi = 2 .* chds(1) - chds(2), % scale and add over the 2 frames
             % 
-            % See also ChannelData.plus
+            % See also ChannelData.mtimes ChannelData.plus
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
                 c = copy(a); c.data = times(a.data, b);
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
@@ -539,6 +584,38 @@ classdef ChannelData < matlab.mixin.Copyable
             else % if both are ChannelData, we check that the time axis is identical
                 if all(a.order == b.order) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
                     c = copy(a); c.data = times(a.data, b.data);
+                else
+                    error('ChannelData does not match - cannot perform arithmetic')
+                end                
+            end
+        end
+    
+        function c = rdivide(a, b)
+            % RDIVIDE - Divide ChannelData data
+            %
+            % chd ./ a divides the data property of the ChannelData chd by 
+            % the ND-array a and returns a ChannelData object.
+            %
+            % a ./ chd divides the ND-array a by the ChannelData chd and
+            % returns a ChannelData object.
+            % 
+            % chd1 ./ chd2 divides the data of the ChannelDatas chd1 and
+            % chd2. The time axes of chd1 and chd2 must be compatible.
+            %
+            % Example:
+            % chd = ChannelData('data', rand([5,4,3,2])); % 2 frames of data
+            % chdn = chd ./ max(chd.data,[],'all'); % normalized data. 
+            % chds = splice(chd, 4); % split into frames
+            % chdr = chds(1) ./ chds(2); % sample-wise ratio over the 2 frames
+            % 
+            % See also ChannelData.plus
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                c = copy(a); c.data = rdivide(a.data, b);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                c = copy(b); c.data = rdivide(a, b.data);
+            else % if both are ChannelData, we check that the time axis is identical
+                if all(a.order == b.order) && all(a.t0 == b.t0, 'all') && a.fs == b.fs
+                    c = copy(a); c.data = rdivide(a.data, b.data);
                 else
                     error('ChannelData does not match - cannot perform arithmetic')
                 end                
@@ -573,6 +650,25 @@ classdef ChannelData < matlab.mixin.Copyable
                 end                
             end
         end
+    
+        function c = minus(a, b), c = a + (-b); end
+        % MINUS - Subtract ChannelData data (see PLUS)
+        function c = ldivide(a, b), c = rdivide(b, a); end
+        % LDIVIDE - Divide ChannelData data (see RDIVIDE)
+        function chd = uminus(chd), chd = applyFun2Data(chd, @uminus); end
+        % UMINUS - Negate ChannelData data
+        %
+        % -chd negates the underlying data of the ChannelData. It is
+        % equivalent to `chd.data = -chd.data`.
+        %
+        % See also ChannelData.uplus ChannelData.minus 
+        function chd = uplus(chd),  chd = applyFun2Data(chd, @uplus);  end
+        % UPLUS - Unary plus for a ChannelData data
+        %
+        % +chd calls the unary plus operator on the underlying data of the 
+        % ChannelData. It is equivalent to `chd.data = +chd.data`.
+        %
+        % See also ChannelData.uminus ChannelData.plus
     end
 
     % DSP overloads 
@@ -917,6 +1013,7 @@ classdef ChannelData < matlab.mixin.Copyable
             [chd.t0, chd.fs, chd.data] = tmp{:};
 
         end
+        function chd = conj(chd)    , chd = applyFun2Data(chd, @conj); end
         function chd = real(chd)    , chd = applyFun2Data(chd, @real); end
         function chd = imag(chd)    , chd = applyFun2Data(chd, @imag); end
         function chd = abs(chd)     , chd = applyFun2Data(chd, @abs); end
@@ -925,6 +1022,50 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd = deg2rad(chd) , chd = applyFun2Data(chd, @deg2rad); end
         function chd = mag2db(chd)  , chd = applyFun2Data(chd, @mag2db); end
         function chd = mod2db(chd)  , chd = applyFun2Data(chd, @mod2db); end
+        function chd = convt(chd, wv, shape)
+            % CONVT - Temporal convolution
+            %      
+            % chdw = convt(chd, wv) performs the temporal convolution of
+            % the ChannelData chd and the Waveform wv. The sampling
+            % frequency of the Waveform is set to match the sampling
+            % frequency of the ChannelData i.e. `wv.fs = chd.fs`
+            % 
+            % chdw = convt(chd, wv, shape) controls the size of the output:
+            %   'full'   - (default) returns the full N-D convolution
+            %   'same'   - returns the central part of the convolution that
+            %            is the same size as A.
+            %   'valid'  - returns only the part of the result that can be
+            %            computed without assuming zero-padded arrays.
+            %            chdw.T = max([chd.T-max(0,numel(wv.samples)-1)],0).
+            %
+            %
+            % See also WAVEFORM.REVERSE CONVD
+            
+            % TODO: account for swapped inputs (h, chd) -> (chd, h) 
+            if nargin < 3, shape = 'full'; end
+
+            % copy semantics
+            chd = copy(chd);
+            wv = copy(wv);
+
+            % get samples and offset
+            wv.fs = chd.fs; % match sampling frequency
+            h = swapdim(wv.samples, 1, chd.tdim); % in time dimension
+
+            % adjust time axes
+            t0_ = -wv.tend + chd.t0;
+            H = numel(h);
+            switch shape
+                case 'full' % pass
+                case 'same',  t0_ = t0_ + ceil((H-1) / 2) ./ chd.fs; % central
+                case 'valid', t0_ = t0_ + ceil((H-1) / 1) ./ chd.fs; % offset
+            end
+
+            % convolve data
+            chd.data = convn(chd.data, h, shape); 
+            chd.t0 = t0_;
+        end
+
     end
 
     % DSP helpers

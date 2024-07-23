@@ -7,7 +7,7 @@ classdef ScanSpherical < Scan
     properties
         r (1,:) {mustBeVector} = 1e-3*linspace(0,40,161)  % image range values
         a (1,:) {mustBeVector} = linspace(-45,45,91)      % image azimuth angle values (deg)
-        e (1,:) {mustBeVector} = 0                        % image elevation angle values (deg)
+        e (1,:) {mustBeVector} = linspace(-45,45,91)      % image elevation angle values (deg)
         order = 'RAE';                      % pixel order of change 
         % origin (3,1) = [0;0;0];             % center of the coordinate system with respect to cartesian coordinates (m)
     end
@@ -128,31 +128,63 @@ classdef ScanSpherical < Scan
             % b_cart = SCANCONVERT(self, b_pol, scanC) uses a given
             % ScanCartesian scanC instead of creating one.
             % 
+            % Example:
+            % % Create a system
+            % xdc = TransducerMatrix.PO192O();
+            % xdc.numd = [8 8]; % shrink to 8 x 8 
+            % scn = ScanSpherical('a',-25:25, 'e', -25:25, 'r', [0 40e-3]);
+            % us = UltrasoundSystem('xdc', xdc, 'scan', scn);
+            % scn.dr = us.lambda / 2; % set resolution
+            % 
+            % % Simulate echoes
+            % sct = Scatterers.Grid([3 2 4], 5e-3, [0 0 20e-3]', 'c0', us.seq.c0);
+            % chd = greens(us, sct);
+            % 
+            % % Beamform on the polar grid
+            % b = DAS(us, chd);
+            % 
+            % % Scan convert to the cartesian grid
+            % b = mod2db(b); % envelope-detection, log-compression
+            % [bc, scnc] = scanConvert(us.scan, b);
+            % 
+            % % Display
+            % figure; whitebg('k'); tiledlayout('flow');
+            % h1 = vol3d(scn , b , nexttile(), ceil( scn.size(3)/2)); 
+            % h2 = vol3d(scnc, bc, nexttile(), ceil(scnc.size(3)/2)); hold on; 
+            % hx = patch(xdc,'FaceColor',[1,1/2,0]); 
+            % hs = plot(sct, 'r.');
+            % legend([hx hs]);
+            % 
+            % % Format display
+            % title(h1.parent, "Spherical (Original)" );
+            % title(h2.parent, "Cartesian (Converted)");
+            % for ax = [h1.parent, h2.parent]
+            %     axes(ax); % make current (sets gca)
+            %     ax.YDir = 'reverse'; view(3); % set view
+            %     dbr b-mode 60; alim(max(caxis)+[-80 -0]); % set colors
+            % end
+            % 
             % See also SCANCARTESIAN
 
-            error("Not implemented.");
+            % create an output scan if one not given
+            if nargin < 3, scanC = ScanCartesian(self); end
 
-            % % create an output scan if one not given
-            % if nargin < 3, scanC = ScanCartesian(self); end
-            % 
-            % % get the cartesian points for the output scan
-            % [X, Y, Z] = scanC.getImagingGrid();
-            % 
-            % % convert to spherical
-            % og = self.origin;
-            % [A, E, R] = cart2sph(Z - og(3), X - og(1), Y - og(2));
-            % 
-            % % sample the data at these coordinates
-            % % TODO: handle different data orders / dimensionality via 
-            % % permution / page functions
-            % assert(self.order == "RAE", "Data must be in order 'RAE'.");
-            % [RG, AG, EG] = ndgrid(self.r, deg2rad(self.a), deg2rad(self.e)); % use interp2 for compatibility
-            % b_cart = cellfun(@(b) {interp2(AG, RG, b, A, R, 'linear', nan)}, num2cell(b_pol, [1,2]));
-            % b_cart = reshape(cat(3, b_cart{:}), [size(A,1:2), size(b_pol, 3:max(3,ndims(b_pol)))]); %#ok<CPROPLC> 
-            % % b_cart = interp3(RG, AG, YG, b_pol, R, A, Y, 'linear', nan); % use interp3 for compatibility
-            % 
-            % % let nans be nans? or make zero?
-            % % b_cart(isnan(b_cart)) = 0;
+            % get the cartesian points for the output scan
+            [X, Y, Z] = scanC.getImagingGrid();
+
+            % convert to spherical
+            og = self.origin;
+            [A, E, R] = cart2sph(Z - og(3), X - og(1), Y - og(2));
+
+            % sample the data at these coordinates
+            % TODO: handle different data orders / dimensionality via 
+            % permution / page functions
+            assert(self.order == "RAE", "Data must be in order 'RAE'.");
+            [RG, AG, EG] = ndgrid(self.r, deg2rad(self.a), deg2rad(self.e)); % use interp2 for compatibility
+            b_cart = interp3(AG, RG, EG, b_pol, A, R, E, 'linear', nan); % use interp3 for compatibility
+
+            % let nans be nans? or make zero?
+            % b_cart(isnan(b_cart)) = 0;
         end
 
         function scan = ScanCartesian(self)
@@ -175,7 +207,7 @@ classdef ScanSpherical < Scan
             grd = num2cell([min(p,[],2:4), max(p,[],2:4)],2); % 3 x 2 min/max
 
             % create a new scan with these boundaries
-            scan = ScanCartesian('xb', grd{1}, 'yb', grd{2}, 'zb', grd{3});
+            scan = ScanCartesian('x', grd{1}, 'y', grd{2}, 'z', grd{3});
 
             % set the spatial resolution to the axial resolution
             if isfinite(self.dr), [scan.dx, scan.dy, scan.dz] = deal(self.dr); end
@@ -213,9 +245,9 @@ classdef ScanSpherical < Scan
         function set.eb(self, b), self.e = linspace(min(b), max(b), self.ne); end
 
         % get step size - Inf for scalar axes, NaN if not regularly spaced
-        function d = get.dr(self), d = uniquetol(diff(self.r)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.da(self), d = uniquetol(diff(self.a)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.de(self), d = uniquetol(diff(self.e)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dr(self), d = uniquetol(diff(self.r), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.da(self), d = uniquetol(diff(self.a), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.de(self), d = uniquetol(diff(self.e), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
         % set step size - preserve/expand the image bounds, but gaurantee
         % spacing - also gaurantee passes through zero

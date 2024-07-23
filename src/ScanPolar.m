@@ -150,6 +150,31 @@ classdef ScanPolar < Scan
             % b_cart = SCANCONVERT(self, b_pol, scanC) uses a given
             % ScanCartesian scanC instead of creating one.
             % 
+            % Example:
+            % % Create a system
+            % xdc = TransducerConvex.C5_2v();
+            % th = xdc.orientations();
+            % scn = ScanPolar('origin', xdc.center, 'a', th, 'r', xdc.radius + [0 50e-3]);
+            % us = UltrasoundSystem('xdc', xdc, 'scan', scn);
+            % scn.dr = us.lambda / 4;
+            % 
+            % % Simulate echoes
+            % sct = Scatterers();
+            % chd = greens(us, sct);
+            % 
+            % % Beamform on the polar grid
+            % b = DAS(us, chd);
+            % b = mod2db(b); % envelope-detection, log-compression
+            % 
+            % % Scan convert to the cartesian grid
+            % [bc, scnc] = scanConvert(us.scan, b);
+            % 
+            % % Display
+            % figure; tiledlayout('flow');
+            % nexttile(); imagesc(scn , b ); dbr b-mode; title("Polar (Original)"     );
+            % nexttile(); imagesc(scnc, bc); dbr b-mode; title("Cartesian (Converted)");
+            % hold on; plot(xdc); legend();
+            % 
             % See also SCANCARTESIAN
 
             % create an output scan if one not given
@@ -232,9 +257,9 @@ classdef ScanPolar < Scan
         function set.yb(self, b), self.y = linspace(min(b), max(b), self.ny); end
 
         % get step size - Inf for scalar axes, NaN if not regularly spaced
-        function d = get.dr(self), d = uniquetol(diff(self.r)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.da(self), d = uniquetol(diff(self.a)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
-        function d = get.dy(self), d = uniquetol(diff(self.y)); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dr(self), d = uniquetol(diff(self.r), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.da(self), d = uniquetol(diff(self.a), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
+        function d = get.dy(self), d = uniquetol(diff(self.y), 1e-3); if isempty(d), d = Inf; elseif ~isscalar(d), d = NaN; end, end
 
         % set step size - preserve/expand the image bounds, but gaurantee
         % spacing - also gaurantee passes through zero

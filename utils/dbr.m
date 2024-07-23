@@ -20,28 +20,37 @@ function dbr(mode, rang)
 % pause(1); 
 % dbr echo 30
 % 
+% pause(1);
+% dbr corr 0.5
+% 
 % See also: SCAN/IMAGESC CHANNELDATA/IMAGESC
 arguments
-    mode (1,1) string {mustBeMember(mode, ["b-mode", "phase", "echo"])} = "b-mode"
+    mode (1,1) string {mustBeMember(mode, ["b-mode", "phase", "echo", "corr"])} = "b-mode"
     rang (1,1) string = defaultRange(mode)
 end
 rang = str2double(rang); % interpret as a number
 
 colorbar; % always activate colorbar
-ax = gca; h = ax.Children(isa(ax.Children,'matlab.graphics.primitive.Image'));
-assert(isscalar(h), "Cannot identify the image for this axis."); % HACK - get the maximum value
+ax = gca; h = ax.Children( arrayfun(@(h) ...
+      isa(h,'matlab.graphics.primitive.Image'  ) ...
+    | isa(h,'matlab.graphics.primitive.Surface'), ...
+    ax.Children));
+assert(~isempty(h), "Cannot identify an image for this axis."); % HACK - get the maximum value
 % caxis auto; cmax = max(caxis); 
-cmax = max(h.CData,[],'all', 'omitnan');
+if exist('clim', 'file'), clm = @clim; else, clm = @caxis; end %#ok<CAXIS> - backwards compatibility
+cmax = max(cellfun(@(x) max(x,[],'all','omitnan'),{h.CData}),[],'all','omitnan');
 switch mode
-    case "b-mode", colormap(gca, 'gray'); caxis(cmax + [-rang   0 ]);
-    case "echo"  , colormap(gca, 'jet' ); caxis(cmax + [-rang   0 ]);
-    case "phase" , colormap(gca, 'hsv' ); caxis(0    + [-rang rang]);
+    case "b-mode", colormap(ax, 'gray'); clm(cmax + [-rang   0 ]);
+    case "echo"  , colormap(ax, 'jet' ); clm(cmax + [-rang   0 ]);
+    case "phase" , colormap(ax, 'hsv' ); clm(0    + [-rang rang]);
+    case "corr"  , colormap(ax, 'hot' ); clm(     + [rang    1 ]);
 end
 
 function r = defaultRange(mode)
 switch mode
     case "b-mode", r = 40; % dB
     case "echo",   r = 60; % dB
-    case "phase", r = 180; % degrees
+    case "phase",  r = 180; % degrees
+    case "corr",   r = 0; % proportion
     % otherwise, error("Not implemented");
 end

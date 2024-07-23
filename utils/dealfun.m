@@ -14,8 +14,8 @@ function varargout = dealfun(fun, varargin)
 if (nargin-1)==1,
   varargout = cellfun(fun, varargin(ones(1,nargout)), 'UniformOutput', false);
 else
-  if nargout ~= (nargin-1)
-    error(message('MATLAB:dealfun:narginNargoutMismatch'))
+  if ~nargout || (nargout ~= (nargin-1))
+    error('QUPS:dealfun:narginNargoutMismatch',  ['Error using dealfun',newline,'The number of outputs should match the number of inputs.'])
   end
   varargout = cellfun(fun, varargin, 'UniformOutput', false);
 end
