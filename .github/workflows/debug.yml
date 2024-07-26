@@ -1,6 +1,7 @@
 name: Debug parfor Errors
 run-name: Debug
 on:
+  push:
   workflow_dispatch:
     inputs:
       debug_enabled:
