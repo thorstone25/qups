@@ -1,4 +1,5 @@
 name: Debug parfor Errors
+run-name: Debug
 on:
   workflow_dispatch:
     inputs:
