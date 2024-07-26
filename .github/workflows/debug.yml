@@ -39,9 +39,9 @@ jobs:
             parallel.internal.logging.enableClientLogging(clogdir, 6)
             setSchedulerMessageHandler(@disp);
             setenv('MDCE_DEBUG','true');
-            pctconfig('preservejobs',true);
+            try pctconfig('preservejobs',true); catch ME, disp(ME), end
 
-            parpool local;
+            try parpool local; catch ME, disp(ME), end
             setup cache; addpath build;
             res = runProjectTests("verbosity", "Verbose"), 
             i = find([res.Failed]); res(i).Name, 
