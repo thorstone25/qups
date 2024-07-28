@@ -238,17 +238,18 @@ classdef ChannelData < matlab.mixin.Copyable
                 );
         end
     
-        function [chd, fmod, smode] = Verasonics(RcvData, Receive, Trans, kwargs)
+        function [chd, fmod, smode, qmod] = Verasonics(RcvData, Receive, Trans, kwargs)
             % VERASONICS - Construct ChannelData from a Verasonics struct
             %
             % chd = ChannelData.Verasonics(RcvData, Receive) constructs an
             % array of ChannelData chd for each receive buffer referenced
             % in the Verasonics 'RcvData' and 'Receive' struct. The data
-            % has size (time x acq x channel x frame).
+            % has size (time x acq x channel x frame) and is returend at
+            % the decimSampleRate frequency.
             % 
             % Within each buffer, the sampling frequency, samples per
             % acquisition, demodulation frequency, and the number of
-            % acquisitions per frame must be constant for each buffer.
+            % acquisitions per frame must be constant for each buffer. 
             %
             % chd = ChannelData.Verasonics(RcvData, Receive, Trans) maps
             % channels to transducer elements and returns the data with
@@ -260,6 +261,10 @@ classdef ChannelData < matlab.mixin.Copyable
             % [chd, fmod, smode] = ChannelData.Verasonics(...) additionally
             % returns an array the sample modes for each buffer.
             %
+            % [chd, fmod, smode, qmod] = ChannelData.Verasonics(...)
+            % additionally returns an array the quadrature decimation
+            % factors for each buffer.
+            %
             % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
             % frames. f = [] imports all frames of the RcvData within the
             % matching buffer. The default is unique([Receive.framenum]).
@@ -268,10 +273,10 @@ classdef ChannelData < matlab.mixin.Copyable
             % the buffer indices b corresponding to each element of
             % RcvData. The default is unique([Receive.bufnum], 'stable').
             %
-            % [...] =  ChannelData.Verasonics(..., 'insert0s', false)
-            % disables 0-insertion to replace missing samples when the 
-            % buffer sample mode is one of ["BS100BW", "BS67BW", "BS50BW"]. 
-            % The default is true.
+            % [...] =  ChannelData.Verasonics(..., 'insert0s', true)
+            % inserts 0s for missing samples removed by the quadrature
+            % decimator when the sample mode is "BS100BW" or "BS50BW" or
+            % when `Receive.quadDecim > 1`.  The default is true.
             % 
             % Example:
             % chd = ChannelData.Verasonics(RcvData, Receive, Trans);
@@ -408,13 +413,8 @@ classdef ChannelData < matlab.mixin.Copyable
 
                 % transform the sampled data depending on the sample mode
                 if kwargs.insert0s
-                    switch sm
-                        case "NS200BW", [N, K] = deal(0, 1); % fully sampled      - insert N=0 0s every K=1 samples
-                        case "BS100BW", [N, K] = deal(2, 2); % [1,1,0,0,]         - insert N=2 0s every K=2 samples
-                        case "BS67BW",  [N, K] = deal(2, 1); % [1,0,0,]           - insert N=2 0s every K=1 samples
-                        case "BS50BW",  [N, K] = deal(6, 2); % [1,1,0,0,0,0,0,0,] - insert N=6 0s every K=2 samples
-                        otherwise,      [N, K] = deal(0, 1); % unknown            - insert N=0 0s every K=1 samples
-                    end
+                    dq = unique([Rx.quadDecim  ]);
+                    [N, K] = deal(2 * (dq - 1), 2); % quad
                     dsz = size(x); % data size
                     x = reshape(x, [K, dsz(1)/K, dsz(2:end)]); % set sample singles/pairs in dim 1
                     x(end+(1:N),:) = 0; % insert N 0s
@@ -425,7 +425,8 @@ classdef ChannelData < matlab.mixin.Copyable
                 % TODO: account for different sample modes
                 chd(i) = ChannelData('data', x, 'fs', 1e6*fs, 'order', 'TMNF');
                 fmod(i) = fm; % assume only one demod frequency
-                smode(i) = sm; % assume only one sample mode 
+                smode(i) = sm; % assume only one sample mode
+                qmod(i) = dq; % assume only one quadrature decimation factor
             end
         end
     end
