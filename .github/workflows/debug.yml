@@ -15,7 +15,7 @@ jobs:
     strategy:
       matrix:
         platform: [macos-latest]
-        release: [R2021a]
+        release: [R2023a]
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Check out repository
