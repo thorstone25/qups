@@ -43,7 +43,10 @@ This package can readily be used to develop new transducer array designs by spec
     - Documentation via `help` and `doc`
 
 
-## Installation 
+## Installation
+### Prerequisites
+QUPS requires the [Signal Processing Toolbox](https://www.mathworks.com/products/signal.html) and the [Parallel Computing Toolbox](https://www.mathworks.com/products/parallel-computing.html) to be installed.
+
 ### MATLAB R2023b+ & git
 Starting in MATLAB R2023b+, QUPS and most of it's extension packages can be installed from within MATLAB via [buildtool](https://www.mathworks.com/help/matlab/ref/buildtool.html) if you have setup [git for MATLAB](https://www.mathworks.com/help/matlab/matlab_prog/set-up-git-source-control.html).
 1. Install qups
@@ -61,7 +64,7 @@ buildtool test
 ```
 
 ### Legacy Installation
-If the above procedure does not work for you, you can manually download and install each [extension](##Extensions).
+You can manually download and install each [extension](##Extensions) separately.
 1. Download the desired extension packages into a folder adjacent to the "qups" folder e.g. if qups is located at `/path/to/my/qups`, kWave should be downloaded to an adjacent folder `/path/to/my/kWave`.
 
 2. Create a MATLAB [Project](https://www.mathworks.com/help/matlab/matlab_prog/create-projects.html) and add the root folder of the extension to the path e.g. `/path/to/my/kWave`.
