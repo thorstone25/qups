@@ -698,7 +698,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 k.GridSize = [ceil(QS ./ k.ThreadBlockSize(1)), N, M];
 
                 % get the computational bounds
-                sblk = (0 : k.GridSize - 1)' * k.ThreadBlockSize(1); % block starting time index
+                sblk = (0 : k.GridSize(1) - 1)' * k.ThreadBlockSize(1); % block starting time index
                 blocks = sblk <= [-inf, sb(2,:), inf]; % point at which we are in bounds
                 blocks = blocks(:,2:end) - blocks(:,1:end-1); % detect change
                 sbk = cellfun(@(x) find(x,1,'first'), num2cell(blocks,2)); % get transition point
