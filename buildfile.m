@@ -81,7 +81,7 @@ plan("test") = TestTask( ...
 
 mfls = dir(fullfile(base, "src", "**", "msfm*.c"));
 [mfls, nms] = deal(string(fullfile({mfls.folder}, {mfls.name})), string({mfls.name}));
-ofls = replace(fullfile(base, "bin", nms), '.c', "."+mexext());
+ofls = fullfile(base, "bin", replace(nms, ".c" + lineBoundary("end"), "."+mexext()));
 tnm = "compile_mex_"+extractBefore(nms,'.c');
 for i = 1:numel(mfls)
     plan(tnm(i)) = matlab.buildtool.tasks.MexTask(mfls(i), fileparts(ofls(i)), ...
