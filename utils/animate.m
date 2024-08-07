@@ -111,7 +111,7 @@ for i = 1:I
     if r(1) == c, r = r(2); else, r = r(1); end % extract row dim
     if all([c r] == [1 2]), continue; end % already in order
     ord = [c r, setdiff(dvec, [c,r])]; % permutation order - put '[c r]' first
-    warning("Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
+    warning("QUPS:animate:MatchingPermutation","Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
     x{i} = permute(x{i}, ord); % permute
 end
 

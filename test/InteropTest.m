@@ -74,13 +74,32 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             if isempty(vsx_files), vsx_files = {''}; end
         end
     end
+    methods(TestClassSetup)
+        function silenceAcceptableWarnings(tst)
+            lids = [...
+                "QUPS:Sequence:DeprecatedValue"    ... in Sequence.UFF
+                "QUPS:QUPS2USTB:ambiguousSequence" ... in Sequence.QUPS2USTB
+                ];
+            W = warning(); % get current state
+            arrayfun(@(l) warning('off', l), lids); % silence
+            tst.addTeardown(@() warning(W)); % restore on exit
+            if ~isempty(gcp('nocreate')) % any pool - execute on each worker
+                ws = parfevalOnAll(@warning, 1); wait(ws);% current state
+                ws = fetchOutputs(ws); % retrieve
+                [~, i] = unique(string({ws.identifier}), 'stable');
+                ws = ws(i); % select first unique set (assumer identical)
+                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
+                tst.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+            end
+        end
+    end
     methods(Test)
         function fieldII_xdc(tst, xdcs)
             tst.assumeTrue(logical(exist('field_init','file'))) % need FieldII for this
             import matlab.unittest.constraints.IsEqualTo;
             import matlab.unittest.constraints.AbsoluteTolerance;
 
-            xdcs.patches() % assumes defaults
+            xdcs.patches(); % assumes defaults
             pchq = xdcs.patches([4 2]);
             pchf = xdcs.getFieldIIPatches([4 2]);
             [pchq, pchf] = dealfun(@(x) cell2mat(swapdim(cellfun(@(x) {cat(3, x{:})}, x),1:2,4:5)), pchq, pchf);

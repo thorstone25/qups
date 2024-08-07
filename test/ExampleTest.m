@@ -7,6 +7,9 @@ classdef ExampleTest < matlab.unittest.TestCase
         scat_lim (1,1) double % limit of scatterers
         pulse_lim (1,2) double % max number of pulses to sim in k-Wave, greens
     end
+    properties(Constant)
+        debug (1,1) logical = false; % whether to print debug warnings
+    end
     
     % blacklists
     properties
@@ -56,9 +59,9 @@ classdef ExampleTest < matlab.unittest.TestCase
                 'FieldII',  ["calc_scat"+["","_all", "_multi"], "getFieldII"+["Aperture","Patches","Positions"]], ... FieldII
                 'MUST',     "simus", ... MUST
                 'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
-                'mex',      ["bfEikonal", "msfm"+["","2d","3d"]], ... mex binaries required ... compilation (optional, requires CUDA)
+                'mex',      "recompile" + ["","Mex"], ... mex binaries required ... compilation (optional, requires CUDA)
                 'gpu',      ["wbilerpg","feval"], ... CUDAKernel or oclKernel support required
-                'comp',     ("recompile" + ["","Mex","CUDA"]), ... compilations setup required
+                'comp',     ("recompile" + ["","CUDA"]), ... compilations setup required
                 'ext',      "vol3d", ... external functions
                 }, 2, [])'; % + "(";
             bl_fcn(:,2) = cellfun(@(s){s+"("}, bl_fcn(:,2)); % append "("
@@ -93,12 +96,14 @@ classdef ExampleTest < matlab.unittest.TestCase
             if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "gpu",:) = []; 
             end
-            kerns = ["msfm2d", "msfm3d"]+"."+mexext; % require mex binaries
-            if 1||all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
+            kerns = ["msfm2d", "msfm3d"]+".c"; % require mex source files
+            lst = arrayfun(@(k) dir(fullfile(prj_rt, "**", k)), kerns, 'uni', 0);
+            if all(ismember(kerns, {vertcat(lst{:}).name}))
+            % if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns))
                 bl_fcn(bl_fcn(:,1) == "mex",:) = []; 
             end
             % fullwave executable must exist in 'bin' folder under this name
-            kerns = ["fullwave2_executable"];
+            kerns = "fullwave2_executable";
             if all(arrayfun(@(k) exist(fullfile(prj_rt, "bin", k), 'file'), kerns)) ...
                     && exist("mapToCoords", "file")
                 bl_fcn(bl_fcn(:,1) == "fullwave",:) = []; 
@@ -136,22 +141,22 @@ classdef ExampleTest < matlab.unittest.TestCase
                 ,"Matching packages: " + join(string(pkg(1,p)), ", ") ...
                 ]), newline));
         end
-        function silenceAcceptableWarnings(testCase)
+        function silenceAcceptableWarnings(test)
             lids = [...
                 "QUPS:kspaceFirstOrder:upsampling", ...  % in US
                 "MATLAB:ver:ProductNameDeprecated", ... % in k-Wave
                 "QUPS:recompile:UnableToRecompile" ... % in US 
                 ];
                 W = warning(); % get current state
-                arrayfun(@(l)                warning(    'off', l), lids); % silence
-                testCase.addTeardown(@() warning(W)); % restore on exit
+                arrayfun(@(l) warning('off', l), lids); % silence
+                test.addTeardown(@() warning(W)); % restore on exit
             if ~isempty(gcp('nocreate')) % any pool - execute on each worker
                 ws = parfevalOnAll(@warning, 1); wait(ws);% current state
                 ws = fetchOutputs(ws); % retrieve
                 [~, i] = unique(string({ws.identifier}), 'stable');
                 ws = ws(i); % select first unique set (assumer identical)
                 wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
-                testCase.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+                test.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
             end
         end
         function txt = truncateJobs(test, txt, kwargs)
@@ -286,14 +291,14 @@ classdef ExampleTest < matlab.unittest.TestCase
                         if isempty(bdln)
                             bdln = nan;
                         elseif ~isscalar(bdln)
-                            warning("Multiple lines match " + string(pt(j)) + " in file " + fls_(m) + ": choosing the "+ord(j)+".");
+                            if ExampleTest.debug, warning("Multiple lines match " + string(pt(j)) + " in file " + fls_(m) + ": choosing the "+ord(j)+"."); end
                             switch j, case 1, bdln = bdln(1); case 2, bdln = bdln(end); end
                         end
                         k(j) = bdln; %#ok<AGROW>
                     end
                     k = k + [1, -1]; % go after/before matching start/end
                     if isnan(k(1))
-                        % warning("No example found for lines "+join(string(blk{:}([1 end])),"-")+" in file "+f+".");
+                        % if ExampleTest.debug, warning("No example found for lines "+join(string(blk{:}([1 end])),"-")+" in file "+f+"."); end
                         continue;
                     end
                     if isnan(k(2)), k(2) = length(code_); end % can't find an ending - assume it's okay
@@ -330,7 +335,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             test.assumeTrue(logical(exist("kspaceFirstOrder3D", "file")), "Missing package kWave"  ); % kWave
             for f = fnms
                 copyfile(which(f+".m"), "./"); % copy to here (temp folder)
-                eval(f); % run
+                evalc(f); % run
             end
         end
     end
@@ -343,7 +348,7 @@ classdef ExampleTest < matlab.unittest.TestCase
             else
                 base_dir = prj.RootFolder;
             end
-            flds = fullfile(base_dir, ["examples"]); % blacklist classes and examples
+            flds = fullfile(base_dir, "examples"); % blacklist classes and examples
             run_examples(test, fls, lns, flds);
         end
     end
@@ -418,9 +423,9 @@ classdef ExampleTest < matlab.unittest.TestCase
             % assert a clean run
             test.silenceAcceptableWarnings();
             if any(contains(code, "compile"))
-                f = str2func("@"+fnm); f(); % run directly
+                evalc(fnm); % run directly
             else
-            test.assertWarningFree(str2func("@"+fnm), "Example "+fnm+" did not complete without a warning!");
+                test.assertWarningFree(@()evalc(fnm), "Example "+fnm+" did not complete without a warning!");
             end
         end
     end
@@ -437,7 +442,7 @@ pat = fnm + "(" + asManyOfPattern(alphanumericsPattern() + ",", arg(1)-1,arg(end
 i = find(contains(code,pat)); % lines with call to kspaceFirstOrder
 
 if isempty(i), V = 0; return; end % 0 if greens not found
-if ~isscalar(i), i = i(1); warning("Multiple calls to "+fnm+"(): choosing the first."); end
+if ~isscalar(i), i = i(1); if ExampleTest.debug, warning("Multiple calls to "+fnm+"(): choosing the first."); end, end
 v = strip(extractBetween(code(i), pat, ("," | ")"))); % us variable
 
 % write code to a file
@@ -467,3 +472,4 @@ else
     fclose(fid);
 end
 end
+
