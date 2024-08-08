@@ -221,3 +221,29 @@ First, be sure you can run `nvcc` from a terminal or command-line interface per 
 #### Windows
 First, setup your system for CUDA per [CUDA installation instructions](https://docs.nvidia.com/cuda/cuda-installation-guide-microsoft-windows/index.html). On Windows you must set the path for both CUDA and the _correct_ MSVC compiler for C/C++. Start a PowerShell terminal within Visual Studio. Run `echo %CUDA_PATH%` to find the base CUDA_PATH and run `echo %VCToolsInstallDir%` to find the MSVC path. Then, in MATLAB, set these paths with `setenv('MW_NVCC_PATH', YOUR_CUDA_BIN_PATH); setenv('VCToolsInstallDir', YOUR_MSVC_PATH);`, where `YOUR_CUDA_BIN_PATH` is the path to the `bin` folder in the `CUDA_PATH` folder. Finally, run `setup CUDA`. From here the proper paths should be added.
 
+## Troubleshooting
+### Parpool management
+Most functions will perform best with an active `parallel.ThreadPool` available. This can be started with `setup parallel` or `parpool Threads`. Alternatively, a `parallel.ProcessPool` can be started with `parpool Processes` (or `parpool local` on earlier MATLAB releases). Functions that allow specifying a parallel environment can avoid using the active parallel pool by using an argument of `0`, or can limit the number of . 
+
+### GPU management
+Some QUPS functions use the currently selected `parallel.gpu.CUDADevice`, or select a `parallel.gpu.CUDADevice` by default. Use [`gpuDevice`](https://www.mathworks.com/help/parallel-computing/parallel.gpu.gpudevice.html) to manually select the gpu. Within a parallel pool, each worker can have a unique selection. By default, GPUs are spread evenly across all workers.
+If [CUDA support](#cuda-support) is enabled, [ptx-files](https://www.mathworks.com/help/parallel-computing/parallel.gpu.gpudevice.html) will be compiled to target the currently selected device. If the currently selected device changes, you may need to recompile binares using `UltrasoundSystem.recompileCUDA` or `setup cache`, particularly if the computer contains GPUs from different [virtual architectures](https://docs.nvidia.com/cuda/cuda-compiler-driver-nvcc/index.html#virtual-architecture-feature-list) or have different compute capabilities.
+
+### OOM (Out of memory) errors
+Beamforming and simulation routines tend to require a trade-off between performance and memory usage. While QUPS attempts to balance this, you can still run into OOM errors if the GPU is almost full or if the problem is too large for either the GPU or CPU. There are several options to mitigate this such as:
+* (GPU OOM) use `x = gather(x);` to move some variables from the GPU (device) to the CPU (host) - this works on `ChannelData` objects too.
+* for beamformers, set the `bsize` optional keyword argument to a smaller value
+* (GPU OOM) use `gpuDevice().reset()` to reset the currently selected GPU - NOTE: this will clear any variables that were not moved from the GPU to the CPU with `gather` first
+* consider reducing the problem and using a for-loop e.g. by processing an image per frame or per depth, or simulating groups of 1000 scatterers at a time
+* (GPU OOM) for `UltrasoundSystem.DAS` and `UltrasoundSystem.greens`, set the `device` argument to `0` to avoid using a GPU device.
+* if a `parallel.Pool` is active and a function accepts an optional parallel environment keyword argument `penv`, use a small number e.g. `4` to limit the number of workers, or `0` to avoid using the active `parallel.Pool`
+* if a `parallel.Pool` is active, shut it down with `delete(gcp('nocreate'))` and [disable automatic parallel pool creation](https://www.mathworks.com/help/parallel-computing/parallel-preferences.html).
+
+
+
+
+
+
+
+
+
