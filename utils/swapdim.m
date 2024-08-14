@@ -31,12 +31,12 @@ ord = 1:L; % all dimensions we have to worry about
 ord0 = ord;
 
 % get permutation
-if isempty(intersect(i, o)) % can be handled separately
+if (noIntersect(i, o)) % can be handled separately
     ord([i o]) = [o i]; % swap dimensions
 else % must fill in missing indices
     l = min(min(i),min(o)) : max(max(i),max(o)); % all indices within swap
-    i = [i, setdiff(l, i)]; % expanded input indices
-    o = [o, setdiff(l, o)]; % expanded output indices
+    i = appendDiff(i,l); % expanded input indices
+    o = appendDiff(o,l); % expanded output indices
     ord(o) = i; % full permutation ordering
 end
 
@@ -53,3 +53,8 @@ else % otherwise implement a generalized transpose
     x = permute(x, ord);
 end
 
+function tf = noIntersect(i,o), tf = all(i'~=o,'all'); 
+% replaces `isempty(intersect(i, o))`
+
+function i = appendDiff(i, l), i = [i,l(all(l~=i',1))]; 
+% replaces `i = [i, setdiff(l, i)];` 
