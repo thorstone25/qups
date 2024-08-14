@@ -4688,7 +4688,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   colormap gray; colorbar; title("Aperture growth apodization");
             %
             %
-            % See also ULTRASOUNDSYSTEM/APACCEPTANCEANGLE
+            % See also APACCEPTANCEANGLE APCOSINEANGLE
 
             % defaults
             arguments
@@ -4759,7 +4759,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % figure; imagesc(us.scan, ap);
             % animate(ap,'fs',1,'loop',false,"title","Angle: "+seq.angles);
             % 
-            % See also apAcceptanceAngle
+            % See also APACCEPTANCEANGLE APCOSINEANGLE
             arguments
                 us (1,1) UltrasoundSystem
                 theta (1,:) = atan2d(us.seq.focus(1,:), us.seq.focus(3,:));
@@ -4817,7 +4817,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %   nexttile(); imagesc(us.scan, bima, [-80 0] + max(bima(:)));
             %   colormap gray; colorbar; title("Acceptance angle apodization");
             %
-            % See also ULTRASOUNDSYSTEM/APAPERTUREGROWTH
+            % See also APAPERTUREGROWTH APCOSINEANGLE
 
             % defaults
             arguments
@@ -4846,6 +4846,44 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % accept if greater than the cutoff angle
             apod = r >= cosd(theta);
         end    
+
+
+        function apod = apCosineAngle(us, theta)
+            % APCOSINEANGLE - Create an cosine-weighted apodization array
+            %
+            % apod = APCOSINEANGLE(us) creates an ND-array to weight
+            % delayed data from the UltrasoundSystem us by the angle
+            % between the element normal and the element to pixel vector.
+            % The weighting is
+            % 
+            % `cosd(min(90, (phi / theta)))`
+            % 
+            % where phi is the angle and theta is the maximum angle.
+            %
+            % apod = APCOSINEANGLE(us, theta) uses an acceptance angle
+            % of theta in degrees. The default is 45.
+            %
+            % The output apod has dimensions I1 x I2 x I3 x N x 1 where
+            % I1 x I2 x I3 are the dimensions of the scan, N is the number
+            % of receive elements.
+            %
+            % See also APAPERTUREGROWTH APACCEPTANCEANGLE
+
+            % defaults
+            arguments
+                us (1,1) UltrasoundSystem
+                theta (1,1) {mustBePositive} = 45
+            end
+
+            % cosine apodization
+            [pg, pn] = deal(us.scan.positions(), us.xdc.positions()); % pixels | elems
+            [~,~,nn] = us.xdc.orientations(); % elem normals
+            [pn, nn] = deal(swapdim(pn,2,5), swapdim(nn,2,5)); % match dims
+            r  = (pg - pn); % elem -> pixel vector
+            r  = r ./ vecnorm(r,2,1); % normalized
+            r  = swapdim(pagemtimes(nn, 'transpose', r, 'none'), 2:6); % normalized inner product
+            apod = cosd(min(90,(90/theta)*acosd(r))); % cosine gradient with (scaled) angle
+        end
     end
 
     % dependent methods
