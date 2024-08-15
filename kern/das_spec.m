@@ -456,7 +456,7 @@ else
                        );
                 end
                 y = y + yn;
-            catch
+            catch E
                 msg = sprintf('dr class: %s; size: [%s]', class(dr), strjoin(string(size(dr))));
                 error('Problem occurred! %s\n%s', msg, getReport(E));
             end
