@@ -422,7 +422,7 @@ else
     end
     
     % temporal packaging function
-    pck = @(x) num2cell(x, [1:3,6:ndims(x)]); % pack for I, F
+    pck = @(x) num2cell(x, [1:3,6:gather(ndims(x))]); % pack for I, F
     osz = [Isz,1,1,fsz]; % interp1 output size (unsqueeze)
     try
     switch fun
@@ -438,6 +438,7 @@ else
             amn = repmat(amn, double([1,M]) ./ [1, size(amn,2)]); % broadcast to [1|N] x M
             Na = size(amn,1); % apodization size over receives
             parfor m = 1:M
+            try
                 yn = dtypefun(zeros([Isz, 1, 1]));
                 drn = num2cell(dr, [1:3]); % ({I} x N x 1)
                 if size(cinvmn,5) == 1, cinvn = cinvmn; else, cinvn = cinvmn(:,m); end % ({I} x [1|N] x 1)
@@ -455,6 +456,10 @@ else
                        );
                 end
                 y = y + yn;
+            catch
+                msg = sprintf('dr class: %s; size: [%s]', class(dr), strjoin(string(size(dr))));
+                error('Problem occurred! %s\n%s', msg, getReport(E));
+            end
             end
             y = reshape(y, [Isz, 1, 1, fsz]);
         case 'MUL'
