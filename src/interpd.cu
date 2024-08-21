@@ -93,17 +93,17 @@ __device__ T2 cubic(const T2 * x, U tau, T2 no_v) {
   if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
       return no_v;
 
-  T2 s0 = x[ti - 1];
-  T2 s1 = x[ti + 0];
-  T2 s2 = x[ti + 1];
-  T2 s3 = x[ti + 2];
+  const T2 s0 = x[ti - 1];
+  const T2 s1 = x[ti + 0];
+  const T2 s2 = x[ti + 1];
+  const T2 s3 = x[ti + 2];
 
   // Cubic Hermite interpolation (increased precision using fused multiply-adds)
   // (Catmull-Rom)
-  U a0 = 0 + u * (-1 + u * (+2 * u - 1));
-  U a1 = 2 + u * (+0 + u * (-5 * u + 3));
-  U a2 = 0 + u * (+1 + u * (+4 * u - 3));
-  U a3 = 0 + u * (+0 + u * (-1 * u + 1));
+  const U a0 = 0.f + u * (-1.f + u * (+2.f * u - 1.f));
+  const U a1 = 2.f + u * (+0.f + u * (-5.f * u + 3.f));
+  const U a2 = 0.f + u * (+1.f + u * (+4.f * u - 3.f));
+  const U a3 = 0.f + u * (+0.f + u * (-1.f * u + 1.f));
   // // Cubic Hermite interpolation (naive, less precise implementation)
   // float a0 = -1 * u * u * u + 2 * u * u - 1 * u + 0;
   // float a1 = +3 * u * u * u - 5 * u * u + 0 * u + 2;
