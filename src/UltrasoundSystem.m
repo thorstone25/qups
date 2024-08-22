@@ -4981,10 +4981,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             end
    
         end
-        function com = recompileCUDA(us, defs, arch)
+        function com = recompileCUDA(us, defs, arch, kwargs)
             % RECOMPILECUDA - Recompile CUDA ptx files
             %
-            % RECOMPILECUDA(us) recompiles all CUDA files and stores
+            % RECOMPILECUDA(us) recompiles all CUDA files to ptx and stores
             % them in us.tmp_folder.
             %
             % RECOMPILECUDA(us, defs) compiles for the compiler 
@@ -5001,6 +5001,12 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % If arch is an empty string, no architecture argument is used.
             % The default is the architecture of the current GPU device.
             %
+            % RECOMPILECUDA(..., 'mex', true) uses `mexcuda` rather than
+            % `nvcc` to compile ptx files (requires R2023a or later). 
+            % Architecture selection, warning selection and suppression,
+            % and other compiler options are not available via mexcuda. The
+            % default is true if `nvcc` is not found on the path.
+            % 
             % nvcom = RECOMPILECUDA(...) returns the command sent to nvcc.
             % This command can be tweaked and resent to debug or fix
             % compilation errors.
@@ -5013,7 +5019,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % change the source code ...
             %
             % % recompile the 3rd CUDA file manually
-            % system(nvcom(3)); 
+            % system(nvcom(3)); % via nvcc
+            % % mexcuda(nvcom{3}{:}); % via mexcuda
             % 
             % See also ULTRASOUNDSYSTEM.RECOMPILE ULTRASOUNDSYSTEM.RECOMPILEMEX 
             % ULTRASOUNDSYSTEM.GENCUDADEFS
@@ -5022,12 +5029,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 us (1,1) UltrasoundSystem
                 defs (1,:) struct = UltrasoundSystem.genCUDAdefs();
                 arch (:,1) string {mustBeScalarOrEmpty, mustBeArch(arch)} = nvarch()
+                kwargs.mex (1,1) logical = isempty(argn(2, @system, 'which nvcc')) && ~isMATLABReleaseOlderThan("R2023a")
             end
+
+            % ensure that the output folder exists
+            if ~exist(us.tmp_folder,'dir'), warning("QUPS:UltrasoundSystem:ReinitializingTmpFolder","Recreating a tmp_folder that was deleted (somehow)."); mkdir(us.tmp_folder); addpath(us.tmp_folder); end
             
             % compile each
             for i = numel(defs):-1:1
                 d = defs(i);
                 % make full command
+                if ~kwargs.mex % via nvcc
                 com(i) = join(cat(1,...
                     "nvcc ", ...
                     "--ptx " + which(string(d.Source)), ...
@@ -5039,8 +5051,22 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     join("-W" + d.Warnings), ...
                     join("-D" + d.DefinedMacros)...
                     ));
-                
-                try s = system(com(i));
+                    comp = @system;
+                else % via mexcuda
+                com{i} = cellstr(cat(1,...
+                    "-ptx", ...
+                    "-output", fullfile(us.tmp_folder, argn(2, @fileparts, d.Source) + ".ptx"), ...
+                    ... ("--" + d.CompileOptions),...
+                    ("-I" + d.IncludePath), ...
+                    ("-L" + d.Libraries), ...
+                    ... ("-W" + d.Warnings), ...
+                    ("-D" + d.DefinedMacros),...
+                    which(string(d.Source)) ...
+                    ... "-arch=" + arch + " ", ... compile for active gpu
+                    ));
+                    comp = @(s) mexcuda(s{1}{:});
+                end                
+                try s = comp(com(i));
                     if s, warning( ...
                             "QUPS:recompile:UnableToRecompile", ...
                             "Unable to recompile " + d.Source ...
