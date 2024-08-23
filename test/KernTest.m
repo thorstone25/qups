@@ -62,6 +62,24 @@ classdef KernTest < matlab.unittest.TestCase
             b = complex(randn(sz), randn(sz));
             test.dargs{3} = {us, b};
         end
+
+        function silenceAcceptableWarnings(test)
+            lids = ...
+                "QUPS:animate:MatchingPermutation" ... in animate
+                ;
+            W = warning(); % get current state
+            arrayfun(@(l) warning('off', l), lids); % silence
+            test.addTeardown(@() warning(W)); % restore on exit
+            if ~isempty(gcp('nocreate')) % any pool - execute on each worker
+                ws = parfevalOnAll(@warning, 1); wait(ws);% current state
+                ws = fetchOutputs(ws); % retrieve
+                [~, i] = unique(string({ws.identifier}), 'stable');
+                ws = ws(i); % select first unique set (assumer identical)
+                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
+                test.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+            end
+        end
+
     end
 
     methods function set_device(test, dev), test.setDev(dev); end end

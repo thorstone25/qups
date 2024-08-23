@@ -16,20 +16,30 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             ]);
     end
 
-    properties
-    end
-
-    methods(TestClassSetup, ParameterCombination = 'exhaustive')
-    end
-    methods(TestClassTeardown)
-    end
-
     methods(TestMethodSetup)
         % Setup for each test
         function fig(~), figure; end
     end
     methods(TestMethodTeardown)
         function cls(~), close; end
+    end
+    methods(TestClassSetup)
+        function silenceAcceptableWarnings(tst)
+            lids = ...
+                "MATLAB:structOnObject"    ... calling struct directly
+                ;
+            W = warning(); % get current state
+            arrayfun(@(l) warning('off', l), lids); % silence
+            tst.addTeardown(@() warning(W)); % restore on exit
+            if ~isempty(gcp('nocreate')) % any pool - execute on each worker
+                ws = parfevalOnAll(@warning, 1); wait(ws);% current state
+                ws = fetchOutputs(ws); % retrieve
+                [~, i] = unique(string({ws.identifier}), 'stable');
+                ws = ws(i); % select first unique set (assumer identical)
+                wait(arrayfun(@(l) parfevalOnAll(@warning, 0, 'off', l), lids)); % silence
+                tst.addTeardown(@() parfevalOnAll(@warning, 0, ws)); % restore on exit
+            end
+        end
     end
     methods(Test)
         function initxdc(test)
@@ -43,10 +53,10 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@plot, xdcs); % supports plotting
             arrayfun(@patch, xdcs); % supports patch
             arrayfun(@(x)patch(x, nexttile(), 'el_sub_div', [2 2]), xdcs); % supports args
-            xdcs(end+2) = xdcs(1), %#ok<NOPRT> implicit empty value, display
-            arrayfun(@disp, xdcs) % display scalar
-            arrayfun(@(x)disp(x([])), xdcs) % display empty
-            x = copy(xdcs); x.delete(); x, arrayfun(@disp, x); % display deleted
+            xdcs(end+2) = xdcs(1); % implicit empty value
+            arrayfun(@edisp, xdcs) % display scalar
+            arrayfun(@(x)edisp(x([])), xdcs) % display empty
+            x = copy(xdcs); x.delete(); arrayfun(@edisp, x); % display deleted
             test.assertWarning(@()xdcs(1).ultrasoundTransducerImpulse(), "QUPS:Transducer:DeprecatedMethod");
             [xdcs.origin] = deal([0 0 -10e-3]); % offset (to be deprecated?)
             [xdcs.rot] = deal([20 -10]); % offset (to be deprecated?)
@@ -65,15 +75,15 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             [seqs([seqs.type] == "FSA").numPulse] = deal(1);
             arrayfun(@(seq) test.assertThat(seq, IsInstanceOf('Sequence')), seqs);
             arrayfun(@(scn) scale(scn, 'dist', 1e3), seqs, "UniformOutput",false); % can scale
-            seqs(end+2) = seqs(1), %#ok<NOPRT> implicit empty value, display
+            seqs(end+2) = seqs(1); % implicit empty value
             seqs(end-1).numPulse = 1; % fix implicit seq
             s = arrayfun(@obj2struct, seqs, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, seqs, 'UniformOutput',false); % supports plotting
             cellfun(@(s) test.assertThat(s.pulse, IsInstanceOf('struct')), s); % recursive check
-            arrayfun(@disp, seqs) % display scalar
-            arrayfun(@(x)disp(x([])), seqs) % display empty
+            arrayfun(@edisp, seqs) % display scalar
+            arrayfun(@(x)edisp(x([])), seqs) % display empty
             arrayfun(@splice, seqs, 'UniformOutput', false); % can splice
-            x = copy(seqs); x.delete(); x, arrayfun(@disp, x); % display deleted
+            x = copy(seqs); x.delete(); arrayfun(@edisp, x); % display deleted
 
             % polar: manipulate range/angles
             seq = SequenceRadial("focus",[0 0 1]'); % fine
@@ -82,7 +92,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             seq = SequenceRadial("ranges",[1 1 1]); % fine
             seq = SequenceRadial("angles",-1:1, "ranges",[1 1 1]); % fine
             seq = SequenceRadial("angles",   0, "ranges",[1 1 1]); % fine
-            seq = SequenceRadial("angles",-1:1, "ranges",[1]); % fine
+            seq = SequenceRadial("angles",-1:1, "ranges",1); % fine
             seq.angles = [-5 0 5]; % fine
             seq.ranges = [2 3 2]; % fine
             test.assertError(@()SequenceRadial("focus",[0 0 1]',"angles",0),""); % bad
@@ -114,10 +124,10 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@obj2struct, scns, 'UniformOutput', false); % supports specialized struct conversion
             arrayfun(@plot, scns); % supports plotting
             arrayfun(@(s) imagesc(s,randn(s.size)), scns); % supports imagesc
-            scns(end+2) = scns(1),%#ok<NOPRT> implicit empty value, display
-            arrayfun(@disp, scns) % display scalar
-            arrayfun(@(x)disp(x([])), scns) % display empty
-            x = copy(scns); x.delete(); x, arrayfun(@disp, x); % display deleted
+            scns(end+2) = scns(1); % implicit empty value
+            arrayfun(@edisp, scns) % display scalar
+            arrayfun(@(x)edisp(x([])), scns) % display empty
+            x = copy(scns); x.delete(); arrayfun(@edisp, x); % display deleted
 
             % supports req'd overload methods
             [~,~,~] = arrayfun(@getImagingGrid, scns, "UniformOutput",false);
@@ -144,8 +154,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             end
 
             % convert polar to cart
-            ScanCartesian(ScanPolar()),
-            ScanCartesian(ScanSpherical()),
+            ScanCartesian(ScanPolar());
+            ScanCartesian(ScanSpherical());
 
             % deprecations
             test.assertWarning(@()scanCartesian(ScanPolar()    ), "QUPS:ScanPolar:syntaxDeprecated"    );
@@ -155,7 +165,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
         function initwv(test)
             % INITWV - Assert that the Waveform constructor initializes
             import matlab.unittest.constraints.IsInstanceOf;
-            wv = Waveform(); % init
+            wv = Waveform(); edisp(wv); % construct & display
             test.assertThat(wv, IsInstanceOf('Waveform'));
 
             % multiple ways to init
@@ -186,7 +196,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITCHD - Assert that a ChannelData constructor initializes
             % without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            chd = ChannelData('data',0), %#ok<NOPRT> implicit display
+            chd = ChannelData('data',0);
             test.assertThat(chd, IsInstanceOf('ChannelData'));
             scale(chd, 'time', 1e6);
             arrayfun(@obj2struct, chd, 'UniformOutput', false); % supports specialized struct conversion
@@ -200,19 +210,20 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % INITUS - Assert that an UltrasoundSystem constructor
             % initializes without arguments
             import matlab.unittest.constraints.IsInstanceOf;
-            us = UltrasoundSystem(), %#ok<NOPRT> implicit display
+            us = UltrasoundSystem(); edisp(us); % construct & display
             test.assertThat(us, IsInstanceOf('UltrasoundSystem'));
 
             fld = us.tmp_folder;
             test.assertTrue(logical(exist(fld,"dir")));
             UltrasoundSystem('copybin',  true);
-            UltrasoundSystem('recompile',true);
+            evalc("UltrasoundSystem('recompile',true);");
             us2 = copy(us); fld2 = us2.tmp_folder; % new instance
             test.assertFalse(fld == fld2); % different folders
             clear us2; test.assertFalse(logical(exist(fld2,'dir'))); % deleted on clear
             us2 = copy(us); fld2 = us2.tmp_folder; % new instance
             copyfile(which("Qups.prj"), fld2); % dirty
             test.addTeardown(@()delete(fullfile(fld2,"Qups.prj"))); % cleanup
+            
             try clear us2 % should error
                 [~, lid] = lastwarn;
                 test.assertTrue(lid == "MATLAB:class:DestructorError", ...
@@ -242,8 +253,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
 
             uss = copy([us us us]); % array
             uss(end+2) = copy(us); % implicit creation
-            arrayfun(@disp, uss) % display scalar
-            arrayfun(@(x)disp(x([])), uss) % display empty
+            arrayfun(@edisp, uss) % display scalar
+            arrayfun(@(x)edisp(x([])), uss) % display empty
 
             % deprecation
             test.assertWarning(@()setfield(us,'sequence',Sequence()),"QUPS:UltrasoundSystem:syntaxDeprecated")
@@ -257,8 +268,8 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             % initialize without arguments
 
             import matlab.unittest.constraints.IsInstanceOf;
-            sct = Scatterers(), %#ok<NOPRT> implicit display
-            med = Medium(),     %#ok<NOPRT> implicit display
+            sct = Scatterers(); edisp(sct); % construct & display
+            med = Medium();     edisp(med); % construct & display
             test.assertThat(sct, IsInstanceOf('Scatterers'));
             test.assertThat(med, IsInstanceOf('Medium'    ));
             scale(sct, "dist", 1e3, "time", 1e6);
@@ -270,9 +281,9 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
 
             % special constructors
             grd = ScanCartesian();
-            Medium.Sampled(grd)
-            Scatterers.Diffuse(grd)
-            Scatterers.Grid()
+            Medium.Sampled(grd);
+            Scatterers.Diffuse(grd);
+            Scatterers.Grid();
 
             % deprecated properties
             test.assertWarning(@()setfield(med,'alphap0',1.2), "QUPS:Medium:syntaxDeprecated")
@@ -338,3 +349,5 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
         end
     end
 end
+
+function edisp(x), evalc("disp(x)"); end %#ok<INUSD>

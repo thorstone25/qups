@@ -39,7 +39,7 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
 
             % tall, sparse
             chdo = tall(chd);
-            sparse(ChannelData('data', randi([0 1], [16 32])))
+            sparse(ChannelData('data', randi([0 1], [16 32])));
 
             % unit conversion check
             chdo = angle(complex(chd));
@@ -75,9 +75,9 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             D3 = chd.getLowpassFilter(0.2);
             D4 = chd.getPassbandFilter([0.1 0.4]);
             for D = [D1 D2]
-                filter(  chd, D)
-                filtfilt(chd, D)
-                fftfilt( chd, D)
+                filter(  chd, D);
+                filtfilt(chd, D);
+                fftfilt( chd, D);
             end
 
             % sampling
@@ -129,13 +129,13 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             tst.assertEqual(-wvr.tend, wv.t0);
             tst.assertEqual(-wv.tend, wvr.t0);
             tst.assertEqual(wv.samples, reverse(reverse(wv)).samples);
-            for s = ["full", "same", "valid"], convt(chd, wv, s), end
+            for s = ["full", "same", "valid"], convt(chd, wv, s); end
             
             % join/splice
-            ChannelData.empty().join(4)
-            join(chd.splice(),4)
-            chd.splice(4)
-            chd.splice(1,4)
+            ChannelData.empty().join(4);
+            join(chd.splice(),4);
+            chd.splice(4);
+            chd.splice(1,4);
 
             % data order
             ord = [1,4,2,3];

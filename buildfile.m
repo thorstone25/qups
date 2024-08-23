@@ -49,7 +49,6 @@ plan("patch") = matlab.buildtool.Task( ...
     "Dependencies", "patch_"+[ext_nms([2 4 3])] ...
     );
 
-
 %% Testing and Artifacts
 % source files (folders)
 src = ["kern","src","utils"] + filesep;
@@ -72,6 +71,8 @@ plan("test") = TestTask( ...
     "Tag","syntax","SourceFiles",src ...
     ,CodeCoverageResults=fullfile("build","code-coverage-brief",["coverage.xml" "html/index.html"]) ...
     ,TestResults="build/test-results-brief/report.html" ...
+    ,Dependencies="compatability" ...
+    ,OutputDetail="Concise" ...
     );
 
 %% Add compilation dependencies
@@ -81,7 +82,7 @@ plan("test") = TestTask( ...
 
 mfls = dir(fullfile(base, "src", "**", "msfm*.c"));
 [mfls, nms] = deal(string(fullfile({mfls.folder}, {mfls.name})), string({mfls.name}));
-ofls = replace(fullfile(base, "bin", nms), '.c', "."+mexext());
+ofls = fullfile(base, "bin", replace(nms, ".c" + lineBoundary("end"), "."+mexext()));
 tnm = "compile_mex_"+extractBefore(nms,'.c');
 for i = 1:numel(mfls)
     plan(tnm(i)) = matlab.buildtool.tasks.MexTask(mfls(i), fileparts(ofls(i)), ...
@@ -415,5 +416,20 @@ ofl  = context.Task.Outputs.Path;
 res = runProjectTests("benchmark", 0);
 txt = string({cat(2,cat(2,res.Details).DiagnosticRecord).Report})';
 writelines(txt, ofl);
+
+end
+
+function compatabilityTask(context)
+% Check for required toolboxes
+req = ["Signal Processing", "Parallel Computing"];
+rec = ["Image Processing"];
+sug = reshape(string.empty,1,0);
+rep = "The following packages are " + ["required", "recommended", "suggested"] ... 
+    + ": " + sprintf('\t') + cellfun(@(s)join(s,", ",2),{req,rec,sug});
+arrayfun(@disp, rep(~ismissing(rep)));
+vn = string({ver().Name});
+i = ismember(req + " Toolbox", vn);
+assert(all(i), "The following toolboxes are required, but not installed:"+newline+join(req(~i)+ " Toolbox", newline));
+disp("All required toolboxes are installed.");
 
 end

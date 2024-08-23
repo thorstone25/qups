@@ -47,7 +47,7 @@ classdef(TestTags = ["Github", "full", "build"]) interpTest < matlab.unittest.Te
             tau_ = cfun(tau_);
 
             % gpu/cpu
-            switch dev, 
+            switch dev 
                 case "CPU", x0_ = gather(  x0_); 
                 case "GPU", x0_ = gpuArray(x0_);
             end
@@ -90,7 +90,7 @@ classdef(TestTags = ["Github", "full", "build"]) interpTest < matlab.unittest.Te
         % all permutations to test
         % ord = {[1,2,3,4], [1,3,2,4], [1,4,2,3]} % permute the data?
         terp = {'cubic', 'nearest', 'linear'}; % overlapping methods
-        dsum = {[], [2], [3,4], 6} % summation dimensions
+        dsum = {[], 2, [3,4], 6} % summation dimensions
         wvecd = {[], 3, [3,4]} % different outer-product weights dimensions
     end
     methods(Test, ParameterCombination = 'exhaustive')

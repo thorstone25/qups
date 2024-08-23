@@ -209,7 +209,7 @@ classdef BFTest < matlab.unittest.TestCase
 
     
     % Github test routine
-    methods(Test, ParameterCombination = 'sequential', TestTags={'Github'})
+    methods(Test, ParameterCombination = 'sequential', TestTags={'Github', 'build'})
         function github_psf(test, bf_name)%, prec, terp)
             if(any(bf_name == ["Eikonal","Adjoint"])), return; end % Too much compute
             
@@ -247,9 +247,9 @@ classdef BFTest < matlab.unittest.TestCase
             % for the Eikonal beamformer, pass if not given FSA delays
             if(bf_name == "Eikonal" && us.seq.type ~= "FSA"), return; end
             % if using a frequency domain method, skip half precision - the phase errors are too large
-            if(ismember(bf_name, ["Adjoint"]) && prec == "halfT"), return; end
+            if(ismember(bf_name, "Adjoint") && prec == "halfT"), return; end
             % weird phase error, but it's not important right now - skip it
-            if(ismember(bf_name, ["Adjoint"]) && us.seq.type == "VS") return; end % && isa(us.xdc, 'TransducerConvex'));
+            if(ismember(bf_name, "Adjoint") && us.seq.type == "VS"), return; end % && isa(us.xdc, 'TransducerConvex'));
             % is using the adjoint method, pagemtimes,pagetranspose must be supported
             test.assumeTrue( bf_name ~= "Adjoint" || (...
                    logical(exist('pagemtimes'   , 'builtin')) ...
@@ -264,7 +264,7 @@ classdef BFTest < matlab.unittest.TestCase
             % for frequency domain methods, the time-axis must be extended
             % so that the replications of the miage are outside of the
             % imaging range
-            if ismember(bf_name, ["Adjoint"])
+            if ismember(bf_name, "Adjoint")
                 dr = hypot(range(scanc.xb), range(scanc.zb)) / 2; % half the largest range across the image
                 dT = round(2 * dr / scat.c0 * chd.fs); % temporal buffer in indices
                 chd = zeropad(chd, dT, dT); % add buffer on both sides
