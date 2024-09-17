@@ -62,13 +62,26 @@ a = permute(a,[dims rdims]);
 % Make offset and index into a
 offset = prod(bsize);
 ndx = 1:prod(bsize);
+numelA = numel(a);
+linIndex = [];
 try
     for i=0:prod(csize)-1,
-        c{i+1} = reshape(a(ndx+i*offset),bsize);
+        linIndex = ndx+i*offset;
+        assert(all(isfinite(linIndex)), ...
+               'Elements of linear index not finite.');
+        assert(all(linIndex) > 0, ...
+               'Elements of linear index not > 0');
+        assert(all(linIndex) <= numelA, ...
+               'Elements of linear index not <= numelA');
+        assert(all(linIndex == floor(linIndex)), ...
+               'Elements of linear index not all integer-valued.');
+        aSub = a(linIndex);
+        reshaped = reshape(aSub,bsize);
+        c{i+1} = reshaped;
     end
 catch E
     % This should never happen!
     error('unexpected:num2cell', ...
-        'Unexpected error in num2cell. size(a): [%s]; dims: [%s]; offset: %d; ndx: [%s];  i: %d; error: %s', ...
-        strjoin(string(size(a))), strjoin(string(dims)), offset, strjoin(string(ndx)), i, getReport(E));
+        'Unexpected error in num2cell. size(a): [%s]; dims: [%s]; offset: %d; linIndex: [%s];  i: %d; error: %s', ...
+        strjoin(string(size(a))), strjoin(string(dims)), offset, strjoin(string(linIndex)), i, getReport(E));
 end
