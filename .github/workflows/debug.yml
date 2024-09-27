@@ -57,7 +57,7 @@ jobs:
       - name: Upload Logs
         uses: actions/upload-artifact@v4
         with:
-          name: Logs-${{runner.os}}
+          name: Logs-${{runner.os}}-${{matrix.release}}
           path: logs/
 
       # Enable tmate debugging of manually-triggered workflows if the input option was provided
