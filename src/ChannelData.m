@@ -1472,7 +1472,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % implicitly broadcasted: we can use ind2sub to recover it's
             % sizing
             ix = cell([numel(fdims), 1]); % indices of the frame for the data
-            [ix{:}] = ind2sub(dsz, gather(m)); % get cell array of indices
+            [ix{:}] = ind2sub([dsz 1], gather(m)); % get cell array of indices
             it = gather(min([ix{:}], tsz)); % restrict to size of chd.time
             ix = cellfun(@gather, ix, 'UniformOutput', false); % enforce on CPU
 
