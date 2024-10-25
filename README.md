@@ -223,7 +223,7 @@ First, setup your system for CUDA per [CUDA installation instructions](https://d
 
 ## Troubleshooting
 ### Parpool management
-Most functions will perform best with an active `parallel.ThreadPool` available. This can be started with `setup parallel` or `parpool Threads`. Alternatively, a `parallel.ProcessPool` can be started with `parpool Processes` (or `parpool local` on earlier MATLAB releases). Functions that allow specifying a parallel environment can avoid using the active parallel pool by using an argument of `0`, or can limit the number of . 
+Most functions will perform best with an active `parallel.ThreadPool` available. This can be started with `setup parallel` or `parpool Threads`. Alternatively, a `parallel.ProcessPool` can be started with `parpool Processes` (or `parpool local` on earlier MATLAB releases). Functions that allow specifying a parallel environment can avoid using the active parallel pool by using an argument of `0`, or can limit the number of parallel processes to at most `N` by passing `N` as an argument.
 
 ### GPU management
 Some QUPS functions use the currently selected `parallel.gpu.CUDADevice`, or select a `parallel.gpu.CUDADevice` by default. Use [`gpuDevice`](https://www.mathworks.com/help/parallel-computing/parallel.gpu.gpudevice.html) to manually select the gpu. Within a parallel pool, each worker can have a unique selection. By default, GPUs are spread evenly across all workers.
