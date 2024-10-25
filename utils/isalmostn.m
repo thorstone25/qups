@@ -18,7 +18,7 @@ if(~all(size(a) == size(b)) )
 end
 
 ntf = isnan(a) & isnan(b);
-vtf = (a - b) < tol;
+vtf = abs(a - b) < tol;
 ttf = ntf | vtf;
 tf = all(ttf(:));
 

@@ -626,9 +626,11 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
             % used by QUPS and Verasonics. If the delays cannot be
             % validated, t0 will be NaN.
             % 
-            % [...] = Sequence.Verasonics(..., 'tol', tol) sets the numeric
-            % threshold for verifying the parsed Verasonics delays are
-            % equivalent to the delays used by QUPS. The default is 1e-16.
+            % [...] = Sequence.Verasonics(..., 'tol', [ttol atol]) sets the
+            % numeric thresholds for verifying the parsed Verasonics delays
+            % and apodization weights are equivalent to the delays and
+            % apodization weights used by QUPS. The default is atol = 1e-9
+            % and ttol = 4e-9s = 4ns = 1 / (250MHz).
             % 
             % [...] =  Sequence.Verasonics(..., 'c0', c0) sets the sound
             % speed c0 in m/s. This should match the value of the Versonics
@@ -659,7 +661,7 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                 Trans (1,1) struct
                 TW struct {mustBeScalarOrEmpty} = struct.empty
                 kwargs.c0 (1,1) {mustBeNumeric, mustBePositive, mustBeFloat} = 1540
-                kwargs.tol (1,2) {mustBeNumeric, mustBePositive, mustBeFloat} = 1e-16 
+                kwargs.tol (1,2) {mustBeNumeric, mustBePositive, mustBeFloat} = [1/250e6 1e-9]
                 kwargs.aperture (:,:) {mustBeNumeric, mustBeInteger, mustBePositive}
                 kwargs.xdc Transducer {mustBeScalarOrEmpty} = TransducerArray.empty
             end
@@ -757,12 +759,28 @@ classdef Sequence < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.
                           1       .* sin(ang(:,2)), ...
                     cos(ang(:,1)) .* cos(ang(:,2)), ...
                     ]; % focal points
+                
                 if     all(rf > 0), styp = "FC"; % focused
                 elseif all(rf < 0), styp = "DV"; % diverging
                 else,               styp = "VS"; % unclear
                                     warning(wid, wmsg); % VS ambiguity warning
                 end
-                seq = Sequence("type",styp, "focus", lambda * pf.');
+                
+                R = 0; if isa(xdc, "TransducerConvex"), R = Trans.radius; end % radius
+                apx = [0 0 -R]; % apex / origin
+                dsta = vecnorm(pog - apx,2,2); % distance to apex
+                
+                if numel(uniquetol(dsta)) <= numel(uniquetol(rf)) % radial??
+                    tha = atan2(pog(:,1) - apx(1), pog(:,3) - apx(3)); % angle w.r.t. apex
+                    tha = tha .* (rf > 0); % ... weird inconsistency ...
+                    seq = SequenceRadial("type", styp ...
+                        , "apex" , apx * lambda ...
+                        , "angles", rad2deg(tha + ang(:,1)) ...
+                        , "ranges", (R + rf) * lambda ...
+                        );
+                else
+                    seq = Sequence("type",styp, "focus", lambda * pf.');
+                end
             
             else
                 warning( ...
