@@ -297,7 +297,7 @@ classdef ChannelData < matlab.mixin.Copyable
                 % get relevant receive info
                 b = kwargs.buffer(i);
                 Rx = Receive((b == [Receive.bufnum])); % filter by buffer and frame
-                if any(kwargs.frames), Rx = Rx(ismember([Receive.framenum], kwargs.frames)); end
+                if any(kwargs.frames), Rx = Rx(ismember([Rx.framenum], kwargs.frames)); end
                 if isempty(Rx) 
                     warning("No data found for buffer " + kwargs.buffer(i) + "."); 
                     [smode(i), fmod(i), chd(i)] = deal("N/A", nan, ChannelData('order','TMNF'));
@@ -1472,7 +1472,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % implicitly broadcasted: we can use ind2sub to recover it's
             % sizing
             ix = cell([numel(fdims), 1]); % indices of the frame for the data
-            [ix{:}] = ind2sub(dsz, gather(m)); % get cell array of indices
+            [ix{:}] = ind2sub([dsz 1], gather(m)); % get cell array of indices
             it = gather(min([ix{:}], tsz)); % restrict to size of chd.time
             ix = cellfun(@gather, ix, 'UniformOutput', false); % enforce on CPU
 
