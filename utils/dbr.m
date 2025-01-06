@@ -38,9 +38,9 @@ ax = gca; h = ax.Children( arrayfun(@(h) ...
 assert(~isempty(h), "Cannot identify an image for this axis."); % HACK - get the maximum value
 % caxis auto; cmax = max(caxis); 
 if exist('clim', 'file'), clm = @clim; else, clm = @caxis; end %#ok<CAXIS> - backwards compatibility
-cmax = max(cellfun(@(x) max(x,[],'all','omitnan'),{h.CData}),[],'all','omitnan');
+cmax = max(cellfun(@(x) max(x(isfinite(x)),[],'all','omitnan'),{h.CData}),[],'all','omitnan');
 switch mode
-    case "b-mode", colormap(ax, 'gray'); clm(cmax + [-rang   0 ]);
+    case "b-mode", colormap(ax, 'bone'); clm(cmax + [-rang   0 ]);
     case "echo"  , colormap(ax, 'jet' ); clm(cmax + [-rang   0 ]);
     case "phase" , colormap(ax, 'hsv' ); clm(0    + [-rang rang]);
     case "corr"  , colormap(ax, 'hot' ); clm(     + [rang    1 ]);
