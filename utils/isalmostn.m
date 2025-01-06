@@ -10,15 +10,18 @@ function [tf, tol] = isalmostn(a, b, tol)
 %
 % See also ISEQUAL ISEQUALN
 
-if nargin < 3, tol = 1e2*eps(max(max(a(:)), max(b(:)))); end
+if nargin < 3, tol = 1e2*eps(max(max(a,[],'all'), max(b,[],'all'))); end
 
-if(~all(size(a) == size(b)) )
+D = max(ndims(a), ndims(b)); % max dimension
+
+if(~all(size(a,1:D) == size(b,1:D)) )
     tf = false;
     return;
 end
 
-ntf = isnan(a) & isnan(b);
-vtf = abs(a - b) < tol;
+% find if any invalid
+ntf = xor(isnan(a), isnan(b)); % one, but not the other, is NaN
+vtf = abs(a - b) >= tol; % outside of tolerance
 ttf = ntf | vtf;
-tf = all(ttf(:));
+tf = ~any(ttf(:));
 

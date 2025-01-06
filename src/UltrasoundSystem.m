@@ -2766,11 +2766,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % ));
             %  ```
             % 
-            % NOTE: Multiple apoodization matrices are not supported for
+            % NOTE: Multiple apodization matrices are not supported for
             % OpenCL kernels.
             % 
-            % b = DAS(us, chd, ... 'c0', c0) uses a beamforming sound speed
-            % of c0. c0 can be a scalar or an NDarray that is broadcastable
+            % b = DAS(us, chd, ..., 'c0', c0) uses a beamforming sound speed
+            % of c0. c0 can be a scalar or an ND-array that is broadcastable
             % to size (I1 x I2 x I3) where  [I1, I2, I3] == us.scan.size.
             % The default is us.seq.c0.            
             % 
@@ -2822,9 +2822,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % occur, requiring MATLAB to be restarted!
             % 
             % DAS is similar to BFDAS, but is more computationally 
-            % efficient at the cost of code readability and interpolation 
-            % methods because it avoids calling the ChannelData/sample 
-            % method.
+            % efficient at the cost of code readability and available
+            % interpolation method because it avoids calling the
+            % ChannelData.sample() method.
             %
             % Example:
             % 
@@ -3088,30 +3088,33 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % seq instead of the Sequence us.seq.
             %
             % [...] = refocus(..., 'method', 'tikhonov') uses a tikhonov
-            % inversion scheme to compute the decoding matrix.
+            % inversion scheme to compute the decoding matrix. This is
+            % best employed for focused transmit seuqneces
             %
-            % [...] = refocus(..., 'gamma', gamma) uses a regularization
-            % parameter of gamma for the tikhonov inversion. If the method
-            % is not 'tikhonov', the argument is ignored. The default is
+            % [...] = refocus(..., 'method', 'tikhonov', 'gamma', gamma)
+            % uses a regularization parameter of gamma for the tikhonov
+            % inversion. If the method is not 'tikhonov', the argument is
+            % ignored. The regularization  parameter is scaled by the
+            % maximum singular value for each frequency. The default is
             % (chd.N / 10) ^ 2.
             %
             % References:
-            % [1] Hyun, D; Dahl, JJ; Bottenus, N. 
-            % "Real-Time Universal Synthetic Transmit Aperture Beamforming with 
-            % Retrospective Encoding for Conventional Ultrasound Sequences (REFoCUS)".
-            % 2021 IEEE International Ultrasonics Symposium (IUS), pp. 1-4.
-            % <a href="matlab:web('https://doi.org/10.1109/IUS52206.2021.9593648')">DOI: 10.1109/IUS52206.2021.9593648</a>
+            % [1] Ali, R.; Herickhoff C.D.; Hyun D.; Dahl, J.J.; Bottenus, N. 
+            % "Extending Retrospective Encoding For Robust Recovery of the Multistatic Dataset". 
+            % IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
+            % vol. 67, no. 5, pp. 943-956, Dec. 2019.
+            % <a href="matlab:web('https://doi.org/10.1109/TUFFC.2019.2961875')">DOI 10.1109/TUFFC.2019.2961875</a>
             % 
             % [2] Bottenus, N. "Recovery of the complete data set from focused transmit beams".
             % IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
             % vol. 65, no. 1, pp. 30-38, Jan. 2018.
             % <a href="matlab:web('https://doi.org/10.1109/TUFFC.2017.2773495')">DOI 10.1109/TUFFC.2017.2773495</a>
             % 
-            % [3] Ali, R.; Herickhoff C.D.; Hyun D.; Dahl, J.J.; Bottenus, N. 
-            % "Extending Retrospective Encoding For Robust Recovery of the Multistatic Dataset". 
-            % IEEE Transactions on Ultrasonics, Ferroelectrics, and Frequency Control, 
-            % vol. 67, no. 5, pp. 943-956, Dec. 2019.
-            % <a href="matlab:web('https://doi.org/10.1109/TUFFC.2019.2961875')">DOI 10.1109/TUFFC.2019.2961875</a>
+            % [3] Hyun, D; Dahl, JJ; Bottenus, N. 
+            % "Real-Time Universal Synthetic Transmit Aperture Beamforming with 
+            % Retrospective Encoding for Conventional Ultrasound Sequences (REFoCUS)".
+            % 2021 IEEE International Ultrasonics Symposium (IUS), pp. 1-4.
+            % <a href="matlab:web('https://doi.org/10.1109/IUS52206.2021.9593648')">DOI: 10.1109/IUS52206.2021.9593648</a>
             % 
             % 
             % Example:
@@ -3274,7 +3277,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %  ```
             % 
             % b = BFADJOINT(..., 'c0', c0) uses a beamforming sound speed 
-            % of c0. c0 can be a scalar or an NDarray that is broadcastable
+            % of c0. c0 can be a scalar or an ND-array that is broadcastable
             % to size (I1 x I2 x I3) where [I1, I2, I3] == us.scan.size. 
             % The default is us.seq.c0.
             %             
@@ -3839,7 +3842,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             %  ```
             % 
             % b = BFDAS(..., 'c0', c0) uses a beamforming sound speed 
-            % of c0. c0 can be a scalar or an NDarray that is broadcastable
+            % of c0. c0 can be a scalar or an ND-array that is broadcastable
             % to size (I1 x I2 x I3) where [I1, I2, I3] == us.scan.size. 
             % The default is us.seq.c0.
             %             
@@ -4848,40 +4851,57 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         end    
 
 
-        function apod = apCosineAngle(us, theta)
+        function apod = apCosineAngle(us, theta, kwargs)
             % APCOSINEANGLE - Create an cosine-weighted apodization array
             %
             % apod = APCOSINEANGLE(us) creates an ND-array to weight
-            % delayed data from the UltrasoundSystem us by the angle
+            % delayed data from the UltrasoundSystem us by the angle `phi`
             % between the element normal and the element to pixel vector.
             % The weighting is
             % 
             % `cosd(min(90, (phi / theta)))`
             % 
-            % where phi is the angle and theta is the maximum angle.
-            %
-            % apod = APCOSINEANGLE(us, theta) uses an acceptance angle
-            % of theta in degrees. The default is 45.
+            % where `theta` is the maximum accepted angle.
             %
             % The output apod has dimensions I1 x I2 x I3 x N x 1 where
             % I1 x I2 x I3 are the dimensions of the scan, N is the number
             % of receive elements.
             %
+            % apod = APCOSINEANGLE(us, theta) uses an acceptance angle
+            % of theta in degrees. The default is 45.
+            %
+            % apod = APCOSINEANGLE(..., 'gpu', false) avoids using a GPU.
+            % The default is true if a GPU is available and the
+            % intermediate memory usage will not exceed 4GB.
+            % 
+            % Example:
+            % us = UltrasoundSystem(); % default
+            % a = us.apCosineAngle(single(45)); % apodization ND-array
+            % 
+            % figure; imagesc(us.scan, a); title("Cosine Apodization"); % display
+            % hold on; plot(us.xdc, 'b','Marker', 'square'); legend(); % add Transducer
+            % colorbar; colormap hot; clim([0 1]); % format
+            % animate(a, 'fn', true, 'loop', false); % animate vs. elements
+            % 
             % See also APAPERTUREGROWTH APACCEPTANCEANGLE
 
             % defaults
             arguments
                 us (1,1) UltrasoundSystem
                 theta (1,1) {mustBePositive} = 45
+                kwargs.gpu (1,1) logical = canUseGPU() && (4 * us.scan.nPix * us.xdc.numel < 4 * 2^30 / 2^3)
             end
 
             % cosine apodization
             [pg, pn] = deal(us.scan.positions(), us.xdc.positions()); % pixels | elems
             [~,~,nn] = us.xdc.orientations(); % elem normals
             [pn, nn] = deal(swapdim(pn,2,5), swapdim(nn,2,5)); % match dims
+            if kwargs.gpu, theta = gpuArray(theta); end % imlpicit casting
+            [pn, nn, pg] = dealfun(@(x) cast(x, 'like', theta), pn, nn, pg);
             r  = (pg - pn); % elem -> pixel vector
             r  = r ./ vecnorm(r,2,1); % normalized
-            r  = swapdim(pagemtimes(nn, 'transpose', r, 'none'), 2:6); % normalized inner product
+            r  = swapdim(pagemtimes(nn, 'transpose', r, 'none'), 2:6, 1:5); % normalized inner product
+            r = max(-1,min(1,r)); % coerce in-bounds (numerical precision issues)
             apod = cosd(min(90,(90/theta)*acosd(r))); % cosine gradient with (scaled) angle
         end
     end
@@ -5053,7 +5073,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     ));
                     comp = @system;
                 else % via mexcuda
-                com{i} = cellstr(cat(1,...
+                com{i} = cellstr(cat(2,...
                     "-ptx", ...
                     "-output", fullfile(us.tmp_folder, argn(2, @fileparts, d.Source) + ".ptx"), ...
                     ... ("--" + d.CompileOptions),...
@@ -5063,7 +5083,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     ("-D" + d.DefinedMacros),...
                     which(string(d.Source)) ...
                     ... "-arch=" + arch + " ", ... compile for active gpu
-                    ));
+                    )');
                     comp = @(s) mexcuda(s{1}{:});
                 end                
                 try s = comp(com(i));

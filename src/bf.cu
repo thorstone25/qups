@@ -111,7 +111,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
 
                 // data/time index number
                 const U ci = cinv[cbase + n * cstride[3] + m * cstride[4]];
-                tau = (ci * (dv + dr) - pv[m].w);
+                tau = (ci * (dv + dr) - pv[m].w); // d/c - t0
 
                 // apply demodulation if non zero
                 if (fc) {w.x = cospi(2*fc*tau); w.y = sinpi(2*fc*tau);}

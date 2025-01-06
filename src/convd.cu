@@ -84,22 +84,15 @@ inline __host__ __device__ void operator+=(half2 &a, const half2 b){
 *
 *
 */
-# ifndef M
-__constant__ size_t M; 
-# endif
-# ifndef N
-__constant__ size_t N;
-# endif
-# ifndef L
-__constant__ size_t L; // total number of lags
-# endif
+
+
 # ifndef L0
 __constant__ int L0; // starting lag
 # endif
 
 // xcorr template
 template <typename T>
-inline __device__ void conv_temp(const T* x, const T* y, T* z, T za, size_t * sizes){
+inline __device__ void conv_temp(const T * const x, const T * const y, T * __restrict__ z, T za, size_t * sizes){
     /*    xcorr_temp(const T* x, const T* y, T* z, T za)
      x, y: input array pointer(s)
      za: 0 value for the data type
@@ -122,8 +115,8 @@ inline __device__ void conv_temp(const T* x, const T* y, T* z, T za, size_t * si
     
     const int c = threadIdx.x + blockDim.x*blockIdx.x; // column output index 
     const int l = threadIdx.y + blockDim.y*blockIdx.y; // strided output index 
-    const int s = blockIdx.z; // batch index 
-    
+    const int s = blockIdx.z; // batch index
+
     // if valid lag indices, multiply and accumulate in-place
     if(l < L && c < clen)
         # pragma unroll
@@ -137,27 +130,27 @@ inline __device__ void conv_temp(const T* x, const T* y, T* z, T za, size_t * si
 }
 
 // xcorr kernels
-__global__ void convf(const float* x, const float* y, float* z, size_t * sizes){
+__global__ void convf(const float* x, const float* y, float* __restrict__ z, size_t * sizes){
     conv_temp<float>(x, y, z, 0.0f, sizes);
 }
 
-__global__ void conv(const double* x, const double* y, double* z, size_t * sizes){
+__global__ void conv(const double* x, const double* y, double* __restrict__ z, size_t * sizes){
     conv_temp<double>(x, y, z, 0.0, sizes);
 }
 #if (__CUDA_ARCH__ >= 530)
-__global__ void convh(const unsigned short* x, const unsigned short* y, unsigned short* z, size_t * sizes){
+__global__ void convh(const unsigned short* x, const unsigned short* y, unsigned short* __restrict__ z, size_t * sizes){
     conv_temp<half>((half*)x, (half*)y, (half*)z, 0.0f, sizes);
 }
 #endif
-__global__ void convcf(const float2* x, const float2* y, float2* z, size_t * sizes){
+__global__ void convcf(const float2* x, const float2* y, float2* __restrict__ z, size_t * sizes){
     conv_temp<float2>(x, y, z, make_float2(0.0f,0.0f), sizes);
 }
 
-__global__ void convc(const double2* x, const double2* y, double2* z, size_t * sizes){
+__global__ void convc(const double2* x, const double2* y, double2* __restrict__ z, size_t * sizes){
     conv_temp<double2>(x, y, z, make_double2(0.0,0.0), sizes);
 }
 #if (__CUDA_ARCH__ >= 530)
-__global__ void convch(const ushort2* x, const ushort2* y, ushort2* z, size_t * sizes){
+__global__ void convch(const ushort2* x, const ushort2* y, ushort2* __restrict__ z, size_t * sizes){
     conv_temp<half2>((half2*)x, (half2*)y, (half2*)z, make_half2(0.0f, 0.0f), sizes);
 }
 #endif
