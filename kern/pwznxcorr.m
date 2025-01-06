@@ -89,10 +89,15 @@ function y = pwznxcorr(x, lags, W, U, kwargs)
 % ```
 %
 % y = PWZNXCORR(..., 'pad', false) disables 0-padding prior to computing
-% the cross-correlation. If `imfilter` (image processing toolbox) is not
+% the cross-correlation. If `imfilter` (Image Processing Toolbox) is not
 % available, this introduces wrap-around artefacts, but prevents the need
 % to copy x, reducing the memory footprint slightly. The default is true.
 %
+% y = PWZNXCORR(..., 'iflt', true) utilizes `imfilter` to apply convolution
+% rather than native convolution.  The Image Processing Toolbox is required
+% to use this option. The default is true if `imfilter` exists and false
+% otherwise. 
+% 
 % Example:
 % % Create correlated channels with gaussian phase noise
 % [T, N, P] = deal(512, 64, 10); % time, channels, samples-per-period
@@ -125,7 +130,7 @@ function y = pwznxcorr(x, lags, W, U, kwargs)
 
 arguments
     x {mustBeNumeric, mustBeFloat} % data
-    lags (1,:) double {mustBeInteger, mustBeFinite} % lags
+    lags (1,:) double {mustBeFinite} % lags
     W {mustBeNumeric} = max([ceil(max(abs(lags)) / 2), 1]) % window size or weighting vector
     U (1,1) double {mustBeInteger, mustBePositive} = 1 % upsampling ratio
     kwargs.pad (1,1) logical  = true; % whether to zero-pad the data prior to correlation
@@ -137,8 +142,9 @@ arguments
     kwargs.tdim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = 1
     kwargs.ndim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = 2
     kwargs.ldim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = ndims(x) + 1;
-    kwargs.multi (1,1) logical = false; % whether to reference multiple channels
+    kwargs.multi (1,1) logical = true; % whether to reference multiple channels
     kwargs.lvec (1,1) logical = true; % whether to vectorize lags
+    kwargs.iflt (1,1) logical = exist('imfilter', 'file'); % requires image processing toolbox
 end
 % alias
 x0 = kwargs.x0; 
@@ -154,7 +160,8 @@ if any(wsz_chk ~= 1)
 end
 
 % parse lags
-if isscalar(lags), lags = -lags:lags; end
+isint = all(lags == floor(lags),'all');
+if isscalar(lags) && isint, lags = -lags:lags; end
 
 % parse window
 if isscalar(W)
@@ -170,17 +177,23 @@ end
 if kwargs.multi, [C, Wn] = deal(Wn, C); end 
 
 % vector accumulation function
-isiflt = exist('imfilter', 'file'); % requires image processing toolbox
-if isiflt % whether to use imfilter
+if kwargs.iflt % whether to use imfilter
     if kwargs.pad, iopt = 0; else, iopt = 'circular'; end % 0-padding
     kernfun = @(x) imfilter(x, double(w), 'same', iopt); 
 else
     kernfun = @(x) cast(convn(x, w, 'same'), 'like', x);
 end
 
+% lag-sampling function
+if isint
+    lsampfun = @(x, l, dim) arrayfun(@(l){circshift(x, -l, dim)},l);
+else
+    lsampfun = @(x, l, dim) {interpd(x, l+swapdim(0:size(x,dim)-1,2,dim), dim)};
+end
+
 % manual temporal 0-padding (if imfilter not available)
-if kwargs.pad && ~isiflt
-    P = max(abs(lags)); % padding length
+if kwargs.pad && ~kwargs.iflt
+    P = ceil(max(abs(lags))); % padding length
     D = max([ndims(x), kwargs.tdim, kwargs.ndim, kwargs.ldim]); % max dimension
     psz = size(x,1:D); % data dimensions
     psz(kwargs.tdim) = P; % pad in this dimension
@@ -234,10 +247,10 @@ if NORM, xln = kernfun(real(xlz .* conj(xlz))); end % normalization power
 for i = numel(lags) : -1 : 1
     % delay right channel by lag
     if kwargs.lvec
-        xr_l = arrayfun(@(l){conj(circshift(xr, -l, tdim))}, lags);
-        xr_l = cat(kwargs.ldim, xr_l{:});
+        xr_l = lsampfun(xr, swapdim(lags,2,kwargs.ldim), tdim);
+        xr_l = conj(cat(kwargs.ldim, xr_l{:}));
     else
-        xr_l = conj(circshift(xr, -lags(i), tdim));
+        xr_l = conj(subsref(lsampfun(xr, lags(i), tdim),substruct('{}',{1})));
     end
 
     % select portion
@@ -249,7 +262,11 @@ for i = numel(lags) : -1 : 1
     end
 
     % non-normalized correlation
-    y = kernfun(xlz .* xrz_l); % (T x [N|N-S] x ...)
+    if kwargs.multi
+        y = kernfun(convd(xlz, flip(xrz_l,2), 2, "same")); % (T x [N|N-S] x ...)
+    else
+        y = kernfun(xlz .* xrz_l); % (T x [N|N-S] x ...)
+    end
 
     % normalization for (Z)NCC
     if NORM
@@ -257,7 +274,11 @@ for i = numel(lags) : -1 : 1
         xrn_l = kernfun(real(xrz_l .* conj(xrz_l)));
 
         % normalization denominator - complex for (garbage) negative amplitudes
-        r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)) .* sqrt(Wn); % denom
+        if kwargs.multi
+            r = sqrt(complex(convd(xln, flip(xrn_l,2), 2, "same"))) .* sqrt(Wn); % denom
+        else
+            r = sqrt(complex(xln)) .* sqrt(complex(xrn_l)) .* sqrt(Wn); % denom
+        end
 
         % normalize
         y = y ./ r;
@@ -275,6 +296,6 @@ end
 if ~kwargs.lvec, y = cast(cat(kwargs.ldim, yi{:}), 'like', x); end % (T x [N|N-S] x ... x lags)
 
 % undo manual 0-padding
-if kwargs.pad && ~isiflt, y = sub(y, 1:size(y,kwargs.tdim)-P, kwargs.tdim); end
+if kwargs.pad && ~kwargs.iflt, y = sub(y, 1:size(y,kwargs.tdim)-P, kwargs.tdim); end
 
 
