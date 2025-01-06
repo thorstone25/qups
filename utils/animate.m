@@ -166,8 +166,10 @@ if ~isempty(kwargs.title)
 end
 
 if kwargs.fn
-    [i_, m_] = ndgrid(1:I, 1:M); % vectorize
-    fttl = arrayfun(@(i,m) " (" + frameSub(x,m,i) + ")", i_, m_); % for each
+    xszs = cellfun(@size, x, 'UniformOutput', false);
+    parfor(i_ = 1:I, 0)
+        fttl(i_,:) = "("+frameSub(xszs{i_},(1:M)')+")";
+    end
 else
     fttl = repmat("", [I M]);
 end
@@ -235,18 +237,18 @@ him = flip([him{:}]); % image handle array, in order of creation
 
 % TODO: check sizing of data versus image handles?
 
-function mi = frameSub(x,m,i)
-xsz = size(x{i}); % total size
+function mi = frameSub(xsz,m)
+% xsz = size(x{i}); % total size
 if nnz(xsz(3:end) > 1) > 1 % more than 1 frame dimension
     D = length(xsz);
     mi = cell(1,D-2);
-    [mi{:}] = ind2sub(xsz(3:D), m); % get all sub-indices
+    [mi{:}] = ind2sub(xsz(3:D), m(:)); % get all sub-indices
     mi = [mi{:}]; % cell -> array
 else % linear indexing
-    mi = m;
+    mi = m(:);
 end
 mi = string(mi); % num -> string
-mi = join(mi, ", "); % 1, 2, 3, ...
+mi = join(mi, ", ", 2); % 1, 2, 3, ...
 
 
 
