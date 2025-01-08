@@ -132,11 +132,16 @@ if use_gdev || use_odev
 
     % determine the data type
     if     isftype(x, 'double')
-        suffix = "" ; prc = 64; [x,t1,t2,w] = dealfun(@double, x, t1, t2, w);
+        suffix = "" ; prc = 64; proto = (complex(double(x([])))); 
+        [x ,w ] = dealfun(@(x) cast(x, 'like',      proto),  x , w);
+        [t1,t2] = dealfun(@(x) cast(x, 'like', real(proto)), t1, t2);
     elseif isftype(x, 'single')
-        suffix = "f"; prc = 32; [x,t1,t2,w] = dealfun(@single, x, t1, t2, w);
+        suffix = "f"; prc = 32; proto = (complex(single(x([]))));
+        [x ,w ] = dealfun(@(x) cast(x, 'like',      proto),  x , w);
+        [t1,t2] = dealfun(@(x) cast(x, 'like', real(proto)), t1, t2);
     elseif isftype(x, 'halfT'  )
-        suffix = "h"; prc = 16; [x,t1,t2,w] = dealfun(@(x)gpuArray(halfT(x)), x, t1, t2, w); % custom type
+        suffix = "h"; prc = 16; 
+        [x,t1,t2,w] = dealfun(@(x) gpuArray(halfT(x)), x, t1, t2, w); % custom type
     else
         suffix = "f" ; prc = 32;
         warning("Datatype " + class(x) + " not recognized as a GPU compatible type.");
