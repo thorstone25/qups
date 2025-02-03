@@ -2072,6 +2072,367 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd.fs = us.fs;
             chd.t0 = chd.t0 + t0;
         end
+
+        function [p, t] = calc_hp(us, scat, element_subdivisions, kwargs)
+            % CALC_HP - Simulate the pressure field/sensitivity via FieldII
+            %
+            % p = CALC_HP(us) simulates the transmit pressure field p
+            % emitted by the UltrasoundSystem us. p is returned as a 
+            % (T x I x M) ND-array where T is time, I is the pixels of
+            % us.scan, and M is each transmit.
+            % 
+            % p = CALC_HP(us, scat) simulates the transmit pressure field p
+            % emitted by the UltrasoundSystem us into the homogeneous
+            % Medium or Scatterers scat. Only the ambient sound speed
+            % and attenuation affect the pressure field calculation. The
+            % default is Medium('c0', us.seq.c0).
+            % 
+            % p = CALC_HP(us, med, element_subdivisions) specifies the
+            % number of subdivisions in width and height for each element.
+            % The default is [1, 1].
+            %
+            % p = CALC_HP(..., "ap", aperture) specifies whether to
+            % simulate the transmit aperture, receive aperture, or the
+            % both (2-way) apertures. The latter calls `calc_hhp()`. The
+            % default is "tx".
+            %
+            % p = CALC_HP(..., "rxseq", rxseq) specifies a receive Sequence
+            % rxseq for the receive beam focusing (or analagously delays
+            % and apodization). The default is us.seq (identical to the
+            % transmit sequence).
+            %
+            % [p, t] = CALC_HP(...) additionally returns the time axes t.
+            % 
+            % [...] = CALC_HP(...,'c0', c0) sets the sound speed c0.
+            % The default is us.seq.c0.
+            %
+            % [...] = CALC_HP(..., 'parenv', clu) or 
+            % [...] = CALC_HP(..., 'parenv', pool) uses the
+            % parallel.Cluster clu or the parallel.Pool pool to
+            % parallelize computations. parallel.ThreadPools are invalid
+            % due to mex function restrictions.
+            % 
+            % [...] = CALC_HP(..., 'parenv', 0) avoids using a 
+            % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
+            % GPU or if memory usage explodes on a parallel.ProcessPool.
+            %
+            % The default is the current pool returned by gcp.
+            % 
+            % job = CALC_HP(..., 'parenv', clu, 'job', true)
+            % returns a job on the parcluster clu for each scatterer. The
+            % job can then be run with `submit(job)`.
+            % 
+            % job = CALC_HP(..., 'job', true) uses the default
+            % cluster returned by parcluster().
+            % 
+            % job = CALC_HP(..., 'job', true, 'type', 'Independent')
+            % creates an independent job via `createJob`.
+            % 
+            % job = CALC_HP(..., 'job', true, 'type', 'Communicating')
+            % creates a communicating job via `createCommunicatingJob`.
+            % This is the default.
+            % 
+            % An independent job transfers and stores a separate set of
+            % data for each task, allowing each transmit to be simulated on
+            % a different worker which may exist on different nodes, but it
+            % requires a full copy of the inputs for each worker which may
+            % incur a heavy data transfer and storage cost.
+            % 
+            % A communicating job shares all resources defined by the
+            % parcluster across all workers, which reduces data transfer
+            % and storage costs, but may require the entire job to fit on a
+            % single node.
+            % 
+            % The parcluster should be configured according to the job. For
+            % a communicating job, the NumWorkers and any memory options
+            % should be configured for all transmits. For an independent
+            % job, the NumWorkers and any memory options should be
+            % allocated for an individual transmit.
+            % 
+            % References:
+            % [1] Jensen, Jørgen Arendt.
+            % <a href="matlab.web('https://orbit.dtu.dk/en/publications/field-a-program-for-simulating-ultrasound-systems')">"Field: A program for simulating ultrasound systems."</a>
+            % Medical & Biological Engineering & Computing 
+            % 34.sup. 1 (1997): 351-353.
+            % 
+            % Example:
+            % % Setup a Focused Transmit
+            % xdc = TransducerArray.L12_3v(); % Verasonics L12-3v
+            % seq = Sequence('type', 'FC', 'c0', 1540); % Sequence @ 1540 m/s
+            % us = UltrasoundSystem('xdc', xdc, 'seq', seq); % get a system
+            % 
+            % % Configure
+            % [us.scan.dx, us.scan.dz] = deal(us.lambda / 2); % set field resolution
+            % us.seq.focus = [0 0 xdc.el_focus]'; % set the transmit focus
+            % 
+            % % Simulate
+            % [p, t] = calc_hp(us); % simulate the transmit pressure field
+            % p = hilbert(p); % analytic
+            %
+            % % Display the data
+            % figure;
+            % hi = imagesc(us.scan, reshape(p(end,:), us.scan.size));
+            % cbd = mod2db(prctile(abs(p(:)), [0.01 99.99])); % color axes
+            % dbr echo; clim(gather(cbd)); % set colors
+            %
+            % % Animate over time
+            % pi = reshape(p, [size(p,1), us.scan.size]); % as an image
+            % ttls = "Transmit Field Energy" + newline ...
+            %      + "Time: t = "+(1e6*t)+" us"; % titles
+            % animate(pi, hi, "title", ttls, "loop", false, "fs", Inf);
+            % 
+            % % Example 2:
+            % % Run the sim on a parcluster instead
+            % clu = parcluster();
+            % job = calc_hp(us, 'job', true, 'parenv', clu);
+            % 
+            % ... modify the job ...
+            % 
+            % % simulate data
+            % submit(job); % launch
+            % wait(job); % wait for the job to finish
+            % out = fetchOutputs(job); % read data
+            % [p2, t2] = deal(out{:}); % parse
+            % 
+            % isalmostn(p, p2) % verify
+            % 
+            % See also ULTRASOUNDSYSTEM/CALC_SCAT_ALL ULTRASOUNDSYSTEM/CALC_SCAT_MULTI
+
+            arguments
+                us (1,1) UltrasoundSystem
+                scat {mustBeA(scat, ["Medium","Scatterers"])} = Medium('c0', us.seq.c0);
+                element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
+                kwargs.ap (1,1) string {mustBeMember(kwargs.ap, ["tx","rx","2way"])} = "tx"
+                kwargs.rxseq (1,1) Sequence = us.seq % foci for the receive beams
+                kwargs.c0 (1,1) double = us.seq.c0 % sound speed
+                kwargs.fc double {mustBeNonnegative} % attenuation central frequency
+                kwargs.parenv {mustBeScalarOrEmpty, mustBeA(kwargs.parenv, ["parallel.Cluster", "parallel.Pool", "double"])}
+                kwargs.job (1,1) logical = false
+                kwargs.type (1,1) string {mustBeMember(kwargs.type, ["Communicating", "Independent"])} = "Communicating";
+                kwargs.verbose (1,1) logical = false
+            end
+            
+            % validate inputs
+            if ~isfield(kwargs, "fc") % initialize if not already
+                switch kwargs.ap
+                    case "tx", kwargs.fc =       us.tx.fc            ;
+                    case "rx", kwargs.fc =                 us.rx.fc  ;
+                    otherwise, kwargs.fc = mean([us.tx.fc, us.rx.fc]);
+                end
+            end
+
+            % one freq per scat
+            if ~any(numel(kwargs.fc) == [1 numel(scat)])
+                error("QUPS:calc_hp:vectorCentralFrequency", ...
+                    "The number of central frequencies ("+numel(kwargs.fc)...
+                    +") must be scalar or equivalent to the number of Scatterers (" ...
+                    +numel(scat)+")");
+            elseif isscalar(kwargs.fc)
+                kwargs.fc = repmat(kwargs.fc, size(scat)); % vectorize
+            end
+
+            % must be the same number of rxseq as txseq
+            if kwargs.ap ~= "tx" && (us.seq ~= kwargs.rxseq || us.seq.numPulse ~= kwargs.rxseq.numPulse)
+                error("QUPS:calc_hp:invalidRxSequence", ...
+                    "The receive focal sequence must have an identical number of foci ("+us.seq.numPulse ...
+                    +") as the transmit focal sequence ("+kwargs.rxseq.numPulse+")" ...
+                    );
+            end
+
+            % set default parenv
+            if ~isfield(kwargs, 'parenv')
+                hcp = gcp('nocreate');
+                if kwargs.job
+                    kwargs.parenv = parcluster(); % default cluster
+                elseif isa(hcp, 'parallel.ThreadPool')
+                    kwargs.parenv = 0; % don't default to a thread pool
+                else
+                    kwargs.parenv = hcp; % use the current pool
+                end
+            end
+
+            % alias
+            [kvb, fcs, rxseq] = deal(kwargs.verbose, kwargs.fc, kwargs.rxseq);
+
+            % make a (communicating) job(s) instead
+            if kwargs.job
+                fkeep = ["c0", "ap", "verbose"]; % fields to keep
+                opts = namedargs2cell(rmfield(kwargs, setdiff(string(fieldnames(kwargs)), fkeep))); % all other fields
+                switch kwargs.type
+                    case "Communicating"
+                        job = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool');
+                        job.createTask(@(us, scat) ...
+                            us.calc_hp(scat, element_subdivisions ...
+                            , 'parenv', Inf, 'fc', fcs, 'rxseq', rxseq, opts{:} ...
+                            ), 2, {us, scat}, 'CaptureDiary',true);
+
+                        % anonymous function to read in data
+                        rfun = @fetchOutputs;
+                        % rfun = @(job) job.Tasks(1).OutputArguments{1};
+
+                    case "Independent"
+                        for s = 1:numel(scat) % for each Scatterers
+                            seqs = splice(us.seq,1); % split up into individual sequences
+                            rsqs = splice(rxseq ,1); % split up into individual sequences
+                            job(s) = createJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true); %#ok<AGROW>
+                            us_ = copy(us); % copy semantics
+                            for m = 1:us.seq.numPulse % each tx
+                                us_.seq = seqs(m); % switch to next tx
+                                job(s).createTask(@(us,scat,fc,rsq) ...
+                                    us.calc_hp(scat, element_subdivisions ...
+                                    , 'parenv', 0, 'fc', fc, 'rxseq', rsq, opts{:} ...
+                                    ), 2, {us, scat(s), fcs(s), rsqs(s)}, 'CaptureDiary',true);
+                            end
+
+                            % anonymous function to read in data
+                            rfun = @fetchOutputs;
+                            % rfun = @(jobs) ...
+                            %     join( arrayfun(@(job) ... for each job
+                            %     join( arrayfun(@(tsk) ... for each tsk
+                            %     tsk.OutputArguments{1}, ... extract data
+                            %     job.Tasks), 3), ... and join tasks (txs) in dim 3
+                            %     jobs), 4); % and join jobs (scats) in dim 4
+                        end
+
+                end
+                [p, t] = deal(job, rfun); % alias
+                return;
+            end
+
+            % helper function
+            vec = @(x) x(:); % column-vector helper function
+
+            % get the Tx/Rx impulse response function / excitation function
+            wv_tx = copy(us.tx.impulse); % transmitter impulse
+            wv_rx = copy(us.rx.impulse); % receiver impulse
+            wv_pl = copy(us.seq.pulse); % excitation pulse
+
+            % get the time axis (which passes through t == 0)
+            [wv_tx.fs, wv_rx.fs, wv_pl.fs] = deal(gather(us.fs));
+            t_tx = wv_tx.time;
+            t_rx = wv_rx.time;
+            t_pl = wv_pl.time;
+
+            % define the impulse and excitation pulse
+            tx_imp = gather(double(real(vec(wv_tx.samples)')));
+            rx_imp = gather(double(real(vec(wv_rx.samples)')));
+            tx_pls = gather(double(real(vec(wv_pl.samples)')));
+
+            % get the apodization and time delays across the aperture(s)
+            apd_tx = gather( us.seq.apodization(us.tx)); % N x M
+            tau_tx = gather(-us.seq.delays(     us.tx)); % N x M
+            tau_offset_tx = min(tau_tx, [], 1); % (1 x M)
+            tau_tx = tau_tx - tau_offset_tx; % 0-base the delays for FieldII
+
+            apd_rx = gather( rxseq.apodization(us.rx)); % N x M
+            tau_rx = gather(-rxseq.delays(     us.rx)); % N x M
+            tau_offset_rx = min(tau_rx, [], 1); % (1 x M)
+            tau_rx = tau_rx - tau_offset_rx; % 0-base the delays for FieldII
+
+            % choose the parallel environment to operate on: avoid running on ThreadPools
+            parenv = kwargs.parenv;
+            if isempty(parenv), parenv = 0; end
+            if isa(parenv, 'parallel.ThreadPool') || isa(parenv, 'parallel.BackgroundPool')
+                warning("QUPS:calc_scat:invalidParalelEnvironment", ...
+                    "calc_scat_multi cannot be run on a "+class(parenv)+"."); % Mex-files ...
+                parenv = 0; 
+            end
+
+            % splice
+            [M, F] = deal(size(tau_tx,2), numel(scat)); % number of transmits/frames
+            [fs_, tx_, rx_, ap] = deal(gather(us.fs), us.tx, us.rx, kwargs.ap); % splice
+            [c0, att] = arrayfun(@(t) deal(t.c0, t.alpha0), scat); % splice
+            pos = {reshape(cast(us.scan.positions(), 'double'), 3, [])}; % field positions {(3 x I)}
+            if ~isscalar(kwargs.fc), fc_ = kwargs.fc; else, fc_ = repmat(kwargs.fc, size(scat)); end
+
+            % Make position/amplitude and transducers constants across the workers
+            if isa(parenv, 'parallel.Pool')
+                cfun = @parallel.pool.Constant;
+                if kwargs.verbose, tb = ticBytes(parenv); end
+            else
+                cfun = @(x)struct('Value', x);
+                [pos] = {pos}; % for struct to work on cell arrays
+            end
+                 
+            [pos_, tx_, rx_] = dealfun(cfun, pos, tx_, rx_);
+            [pres, ts] = deal(cell(M,F)); % pre-allocate
+            parfor (m = 1:M, parenv) % each transmit pulse
+            % for (m = 1:M) % each transmit pulse %%% DEBUG %%%
+                % (re)initialize field II
+                field_init(-1);
+
+                % get Tx/Rx apertures
+                p_focal = [0;0;0];
+                Tx = tx_.Value.getFieldIIAperture(element_subdivisions, p_focal.'); %#ok<PFBNS> % constant over workers
+                Rx = rx_.Value.getFieldIIAperture(element_subdivisions, p_focal.'); %#ok<PFBNS> % constant over workers
+
+                % set the impulse response function / excitation function
+                xdc_impulse   (Tx, tx_imp);
+                xdc_impulse   (Rx, rx_imp);
+                xdc_excitation(Tx, tx_pls);
+
+                % nullify the response on the receive aperture
+                % xdc_times_focus(Rx, 0,  zeros([1, rx_.Value.numel])); % set the delays manually
+                % for each receive, set the receive delays and apodization
+                xdc_times_focus(Rx, 0, double(tau_rx(:,m)')); % set the delays
+                xdc_apodization(Rx, 0, double(apd_rx(:,m)')); % set the apodization
+
+                % for each transmit, set the transmit time delays and
+                % apodization
+                xdc_times_focus(Tx, 0, double(tau_tx(:,m)')); % set the delays
+                xdc_apodization(Tx, 0, double(apd_tx(:,m)')); % set the apodization
+
+                for (f = F:-1:1) %#ok<NO4LP> % each scat frame
+                    % set sound speed/sampling rate
+                    set_field('fs', double(fs_));
+                    set_field('c', c0(f)); %#ok<PFBNS> % this array is small
+
+                    % set the attenuation
+                    use_att = isfinite(att(f)) && isfinite(fc_(f)); %#ok<PFBNS> this array is small too
+                    if use_att % TODO: no need to branch?
+                        set_field('att',fc_(f)*att(f)); % attenuation, frequency independent
+                        set_field('freq_att',  att(f)); % attenuation, frequency   dependent
+                        set_field('att_f0'  ,  fc_(f)); % attenuation, central frequency
+                        set_field('use_att' , double(use_att)); % turn on attenuation modelling                        
+                    end
+                    if kvb, disp("Simulating pulse "+m+" of frame "+f+" "+sub(["without","with"],1+use_att) + " attenuation."); end
+
+
+                    % call the sim
+                    % [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
+                    switch ap
+                        case "tx"  , [pres{m,f}, ts{m,f}] = calc_hp( Tx   , pos_.Value{f}.');  %#ok<PFBNS> % constant over workers
+                        case "rx"  , [pres{m,f}, ts{m,f}] = calc_hp( Rx   , pos_.Value{f}.');              % constant over workers
+                        case "2way", [pres{m,f}, ts{m,f}] = calc_hhp(Tx,Rx, pos_.Value{f}.');              % constant over workers
+                    end
+                end
+            end
+
+            if isa(parenv, 'parallel.Pool') && kwargs.verbose, tocBytes(parenv, tb); end
+
+            % adjust start time based on signal time definitions
+            switch ap
+                case "tx", tau_offset = tau_offset_tx                ;
+                case "rx", tau_offset =                 tau_offset_rx;
+                otherwise, tau_offset = tau_offset_tx + tau_offset_rx;
+            end
+            t0 = ... cell2mat(ts) + ... % fieldII start time (1 x 1 x M x F)
+                (t_pl(1) + t_tx(1) + t_rx(1)) ... signal delays for impulse/excitation
+                + shiftdim(tau_offset,-1) ... 0-basing the delays across the aperture
+                ; % 1 x 1 x M
+            
+            % create the output QUPS ChannelData object 
+            chd = cellfun(@(x, t0) ChannelData('data', x, 't0', t0, 'fs', us.fs), pres, ts); % per transmit/frame (M x F) object array
+            chd = arrayfun(@(f) join(chd(:,f), 3), 1:F); % join over transmits (1 x F) object array
+            if ~isscalar(chd), chd = join(chd, 4); end % join over frames (1 x 1) object array
+
+            % set sampling frequency and transmit times for all
+            chd.fs = us.fs;
+            chd.t0 = chd.t0 + t0;
+
+            % output (T x I1 x I2 x I3 x M x F)
+            [p, t] = deal(chd.data, chd.time);
+        end
     end
     
     % k-Wave calls
