@@ -48,7 +48,7 @@ function y = wsinterpd2(x, t1, t2, dim, w, sdim, interp, extrapval, omega)
 %
 
 %% validate dimensions
-persistent k prc0; % cache prior kernel calls
+persistent d k prc0; % cache prior kernel calls
 if nargin < 9 || isempty(omega),     omega = 0; end
 if nargin < 8 || isempty(extrapval), extrapval = nan; end
 if nargin < 7 || isempty(interp),    interp = 'linear'; end
@@ -96,12 +96,13 @@ dsizes = [max(size(t1,1),size(t2,1)), max([size(t1,2:S); size(t2,2:S); size(x,2:
 % function to determine type
 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
-use_gdev = exist('interpd.ptx', 'file') ...
+use_gdev = ((isa(k,'parallel.gpu.CUDAKernel') && existsOnGPU(k)) || exist('interpd.ptx', 'file')) ...
         && ( isa(x, 'gpuArray') || isa(t1, 'gpuArray') || isa(t2, 'gpuArray') || isa(x, 'halfT') && x.gtype) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
         && real(omega) == 0;
 
-use_odev = exist('interpd.cl', 'file') ...
+use_odev = ~use_gdev && ...
+           ((isa(k,'oclKernel'              ) && existsOnGPU(k)) || exist('interpd.cl', 'file')) ...
         && (ismember(interp, ["nearest", "linear", "cubic", "lanczos3"])) ... 
         && real(omega) == 0;
 
@@ -213,7 +214,8 @@ if use_gdev || use_odev
     end
 
     % constant arguments
-    if use_gdev, d = gpuDevice(); cargs = {flagnum, imag(omega)}; else, d = k.Device; cargs = {}; end 
+    if use_odev, cargs = {}; else, cargs = {flagnum, imag(omega)}; end
+    if use_odev, d = k.Device; elseif use_gdev && ~use_cached, d = gpuDevice(); end
 
     % kernel sizing
     K = d.MaxGridSize(2);
