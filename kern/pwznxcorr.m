@@ -142,7 +142,7 @@ arguments
     kwargs.tdim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = 1
     kwargs.ndim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = 2
     kwargs.ldim (1,1) int64 {mustBeNumeric, mustBeInteger, mustBePositive} = ndims(x) + 1;
-    kwargs.multi (1,1) logical = true; % whether to reference multiple channels
+    kwargs.multi (1,1) logical = false; % whether to reference multiple channels
     kwargs.lvec (1,1) logical = true; % whether to vectorize lags
     kwargs.iflt (1,1) logical = exist('imfilter', 'file'); % requires image processing toolbox
 end
