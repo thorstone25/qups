@@ -4483,18 +4483,20 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 if isfinite(kwargs.bsize)
                     [chds, im] = splice(chd(i), chd.mdim, kwargs.bsize); % always splice tx
                     Ma = cellfun(@(x) size(x, 5), varargin); % size in tx dim
-                    bi = {0}; % implicit preallocation
-                    for m = numel(chds):-1:1 % each set of txs
+                    bi = {0}; bi0 = 0; a0 = cast(1,'like', aproto); % (implicit) preallocation
+                    for k = find(Ma == 1); a0 = a0 .* varargin{k}; end % init apodization for all tx, force type/complexity (optimization)
+                    for m = numel(chds):-1:1, a = a0; % each set of txs
                         tau_txm = sub(tau_tx, im(m), 5); % index delays per tx
-                        a = cast(sub(varargin{end}, unique(min(im{m},Ma(end))), 5), 'like', aproto); % init apodization per tx, force type/complexity (optimization)
-                        for s = 1:numel(varargin)-1, a = a .* sub(varargin{s}, unique(min(im{m},Ma(s))), 5); end % reduce apodization per tx
+                        for s = find(Ma ~= 1), j = min(im{m}, Ma(s)); % gaurd OOB
+                            a = a .* varargin{s}(:,:,:,:,j);
+                        end % reduce apodization per tx
                         a = cast(a, 'like', aproto); % ensure complex
                         bim = sample2sep(chds(m), tau_txm, tau_rx, kwargs.interp, a, sdim, kwargs.fmod, [4, 5]); % (I1 x I2 x I3 x [1|N] x [1|M] x [F x ... ])
                         if kwargs.keep_tx, bi{m} = bim;
-                        else, bi{1} = bi{1} + bim;
+                        else, bi0 = bi0 + bim;
                         end
                     end
-                    bi = cat(5, bi{:});
+                    if kwargs.keep_tx, bi = cat(5, bi{:}); else, bi = bi0; end
                 else  
                     a = cast(varargin{end},'like', aproto); for s = 1:numel(varargin)-1, a = a .* varargin{s}; end % reduce apodization
                     a = cast(a, 'like', aproto); % ensure complex
