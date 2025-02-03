@@ -483,12 +483,12 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd =  uint8T(chd) , chd = applyFun2Data(chd, @uint8); end
         % cast underlying type to uint8
         function T = classUnderlying(chd), try T = classUnderlying(chd.data); catch, T = class(chd.data); end, end % revert to class if undefined
-        % underlying class of the data or class of the data
-        function T = underlyingType(chd), try T = underlyingType(chd.data); catch, T = class(chd.data); end, end % R2020b+ overload
-        % underlying type of the data or class of the data
-        function tf = isreal(chd), tf = isreal(chd.data); end
+        % underlying class or type of the data
+        function T = underlyingType( chd), try T = underlyingType(chd.data); catch, T = class(chd.data); end, end % R2020b+ overload
+        % underlying type or class of the data
+        function tf = isreal(chd), tf = arrayfun(@(chd) isreal(chd.data), chd); end
         % whether the underlying data is real
-        function tf = istall(chd), tf = istall(chd.data); end
+        function tf = istall(chd), tf = arrayfun(@(chd) istall(chd.data), chd); end
         % whether the underlying data is tall
     end
     
