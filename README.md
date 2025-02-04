@@ -162,6 +162,8 @@ If you have trouble, please submit an [issue](https://github.com/thorstone25/qup
 ## Citation
 If you use this software, please cite this repository using the [citation file](CITATION.cff) or via the menu option in the "About" section of the [github page](github.com/thorstone25/qups).
 
+> Brevett, T. (2024). QUPS: A MATLAB Toolbox for Rapid Prototyping of Ultrasound Beamforming and Imaging Techniques. Journal of Open Source Software, 9(101), 6772. https://doi.org/10.21105/joss.06772
+
 If you use any of the extensions, please see their citation policies:
 * [FieldII](https://www.field-ii.dk/?background.html)
 * [MUST](https://www.biomecardio.com/MUST/documentation.html)
