@@ -85,7 +85,7 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % 
 % See also IMAGESC FRAME2GIF VIDEOWRITER
 arguments
-    x {mustBeA(x, ["cell","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} % data
+    x {mustBeA(x, ["cell","sparse","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} % data
     h (1,:) matlab.graphics.primitive.Image = inferHandles(x)
     kwargs.fs (1,1) {mustBePositive} = 20; % refresh rate (hertz)
     kwargs.loop (1,1) logical = true; % loop until cancelled
@@ -101,22 +101,32 @@ I = numel(h); % number of images
 % cellfun(@mustBeReal, x);
 
 % If necessary, attempt to permute the data to match the images
+spim = zeros(1,I); % sparse image dimensions
 for i = 1:I
     hsz = size(h(i).CData); % images size
     dsz = size(x{i}); % data size
-    dvec = 1:ndims(x{i}); % set of dimensions
-    mch = hsz' == dsz; % where dimensions match
-    c = find(mch(1,:), 1, 'first'); % first match is column dim
-    r = find(mch(2,:), 2, 'first'); % first 2, in case 1st == columns
-    if r(1) == c, r = r(2); else, r = r(1); end % extract row dim
-    if all([c r] == [1 2]), continue; end % already in order
-    ord = [c r, setdiff(dvec, [c,r])]; % permutation order - put '[c r]' first
-    warning("QUPS:animate:MatchingPermutation","Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
-    x{i} = permute(x{i}, ord); % permute
+    if issparse(x{i}) && ~all(hsz == dsz) % sparse, but vectorized
+        spi = find(prod(hsz) == dsz); % sparse image (matching)
+        if isempty(spi)
+            error("animate:sizeMisMatch","Unable to match dimensions for image "+i+".");
+        end
+        spim(i) = spi; % which dimension is vectorized
+    else
+        dvec = 1:ndims(x{i}); % set of dimensions
+        mch = hsz' == dsz; % where dimensions match
+        c = find(mch(1,:), 1, 'first'); % first match is column dim
+        r = find(mch(2,:), 2, 'first'); % first 2, in case 1st == columns
+        if r(1) == c, r = r(2); else, r = r(1); end % extract row dim
+        if all([c r] == [1 2]), continue; end % already in order
+        ord = [c r, setdiff(dvec, [c,r])]; % permutation order - put '[c r]' first
+        warning("QUPS:animate:MatchingPermutation","Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
+        x{i} = permute(x{i}, ord); % permute
+    end
 end
 
 % Get sizing info
 msz = cellfun(@(x) {(size(x,3:max(3,ndims(x))))}, x); % upper dimension sizing
+msz(spim>0) = cellfun(@size, x(spim>0), num2cell(3-spim(spim>0)), 'uni', 0); % sparse dimension sizing
 Mi = cellfun(@prod, msz); % total size
 M = unique(Mi);
 
@@ -177,7 +187,10 @@ end
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
-        for i = 1:I, if isreal(x{i}), h(i).CData(:) = x{i}(:,:,m); else, h(i).CData(:) = mod2db(x{i}(:,:,m)); end, end% update image
+        for i = 1:I, xi = x{i};
+            if ~issparse(xi), xim = xi(:,:,m); else, switch spim(i), case 0, xim = xi;  case 1, xim = xi(:,m); case 2, xim = xi(m,:); end, end
+            if isreal(xim), h(i).CData(:) = xim; else, h(i).CData(:) = mod2db(xim); end
+        end% update image
         % if isa(h, 'matlab.graphics.chart.primitive.Surface'), h(i).ZData(:) = h(i).CData(:); end % TODO: integrate surfaces
         if ~isempty(kwargs.title)
             for i = 1:I, h(i).Parent.Title.String = kwargs.title(i,m) + fttl(i,m); end
