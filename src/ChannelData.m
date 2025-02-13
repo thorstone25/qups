@@ -261,8 +261,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % returns an array the sample modes for each buffer.
             %
             % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
-            % frames. f = [] imports all frames of the RcvData within the
-            % matching buffer. The default is unique([Receive.framenum]).
+            % frames to import. Setting f = [] imports all frames of the
+            % RcvData within each buffer. The default is []. 
             %
             % [...] = ChannelData.Verasonics(..., 'buffer', b) specfies
             % the buffer indices b corresponding to each element of
@@ -283,8 +283,8 @@ classdef ChannelData < matlab.mixin.Copyable
                 RcvData cell
                 Receive struct {mustBeNonempty}
                 Trans struct {mustBeScalarOrEmpty} = struct.empty
-                kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
-                kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
+                kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger, mustBePositive} = unique([Receive.bufnum], 'stable')
+                kwargs.frames (1,:) {mustBeNumeric, mustBeInteger, mustBePositive} = [] % = unique([Receive.framenum])
                 kwargs.insert0s (1,1) logical = true
             end
 
