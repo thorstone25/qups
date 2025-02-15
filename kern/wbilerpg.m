@@ -193,14 +193,14 @@ for ineg = [false, true], for isteep = [false, true], for irev = [false, true]
             % N = X + Y + R + 1;
 
             % sort, reshape, and label all points / segments
-            n_ = (ones(1,'like',iro):N)'; % indices
+            n_ = (ones(1,'like',iproto):N)'; % indices
             [pall, oi] = sortpoints(pall, m); % sort x/y per I ([N+1] x 2 x I)
             pall = reshape(complex(pall(:,1,:), pall(:,2,:)),[1 N+1,I]); % (1 x [N+1] x I)
             oj = (argmax(oi == [R+1, (1:R), R+2],[],1)); % label transitions (1 x [R+2] x I)
             % oj = (oj(:,1:end-1,:) <= n_ & n_ <= oj(:,2:end,:)); % label filters (N x [R+1] x I)
             % for l = 1:R+1, iro(1,oj(:,l,:)) = l; end % set labels
             % iro(:,:,ind) = reshape(sum((1:R+1) .* int32(oj), 2, "native"), [1 N I]); % labels (1 x N x I)
-            iro(1,:,ind) = sum( (1:R+1) .* cast(...
+            iro(1,:,ind) = sum( (ones(1,'like',iproto):R+1) .* cast(...
                 oj(:,1:end-1,:) <= n_ & n_ < oj(:,2:end,:) ...
                 , 'like', iproto), 2, "native"); % inline labels: (N x 1 x I) -> (1 x N x I)
             %{
