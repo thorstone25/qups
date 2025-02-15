@@ -561,6 +561,87 @@ classdef ChannelData < matlab.mixin.Copyable
                 error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
             end
         end
+        function chd = mrdivide(a, b)
+            % MTIMES - Matrix multiply ChannelData
+            %
+            % chd * A right multiplies the ChannelData chd by the matrix A
+            % along the transmit dimension. The matrix A and the underlying
+            % data of chd must be  supported by pagemtimes
+            % 
+            % A * chd left multiplies the matrix A by the 1st dimension of
+            % the ChannelData chd e.g. the time dimension if 
+            % chd.order(1) == 'T'. Use ChannelData.swapdimD to change the
+            % first dimension.
+            % 
+            % Example:
+            % chd = ChannelData('data', rand([8,12,4,2],'single'));
+            % 
+            % % Right multiply for tx encoding/decoding
+            % chd * hadamard(chd.M), % hadamard encoding/decoding
+            % 
+            % % Left multiply to apply to first dimension (Time by default)
+            % assert(chd.order(1) == 'T'); % ensure time axes is 1st
+            % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
+            % H' * chd % apply 
+            % 
+            % % Sparse left multiplication is supported
+            % sparse(H)' * doubleT(chd) % (sparse multiplication requires double type)
+            % 
+            % % Swap dimensions to apply hadamard over rx
+            % hadamard(chd.N) * swapdimD(chd, chd.ndim, 1)
+            % 
+            % See also pagemtimes ChannelData.times ChannelData.swapdimD
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
+                chd.data = reshape(pagemtimes(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), A), [sz(1:d-1),size(A,2),sz(d+1:end)]);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                chd = copy(b); A = a; sz = size(chd.data); sz(1) = size(A,1);
+                chd.data = reshape(A * chd.data(:,:), sz);
+            else % if both are ChannelData, this is currently undefined
+                error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
+            end
+        end
+        function chd = mldivide(a, b)
+            % MLDIVIDE - Matrix left division of ChannelData
+            %
+            % A \ chd left divides the matrix A by the 1st dimension of
+            % the ChannelData chd e.g. the time dimension if
+            % chd.order(1) == 'T'. Use ChannelData.swapdimD to change the
+            % first dimension.
+            %
+            % chd \ A left divides the 1st dimension of the ChannelData chd
+            % by the matrix A along the transmit dimension. The matrix A
+            % and the underlying data of chd must be supported by
+            % pagemldivide.
+            %
+            % Example:
+            % chd = ChannelData('data', rand([8,12,4,2],'single'));
+            %
+            % % Right multiply for tx encoding/decoding
+            % chd * hadamard(chd.M), % hadamard encoding/decoding
+            %
+            % % Left multiply to apply to first dimension (Time by default)
+            % assert(chd.order(1) == 'T'); % ensure time axes is 1st
+            % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
+            % H' * chd % apply
+            %
+            % % Sparse left multiplication is supported
+            % sparse(H)' * doubleT(chd) % (sparse multiplication requires double type)
+            %
+            % % Swap dimensions to apply hadamard over rx
+            % hadamard(chd.N) * swapdimD(chd, chd.ndim, 1)
+            %
+            % See also pagemtimes ChannelData.mtimes ChannelData.swapdimD
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
+                chd.data = reshape(pagemldivide(A, reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end)))), [sz(1:d-1),size(A,2),sz(d+1:end)]);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                chd = copy(b); A = a; sz = size(chd.data); sz(1) = size(A,1);
+                chd.data = reshape(chd.data(:,:) \ A, sz);
+            else % if both are ChannelData, this is currently undefined
+                error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
+            end
+        end
         function c = times(a, b)
             % TIMES - Multiply ChannelData data
             %
@@ -1362,7 +1443,7 @@ classdef ChannelData < matlab.mixin.Copyable
             if istall(ntau1) || istall(chd.data)
                 y = matlab.tall.transform(@wsinterpd2, chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
             else
-                y = wsinterpd2(chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
+                y =                        wsinterpd2( chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
             end
         end
         
