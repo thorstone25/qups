@@ -1041,7 +1041,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % UltrasoundSystem us.
             % 
             % conf = FULLWAVECONF(us, medium, cgrd) uses the  
-            % ScanCartesian cgrd as the simulation region. The default is
+            % ScanCartesian cgrd as the simulation domain. The default is
             % us.scan.
             %
             % conf = FULLWAVECONF(..., 'f0', f0) uses a reference frequency
@@ -2073,46 +2073,47 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd.t0 = chd.t0 + t0;
         end
 
-        function [p, t] = calc_hp(us, scat, element_subdivisions, kwargs)
+        function [chd, rfun] = calc_hp(us, scat, element_subdivisions, cgrd, kwargs)
             % CALC_HP - Simulate the pressure field/sensitivity via FieldII
             %
-            % p = CALC_HP(us) simulates the transmit pressure field p
-            % emitted by the UltrasoundSystem us. p is returned as a 
-            % (T x I x M) ND-array where T is time, I is the pixels of
-            % us.scan, and M is each transmit.
+            % chdp = CALC_HP(us) simulates the transmit pressure field
+            % emitted by the UltrasoundSystem us and returns a ChannelData
+            % object chdp containing a (T x I x M) ND-array where T is
+            % time, I is the pixels of us.scan, and M is each transmit.
             % 
-            % p = CALC_HP(us, scat) simulates the transmit pressure field p
-            % emitted by the UltrasoundSystem us into the homogeneous
-            % Medium or Scatterers scat. Only the ambient sound speed
-            % and attenuation affect the pressure field calculation. The
-            % default is Medium('c0', us.seq.c0).
+            % chdp = CALC_HP(us, scat) simulates the transmit pressure
+            % field in the homogeneous Medium or Scatterers scat. Only the
+            % ambient sound speed and attenuation affect the pressure field
+            % calculation. The default is Medium('c0', us.seq.c0).
             % 
-            % p = CALC_HP(us, med, element_subdivisions) specifies the
+            % chdp = CALC_HP(us, med, element_subdivisions) specifies the
             % number of subdivisions in width and height for each element.
             % The default is [1, 1].
             %
-            % p = CALC_HP(..., "ap", aperture) specifies whether to
+            % chdp = CALC_HP(us, med, element_subdivisions, cgrd) sets the
+            % simulation domain to be ScanCartesian cgrd. The default is
+            % us.scan.
+            % 
+            % chdp = CALC_HP(..., "ap", aperture) specifies whether to
             % simulate the transmit aperture, receive aperture, or the
             % both (2-way) apertures. The latter calls `calc_hhp()`. The
             % default is "tx".
             %
-            % p = CALC_HP(..., "rxseq", rxseq) specifies a receive Sequence
+            % chdp = CALC_HP(..., "rxseq", rxseq) specifies a receive Sequence
             % rxseq for the receive beam focusing (or analagously delays
             % and apodization). The default is us.seq (identical to the
             % transmit sequence).
             %
-            % [p, t] = CALC_HP(...) additionally returns the time axes t.
-            % 
-            % [...] = CALC_HP(...,'c0', c0) sets the sound speed c0.
+            % chdp = CALC_HP(...,'c0', c0) sets the sound speed c0.
             % The default is us.seq.c0.
             %
-            % [...] = CALC_HP(..., 'parenv', clu) or 
-            % [...] = CALC_HP(..., 'parenv', pool) uses the
+            % chdp = CALC_HP(..., 'parenv', clu) or 
+            % chdp = CALC_HP(..., 'parenv', pool) uses the
             % parallel.Cluster clu or the parallel.Pool pool to
             % parallelize computations. parallel.ThreadPools are invalid
             % due to mex function restrictions.
             % 
-            % [...] = CALC_HP(..., 'parenv', 0) avoids using a 
+            % chdp = CALC_HP(..., 'parenv', 0) avoids using a 
             % parallel.Cluster or parallel.Pool. Use 0 when operating on a 
             % GPU or if memory usage explodes on a parallel.ProcessPool.
             %
@@ -2132,6 +2133,15 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % creates a communicating job via `createCommunicatingJob`.
             % This is the default.
             % 
+            % [job, rfun] = CALC_HP(..., 'job', true, ...) additionally
+            % provides a parsing function rfun for convenience to read the 
+            % data computed by the job, such that `chd = rfun(job)`. The
+            % parsing function is specific to the type of job.
+            % Alternatively, `out = fetchOutputs(job)` can be used to
+            % gather the output for an individual job, but does not
+            % directly provide the ChannelData chd.
+            % 
+            % Note:
             % An independent job transfers and stores a separate set of
             % data for each task, allowing each transmit to be simulated on
             % a different worker which may exist on different nodes, but it
@@ -2166,9 +2176,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % us.seq.focus = [0 0 xdc.el_focus]'; % set the transmit focus
             % 
             % % Simulate
-            % [p, t] = calc_hp(us); % simulate the transmit pressure field
-            % p = hilbert(p); % analytic
-            %
+            % chdp = calc_hp(us); % simulate the transmit pressure field
+            % chdp = hilbert(chdp); % -> acoustic energy
+            % [p, t] = deal(chdp.data, chdp.time); % extract pressure, time
+            % 
             % % Display the data
             % figure;
             % hi = imagesc(us.scan, reshape(p(end,:), us.scan.size));
@@ -2184,15 +2195,16 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % Example 2:
             % % Run the sim on a parcluster instead
             % clu = parcluster();
-            % job = calc_hp(us, 'job', true, 'parenv', clu);
+            % [job, rfun] = calc_hp(us, 'job', true, 'parenv', clu);
             % 
             % ... modify the job ...
             % 
             % % simulate data
             % submit(job); % launch
             % wait(job); % wait for the job to finish
-            % out = fetchOutputs(job); % read data
-            % [p2, t2] = deal(out{:}); % parse
+            % chdp2 = rfun(job); % read data
+            % chdp2 = hilbert(chdp2); % -> acoustic energy
+            % [p2, t2] = deal(chdp2.data, chdp2.time); % parse
             % 
             % isalmostn(p, p2) % verify
             % 
@@ -2202,6 +2214,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 us (1,1) UltrasoundSystem
                 scat {mustBeA(scat, ["Medium","Scatterers"])} = Medium('c0', us.seq.c0);
                 element_subdivisions (1,2) double {mustBeInteger, mustBePositive} = [1,1]
+                cgrd (1,1) ScanCartesian = us.scan
                 kwargs.ap (1,1) string {mustBeMember(kwargs.ap, ["tx","rx","2way"])} = "tx"
                 kwargs.rxseq (1,1) Sequence = us.seq % foci for the receive beams
                 kwargs.c0 (1,1) double = us.seq.c0 % sound speed
@@ -2262,13 +2275,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     case "Communicating"
                         job = createCommunicatingJob(kwargs.parenv, 'AutoAddClientPath', true, 'AutoAttachFiles',true, 'Type', 'Pool');
                         job.createTask(@(us, scat) ...
-                            us.calc_hp(scat, element_subdivisions ...
+                            us.calc_hp(scat, element_subdivisions, cgrd ...
                             , 'parenv', Inf, 'fc', fcs, 'rxseq', rxseq, opts{:} ...
-                            ), 2, {us, scat}, 'CaptureDiary',true);
+                            ), 1, {us, scat}, 'CaptureDiary',true);
 
                         % anonymous function to read in data
-                        rfun = @fetchOutputs;
-                        % rfun = @(job) job.Tasks(1).OutputArguments{1};
+                        % rfun = @fetchOutputs;
+                        rfun = @(job) job.Tasks(1).OutputArguments{1};
 
                     case "Independent"
                         for s = 1:numel(scat) % for each Scatterers
@@ -2279,23 +2292,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                             for m = 1:us.seq.numPulse % each tx
                                 us_.seq = seqs(m); % switch to next tx
                                 job(s).createTask(@(us,scat,fc,rsq) ...
-                                    us.calc_hp(scat, element_subdivisions ...
+                                    us.calc_hp(scat, element_subdivisions, cgrd ...
                                     , 'parenv', 0, 'fc', fc, 'rxseq', rsq, opts{:} ...
-                                    ), 2, {us, scat(s), fcs(s), rsqs(s)}, 'CaptureDiary',true);
+                                    ), 1, {us_, scat(s), fcs(s), rsqs(s)}, 'CaptureDiary',true);
                             end
 
                             % anonymous function to read in data
-                            rfun = @fetchOutputs;
-                            % rfun = @(jobs) ...
-                            %     join( arrayfun(@(job) ... for each job
-                            %     join( arrayfun(@(tsk) ... for each tsk
-                            %     tsk.OutputArguments{1}, ... extract data
-                            %     job.Tasks), 3), ... and join tasks (txs) in dim 3
-                            %     jobs), 4); % and join jobs (scats) in dim 4
+                            % rfun = @fetchOutputs;
+                            rfun = @(jobs) ...
+                                join( arrayfun(@(job) ... for each job
+                                join( arrayfun(@(tsk) ... for each tsk
+                                tsk.OutputArguments{1}, ... extract data
+                                job.Tasks), 3), ... and join tasks (txs) in dim 3
+                                jobs), 4); % and join jobs (scats) in dim 4
                         end
 
                 end
-                [p, t] = deal(job, rfun); % alias
+                chd = job; % alias 
                 return;
             end
 
@@ -2342,7 +2355,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             [M, F] = deal(size(tau_tx,2), numel(scat)); % number of transmits/frames
             [fs_, tx_, rx_, ap] = deal(gather(us.fs), us.tx, us.rx, kwargs.ap); % splice
             [c0, att] = arrayfun(@(t) deal(t.c0, t.alpha0), scat); % splice
-            pos = {reshape(cast(us.scan.positions(), 'double'), 3, [])}; % field positions {(3 x I)}
+            pos = {reshape(cast(cgrd.positions(), 'double'), 3, [])}; % field positions {(3 x I)}
             if ~isscalar(kwargs.fc), fc_ = kwargs.fc; else, fc_ = repmat(kwargs.fc, size(scat)); end
 
             % Make position/amplitude and transducers constants across the workers
@@ -2357,7 +2370,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             [pos_, tx_, rx_] = dealfun(cfun, pos, tx_, rx_);
             [pres, ts] = deal(cell(M,F)); % pre-allocate
             parfor (m = 1:M, parenv) % each transmit pulse
-            % for (m = 1:M) % each transmit pulse %%% DEBUG %%%
+            % for m = flip(1:M) % each transmit pulse %%% DEBUG %%%
                 % (re)initialize field II
                 field_init(-1);
 
@@ -2401,25 +2414,23 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     % call the sim
                     % [voltages{m,f}, ts{m,f}] = calc_scat_multi(Tx, Rx, pos_.Value{f}.', amp_.Value{f}.'); %#ok<PFBNS> % constant over workers
                     switch ap
-                        case "tx"  , [pres{m,f}, ts{m,f}] = calc_hp( Tx   , pos_.Value{f}.');  %#ok<PFBNS> % constant over workers
-                        case "rx"  , [pres{m,f}, ts{m,f}] = calc_hp( Rx   , pos_.Value{f}.');              % constant over workers
-                        case "2way", [pres{m,f}, ts{m,f}] = calc_hhp(Tx,Rx, pos_.Value{f}.');              % constant over workers
+                        case "tx"  , [pres{m,f}, ts{m,f}] = calc_hp( Tx   , pos_.Value{1}.');  %#ok<PFBNS> % constant over workers
+                        case "rx"  , [pres{m,f}, ts{m,f}] = calc_hp( Rx   , pos_.Value{1}.');              % constant over workers
+                        case "2way", [pres{m,f}, ts{m,f}] = calc_hhp(Tx,Rx, pos_.Value{1}.');              % constant over workers
                     end
                 end
             end
 
             if isa(parenv, 'parallel.Pool') && kwargs.verbose, tocBytes(parenv, tb); end
 
-            % adjust start time based on signal time definitions
+            % adjust start time based on delays and impulse response
             switch ap
-                case "tx", tau_offset = tau_offset_tx                ;
-                case "rx", tau_offset =                 tau_offset_rx;
-                otherwise, tau_offset = tau_offset_tx + tau_offset_rx;
+                case "tx", t0 = tau_offset_tx + t_tx(1)                           ;
+                case "rx", t0 =                           tau_offset_rx  + t_rx(1);
+                otherwise, t0 = tau_offset_tx + t_tx(1) + tau_offset_rx  + t_rx(1);
             end
-            t0 = ... cell2mat(ts) + ... % fieldII start time (1 x 1 x M x F)
-                (t_pl(1) + t_tx(1) + t_rx(1)) ... signal delays for impulse/excitation
-                + shiftdim(tau_offset,-1) ... 0-basing the delays across the aperture
-                ; % 1 x 1 x M
+            t0 = t0 + t_pl(1); % adjust for excitation pulse
+            t0 = reshape(t0, [1 size(t0)]); % -> 1 x 1 x M
             
             % create the output QUPS ChannelData object 
             chd = cellfun(@(x, t0) ChannelData('data', x, 't0', t0, 'fs', us.fs), pres, ts); % per transmit/frame (M x F) object array
@@ -2430,30 +2441,46 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd.fs = us.fs;
             chd.t0 = chd.t0 + t0;
 
-            % output (T x I1 x I2 x I3 x M x F)
-            [p, t] = deal(chd.data, chd.time);
+            % output (T x [I1 x I2 x I3] x M x F)
+            % [p, t] = deal(chd.data, chd.time);
         end
     end
     
     % k-Wave calls
     methods
-        function [chd, readfun, args] = kspaceFirstOrder(us, med, cgrd, varargin, kwargs, karray_args, kwave_args, ksensor_args)
+        function [chd, readfun, args] = kspaceFirstOrder(us, med, cgrd, varargin, kwargs, karray_args, kwave_args, kmedium_args, ksensor_args)
             % KSPACEFIRSTORDER - Simulate channel data via k-Wave
             % 
             % chd = KSPACEFIRSTORDER(us, med) simulates the Medium med 
             % and returns a ChannelData object chd via k-Wave.
             %
             % chd = KSPACEFIRSTORDER(us, med, cgrd) operates using
-            % the simulation region defined by the ScanCartesian cgrd. The
+            % the simulation domain defined by the ScanCartesian cgrd. The
             % default is us.scan.
             % 
             % If using an element mapping method provided by kWaveArray,
             % the step sizes in all dimensions must be identical.
             %
+            % chdp = KSPACEFIRSTORDER(..., 'field', true) instead returns
+            % the pressure over time throughout the entire field (a.k.a.
+            % simulation domain) as a ChannelData p. In other words,
+            % ```
+            % t = chdp.time; % time
+            % q = cgrd.positions(); % space
+            % for i = 1:numel(t),
+            %     for j = 1:numel(q),
+            %         p(i,j,:) = chdp.data(i,j,:); % equivalent
+            %     end
+            % end
+            % ```
+            % 
             % chd = KSPACEFIRSTORDER(..., 'T', T) runs the simulation
             % until time T. The default is computed heuristically to
             % include a two-way propagation of a signal at the slowest
             % sound speed.
+            % 
+            % chd = KSPACEFIRSTORDER(..., 'gpu', tf) selects whether to use
+            % GPU types. The default is true if a GPU is available.
             % 
             % chd = KSPACEFIRSTORDER(..., 'isosub', true) runs an 
             % additional simulation per pulse of an analagous medium with 
@@ -2477,11 +2504,14 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % transducer elements to the computational grid. Must be one of 
             % {'nearest*, 'linear', 'karray-direct', 'karray-depend'}. 
             % 
-            % The 'nearest' method uses the nearest pixel. The 'linear' 
-            % method uses linear interpolation weights. The 'karray-direct'
-            % method uses kWaveArray methods but avoids recomputing 
-            % intermediate results. The 'karray-depend' method always uses 
-            % the kWaveArray methods, but can be slower.
+            % The 'nearest' method uses the nearest pixel. 
+            % The 'linear'  method uses linear interpolation weights. 
+            % The 'karray-direct' method uses kWaveArray methods but avoids 
+            % recomputing intermediate results. 
+            % The 'karray-depend' method always uses kWaveArray as a
+            % dependency to ensure future revisions of the package are
+            % implemented, but can be slower if newer features are not
+            % necessary.
             % 
             % chd = KSPACEFIRSTORDER(..., 'parenv', clu) or 
             % chd = KSPACEFIRSTORDER(..., 'parenv', pool) uses the
@@ -2525,9 +2555,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % [...] = KSPACEFIRSTORDER(..., 'binary', true) calls k-Wave's 
             % accelerated binary functions, which are appended with 'C' for
             % the CPU version and 'G' for the GPU version. The selection is
-            % determined by whether the 'DataCast' option represent a GPU 
-            % or CPU data type. The path to the binaries should be
-            % specified using the 'BinaryPath' option.
+            % determined by the 'gpu' keyword argument. The path to the
+            % binaries should be specified using the 'BinaryPath' option.
             %
             % Note: If using this option with a cluster, the binaries must 
             % be accesible and executable from the worker session, not the 
@@ -2577,8 +2606,24 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % chd = kspaceFirstOrder(us, med, cgrd);
             % 
             % % Display the ChannelData
-            % figure;
+            % figure; 
             % imagesc(hilbert(chd));
+            % dbr echo 60;
+            % 
+            % % Example 2: Field simulation
+            % % Simulate
+            % chdp = kspaceFirstOrder(us, med, cgrd, 'field', true); % (T x [Z x X x 1] x M==1) 
+            % 
+            % % Pre-process: field energy vs. space over time
+            % chdp = hilbert(chdp); % pressure -> acoustic energy 
+            % p = reshape(pagetranspose(chdp.data), [cgrd.size, chdp.T, seq.numPulse]); % (Z x X x 1 x T x M==1)
+            % 
+            % % Display
+            % figure; imagesc(cgrd, p); % image
+            % pmax = gather(mod2db(max(p(:)))); % max pressure
+            % dbr echo; clim([-80 0] + pmax); % set colormap and scaling
+            % ttls = compose("Time: %0.2f us", 1e6*chdp.time); % animation titles
+            % animate(p, "title", ttls, 'fs', 200, 'loop', false); % animate over time
             % 
             % See also ULTRASOUNDSYSTEM/FULLWAVESIM PARALLEL.JOB/FETCHOUTPUTS
             arguments % required arguments
@@ -2600,6 +2645,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 kwargs.binary (1,1) logical = false; % whether to use the binary form of k-Wave
                 kwargs.isosub (1,1) logical = false; % whether to subtract the background using an isoimpedance sim
                 kwargs.gpu (1,1) logical = logical(gpuDeviceCount()) % whether to employ gpu during pre-processing
+                kwargs.field (1,1) logical = false % whether to record the entire field
             end
             arguments % kWaveArray arguments - these are passed to kWaveArray
                 karray_args.UpsamplingRate (1,1) double =  10
@@ -2694,7 +2740,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             wnorm = swapdim(wnorm,1,5); % 1 x M x 1 x 1 x 3
 
             % generate {psig, mask, elem_weights}
-            if us.tx == us.rx, aps = "xdc"; else, aps = ["tx", "rx"]; end
+            if kwargs.field, aps = "tx"; elseif us.tx == us.rx, aps = "xdc"; else, aps = ["tx", "rx"]; end
             for ap = aps % always do rx last: rx variables used in post
             switch kwargs.ElemMapMethod
                 case 'nearest'
@@ -2785,7 +2831,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     
             end
 
-            if (ap == "rx" || ap == "xdc")
+            if kwargs.field
+                ksensor.mask = true(size(mask));
+                
+            elseif (ap == "rx" || ap == "xdc")
                 % define the sensor
                 ksensor.mask = mask; % pixels to record
 
@@ -2837,7 +2886,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             kgrid.setTime(Nt, kgrid.dt);
 
             % get the receive impulse response function
-            rx_imp = copy(us.rx.impulse);
+            if kwargs.field, rx_imp = Waveform.Delta(); % nullify
+            else,            rx_imp = copy(us.rx.impulse);
+            end 
             rx_imp.fs = fs_;
             t_rx = rx_imp.time;
             rx_sig = gather(real(rx_imp.samples(:)));
@@ -2852,6 +2903,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             kwave_args.PMLInside = false;
             kwave_args.PMLSize = Npml(1:kgrid.dim);
 
+            % enforce gpu (in)compatability
+            if ~kwargs.gpu && contains(kwave_args.DataCast, "gpuArray-")
+                kwave_args.DataCast = extractAfter(kwave_args.DataCast, "gpuArray-");
+            end
+
             % make string inputs character arrays to avoid compatability
             % issues
             for f = string(fieldnames(kwave_args))'
@@ -2862,7 +2918,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             % dispatch to the appropriate function
             if kwargs.binary
-                if contains(kwave_args.DataCast, "gpuArray")
+                if kwargs.gpu
                     switch kgrid.dim
                         case 1, kspaceFirstOrderND_ = @kspaceFirstOrder1D;
                         case 2, kspaceFirstOrderND_ = @kspaceFirstOrder2DG;
@@ -2908,15 +2964,18 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % add the unspecified arguments
             if ~isempty(varargin), for v = 1:numel(kwave_args_), kwave_args_{v} = cat(1, kwave_args_{v}(:), varargin(:)); end, end
 
+            % specify Rx element-mapping method
+            if kwargs.field, elemmethod = "none"; else, elemmethod = kwargs.ElemMapMethod; end
+
             % processing step: get sensor data, enforce on CPU (T x N)
-            switch kwargs.ElemMapMethod
+            switch elemmethod 
                 case 'karray-depend'
                     rx_args = {kgrid, karray};
                     % proc_fun = @(x) gather(convn( karray.combineSensorData(kgrid, x.ux).', rx_sig, 'full'));
                 case {'karray-direct'}
                     rx_args = {elem_weights};
                     % proc_fun = @(x) gather(convn(x.ux.' * full(elem_weights)), rx_sig, 'full'); % (J' x T)' x (J' x N) -> T x N
-                case {'nearest'}
+                case {'nearest','none'}
                     rx_args = {};
                     %proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full')); % -> (T x N)
                 case 'linear'
@@ -2932,16 +2991,11 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     %     (el_map_el * (el_weight(:) .* convd(el_map_grd' * x.ux, rx_sig, 2, 'full'))).' ... % [(N x J'') x [[(J'' x J') x (J' x T')] x (T' x T | J'')]]' -> (T x N)
                     %     ...
                     %     ); % [(N x J'') x (J'' x T)]' -> T x N
-
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
                     rx_args = {};
                     % proc_fun = @(x) gather(convn(x.ux.', rx_sig, 'full'));
             end
-
-            % choose where to compute the data
-            % parfor behaviour - for now, only parenv == 0 -> parfor
-            elemmethod = kwargs.ElemMapMethod;
-            
+                        
             % get the arguments to run the sim
             args = {...
                 kspaceFirstOrderND_, ...
@@ -2950,6 +3004,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 t0, fs_ ...
                 };
 
+            % choose where to compute the data
             if nargout < 2 || ~isa(kwargs.parenv, 'parallel.Cluster') % no job/cluster requested
                 args{end+1} = kwargs.parenv; % parfor arg: execution environment
 
@@ -2986,7 +3041,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     f = f(ismember(f, {'ux', 'uy', 'uz'})); % velocity fields
                     u = arrayfun(@(f) {x.(f)}, f); % extract each velocity field
                     u = cat(3, u{:}); % J' x T x D, D = 2 or 3
-                case {'nearest', 'linear','karray-depend', 'karray-direct'}
+                case {'none', 'nearest', 'linear','karray-depend', 'karray-direct'}
                     u = x.p; % pressure (J' x T)
             end
             else % the data is given directly, not in a struct
@@ -3006,6 +3061,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     end
                 case {'nearest'}
                     y = gather(convn(pagetranspose(u), rx_sig, 'full')); % -> (T x N | D)
+                case {'none'}
+                    y = gather(      pagetranspose(u)                 ); % -> (T x N | D)
                 case 'linear'
                     [el_weight, el_map_grd, el_map_el] = deal(varargin{:});
                     
@@ -3028,7 +3085,6 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                             )) ...
                             ), 'like', u(1)*rx_sig(1)));
                     end
-
                 otherwise, warning('Unrecognized mapping option - mapping to grid pixels by default.');
                    y = gather(convn(u, rx_sig, 'full'));
             end
@@ -3056,20 +3112,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 tt_pulse = tic;
 
                 % configure gpu selection
-                if gpuDeviceCount() % if gpus exist
+                if canUseGPU() % if gpus exist
+                    % whether using the GPU binary
+                    isgpubin = endsWith(func2str(kspaceFirstOrderND_), 'G');
+
                     % get reference to the desired gpuDevice
                     if setgpu % set the current gpuDevice on implicit pools
                         % TODO: allow input to specify gpu dispatch
                         tsk = getCurrentTask();
                         g = gpuDevice(1+mod(tsk.ID-1, gpuDeviceCount())); % even split across tasks 
-                    else % get current device on expliciti pools or currrent session
+                    elseif isgpubin % get current device on explicit pools or current session
                         g = gpuDevice();
+                    else
+                        g = []; % no need to reference
                     end
 
                     % specify the device input explicitly if using a GPU binary
-                    if endsWith(func2str(kspaceFirstOrderND_), 'G')
+                    if isgpubin
                         % explicitly set for kWave binary
-                        kwave_args_{puls} = [kwave_args_{puls}, {'DeviceNum'; (g.Index - 1)}]; %#ok<PFOUS>
+                        kwave_args_{puls}(:,end+1) = {'DeviceNum'; (g.Index - 1)}; %#ok<PFOUS>
                     end
                 end
 
