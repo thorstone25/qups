@@ -111,12 +111,11 @@ classdef USTest < matlab.unittest.TestCase
 
             [tx, rx, seq] = dealfun(@copy, tx, rx, seq); % copy semantics
 
-            % set numpulse for fsa
             if seq.type == "FSA", seq.numPulse = tx.numel; end
             % rx = TransducerArray; % const to reduce combinatorics
 
             % shift transducers
-            [tx.offset, rx.offset] = deal([-1 0 0]*1e-3, [1 0 0]*1e-3);
+             [tx.offset, rx.offset] = deal([-1 0 0]*1e-3, [1 0 0]*1e-3);
 
             % filter for identical transducer where required
             if simname == "simus"
