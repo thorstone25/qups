@@ -127,6 +127,11 @@ classdef USTest < matlab.unittest.TestCase
                if isa(tx, 'TransducerGeneric'), return; end % incompatible
             end
 
+            % filter for same number of elements for generic sequences
+            if simname == "calc_hp" && isa(seq, "SequenceGeneric")
+                if tx.numel ~= rx.numel, return; end % incompatible
+            end
+
             % construct each tx, rx, seq, scan
             us = UltrasoundSystem('tx', tx, 'rx', rx, 'seq', seq,'recompile',false,'fs',single(4*rx.fc));
             [lb, ub] = bounds([tx.bounds, rx.bounds], 2);
