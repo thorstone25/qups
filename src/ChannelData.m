@@ -587,15 +587,16 @@ classdef ChannelData < matlab.mixin.Copyable
             % % Swap dimensions to apply hadamard over rx
             % hadamard(chd.N)' / swapdimD(chd, chd.ndim, 1)
             %
-            % See also pagemtimes ChannelData.rdivide ChannelData.swapdimD
-    	    if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mrdivide:unsupported","mrdivide is supported in MATLAB R2022a and later releases."); end
+            % See also pagemrdivide ChannelData.rdivide ChannelData.swapdimD
+    	    
+            % if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mrdivide:unsupported","mrdivide is supported in MATLAB R2022a and later releases."); end
+            if isMATLABReleaseOlderThan("R2022a"), pagemrdivide = @lpagemrdivide; else, pagemrdivide = @pagemrdivide; end % local implementation
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
                 chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
                 chd.data = reshape(pagemrdivide(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), A), [sz(1:d-1),size(A,1),sz(d+1:end)]);
             elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
                 chd = copy(b); A = a; % sz = size(chd.data); d = chd.mdim;
                 chd.data = pagemrdivide(A, chd.data, "transpose");
-                % chd.data = reshape(A / chd.data(:,:), sz);
             else % if both are ChannelData, this is currently undefined
                 error("QUPS:ChannelData:OperationUndefined", "mrdivide (/) is currently undefined for 2 ChannelData objects - use rdivide (./) for element-wise division.");
             end
@@ -627,8 +628,10 @@ classdef ChannelData < matlab.mixin.Copyable
             % % Swap dimensions to apply hadamard over rx
             % hadamard(chd.N) \ swapdimD(chd, chd.ndim, 1)
             %
-            % See also pagemtimes ChannelData.ldivide ChannelData.swapdimD
-            if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mldivide:unsupported","mldivide is supported in MATLAB R2022a and later releases."); end
+            % See also pagemldivide ChannelData.ldivide ChannelData.swapdimD
+            
+            % if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mldivide:unsupported","mldivide is supported in MATLAB R2022a and later releases."); end
+            if isMATLABReleaseOlderThan("R2022a"), pagemldivide = @lpagemldivide; else, pagemldivide = @pagemldivide; end % local implementation
             if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
                 chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
                 chd.data = reshape(pagemldivide(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), 'transpose', A), [sz(1:d-1),size(A,2),sz(d+1:end)]);
@@ -1945,6 +1948,62 @@ classdef ChannelData < matlab.mixin.Copyable
         function o = get.ord(chd), warning("QUPS:ChannelData:syntaxDeprecated","ChannelData.ord is deprecated. Use the .order property instead."); o = chd.order; end
         function set.ord(chd, o),  warning("QUPS:ChannelData:syntaxDeprecated","ChannelData.ord is deprecated. Use the .order property instead."); chd.order = o; end
     end
+end
+
+%% Helper Functions
+function X = lpagemrdivide(B, A, transA)
+    arguments
+        B
+        A
+        transA (1,1) string {mustBeMember(transA, ["transpose","ctranspose","none"])} = "none";
+    end
+    switch transA
+        case       "none", op = @(x) x;
+        case  "transpose", op = @transpose;
+        case "ctranspose", op = @ctranspose;
+    end
+    D = max(4,max(ndims(A), ndims(B))); % max dimension
+    szA = size(A,3:D);
+    szB = size(B,3:D);
+    szX = max(szA, szB);
+    i = cell(1,D-2);
+    [i{:}] = ind2sub(szX, (1:prod(szX))'); % linear -> sub-indices
+    j = num2cell(min([i{:}], szA),1); % A sub-indices
+    k = num2cell(min([i{:}], szB),1); % B sub-indices
+    j = sub2ind(szA, j{:}); % A linear-indices
+    k = sub2ind(szB, k{:}); % B linear-indices
+    for n = flip(1:prod(szX))
+        X(:,:,n) = B(:,:,k(n)) / op(A(:,:,j(n))); % compute
+    end
+    X = reshape(X, [size(X,1:2), szX]);
+end
+
+function X = lpagemldivide(A, B, transA)
+    arguments
+        A
+        B
+        transA = "none"; %(1,1) string {mustBeMember(transB, ["transpose","ctranspose","none"])} = "none";
+    end
+    if isstring(B) || ischar(B), [B, transA] = deal(transA, B); end
+    switch transA
+        case       "none", op = @(x) x;
+        case  "transpose", op = @transpose;
+        case "ctranspose", op = @ctranspose;
+    end
+    D = max(4,max(ndims(A), ndims(B))); % max dimension
+    szA = size(A,3:D);
+    szB = size(B,3:D);
+    szX = max(szA, szB);
+    i = cell(1,D-2);
+    [i{:}] = ind2sub(szX, (1:prod(szX))'); % linear -> sub-indices
+    j = num2cell(min([i{:}], szA),1); % A sub-indices
+    k = num2cell(min([i{:}], szB),1); % B sub-indices
+    j = sub2ind(szA, j{:}); % A linear-indices
+    k = sub2ind(szB, k{:}); % B linear-indices
+    for n = flip(1:prod(szX))
+        X(:,:,n) = op(A(:,:,j(n))) \ B(:,:,k(n)); % compute
+    end
+    X = reshape(X, [size(X,1:2), szX]);
 end
 
 % TODO: make a default interpolation method property
