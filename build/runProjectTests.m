@@ -1,4 +1,3 @@
-
 function [res, suite, runner] = runProjectTests(tag, parenv, kwargs)
 % runProjectTests - Run tests for QUPS
 %
@@ -101,7 +100,7 @@ end
 
 % filter plugs if running in parallel
 if ~isempty(parenv) || (isnumeric(parenv) && parenv > 0) % delete non-parallel plug-ins
-    i = ~cellfun(@(p)p.supportsParallel, plugs); % is paralle
+    i = ~cellfun(@(p)p.supportsParallel, plugs); % is parallel
     if any(i), warning("Deleting plug-ins that lack parallel support."); end
     plugs(i) = [];
 end 
