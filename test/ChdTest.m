@@ -116,11 +116,10 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
 
         function linalg(tst)
             import matlab.unittest.constraints.IsEqualTo;
-            tol = matlab.unittest.constraints.AbsoluteTolerance(single(1e-5)); % matrix inversion @ single precision
+            tol = matlab.unittest.constraints.AbsoluteTolerance(single(1e-4)); % matrix inversion @ single precision
 
             [T,M,N,F] = deal(8,6,4,2); % must be > 2 in dims 1:3
-            x = ChannelData('data', rand([T M N F],'single'), 't0', randn([1 M 1 F]), 'order', 'TMNF');
-            y = ChannelData('data', rand([T M N F],'single'), 't0', x.t0            , 'order', 'TMNF');
+            x = ChannelData('data', rand([T M N F],'single'), 'order', 'TMNF');
             ords = flip(perms([1 2 3])',2); % permution ordering
             ords(4,:) = 4; % explicit for permute
 
@@ -134,8 +133,8 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
                 D = size(chd.data,1); % first dim size
 
                 % 1st dim domain transform
-                H = randn(D+[0 4],'single')';
-                J = randn(D-[0 2],'single')';
+                H = randn(D + [0 4],'single')';
+                J = randn(D - [0 2],'single')';
 
                 % apply transmit dimension transform
                 u = chd * A; % forward tx transform

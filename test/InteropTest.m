@@ -196,7 +196,7 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             for i = 1:numel(uscn)
                 sca = uscn{i};
                 scn = Scan.UFF(sca);
-                tst.assertEqual(scn.positions()', sca.xyz, "Conversion from " + class(sca) + " to " + class(scn) + " failed.");
+                tst.assertEqual(reshape(scn.positions(),3,[])', sca.xyz, "Conversion from " + class(sca) + " to " + class(scn) + " failed.");
                 tst.assertEqual(sca.xyz, scn.QUPS2USTB().xyz, "Conversion from " + class(scn) + " to " + class(sca) + " failed.");
             end
 
