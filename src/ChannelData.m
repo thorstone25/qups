@@ -577,15 +577,15 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd = ChannelData('data', rand([8,12,4,2],'single'));
             % 
             % % Right multiply for tx encoding/decoding
-            % chd / hadamard(chd.M), % hadamard encoding/decoding
+            % chd / hadamard(chd.M)', % hadamard encoding/decoding
             % 
             % % Left multiply to apply to first dimension (Time by default)
-            % assert(chd.order(1) == 'T'); % ensure time axes is 1st
+            % assert(chd.order(1) == 'T'); % ensure time axis is 1st
             % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
             % H' / chd % apply 
             % 
             % % Swap dimensions to apply hadamard over rx
-            % hadamard(chd.N) / swapdimD(chd, chd.ndim, 1)
+            % hadamard(chd.N)' / swapdimD(chd, chd.ndim, 1)
             %
             % See also pagemtimes ChannelData.rdivide ChannelData.swapdimD
     	    if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mrdivide:unsupported","mrdivide is supported in MATLAB R2022a and later releases."); end
@@ -597,7 +597,7 @@ classdef ChannelData < matlab.mixin.Copyable
                 chd.data = pagemrdivide(A, chd.data, "transpose");
                 % chd.data = reshape(A / chd.data(:,:), sz);
             else % if both are ChannelData, this is currently undefined
-                error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
+                error("QUPS:ChannelData:OperationUndefined", "mrdivide (/) is currently undefined for 2 ChannelData objects - use rdivide (./) for element-wise division.");
             end
         end
         function chd = mldivide(a, b)
@@ -620,7 +620,7 @@ classdef ChannelData < matlab.mixin.Copyable
             % chd \ hadamard(chd.M), % hadamard encoding/decoding
             %
             % % Left divide to apply to first dimension (Time by default)
-            % assert(chd.order(1) == 'T'); % ensure time axes is 1st
+            % assert(chd.order(1) == 'T'); % ensure time axis is 1st
             % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
             % H \ chd % apply
             %

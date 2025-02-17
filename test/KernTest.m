@@ -301,7 +301,7 @@ classdef KernTest < matlab.unittest.TestCase
 
             % test that defaults work
             imagesc(us.scan, b); dbr;
-            arrayfun(@dbr, ["b-mode", "phase", "echo"])
+            arrayfun(@dbr, ["b-mode", "phase", "echo", "corr"])
             
             % warn on ith argument
             clf(hf);

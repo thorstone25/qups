@@ -50,7 +50,7 @@ function [cxy, ixo, iyo, iro] = wbilerpg(x, y, xa, ya, xb, yb, r)
 % figure;
 % pcolor(x, y, full(s)')
 % title("Weights from ("+xa+","+ya+"), to ("+xb+","+yb+").");
-% clim([0 1]);
+% caxis([0 1]);
 % 
 % % Example 2: Line segments
 % % Divide the line into quarters
@@ -64,7 +64,7 @@ function [cxy, ixo, iyo, iro] = wbilerpg(x, y, xa, ya, xb, yb, r)
 % figure; tiledlayout('flow');
 % for i = 1:4
 %     h(i) = pcolor(nexttile(i), x, y, full(si{i})');
-%     clim(h(i).Parent, [0 1]);
+%     caxis(h(i).Parent, [0 1]);
 %     title(h(i).Parent, "Line segment "+i+" of 4" ... 
 %         + " from ("+xa+","+ya+"), to ("+xb+","+yb+")." ...
 %     );
