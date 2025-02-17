@@ -101,7 +101,7 @@ I = numel(h); % number of images
 % cellfun(@mustBeReal, x);
 
 % If necessary, attempt to permute the data to match the images
-spim = zeros(1,I); % sparse image dimensions
+spim = zeros(size(x)); % sparse image dimensions
 for i = 1:I
     hsz = size(h(i).CData); % images size
     dsz = size(x{i}); % data size
