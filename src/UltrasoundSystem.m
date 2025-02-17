@@ -5307,7 +5307,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % figure; imagesc(us.scan, a); title("Cosine Apodization"); % display
             % hold on; plot(us.xdc, 'b','Marker', 'square'); legend(); % add Transducer
-            % colorbar; colormap hot; clim([0 1]); % format
+            % colorbar; colormap hot; caxis([0 1]); % format
             % animate(a, 'fn', true, 'loop', false); % animate vs. elements
             % 
             % See also APAPERTUREGROWTH APACCEPTANCEANGLE
