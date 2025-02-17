@@ -2187,7 +2187,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % dbr echo; clim(gather(cbd)); % set colors
             %
             % % Animate over time
-            % pi = reshape(p, [size(p,1), us.scan.size]); % as an image
+            % pi = reshape(pagetranspose(p), [us.scan.size, size(p,[1 3])]); % as an image
             % ttls = "Transmit Field Energy" + newline ...
             %      + "Time: t = "+(1e6*t)+" us"; % titles
             % animate(pi, hi, "title", ttls, "loop", false, "fs", Inf);
@@ -2199,7 +2199,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % ... modify the job ...
             % 
-            % % simulate data
+            % % Simulate data
             % submit(job); % launch
             % wait(job); % wait for the job to finish
             % chdp2 = rfun(job); % read data
