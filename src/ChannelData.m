@@ -261,8 +261,8 @@ classdef ChannelData < matlab.mixin.Copyable
             % returns an array the sample modes for each buffer.
             %
             % [...] = ChannelData.Verasonics(..., 'frames', f) specfies the
-            % frames. f = [] imports all frames of the RcvData within the
-            % matching buffer. The default is unique([Receive.framenum]).
+            % frames to import. Setting f = [] imports all frames of the
+            % RcvData within each buffer. The default is []. 
             %
             % [...] = ChannelData.Verasonics(..., 'buffer', b) specfies
             % the buffer indices b corresponding to each element of
@@ -283,8 +283,8 @@ classdef ChannelData < matlab.mixin.Copyable
                 RcvData cell
                 Receive struct {mustBeNonempty}
                 Trans struct {mustBeScalarOrEmpty} = struct.empty
-                kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.bufnum], 'stable')
-                kwargs.frames (1,:) {mustBeNumeric, mustBeInteger} = unique([Receive.framenum])
+                kwargs.buffer (1,:) {mustBeNumeric, mustBeInteger, mustBePositive} = unique([Receive.bufnum], 'stable')
+                kwargs.frames (1,:) {mustBeNumeric, mustBeInteger, mustBePositive} = [] % = unique([Receive.framenum])
                 kwargs.insert0s (1,1) logical = true
             end
 
@@ -483,12 +483,12 @@ classdef ChannelData < matlab.mixin.Copyable
         function chd =  uint8T(chd) , chd = applyFun2Data(chd, @uint8); end
         % cast underlying type to uint8
         function T = classUnderlying(chd), try T = classUnderlying(chd.data); catch, T = class(chd.data); end, end % revert to class if undefined
-        % underlying class of the data or class of the data
-        function T = underlyingType(chd), try T = underlyingType(chd.data); catch, T = class(chd.data); end, end % R2020b+ overload
-        % underlying type of the data or class of the data
-        function tf = isreal(chd), tf = isreal(chd.data); end
+        % underlying class or type of the data
+        function T = underlyingType( chd), try T = underlyingType(chd.data); catch, T = class(chd.data); end, end % R2020b+ overload
+        % underlying type or class of the data
+        function tf = isreal(chd), tf = arrayfun(@(chd) isreal(chd.data), chd); end
         % whether the underlying data is real
-        function tf = istall(chd), tf = istall(chd.data); end
+        function tf = istall(chd), tf = arrayfun(@(chd) istall(chd.data), chd); end
         % whether the underlying data is tall
     end
     
@@ -559,6 +559,87 @@ classdef ChannelData < matlab.mixin.Copyable
                 chd.data = reshape(A * chd.data(:,:), sz);
             else % if both are ChannelData, this is currently undefined
                 error("QUPS:ChannelData:OperationUndefined", "mtimes (*) is currently undefined for 2 ChannelData objects - use times (.*) for element-wise multiplication.");
+            end
+        end
+        function chd = mrdivide(a, b)
+            % MRDIVIDE - Matrix right division of ChannelData
+            %
+            % chd / A right divides the ChannelData chd by the matrix A
+            % along the transmit dimension. The matrix A and the underlying
+            % data of chd must be  supported by pagemrdivide
+            % 
+            % A / chd left divides the matrix A by the 1st dimension of
+            % the ChannelData chd e.g. the time dimension if 
+            % chd.order(1) == 'T'. Use ChannelData.swapdimD to change the
+            % first dimension.
+            % 
+            % Example:
+            % chd = ChannelData('data', rand([8,12,4,2],'single'));
+            % 
+            % % Right multiply for tx encoding/decoding
+            % chd / hadamard(chd.M)', % hadamard encoding/decoding
+            % 
+            % % Left multiply to apply to first dimension (Time by default)
+            % assert(chd.order(1) == 'T'); % ensure time axis is 1st
+            % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
+            % H' / chd % apply 
+            % 
+            % % Swap dimensions to apply hadamard over rx
+            % hadamard(chd.N)' / swapdimD(chd, chd.ndim, 1)
+            %
+            % See also pagemrdivide ChannelData.rdivide ChannelData.swapdimD
+    	    
+            % if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mrdivide:unsupported","mrdivide is supported in MATLAB R2022a and later releases."); end
+            if isMATLABReleaseOlderThan("R2022a"), pagemrdivide = @lpagemrdivide; else, pagemrdivide = @pagemrdivide; end % local implementation
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
+                chd.data = reshape(pagemrdivide(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), A), [sz(1:d-1),size(A,1),sz(d+1:end)]);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                chd = copy(b); A = a; % sz = size(chd.data); d = chd.mdim;
+                chd.data = pagemrdivide(A, chd.data, "transpose");
+            else % if both are ChannelData, this is currently undefined
+                error("QUPS:ChannelData:OperationUndefined", "mrdivide (/) is currently undefined for 2 ChannelData objects - use rdivide (./) for element-wise division.");
+            end
+        end
+        function chd = mldivide(a, b)
+            % MLDIVIDE - Matrix left division of ChannelData
+            %
+            % A \ chd left divides the matrix A by the 1st dimension of
+            % the ChannelData chd e.g. the time dimension if
+            % chd.order(1) == 'T'. Use ChannelData.swapdimD to change the
+            % first dimension.
+            %
+            % chd \ A left divides the 1st dimension of the ChannelData chd
+            % by the matrix A along the transmit dimension. The matrix A
+            % and the underlying data of chd must be supported by
+            % pagemldivide.
+            %
+            % Example:
+            % chd = ChannelData('data', rand([8,12,4,2],'single'));
+            %
+            % % Right divide for tx encoding/decoding
+            % chd \ hadamard(chd.M), % hadamard encoding/decoding
+            %
+            % % Left divide to apply to first dimension (Time by default)
+            % assert(chd.order(1) == 'T'); % ensure time axis is 1st
+            % H = convmtx([-1 2 -6 2 -1], chd.T); % convolution matrix
+            % H \ chd % apply
+            %
+            % % Swap dimensions to apply hadamard over rx
+            % hadamard(chd.N) \ swapdimD(chd, chd.ndim, 1)
+            %
+            % See also pagemldivide ChannelData.ldivide ChannelData.swapdimD
+            
+            % if isMATLABReleaseOlderThan("R2022a"), error("ChannelData:mldivide:unsupported","mldivide is supported in MATLAB R2022a and later releases."); end
+            if isMATLABReleaseOlderThan("R2022a"), pagemldivide = @lpagemldivide; else, pagemldivide = @pagemldivide; end % local implementation
+            if isa(a, 'ChannelData') && ~isa(b, 'ChannelData')
+                chd = copy(a); A = b; d = chd.mdim; sz = size(chd.data);
+                chd.data = reshape(pagemldivide(reshape(chd.data,prod(sz(1:d-1)),sz(d),prod(sz(d+1:end))), 'transpose', A), [sz(1:d-1),size(A,2),sz(d+1:end)]);
+            elseif ~isa(a, 'ChannelData') && isa(b, 'ChannelData')
+                chd = copy(b); A = a;
+                chd.data = pagemldivide(A, chd.data);
+            else % if both are ChannelData, this is currently undefined
+                error("QUPS:ChannelData:OperationUndefined", "mldivide (\) is currently undefined for 2 ChannelData objects - use ldivide (./) for element-wise division.");
             end
         end
         function c = times(a, b)
@@ -1362,7 +1443,7 @@ classdef ChannelData < matlab.mixin.Copyable
             if istall(ntau1) || istall(chd.data)
                 y = matlab.tall.transform(@wsinterpd2, chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
             else
-                y = wsinterpd2(chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
+                y =                        wsinterpd2( chd.data, ntau1, ntau2, chd.tdim, w, sdim, interp, 0, omega);
             end
         end
         
@@ -1867,6 +1948,62 @@ classdef ChannelData < matlab.mixin.Copyable
         function o = get.ord(chd), warning("QUPS:ChannelData:syntaxDeprecated","ChannelData.ord is deprecated. Use the .order property instead."); o = chd.order; end
         function set.ord(chd, o),  warning("QUPS:ChannelData:syntaxDeprecated","ChannelData.ord is deprecated. Use the .order property instead."); chd.order = o; end
     end
+end
+
+%% Helper Functions
+function X = lpagemrdivide(B, A, transA)
+    arguments
+        B
+        A
+        transA (1,1) string {mustBeMember(transA, ["transpose","ctranspose","none"])} = "none";
+    end
+    switch transA
+        case       "none", op = @(x) x;
+        case  "transpose", op = @transpose;
+        case "ctranspose", op = @ctranspose;
+    end
+    D = max(4,max(ndims(A), ndims(B))); % max dimension
+    szA = size(A,3:D);
+    szB = size(B,3:D);
+    szX = max(szA, szB);
+    i = cell(1,D-2);
+    [i{:}] = ind2sub(szX, (1:prod(szX))'); % linear -> sub-indices
+    j = num2cell(min([i{:}], szA),1); % A sub-indices
+    k = num2cell(min([i{:}], szB),1); % B sub-indices
+    j = sub2ind(szA, j{:}); % A linear-indices
+    k = sub2ind(szB, k{:}); % B linear-indices
+    for n = flip(1:prod(szX))
+        X(:,:,n) = B(:,:,k(n)) / op(A(:,:,j(n))); % compute
+    end
+    X = reshape(X, [size(X,1:2), szX]);
+end
+
+function X = lpagemldivide(A, B, transA)
+    arguments
+        A
+        B
+        transA = "none"; %(1,1) string {mustBeMember(transB, ["transpose","ctranspose","none"])} = "none";
+    end
+    if isstring(B) || ischar(B), [B, transA] = deal(transA, B); end
+    switch transA
+        case       "none", op = @(x) x;
+        case  "transpose", op = @transpose;
+        case "ctranspose", op = @ctranspose;
+    end
+    D = max(4,max(ndims(A), ndims(B))); % max dimension
+    szA = size(A,3:D);
+    szB = size(B,3:D);
+    szX = max(szA, szB);
+    i = cell(1,D-2);
+    [i{:}] = ind2sub(szX, (1:prod(szX))'); % linear -> sub-indices
+    j = num2cell(min([i{:}], szA),1); % A sub-indices
+    k = num2cell(min([i{:}], szB),1); % B sub-indices
+    j = sub2ind(szA, j{:}); % A linear-indices
+    k = sub2ind(szB, k{:}); % B linear-indices
+    for n = flip(1:prod(szX))
+        X(:,:,n) = op(A(:,:,j(n))) \ B(:,:,k(n)); % compute
+    end
+    X = reshape(X, [size(X,1:2), szX]);
 end
 
 % TODO: make a default interpolation method property

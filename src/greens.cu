@@ -23,9 +23,9 @@ __device__ void greens_temp(T2 * __restrict__ y,
     const U R0   = s0t0fscinv[5]; // min distance for div by 0
     
     // get starting index of this scatterer
-    const size_t s = threadIdx.x + blockIdx.x * blockDim.x; // time 
-    const size_t n = threadIdx.y + blockIdx.y * blockDim.y; // rx
-    const size_t m = threadIdx.z + blockIdx.z * blockDim.z; // tx
+    const int s = threadIdx.x + blockIdx.x * blockDim.x; // time 
+    const int n = threadIdx.y + blockIdx.y * blockDim.y; // rx
+    const int m = threadIdx.z + blockIdx.z * blockDim.z; // tx
 
     // reinterpret inputs as vector pointers (makes loading faster and indexing easier)
     const U3 * pi = reinterpret_cast<const U3*>(Pi); // 3 x I
@@ -33,7 +33,8 @@ __device__ void greens_temp(T2 * __restrict__ y,
     const U3 * pv = reinterpret_cast<const U3*>(Pv); // 3 x M x E
 
     // rename for readability
-    const size_t N = QUPS_N, S = QUPS_S, M = QUPS_M, I = QUPS_I;//, T = QUPS_T;
+    const int N = QUPS_N, S = QUPS_S, M = QUPS_M, T = QUPS_T;
+    const size_t I = QUPS_I;
     // rxs, num scat, output time size, txs, kernel time size, 
     // S is size of output, T is size of input kernel, I the number of scats
     
@@ -49,9 +50,9 @@ __device__ void greens_temp(T2 * __restrict__ y,
         for(size_t i = iblock[2*blockIdx.x+0]; i <= iblock[2*blockIdx.x+1] && i < I; ++i){ // for each scatterer
             if(s >= sb[2*i+0]){ // if within sampling window
                 # pragma unroll 
-                for(size_t me = 0; me < E[1]; ++me){ // for each tx sub-aperture
+                for(int me = 0; me < E[1]; ++me){ // for each tx sub-aperture
                     # pragma unroll 
-                    for(size_t ne = 0; ne < E[0]; ++ne){ // for each rx sub-aperture
+                    for(int ne = 0; ne < E[0]; ++ne){ // for each rx sub-aperture
     
                         // 2-way path distance
                         r1 = length(pi[i] - pr[n + ne*N]); // rx propagation
@@ -72,7 +73,7 @@ __device__ void greens_temp(T2 * __restrict__ y,
                         // sample the kernel and add to the signal at this time
                         // fsr applies a 'stretch' operation to the sample time, because the 
                         // input data x is sampled at sampling frequency fsr * fs
-                        val += a[i] * sample(x, fsr*tau, iflag, zero_v) / (r1 * r2); // out of bounds: extrap 0
+                        val += a[i] * sample(x, fsr*tau, iflag, zero_v, T) / (r1 * r2); // out of bounds: extrap 0
                     }
                 }
             }

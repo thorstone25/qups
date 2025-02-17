@@ -114,6 +114,50 @@ classdef(TestTags = ["full", "Github", "build", "syntax"]) ChdTest < matlab.unit
             tst.assertError(@() a * a, "QUPS:ChannelData:OperationUndefined");
         end
 
+        function linalg(tst)
+            import matlab.unittest.constraints.IsEqualTo;
+            tol = matlab.unittest.constraints.AbsoluteTolerance(single(1e-4)); % matrix inversion @ single precision
+
+            [T,M,N,F] = deal(8,6,4,2); % must be > 2 in dims 1:3
+            x = ChannelData('data', rand([T M N F],'single'), 'order', 'TMNF');
+            ords = flip(perms([1 2 3])',2); % permution ordering
+            ords(4,:) = 4; % explicit for permute
+
+            % transmit domain transform
+            A = randn(M + [0 4],'single');
+            B = randn(M - [0 2],'single');
+            
+            for ord = ords
+                % transform
+                chd = x.permuteD(ord);
+                D = size(chd.data,1); % first dim size
+
+                % 1st dim domain transform
+                H = randn(D + [0 4],'single')';
+                J = randn(D - [0 2],'single')';
+
+                % apply transmit dimension transform
+                u = chd * A; % forward tx transform
+                u = u   / A; % invert  tx transform
+                tst.assertThat(u.data, IsEqualTo(chd.data, 'Within', tol));
+
+                v = chd \ eye(chd.M); % identity tx inversion
+                u = chd \ A;          % tx inversion transform
+                u = u * pinv(A)     ; % invert       transform
+                tst.assertThat(u.data, IsEqualTo(v.data, 'Within', tol));
+
+                % apply time transforms
+                u = H * chd; % forward time transform
+                u = H \ u  ; % invert  time transform
+                tst.assertThat(u.data, IsEqualTo(chd.data, 'Within', tol));
+
+                v =  eye(D) / chd; % identity time inversion
+                u =      H  / chd; % time inversion transform
+                u = pinv(H) * u  ; % invert         transform
+                tst.assertThat(u.data, IsEqualTo(v.data, 'Within', tol));
+            end
+        end
+
         function transforming(tst)
             [T,M,N,F] = deal(16,8,4,2);
             chd = ChannelData('data', rand([T M N F]), 't0', randn([1 M 1 F]), 'order', 'TMNF', 'fs', 25);

@@ -212,11 +212,18 @@ classdef ParTest < matlab.unittest.TestCase
             tt = tic(); chd = greens(tst.us, tst.sct, 'parenv', tst.getPenv(par_prof));
             tst.logTestCheck(chd, tt);
         end
-        function fieldII_penv(tst, par_prof) % test FieldII
+        function fieldII_penv(tst, par_prof) % test FieldII - calc_scat_multi()
             tst.setupPenv(par_prof);
             penv = tst.getPenv(par_prof); % get penv for this profile
             if contains(par_prof, ["Threads", "background"]), return; end % incompatible
             tt = tic(); chd = calc_scat_multi(tst.us, tst.sct, 'parenv', penv);
+            tst.logTestCheck(chd, tt);
+        end
+        function fieldIIh_penv(tst, par_prof) % test FieldII - calc_hp()
+            tst.setupPenv(par_prof);
+            penv = tst.getPenv(par_prof); % get penv for this profile
+            if contains(par_prof, ["Threads", "background"]), return; end % incompatible
+            tt = tic(); chd = calc_hp(tst.us, tst.sct, 'parenv', penv);
             tst.logTestCheck(chd, tt);
         end
         function kwave_penv(tst, par_prof) % test k-Wave

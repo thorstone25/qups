@@ -82,7 +82,7 @@ classdef SimTest < matlab.unittest.TestCase
             % reduce number of elements - still an array, but we only check the center
             switch xdc_name
                 case 'PO192O', xdc.numd(:) = 3;
-                otherwise, xdc.numel = 3;
+                otherwise, xdc.numel = 5;
             end
 
             % Choose a transmit sequence
@@ -127,7 +127,7 @@ classdef SimTest < matlab.unittest.TestCase
             % set the scan at the edge of the transducer
             pn = xdc.positions(); % element positions
             xb = pn(1,[1,end]); % x-limits are the edge of the aperture
-            zb = [-10e-3, 10e-3] + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
+            zb = range(xb)*[-1 1]/2 + [min(scat.pos(3,:)), max(scat.pos(3,:))]; % z-limits surround the point target
 
             Npixd = 2^7;
             scanc = ScanCartesian(...
@@ -190,7 +190,8 @@ classdef SimTest < matlab.unittest.TestCase
 
     % some of these options aren't fully supported yet.
     properties(TestParameter)
-        sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
+        scat_sim_name = {'Greens', 'FieldII', 'FieldII_multi', 'SIMUS', 'kWave'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
+        field_sim_name = {'FieldII_hp', 'FieldII_hhp', 'kWave_field'} % k-Wave just takes a while, SIMUS has difficult to predict phase errors
     end
     methods(TestMethodSetup)
         function resetGPU(test)
@@ -226,8 +227,9 @@ classdef SimTest < matlab.unittest.TestCase
 
     % Full test routine
     methods(Test, ParameterCombination = 'exhaustive', TestTags={'full', 'build'})
-        function full_pscat(test, sim_name), pscat(test, sim_name); end % forward all
+        function full_pscat(test, scat_sim_name), pscat(test, scat_sim_name); end % forward all
         function full_greens_devs(test), greens_devs(test); end % forward all
+        function full_field(test, field_sim_name); field(test, field_sim_name); end % forward all
     end
 
     
@@ -352,6 +354,82 @@ classdef SimTest < matlab.unittest.TestCase
                         ));
                 end
             end
+        end
+    
+        function field(test, sim_name)
+            % FIELD - Test accuracy of pressure field (a.k.a. beam pattern) simulations
+            %
+            % Test that the pressure field, steered towards a scatterer in
+            % the center of the imaging domain, achieves its peak at the
+            % location of the scatterer within tolerance of the propagation
+            % delay and temporal and spatial sampling frequency, after
+            % accounting for beamforming delays.
+
+            % unpack
+            [us, scat, med, tscan, clu] = deal(...
+                test.us, test.scat, test.med, test.tscan, test.clu ...
+                );
+
+            % modify the sequence - central tx only
+            us = copy(us); 
+            seq = us.seq.splice(1);
+            us.seq = seq(ceil(numel(seq)/2)); % central Tx only
+            if us.seq.type == "FSA", us.seq.del = zeros(us.xdc.numel,1); end
+
+            % check if we can even call the sim
+            switch sim_name
+                case {'FieldII_hp'},  test.assumeTrue(logical(exist('field_init', 'file')));
+                case {'FieldII_hhp'}, test.assumeTrue(logical(exist('field_init', 'file')));
+                case {'kWave_field'}, test.assumeTrue(logical(exist('kWaveGrid' , 'file')));
+            end
+
+            % simulate based on the simulation routine
+            opts = {'parenv', clu,};
+            switch sim_name
+                case 'FieldII_hp'
+                    cgrd = us.scan; % Field II has MAJOR memory limitations ...
+                    chd = calc_hp(us, scat, [1,1], cgrd, opts{:}); % use FieldII,
+                case 'FieldII_hhp'
+                    cgrd = us.scan; % Field II has MAJOR memory limitations ...
+                    chd = calc_hp(us, scat, [1,1], cgrd, 'ap', '2way', opts{:}); % use FieldII,
+                case 'kWave_field', if(gpuDeviceCount && (clu == 0 || isa(clu, 'parallel.Cluster'))), dtype = 'gpuArray-single'; else, dtype = 'single'; end % data type for k-Wave
+                    T = 1.1 * max(vecnorm(scat.pos - us.xdc.positions,2,1)) / med.c0 + us.seq.pulse.tend + 2 * us.xdc.impulse.tend; % signal end time
+                    cgrd = tscan;
+                    chd = kspaceFirstOrder(us, med, cgrd, 'field', true, 'CFL_max', 0.5, 'PML', [8 64], 'parenv', clu, 'PlotSim', false, 'DataCast', dtype, "T", T); % run locally, and use an FFT friendly PML size
+                otherwise, warning('Simulator not recognized'); return;
+            end
+
+            % get max acoustic energy vs. time at the scat position
+            % p = reshape(pagetranspose(hilbert(chd.data)), [cgrd.size, chd.T, chd.M]);
+            pt = cgrd.positions(); 
+            j = argmin(vecnorm(pt - scat.pos,2,1), [], "all", "linear"); % closest pixel
+            p = hilbert(chd.data(:,j,:)); % pressure at scat (T x 1 x M)
+            tau = sel(chd.time, argmax(p,[],1), 1); % delay  (1 x 1 x M)
+
+            % peak should be ~near~ 10us one-way for FSA and PW and
+            % ~near~ 0us (at the focus) for FC
+            switch us.seq.type
+                case {'FSA','PW'},  t0 = 10e-6;
+                case {'FC'},        t0 = 00e-6;
+                otherwise, error("Unrecognized sequence type " + us.seq.type + ".");
+            end
+            if sim_name == "FieldII_hhp" && us.seq.type ~= "FC", t0 = t0 + 10e-6; end % 2-way delay
+            switch sim_name
+                case "kWave_field", tol = double(10*(tscan.dz / scat.c0)); % within 10 samples of the true location
+                % case "SIMUS", tol = double(1/us.xdc.fc); % SIMUS does not have calibrated phase: be within 1 wavelength of the true location
+                otherwise,    tol = double(1.1/chd.fs); % must be accurate down to the sample
+            end
+
+
+            % test
+            import matlab.unittest.constraints.IsEqualTo;
+            import matlab.unittest.constraints.AbsoluteTolerance;
+
+            % temporal offset
+            tau = gather(double(tau)); % typing
+            arrayfun(@(tau) test.assertThat(tau, IsEqualTo(t0, 'Within', AbsoluteTolerance(tol)), (...
+                "Peak of the data (" + tau + "us) is offset by more than " + tol + "from the true peak (" + t0 + "us)." ...
+                )), tau);
         end
     end
 

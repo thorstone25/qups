@@ -174,7 +174,7 @@ classdef Scan < matlab.mixin.Copyable & matlab.mixin.Heterogeneous & matlab.mixi
             % scan = scale(scan, 'dist', 1e3); % in millimeters
             % scan.xb
             %
-            %
+            % See also: CHANNELDATA.SCALE ULTRASOUNDSYSTEM.SCALE
             arguments
                 scan Scan
                 kwargs.dist (1,1) double

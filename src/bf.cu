@@ -111,7 +111,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
 
                 // data/time index number
                 const U ci = cinv[cbase + n * cstride[3] + m * cstride[4]];
-                tau = (ci * (dv + dr) - pv[m].w);
+                tau = (ci * (dv + dr) - pv[m].w); // d/c - t0
 
                 // apply demodulation if non zero
                 if (fc) {w.x = cospi(2*fc*tau); w.y = sinpi(2*fc*tau);}
@@ -123,7 +123,7 @@ void __device__ DAS_temp(U2 * __restrict__ y,
                         val *= a[astride[5+6*s] + i1 * astride[0+6*s] + i2 * astride[1+6*s] + i3 * astride[2+6*s] + n * astride[3+6*s] + m * astride[4+6*s]];
 
                 // sample the trace
-                if(val.x || val.y) val *= w * sample(&x[nm * T], tau * fs, flag & 7, zero_v); // out of bounds: extrap 0
+                if(val.x || val.y) val *= w * sample(&x[nm * T], tau * fs, flag & 7, zero_v, T); // out of bounds: extrap 0
 
                 // choose the accumulation
                 const int sflag = flag & 24; // extract bits 5,4

@@ -67,36 +67,36 @@ int __device__ modfi(const half x, half* r){
 
 /// @brief Device function for nearest-neighbor interpolation
 template<typename U, typename T2>
-__device__ T2 nearest(const T2 * x, U tau, T2 no_v) {
+__device__ T2 nearest(const T2 * x, U tau, const T2 no_v, const int len) {
     const int ti = (int) roundf(tau); // round to nearest integer
-    return (0 <= ti && ti < QUPS_T) ? x[ti] : no_v;
+    return (0 <= ti && ti < len) ? x[ti] : no_v;
 }
 
 /// @brief Device function for linear interpolation
 template<typename U, typename T2>
-__device__ T2 linear(const T2 * x, U tau, T2 no_v) {
+__device__ T2 linear(const T2 * x, U tau, const T2 no_v, const int len) {
     U tf;
     
     // fractional and integer part
     const int ti = modfi(tau, &tf); 
                 
     // if in bounds, linearly interpolate by ratio tau at time-index ti[+1]
-    return (0 <= ti && ti + 1 < QUPS_T) ? lerp(x[ti], x[ti + 1], tf) : no_v;
+    return (0 <= ti && ti + 1 < len) ? lerp(x[ti], x[ti + 1], tf) : no_v;
 }
 
 /// @brief Device function for cubic Hermite interpolation
 template<typename U, typename T2>
-__device__ T2 cubic(const T2 * x, U tau, T2 no_v) {
+__device__ T2 cubic(const T2 * x, U tau, const T2 no_v, const int len) {
   U u;
-  int ti = modfi(tau, &u); // u is the fractional part, ti the integer part
+  int ti = modfi(tau, &u) - 1; // u is the fractional part, ti the integer part
   
-  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
+  if (!(0 <= (ti + 0) && (ti + 3) < len))
       return no_v;
 
-  const T2 s0 = x[ti - 1];
-  const T2 s1 = x[ti + 0];
-  const T2 s2 = x[ti + 1];
-  const T2 s3 = x[ti + 2];
+  const T2 s0 = x[ti + 0];
+  const T2 s1 = x[ti + 1];
+  const T2 s2 = x[ti + 2];
+  const T2 s3 = x[ti + 3];
 
   // Cubic Hermite interpolation (increased precision using fused multiply-adds)
   // (Catmull-Rom)
@@ -130,12 +130,12 @@ __device__ T lanczos_helper(T u, int a) {
 
 /// @brief Device function for Lanczos 3-lobe interpolation
 template<typename U, typename T2>
-__device__ T2 lanczos3(const T2 * x, U tau, T2 no_v) {
+__device__ T2 lanczos3(const T2 * x, U tau, const T2 no_v, const int len) {
   constexpr int a = 2;  // a=2 for 3-lobe Lanczos resampling
   U u;
   const int ti = modfi(tau, &u); // u is the fractional part, ti the integer part
   
-  if (!(0 <= (ti - 1) && (ti + 2) < QUPS_T))
+  if (!(0 <= (ti - 1) && (ti + 2) < len))
       return no_v;
   
   T2 s0 = x[ti - 1];
@@ -150,18 +150,18 @@ __device__ T2 lanczos3(const T2 * x, U tau, T2 no_v) {
 }
 
 template <typename U, typename T2>
-__device__ T2 sample(const T2 * x, U tau, int flag, const T2 no_v){
+__device__ T2 sample(const T2 * x, U tau, int flag, const T2 no_v, const int len){
     // sample according to the flag
          if (flag == 0)
-        return nearest  (x, tau, no_v);
+        return nearest  (x, tau, no_v, len);
     else if (flag == 1)
-        return linear   (x, tau, no_v);
+        return linear   (x, tau, no_v, len);
     else if (flag == 2)
-        return cubic    (x, tau, no_v);
+        return cubic    (x, tau, no_v, len);
     else if (flag == 3)
-        return lanczos3 (x, tau, no_v);
+        return lanczos3 (x, tau, no_v, len);
     else if (flag == 4)
-        return linear   (x, tau, no_v);
+        return linear   (x, tau, no_v, len);
     else 
         return no_v;     
 }
@@ -186,7 +186,7 @@ __device__ void interpd_temp(T2 * __restrict__ y,
     if(i < I && n < N && m < M){
         # pragma unroll
         for(size_t f = 0; f < F; ++f){ // per transmit
-            y[i + n*I + m*N*I + f*M*N*I] = sample(&x[n*T + f*N*T], (V)(tau[i + n*I + m*I*N]), flag, no_v);
+            y[i + n*I + m*N*I + f*M*N*I] = sample(&x[n*T + f*N*T], (V)(tau[i + n*I + m*I*N]), flag, no_v, T);
         }
     }
 }
@@ -334,8 +334,8 @@ __device__ void wsinterpd_temp(T2 * __restrict__ y,
                 v += js * dstride[3 + 4*s]; // add pitched index for this dim (samples)
             }
             
-            const T2 a = {cosf(omega * tau[u]), sinf(omega * tau[u])}; // modulation phasor
-            const T2 val = a * w[k] * sample(&x[(v)*T], (V)tau[u], flag, no_v); // weighted sample
+            const T2 a = isinf(tau[u]) ? no_v : (T2){cosf(omega * tau[u]), sinf(omega * tau[u])}; // modulation phasor
+            const T2 val = a * w[k] * sample(&x[(v)*T], (V)tau[u], flag, no_v, T); // weighted sample
             atomicAddStore(&y[l], val); // store
         }
     }
@@ -387,8 +387,8 @@ __device__ void wsinterpd2_temp(T2 * __restrict__ y,
                 v += js * dstride[4 + 5*s]; // add pitched index for this dim (samples)
             }
             const U  t = tau1[r] + tau2[u]; // time
-            const T2 a = {cosf(omega * t), sinf(omega * t)}; // modulation phasor
-            const T2 val = a * w[k] * sample(&x[(v)*T], (V)t, flag, no_v); // weighted sample
+            const T2 a = isinf(t) ? no_v : (T2){cosf(omega * t), sinf(omega * t)}; // modulation phasor
+            const T2 val = a * w[k] * sample(&x[(v)*T], (V)t, flag, no_v, T); // weighted sample
             atomicAddStore(&y[l], val); // store
         }
     }

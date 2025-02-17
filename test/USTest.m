@@ -38,6 +38,7 @@ classdef USTest < matlab.unittest.TestCase
             if exist("calc_scat_multi.m",'file')
                 simulator.FieldIIm = @calc_scat_multi;
                 simulator.FieldIIa = @calc_scat_all;
+                simulator.FieldIIh = @calc_hp;
             end
             if exist("kspaceFirstOrder2D.m", 'file')
                 simulator.kWave = @kspaceFirstOrder;
@@ -45,7 +46,8 @@ classdef USTest < matlab.unittest.TestCase
             if exist("simus3.m", "file")
                 simulator.MUST = @simus;
             end
-            if exist("fullwave2_executable", "file") ...
+            qupsroot = fullfile(fileparts(mfilename('fullpath')),"..");
+            if exist(fullfile(qupsroot, "bin", "fullwave2_executable"), "file") ...
             && exist("mapToCoords", "file")
                 simulator.fullwave = @fullwaveSim;
             end
@@ -109,12 +111,11 @@ classdef USTest < matlab.unittest.TestCase
 
             [tx, rx, seq] = dealfun(@copy, tx, rx, seq); % copy semantics
 
-            % set numpulse for fsa
             if seq.type == "FSA", seq.numPulse = tx.numel; end
             % rx = TransducerArray; % const to reduce combinatorics
 
             % shift transducers
-            [tx.offset, rx.offset] = deal([-1 0 0]*1e-3, [1 0 0]*1e-3);
+             [tx.offset, rx.offset] = deal([-1 0 0]*1e-3, [1 0 0]*1e-3);
 
             % filter for identical transducer where required
             if simname == "simus"
@@ -126,11 +127,20 @@ classdef USTest < matlab.unittest.TestCase
                if isa(tx, 'TransducerGeneric'), return; end % incompatible
             end
 
+            % filter for same number of elements for generic sequences
+            if simname == "calc_hp" && isa(seq, "SequenceGeneric")
+                if tx.numel ~= rx.numel, return; end % incompatible
+            end
+
             % construct each tx, rx, seq, scan
             us = UltrasoundSystem('tx', tx, 'rx', rx, 'seq', seq,'recompile',false,'fs',single(4*rx.fc));
             [lb, ub] = bounds([tx.bounds, rx.bounds], 2);
             scat = Scatterers("pos", (lb+ub)./2 + [0 0 50*us.lambda]');
             switch simname
+                case "calc_hp"
+                    grid = us.scan.copy();
+                    grid.size(grid.size > 1) = 2*max(tx.numel, rx.numel); % shrink sim domain to reduce sim time
+                    chd = simulator(us, scat, [1 1], grid);
                 case {"greens", "calc_scat_multi","calc_scat_all","simus"} % point target
                     chd = simulator(us, scat);
                     if simname == "greens"
@@ -153,6 +163,7 @@ classdef USTest < matlab.unittest.TestCase
                         case "kspaceFirstOrder" 
                             % should always work
                             us.fs = 2*us.fc; % unstable, but faster
+                            chd = simulator(us, med, "CFL_max", 10, 'field', true);
                             chd = simulator(us, med, "CFL_max", 10);
 
                             % further test element mapping

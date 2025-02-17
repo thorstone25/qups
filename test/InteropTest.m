@@ -166,27 +166,37 @@ classdef(TestTags = ["full","Github","build","syntax"]) InteropTest < matlab.uni
             tst.assumeTrue(logical(exist('uff','class'))) % need USTB for this
 
             % test scans
-            uscn = cell(1,2);
+            uscn = cell(1,1);
 
-            % 3D plane scan
+            % 3D plane scan (deprecated)
+            %{
             sca = uff.linear_3D_scan();
             sca.radial_axis=linspace(-20e-3,20e-3,256)';
             sca.axial_axis=linspace(0e-3,40e-3,256)';
             sca.roll=0;
             uscn{1} = sca;
+            %}
 
-            % rotated scan?
+            sca = uff.linear_scan();
+            sca.x_axis=linspace(-20e-3, 20e-3, 256)';
+            sca.z_axis=linspace(  0e-3, 40e-3, 256)';
+            uscn{1} = sca;
+
+            % rotated scan? (deprecated)
+            %{
             sca = uff.linear_scan_rotated();
             sca.x_axis=linspace(-20e-3,20e-3,256)';
             sca.z_axis=linspace(0e-3,40e-3,256)';
             sca.rotation_angle = 20*pi/180;
             sca.center_of_rotation = [0 0 0]';
             uscn{2} = sca;
+            %}
+
             
             for i = 1:numel(uscn)
                 sca = uscn{i};
                 scn = Scan.UFF(sca);
-                tst.assertEqual(scn.positions()', sca.xyz, "Conversion from " + class(sca) + " to " + class(scn) + " failed.");
+                tst.assertEqual(reshape(scn.positions(),3,[])', sca.xyz, "Conversion from " + class(sca) + " to " + class(scn) + " failed.");
                 tst.assertEqual(sca.xyz, scn.QUPS2USTB().xyz, "Conversion from " + class(scn) + " to " + class(sca) + " failed.");
             end
 

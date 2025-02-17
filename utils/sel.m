@@ -12,8 +12,9 @@
 % Example:
 % x = rand(2,3,4);
 % [y, ix] = max(x, [], 3);
+% [y(1), ix(1)] = deal(NaN); % remove
 % ys = sel(x, ix, 3);
-% all(y == ys, 'all')
+% isequaln(y, ys)
 % 
 % See also SUB
 function y = sel(x, ind, dim)
@@ -34,7 +35,7 @@ if isa(x,'gpuArray') || isa(ind, 'gpuArray'), [i{:}] = dealfun(@gpuArray, i{:});
 
 % broadcast ind to all dimensions in x (except dim)
 D = max([ndims(x), ndims(ind)+1, dim]); % maximum dimension
-rsz = size(x,1:D) ./ size(ind,1:D); % broadcasting size
+rsz = size(x,1:D) ./ max(1,size(ind,1:D)); % broadcasting size
 rsz(dim) = 1; % don't repeat in selected dimension
 ind = repmat(ind, rsz); % make full
 
@@ -48,10 +49,9 @@ y = reshape(y, size(lind));
 
 function mustBeIndex(ind)
 arguments
-    ind {mustBeInteger, mustBeNonnegative}
+    ind {mustBeNumeric}
 end
-
-if isnumeric(ind)
-    mustBePositive(ind);
-end
+j = ~isnan(ind);
+mustBeNonnegative(ind(j));
+mustBeInteger(ind(j));
     

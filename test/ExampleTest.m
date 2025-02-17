@@ -56,7 +56,7 @@ classdef ExampleTest < matlab.unittest.TestCase
                 ... "bfAdjoint", ... QUPS (RAM)
                 'kWave',    "kspaceFirstOrder"+optionalPattern(digitsPattern(1)+"D"), ... k-Wave (still too large)
                 'USTB',     ["QUPS2USTB", "uff." + alphanumericsPattern + wildcardPattern], ... USTB
-                'FieldII',  ["calc_scat"+["","_all", "_multi"], "getFieldII"+["Aperture","Patches","Positions"]], ... FieldII
+                'FieldII',  ["calc_hp","calc_scat"+["","_all", "_multi"], "getFieldII"+["Aperture","Patches","Positions"]], ... FieldII
                 'MUST',     "simus", ... MUST
                 'fullwave', ["getFullwaveTransducer", "fullwaveSim", "fullwaveConf", "fullwaveJob", "mapToCoords"], ... % fullwave
                 'mex',      "recompile" + ["","Mex"], ... mex binaries required ... compilation (optional, requires CUDA)

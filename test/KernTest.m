@@ -301,7 +301,7 @@ classdef KernTest < matlab.unittest.TestCase
 
             % test that defaults work
             imagesc(us.scan, b); dbr;
-            arrayfun(@dbr, ["b-mode", "phase", "echo"])
+            arrayfun(@dbr, ["b-mode", "phase", "echo", "corr"])
             
             % warn on ith argument
             clf(hf);
@@ -388,6 +388,25 @@ classdef KernTest < matlab.unittest.TestCase
             [~]     = test.assertError(@() dealfun(@magic, 1,2), "QUPS:dealfun:narginNargoutMismatch", "`dealfun()` did not throw an error!");           
             [~,~,~] = test.assertError(@() dealfun(@magic, 1,2), "QUPS:dealfun:narginNargoutMismatch", "`dealfun()` did not throw an error!");           
             [a,b,c] = dealfun(@magic, 1,2,3); % works
+        end
+        function msfm2D_test(test)
+            % 2D test
+            SourcePoint = [51; 51];
+            SpeedImage = ones([101 101]);
+            [X, Y] = ndgrid(1:101, 1:101);
+            T1 = sqrt((X-SourcePoint(1)).^2 + (Y - SourcePoint(2)) .^ 2);
+
+            % Run fast marching 1th order, 1th order multi stencil
+            % and 2th orde and 2th orde multi stencil
+
+            tic; T1_FMM1 = msfm(SpeedImage, SourcePoint, false, false); toc;
+            tic; T1_MSFM1 = msfm(SpeedImage, SourcePoint, false, true); toc;
+            tic; T1_FMM2 = msfm(SpeedImage, SourcePoint, true, false); toc;
+            tic; T1_MSFM2 = msfm(SpeedImage, SourcePoint, true, true); toc;
+
+            SourcePoint=rand(2,100)*255+1;
+            SpeedImage = ones([256 256]);
+            tic; T1_MSFM2 = msfm(SpeedImage, SourcePoint, true, true); toc;
         end
     end
 end

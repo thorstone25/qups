@@ -1,4 +1,4 @@
-function [cxy, ixo, iyo] = wbilerpg(x, y, xa, ya, xb, yb)
+function [cxy, ixo, iyo, iro] = wbilerpg(x, y, xa, ya, xb, yb, r)
 % WBILERPG - Weights for bilinear interpolation (GPU/OpenCL-enabled)
 %
 % [cxy, ixo, iyo] = WBILERPG(x, y, xa, ya, xb, yb) takes in a pair of grid
@@ -16,6 +16,17 @@ function [cxy, ixo, iyo] = wbilerpg(x, y, xa, ya, xb, yb)
 % the same grid index. These can be added afterwards to form the full
 % weights.
 %
+% [...] = WBILERP(x, y, xa, ya, xb, yb, r) specifies a vector of segment
+% divisions r that sub-divide the line (xa,ya) to (xb,yb) by inserting the
+% points (xa + r(i)*(xb-xa), ya + r(i)*(yb-ya)) where r must be between 0
+% and 1 exclusively. Each output is then size 4 x (X + Y + R + 1) where R
+% is the number of sub-divisions. The default is [] (no sub-divisions).
+% 
+% [cxy, ixo, iyo, iro] = WBILERP(...) additionally outputs an ND-array of
+% indices corresponding to each line segment defined by the subdivisions in
+% r. A value of 0 indicates the index is invalid. These can be used to
+% generate multiple sets of weights along the same line.
+% 
 % Note: This function requires that either a CUDA-enabled gpu or a working
 % implementation of OpenCL via Matlab-OpenCL be available.
 % 
@@ -24,22 +35,46 @@ function [cxy, ixo, iyo] = wbilerpg(x, y, xa, ya, xb, yb)
 %
 % Example:
 % % Create a grid
-% [x,  y ] = deal(single(-5:5), single(-5:5)); % 11 x 11 grid
+% [x, y] = deal(-5:5, -5:5); % 11 x 11 grid
 % [xa, ya] = deal(-4, +1);
 % [xb, yb] = deal(+3, -2);
 %
 % % Get the interpolation weights
 % [cxy, ixo, iyo] = wbilerpg(x, y, xa, ya, xb, yb); % get the line segment weights
-%
+% 
 % % Create a sparse matrix, implicitly summing weights from neighboring
 % % line segments
 % val = (ixo ~= 0) & (iyo ~= 0); % filter out invalid indices
-% s = sparse(ixo(val), iyo(val), double(cxy(val)), numel(x), numel(y));
-%
+% s = sparse(ixo(val), iyo(val), cxy(val), numel(x), numel(y));
+% 
 % figure;
 % pcolor(x, y, full(s)')
 % title("Weights from ("+xa+","+ya+"), to ("+xb+","+yb+").");
-%
+% caxis([0 1]);
+% 
+% % Example 2: Line segments
+% % Divide the line into quarters
+% r = [1/4, 1/2, 3/4]; % divisions (endpoints 0 and 1 are implicit)
+% [cxy, ixo, iyo, iro] = wbilerpg(x, y, xa, ya, xb, yb, r); % get the line segment weights
+% for i = 1:4, val = (iro == i); 
+%     si{i} = sparse(ixo(val), iyo(val), cxy(val), numel(x), numel(y));
+% end
+% 
+% % Display
+% figure; tiledlayout('flow');
+% for i = 1:4
+%     h(i) = pcolor(nexttile(i), x, y, full(si{i})');
+%     caxis(h(i).Parent, [0 1]);
+%     title(h(i).Parent, "Line segment "+i+" of 4" ... 
+%         + " from ("+xa+","+ya+"), to ("+xb+","+yb+")." ...
+%     );
+%     seg_len(i) = full(sum(si{i},'all'));
+% end
+% 
+% seg_len = cellfun(@(S) full(sum(S,'all')), si);
+% disp("Segment lengths: [" + join(string(seg_len),", ") + "]");
+% disp("Range (max - min): " + range(seg_len));
+% 
 % See also XIAOLINWU_K_SCALED SPARSE WBILERP
 
 arguments
@@ -49,16 +84,18 @@ arguments
     ya      {mustBeReal, mustBeNumeric, mustBeFloat}
     xb      {mustBeReal, mustBeNumeric, mustBeFloat}
     yb      {mustBeReal, mustBeNumeric, mustBeFloat}
+    r  (:,1) {mustBeInRange(r,0,1), mustBeFloat} = [] % segment divisions
 end
 
 % ensure floating point, sorted, grid in vector form
 assert(issorted(x), 'x-grid vector must be sorted.');
 assert(issorted(y), 'y-grid vector must be sorted.');
-assert(numel(unique(cellfun(@ndims, {xa,ya,xb,yb}))) == 1, 'All end-point coordinates must have the same number of dimensions.')
+assert(isscalar(unique(cellfun(@ndims, {xa,ya,xb,yb}))), 'All end-point coordinates must have the same number of dimensions.')
 assert(~any(diff(cell2mat(cellfun(@(x){size(x)'}, {xa,ya,xb,yb})),1,2),'all'), 'All end-point coordinates must have the same size.')
 
 % move to same class to avoid precision matching issues
-proto = cat(1,x(:),y(:),xa(:),ya(:),xb(:),yb(:)); % imply MATLAB casting rules
+proto = cat(1,x([]),y([]),xa([]),ya([]),xb([]),yb([])); % imply MATLAB casting rules
+iproto = int32(proto); % integer version (gpuArray maybe?)
 [x,y,xa,ya,xb,yb] = deal6fun(@(x)cast(x, 'like', proto),x,y,xa,ya,xb,yb);
 
 % get the transforms that should be applied for each set of points
@@ -66,9 +103,10 @@ proto = cat(1,x(:),y(:),xa(:),ya(:),xb(:),yb(:)); % imply MATLAB casting rules
 
 % pre-allocate final output
 Ia = numel(xa); % number of point pairs
-N = numel(x) + numel(y) + 1; % number of grid points
-[ixo, iyo] = deal(zeros([4*N,Ia], 'int32'));
-[cxy]      = deal(zeros([4*N,Ia], 'like', xa));
+N = numel(x) + numel(y) + numel(r) + 1; % number of grid points
+[ixo, iyo] = deal(zeros([4,N,Ia], 'like', iproto));
+[iro     ] = deal(zeros([1,N,Ia], 'like', iproto));
+[cxy]      = deal(zeros([4,N,Ia], 'like',  proto));
 
 % determine the suffix based on the type
 uclass = class(xa);
@@ -80,7 +118,7 @@ switch uclass
 end
 
 % parse device
-use_gdev = logical(gpuDeviceCount()) && exist('wbilerp.ptx', 'file');
+use_gdev = canUseGPU() && exist('wbilerp.ptx', 'file');
 use_odev = exist('oclDeviceCount','file') && oclDeviceCount() && ~isempty(oclDevice());
 
 % specify the kernel (must be on the path)
@@ -137,31 +175,55 @@ for ineg = [false, true], for isteep = [false, true], for irev = [false, true]
             pmu = complex(min(xg(end), vx), min(yg(end), vy)); % upper bound (1 x I)
 
             % sort in x, then y, so that we have a non-descreasing line
-            [ux, uy, vx, vy, m, mi] = dealfun(@(x) shiftdim(x(:), -2), ux, uy, vx, vy, m, mi); % move to 1 x 1 x I
+            [ux, uy, vx, vy, m, mi] = dealfun(@(x) reshape(x,1,1,I), ux, uy, vx, vy, m, mi); % move to 1 x 1 x I
 
             % all points ([N+1] x 2 x I)
             pall = [...
+                ux + r.*(vx-ux), uy + r.*(vy-uy); ... segments
                 ux, uy; ... endpoint
                 vx, vy; ... endpoint
                 [xg + 0*uy, uy + m  .* (xg - ux)]; ...  x-intercepts
                 [ux + mi .* (yg - uy), yg + 0*uy]; ...  y-intercepts
                 ];
 
+            % input/output sizing
+            X = cast(numel(xg), 'like', iproto);
+            Y = cast(numel(yg), 'like', iproto);
+            R = cast(numel(r ), 'like', iproto);
+            % N = X + Y + R + 1;
+
+            % sort, reshape, and label all points / segments
+            n_ = (ones(1,'like',iproto):N)'; % indices
+            [pall, oi] = sortpoints(pall, m); % sort x/y per I ([N+1] x 2 x I)
+            pall = reshape(complex(pall(:,1,:), pall(:,2,:)),[1 N+1,I]); % (1 x [N+1] x I)
+            oj = (argmax(oi == [R+1, (1:R), R+2],[],1)); % label transitions (1 x [R+2] x I)
+            % oj = (oj(:,1:end-1,:) <= n_ & n_ <= oj(:,2:end,:)); % label filters (N x [R+1] x I)
+            % for l = 1:R+1, iro(1,oj(:,l,:)) = l; end % set labels
+            % iro(:,:,ind) = reshape(sum((1:R+1) .* int32(oj), 2, "native"), [1 N I]); % labels (1 x N x I)
+            iro(1,:,ind) = sum( (ones(1,'like',iproto):R+1) .* cast(...
+                oj(:,1:end-1,:) <= n_ & n_ < oj(:,2:end,:) ...
+                , 'like', iproto), 2, "native"); % inline labels: (N x 1 x I) -> (1 x N x I)
+            %{
             % sort and reshape them -> (2 x [N+1] x I)
-            parfor (i = 1:I, 0), pall(:,:,i) = sortpoints(pall(:,:,i), m(i)); end
+            [pall, m, iro_] = gather(pall, m, iro(:,:,ind));
+            parfor (i = 1:I)
+            % for (i = 1:I)
+                [pall(:,:,i), oi] = sortpoints(pall(:,:,i), m(i)); % sort
+                oj = arrayfun(@(x) find(oi == x,1,'first'), [R+1, (1:R), R+2]); % start | segments | end
+                iroi_ = iro_(1,:,i); % splicing
+                for j = 1:R+1, iroi_(oj(j) : oj(j+1) - 1) = j; end % label
+                iro_(1,:,i) = iroi_; % update
+            end 
+            iro(:,:,ind) = iro_; 
             pall = pagetranspose(pall);
             pall = complex(pall(1,:,:), pall(2,:,:)); % typecast
-
-            % input/output sizing
-            X = int32(numel(xg));
-            Y = int32(numel(yg));
-            % N = X + Y + 1;
+            %}
 
             % preallocate output: each line segment produces 4 integrals for 4 grid
             % points defined by [[ix, iy, c1]; [ix+1, iy, c2]; [ix, iy+1, c3], [ix+1, iy+1, c4]];
-            cxyo = zeros([4*N,I], 'like', real(pall));
-            ixyo = -ones([4*N,I] , 'int32');
-            ixyo = complex(ixyo, ixyo); % alias (x,y) -> (real, imag)
+            cxyo = zeros([4,N,I], 'like', real(pall([])));
+            ixyo = -gpuArray.ones(1,underlyingType(iproto));
+            ixyo = repmat(complex(ixyo, ixyo), [4,N,I]); % alias (x,y) -> (real, imag)
 
             % setup the execution size
             kern.ThreadBlockSize(1) = min(I,kern.MaxThreadsPerBlock);
@@ -180,39 +242,48 @@ for ineg = [false, true], for isteep = [false, true], for irev = [false, true]
             end
 
             % set correct output for x and y in original coordinates
-            [ixo(:,ind), iyo(:,ind)] = unapplyTrans(real(ixyo), imag(ixyo), ineg, isteep, Y);
-            if suffix ~= "h", cxy(:,ind) = cxyo; % store normally
-            else,             cxy.val(:,ind) = cxyo; % store while aliased
+            [ixo(:,:,ind), iyo(:,:,ind)] = unapplyTrans(real(ixyo), imag(ixyo), ineg, isteep, Y);
+            if suffix ~= "h", cxy(:,:,ind) = cxyo; % store normally
+            else,             cxy.val(:,:,ind) = cxyo; % store while aliased
             end
 
 end, end, end
 
 % set output sizing as a vector in dim1
 osz = [4*N, size(xa, 1:ndims(xa))];
-[ixo, iyo, cxy] = deal3(reshape(ixo,osz), reshape(iyo,osz), reshape(cxy,osz));
-[ixo, iyo] = deal(1+ixo, 1+iyo); % use 1-based indexing for MATLAB
+iro = repmat(iro, [4,1]); % expand
+[ixo, iyo, iro, cxy] = deal4(reshape(ixo,osz), reshape(iyo,osz), reshape(iro,osz), reshape(cxy,osz));
+ixo = ixo + 1; iyo = iyo + 1; % use 1-based indexing for MATLAB
 
+% set invalid indices to 0:
+iro = iro .* cast(ixo & iyo, 'like', iproto);
+% assert(~any(iro & ~(ixo&iyo),'all'), "Labelled segment contains invalid points!"); % DEBUG: has label -> valid point
 end
 
 % helper functions
 function [a,b] = deal2(a,b), end
-function [a,b,c] = deal3(a,b,c), end
+function [a,b,c,d] = deal4(a,b,c,d), end
 function [a,b,c,d,e,f] = deal6(a,b,c,d,e,f), end
 function [a,b,c,d,e,f] = deal6fun(fun,a,b,c,d,e,f)
 a = fun(a); b = fun(b); c = fun(c); d = fun(d); e = fun(e); f = fun(f);
 end
 
-function pall = sortpoints(pall, m)
 
+function [pall, o] = sortpoints(pall, m)
 % sort in x, then y, so that we have a non-descreasing line
-[pall, ~] = sortrows(pall, [1, 2], 'ascend'); % sort in x, then y ([N+1] x 2)
+% [pall, o] = sortrows(pall, [1, 2], 'ascend'); % sort in x, then y ([N+1] x 2)
+[~, o] = sort(pall(:,1,:), 1, 'ascend'); % sort in x, then y ([N+1] x 2 x I)
+pall = sel(pall, o, 1);
+o = int32(o);
 
 % when points are very close but not equal, numerical instability can cause
 % things to be non-monotonic: enforce this by sorting y separately from x
 % unless m = 0 / mi = nan. This swaps y-values when they are mismatched due
 % to numerical instability.
-if ~(m == 0), pall(:,2) = sort(pall(:,2), 'ascend'); end
-
+% if ~(m == 0), pall(:,2) = sort(pall(:,2), 'ascend'); end
+i = ~(m == 0);
+[~, j] = sort(pall(:,2,i), 1, 'ascend');
+pall(:,2,i) = sel(pall(:,2,i), j, 1);
 end
 
 function [yneg, steep, reverse] = getTrans(xa, ya, xb, yb)

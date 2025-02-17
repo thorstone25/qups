@@ -126,6 +126,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             arrayfun(@(s) imagesc(s,randn(s.size)), scns); % supports imagesc
             scns(end+2) = scns(1); % implicit empty value
             arrayfun(@edisp, scns) % display scalar
+            arrayfun(@edisp, [scns scns]) % display array
             arrayfun(@(x)edisp(x([])), scns) % display empty
             x = copy(scns); x.delete(); arrayfun(@edisp, x); % display deleted
 
@@ -216,7 +217,7 @@ classdef (TestTags = ["Github", "full", "build", "syntax"]) InitTest < matlab.un
             fld = us.tmp_folder;
             test.assertTrue(logical(exist(fld,"dir")));
             UltrasoundSystem('copybin',  true);
-            evalc("UltrasoundSystem('recompile',true);");
+            evalc("us = UltrasoundSystem('recompile',true); us.recompile();");
             us2 = copy(us); fld2 = us2.tmp_folder; % new instance
             test.assertFalse(fld == fld2); % different folders
             clear us2; test.assertFalse(logical(exist(fld2,'dir'))); % deleted on clear
