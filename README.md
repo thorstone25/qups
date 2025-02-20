@@ -8,6 +8,7 @@
 ![GitHub Issues or Pull Requests](https://img.shields.io/github/issues/thorstone25/qups)
 ![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/thorstone25/qups)
 
+| [Features](#features) | [Installation](#installation) | [Quick Start](#quick-start) | [Documentation](#documentation) | [Citation](#citation) | [Parallel Processing](#parallel-processing-with-external-packages) | [Troubleshooting](#troubleshooting) |
 
 ## Description
 QUPS (pronounced "CUPS") is an abstract, lightweight, readable tool for prototyping pulse-echo ultrasound systems and algorithms. 
@@ -54,7 +55,7 @@ Starting in MATLAB R2023b+, QUPS and most of it's extension packages can be inst
 gitclone("https://github.com/thorstone25/qups.git");
 cd qups;
 ```
-2. (optional) Install and patch [extension](##Extensions) packages and compile mex and CUDA binaries (failures can be safely ignored)
+2. (optional) Install and patch [extension](#extensions) packages and compile mex and CUDA binaries (failures can be safely ignored)
 ```
 buildtool install patch compile -continueOnFailure
 ```
@@ -64,7 +65,7 @@ buildtool test
 ```
 
 ### Legacy Installation
-You can manually download and install each [extension](##Extensions) separately.
+You can manually download and install each [extension](#extensions) separately.
 1. Download the desired extension packages into a folder adjacent to the "qups" folder e.g. if qups is located at `/path/to/my/qups`, kWave should be downloaded to an adjacent folder `/path/to/my/kWave`.
 
 2. Create a MATLAB [Project](https://www.mathworks.com/help/matlab/matlab_prog/create-projects.html) and add the root folder of the extension to the path e.g. `/path/to/my/kWave`.
@@ -72,7 +73,7 @@ You can manually download and install each [extension](##Extensions) separately.
 
 3. Open the `Qups.prj` project and add each extension package as a [reference](https://www.mathworks.com/help/matlab/matlab_prog/componentize-large-projects.html).
 
-4. (optional) Apply [patches](###parallel-processing-with-external-packages) to enable further parallel processing.
+4. (optional) Apply [patches](#parallel-processing-with-external-packages) to enable further parallel processing.
 
 5. (optional) Run tests via the `runProjectTests()` function in the build directory.
 ```
@@ -104,8 +105,8 @@ setup parallel CUDA cache; % setup the environment with any available accelerati
 
 3. Create an ultrasound system and point scatterer to simulate
 ```
-scat = Scatterers('pos', 1e-3*[0 0 30]'); % a single point scatterer at 20mm depth
-xdc = TransducerArray.P4_2v(); % simulate a Verasonics L11-5v transducer
+sct = Scatterers('pos', 1e-3*[0 0 30]'); % a single point scatterer at 30mm depth
+xdc = TransducerArray.P4_2v(); % simulate a Verasonics P4-2v transducer
 seq = Sequence('type', 'FSA', 'numPulse', xdc.numel); % full synthetic-aperture pulse sequence
 scan = ScanCartesian('x', 1e-3*[-10, 10], 'z', 1e-3*[25 35]); % set the image boundaries - we'll set the resolution later
 us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 4*xdc.fc); % create a system description
@@ -114,23 +115,23 @@ us = UltrasoundSystem('xdc', xdc, 'seq', seq, 'scan', scan, 'fs', 4*xdc.fc); % c
 
 4. Display the geometry
 ```
-figure; plot(us); hold on; plot(scat, 'cx'); % plot the ultrasound system and the point scatterers
+figure; plot(us); hold on; plot(sct, 'cx'); % plot the ultrasound system and the point scatterers
 ```
 
 ![](fig/README/geometry.png)
 
 5. Simulate channel data
 ```
-chd = greens(us, scat); % create channel data using a shifted Green's function (CUDA/OpenCL-enabled)
-% chd = calc_scat_multi(us, scat); %  ... or with FieldII
-% chd = kspaceFirstOrder(us, scat); % ... or with k-Wave (CUDA-enabled)
-% chd = simus(us, scat); %            ... or with MUST   (CUDA-enabled)
+chd = greens(us, sct); % create channel data using a shifted Green's function (CUDA/OpenCL-enabled)
+% chd = calc_scat_multi(us, sct); %  ... or with FieldII
+% chd = kspaceFirstOrder(us, sct); % ... or with k-Wave (CUDA-enabled)
+% chd = simus(us, sct); %            ... or with MUST   (CUDA-enabled)
 
 ```
 6. Display the channel data 
 ```
-figure; imagesc(chd); dbr echo 60;
-animate(chd.data, 'loop', false, 'title', "Tx: "+(1:chd.M));
+figure; imagesc(chd); dbr echo 60; % 'echo' settings w/ 60 dB dynamic range
+animate(chd.data, 'loop', false, 'title', "Tx: "+(1:chd.M)); % M = # of transmits
 ```
 ![](fig/README/channel_data.gif)
 
@@ -160,11 +161,11 @@ For further documentation on customizing classes, see the class structure [READM
 If you have trouble, please submit an [issue](https://github.com/thorstone25/qups/issues).
 
 ## Citation
-If you use this software, please cite this repository using the [citation file](CITATION.cff) or via the menu option in the "About" section of the [github page](github.com/thorstone25/qups).
+If you use this software, please cite this repository via the menu option in the "About" section of the [github page](github.com/thorstone25/qups), or the [citation file](CITATION.cff), or by copying the citation below.
 
 > Brevett, T. (2024). QUPS: A MATLAB Toolbox for Rapid Prototyping of Ultrasound Beamforming and Imaging Techniques. Journal of Open Source Software, 9(101), 6772. https://doi.org/10.21105/joss.06772
 
-If you use any of the extensions, please see their citation policies:
+If you use any of the [extensions](#extensions), please see their citation policies:
 * [FieldII](https://www.field-ii.dk/?background.html)
 * [MUST](https://www.biomecardio.com/MUST/documentation.html)
 * [MatCL](https://github.com/IANW-Projects/MatCL?tab=readme-ov-file#reference) (via Matlab-OpenCL)
