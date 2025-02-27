@@ -92,6 +92,10 @@ assert(issorted(x), 'x-grid vector must be sorted.');
 assert(issorted(y), 'y-grid vector must be sorted.');
 assert(isscalar(unique(cellfun(@ndims, {xa,ya,xb,yb}))), 'All end-point coordinates must have the same number of dimensions.')
 assert(~any(diff(cell2mat(cellfun(@(x){size(x)'}, {xa,ya,xb,yb})),1,2),'all'), 'All end-point coordinates must have the same size.')
+N = nnz(~(min(x) <= xa & xa < max(x))); if N, warning("The x-coordinate of "+N+" point(s) of a fall(s) outside the grid."); end
+N = nnz(~(min(x) <= xb & xb < max(x))); if N, warning("The x-coordinate of "+N+" point(s) of b fall(s) outside the grid."); end
+N = nnz(~(min(y) <= ya & ya < max(y))); if N, warning("The y-coordinate of "+N+" point(s) of a fall(s) outside the grid."); end
+N = nnz(~(min(y) <= yb & yb < max(y))); if N, warning("The y-coordinate of "+N+" point(s) of b fall(s) outside the grid."); end
 
 % move to same class to avoid precision matching issues
 proto = cat(1,x([]),y([]),xa([]),ya([]),xb([]),yb([])); % imply MATLAB casting rules
