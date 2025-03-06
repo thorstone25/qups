@@ -616,11 +616,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), us.rx.numel, us.tx.numel, prod(element_subdivisions));
-            x   = complex(zeros([1 T N M 0], 'like', kern)); % set size/type
-            x(:,:,:,:,1) = 0; % pre-allocate (once, not twice)
+            x = zeros([1 T N M], 'like', complex(kern([]))); % pre-allocate
 
             % splice
-            c0  = scat(f).c0;
+            c0 = scat(f).c0;
             ps = scat(f).pos; % 3 x S
             as = scat(f).amp; % 1 x S
             fso = us.fs; % output channel data sampling frequency
@@ -629,11 +628,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % compute the maximum distance for each scatterer
             % sort points by geometric mean of minimum/maximum distance
             [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-            for p = us.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
-            for p = us.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
-            for p = us.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1)); end % minimum scat time
-            for p = us.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+            for p = us.tx.positions, rs = vecnorm(ps - p, 2, 1); % distances
+                rminrx = min(rminrx, rs); % minimum scat time
+                rmaxrx = max(rmaxrx, rs); % maximum scat time
+            end
+            if us.tx ~= us.rx % different transducers
+            for p = us.rx.positions, rs = vecnorm(ps - p, 2, 1); % distances
+                rmintx = min(rmintx, rs); % minimum scat time
+                rmaxtx = max(rmaxtx, rs); % maximum scat time
+            end
             [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+            else % same transducer
+            [rmin, rmax] = deal(     2 * rminrx,      2 * rmaxrx);
+            end
             [~, i] = sort((rmin .* rmax)); % get sorting
 
             % sort points by geometric mean of minimum/maximum distance
@@ -644,8 +651,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
                 % determine the data type
-                if     isftype(kern, 'double'), typ = "double"; prc = 64; suffix = "" ; cfun = @double;
-                elseif isftype(kern, 'single'), typ = "single"; prc = 32; suffix = "f"; cfun = @single;
+                if     isftype(kern, 'double'), typ = "double"; prc = 64; suffix = "" ; cfun = @(x) cast(x, 'like', double(x([])));
+                elseif isftype(kern, 'single'), typ = "single"; prc = 32; suffix = "f"; cfun = @(x) cast(x, 'like', single(x([])));
                 elseif isftype(kern, 'halfT' ), typ = "halfT" ; prc = 16; suffix = "h"; cfun = @(x) alias(halfT(x));
                 else,   error("Datatype " + class(kern) + " not recognized as a GPU compatible type.");
                 end
