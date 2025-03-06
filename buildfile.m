@@ -252,8 +252,15 @@ if dwnld
             else, error("Cannot identify system type for FieldII download.");
             end
 
-            url = "https://www.field-ii.dk/program_code/matlab_2021/Field_II_ver_3_30_"+os+".tar.gz";
-            untar(url, fld);
+            isM1 = ismac() && computer() == "MACA64"; % M1 chips
+            if isM1
+                url = "https://www.field-ii.dk/program_code/matlab_2023/Field_II_ver_4_11_"+os+".zip";
+                unzip(url, fld);
+                movefile(fullfile(fld, "m_files","*"), fld); % move sub-folder files to main folder
+            else
+                url = "https://www.field-ii.dk/program_code/matlab_2021/Field_II_ver_3_30_"+os+".tar.gz";
+                untar(url, fld);
+            end
 
             % create a git repo
             vnm = replace(extractBetween(url, "Field_II_ver_", "_"+os),"_","."); % version name
