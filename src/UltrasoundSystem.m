@@ -5721,7 +5721,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             flagnum = flagnum + 8*kwargs.keep_rx + 16*kwargs.keep_tx + 32*(chd.ndim>chd.mdim);
             
             % add the defined macros
-            def.DefinedMacros = cat(1, ...
+            def.DefinedMacros = cat(2, ...
                 def.DefinedMacros, ... keep the current defs
                 "QUPS_" + {... prepend 'QUPS_'
                 "VS="+VS,... virtual source model
@@ -5731,7 +5731,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 "I1="+Isz(1),... pixel dim 1
                 "I2="+Isz(2),... pixel dim 2
                 "I3="+Isz(3) ... pixel dim 3
-                }');
+                });
             if  kwargs.interp ~= "none"
                 def.DefinedMacros(end+1) = "QUPS_BF_FLAG="+flagnum; % interp / integration flag
             end
@@ -5741,7 +5741,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             
             % if T is provided, include it
             if isscalar(chd)
-                def.DefinedMacros = [def.DefinedMacros; ...
+                def.DefinedMacros = [def.DefinedMacros, ...
                     {"QUPS_T="+chd.T}; ... number of time samples
                     ];
             end
