@@ -3502,11 +3502,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         end
         
         function [chd, Hi] = refocus(us, chd, seq, kwargs)
-            % REFOCUS - Recreate full-synthetic aperture data
+            % REFOCUS - Recreate full-synthetic aperture (FSA) data
             %
             % chd = refocus(us, chd) refocuses the ChannelData chd
-            % captured with the UltrasoundSystem us into FSA data.
-            %
+            % captured with the UltrasoundSystem us into FSA data via a
+            % linear algebraic expression mapping transmit pulses to
+            % transmit elements. If the encoding matrix H of phasors
+            % represents the linear mapping of elements to pulses per
+            % frequency, the REFoCUS algorithm seeks to model the observed
+            % data `y` per frequency as `y = H*x` and seeks to estimate the
+            % FSA data `x`. 
+            % 
             % [chd, Hi] = refocus(...) additionally returns the decoding
             % matrix Hi. Hi is of size (V x M x T) where V is the number
             % of transmit pulses, M is the number of transmit elements, and
@@ -3516,9 +3522,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % assuming that the ChannelData chd was captured using Sequence
             % seq instead of the Sequence us.seq.
             %
-            % [...] = refocus(..., 'method', 'tikhonov') uses a tikhonov
+            % [...] = refocus(..., 'method', 'adjoint') applies the adjoint
+            % of the encoding matrix as the decoder. This is typically 
+            % sufficient for plane-waves and/or orthogonal encodings.
+            %
+            % [...] = refocus(..., 'method', 'tikhonov') uses a Tikhonov
             % inversion scheme to compute the decoding matrix. This is
-            % best employed for focused transmit seuqneces
+            % preferable if using focused transmit sequences.
             %
             % [...] = refocus(..., 'method', 'tikhonov', 'gamma', gamma)
             % uses a regularization parameter of gamma for the tikhonov
@@ -3526,7 +3536,39 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % ignored. The regularization  parameter is scaled by the
             % maximum singular value for each frequency. The default is
             % (chd.N / 10) ^ 2.
-            %
+            % 
+            % [...] = refocus(..., 'method', 'pinv') applies the
+            % psuedoinverse of the encoding matrix H and is roughly
+            % equivalent to a Tikhonov inversion with gamma == 0. This
+            % option is not recommended.
+            % 
+            % 
+            % Note: 
+            % The QUPS delay model for focused transmits i.e. with
+            % us.seq.type == 'FC' places time t == 0 for each transmit at
+            % each focal point in pf = us.seq.focus. However, for FSA
+            % transmits, time t == 0 occurs at each transmitting element in
+            % pn = us.xdc.positions. 
+            % 
+            % While the refocused data will shift in time to satisfy this
+            % definition, the call to refocus() will not modify the time
+            % axes. Instead, the ChannelData chd should be zeropadded prior
+            % to calling refocus() to ensure that the time axes chd.time
+            % will contains the echoes. Otherwise, since REFoCUS operates
+            % in the frequency domain, the output will contain wrap-around
+            % artefacts.
+            % 
+            % For example, if the FSA ChannelData will contain echo energy
+            % from 10 us to 40 us, but the time axes for the focused
+            % ChannelData chd goes from -10 us to 20 us, then the focused
+            % ChannelData chd should be zeropadded at the end by at least
+            % 20 us e.g. 
+            % ```
+            % tmax = 40e-6; % the output data extends to 40 us.
+            % npad = ceil(chd.fs*(tmax - max(chd.time))); % convert to indices
+            % chd = chd.zeropad(0, npad); % zeropad the data in time
+            % ```
+            % 
             % References:
             % [1] Ali, R.; Herickhoff C.D.; Hyun D.; Dahl, J.J.; Bottenus, N. 
             % "Extending Retrospective Encoding For Robust Recovery of the Multistatic Dataset". 
@@ -3547,129 +3589,175 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % 
             % Example:
-            % % Define the setup - make plane waves
-            % c0 = 1500;
-            % us = UltrasoundSystem();
-            % seq = Sequence(        'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0);
-            % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
-            % seqfc = SequenceRadial('type', 'FC', 'focus',[0 0 20]' + [1 0 0]'.*sub(us.xdc.positions,1,1), 'c0', c0);
-            % scat = Scatterers('pos', [5 0 30]'*1e-3, 'c0', seqpw.c0); % define a point target
+            % %% Define the setup
+            % c0 = 1500; % sound speed
+            % us = UltrasoundSystem(); % default
+            % pn = us.xdc.positions(); % element positions
+            % [xf, zf, yf] = ndgrid( pn(1,1:2:end), 1e-3*[20 40 60], 0); % foci grid
+            % pf = [xf(:),yf(:),zf(:)]'; % focal points (3 x V)
             %
-            % % Compute the image
-            % chd = greens(us, scat); % compute the response
-            % b = DAS(us, chd); % beamform the data
-            %
-            % % Focus into plane waves and beamform
+            % %% Create the Sequences
+            % seq   = Sequence(      'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0); % FSA
+            % seqhd = Sequence(      'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0, 'apd', hadamard(us.xdc.numel)); % hadamard encoding
+            % seqpw = SequenceRadial('type', 'PW' , 'angles'  , -45:1.5:45  , 'c0', c0); % plane waves
+            % seqfc = SequenceRadial('type', 'FC' , 'focus'   , pf          , 'c0', c0); % focused
+            % 
+            % %% Simulate scatterers
+            % % sct = Scatterers('pos', [5 0 30]'*1e-3, 'c0', c0); % define a point target
+            % sct = Scatterers.Grid([11 1 11], 2.5e-3, [0 0 20e-3]'); % define a grid of point targets 
+            % chd = greens(us, sct); % compute the FSA response
+            % 
+            % %% Synthesize plane waves, focused, and hadamard encoded transmits 
+            % chdhd = focusTx(us, chd, seqhd);
             % chdpw = focusTx(us, chd, seqpw);
-            % uspw = copy(us);
-            % uspw.seq = seqpw;
-            % bpw = DAS(uspw, chdpw);
-            %
-            % % Refocus back to FSA, and beamform
-            % chdfsa1 = refocus(us, chdpw, seqpw);
-            % bfsa1 = DAS(us, chdfsa1);
-            %
-            % % Focus at focal points and beamform
             % chdfc = focusTx(us, chd, seqfc);
-            % usfc = copy(us);
-            % usfc.seq = seqfc;
-            % bfc = DAS(usfc, chdfc);
-            %
-            % % Refocus back to FSA, and beamform
-            % chdfsa2 = refocus(us, chdpw, seqpw);
-            % bfsa2 = DAS(us, chdfsa2);
-            %
-            % % Display the channel data
+            % 
+            % %% Create the corresponding UltrasoundSystem
+            % ushd = copy(us); ushd.seq = seqhd;
+            % uspw = copy(us); uspw.seq = seqpw;
+            % usfc = copy(us); usfc.seq = seqfc;
+            % 
+            % %% Conditioning for Focused transmits w/ REFoCUS
+            % % Since REFoCUS operates in the frequency domain, we have to worry about
+            % % periodicity and wrap-around effects
+            % tpls = usfc.seq.pulse.duration + 2*usfc.xdc.impulse.duration; % pulse duration
+            % tdel = 2*max(range(usfc.seq.delays(usfc.xdc), 1)); % delay range
+            % tsct = 2*vecnorm(sct.pos)/sct.c0; tsct = [min(tsct(:)), max(tsct(:))]; % scatterer delay
+            % tbnd = tsct + [-1 1] * (tdel + tpls); % worst-case temporal boundaries
+            % Tpad = max(0,ceil(chdfc.fs * [max(chdfc.time(1,:)) - tbnd(1), tbnd(end) - min(chdfc.time(end,:))])); % padding sizes
+            % chdfc = chdfc.zeropad(Tpad(1), Tpad(2)); % extend channel data as necessary
+            % 
+            % %% Beamform images with native transmit pulse
+            % Hapd = pinv(ushd.seq.apodization(ushd.xdc)); % decoding matrix (pinv(H) == H' for Hadamard)
+            % bhd = DAS(ushd, chdhd * Hapd); % decoding applied over Tx
+            % bpw = DAS(uspw, chdpw       );
+            % bfc = DAS(usfc, chdfc       );
+            % 
+            % %% Refocus back to FSA
+            % chdhdr = refocus(us, chdhd, seqhd);
+            % chdpwr = refocus(us, chdpw, seqpw);
+            % chdfcr = refocus(us, chdfc, seqfc);
+            % 
+            % %% Beamform refocused data
+            % b    = DAS(us, chd   ); % original FSA
+            % bhdr = DAS(us, chdhdr);
+            % bpwr = DAS(us, chdpwr);
+            % bfcr = DAS(us, chdfcr);
+            % 
+            % %% Pack the Channel Data and B-modes
+            % chds = [chd, chdhdr, chdpw, chdpwr, chdfc, chdfcr];
+            % bs   = {b  ,   bhdr,   bpw,   bpwr,   bfc,   bfcr};
+            % tnms = ["Original", "Hadamard"; "Plane Waves", "Plane Waves"; "Focused", "Focused"]';
+            % tnms = tnms + ["","-REFoCUS"]';
+            % 
+            % %% Display the channel data
             % figure('Name', 'Channel Data');
             % tiledlayout(3,2);
-            % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
-            % tnms = ["Original", "Original", "PW", "PW-REF", "FC", "FC-REF"];
-            % for i = 1:numel(chds)
-            %     himc = imagesc(chds(i),ceil(chds(i).M/2),nexttile()); 
-            %     title(tnms(i));
-            %     colorbar; colormap default; caxis(max(caxis) + [-50 0]);
+            % for i = numel(chds):-1:1
+            %     himc(i) = imagesc(chds(i), ceil(chds(i).M/2), nexttile(i));
+            %     dbr echo; title(tnms(i));
             % end
-            % linkaxes([himc.Parent]);
-            %
-            % % Display the images
+            % linkaxes([himc.Parent], 'x');
+            % 
+            % %% Display the images
             % figure('Name', 'B-mode');
             % tiledlayout(3,2);
-            % bs = {b, b, bpw, bfsa1, bfc, bfsa2};
-            % bpow = gather(mod2db(cellfun(@(b)max(b,[],'all'), bs)));
-            % for i = 1:numel(bs)
-            %     himb(i) = imagesc(us.scan, bs{i}, nexttile(), bpow(i) + [-80 0]);
-            %     colormap gray; colorbar; 
-            %     title(tnms(i));
+            % for i = numel(bs):-1:1
+            %     himb(i) = imagesc(us.scan, bs{i}, nexttile(i));
+            %     dbr b-mode; title(tnms(i));
             % end
             % linkaxes([himb.Parent]);
             %
-            % See also FOCUSTX
+            % See also FOCUSTX CHANNELDATA/ZEROPAD
             arguments
                 us (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
                 seq (1,1) Sequence = us.seq
-                kwargs.gamma (1,1) {mustBeNumeric} = (chd.N / 10)^2 % heuristically chosen
-                kwargs.method (1,1) string {mustBeMember(kwargs.method, "tikhonov")} = "tikhonov"
+                kwargs.gamma (1,1)  {mustBeNumeric, mustBeNonnegative} = 10*(chd.N / 10)^2 % heuristically chosen
+                kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov","adjoint","pinv"])} = "tikhonov"
             end
 
             % dispatch pagenorm/pagemrdivide function based on MATLAB version
-            if     exist('pagenorm', 'file')
-                pagenorm2 = @(x) pagenorm(x,2);
-            elseif exist('pagesvd', 'builtin')
+            if     isMATLABReleaseOlderThan("R2021b")
+                pagenorm2 = @(x) cellfun(@(x) svds(x,1), num2cell(double(x),1:2));
+            elseif isMATLABReleaseOlderThan("R2022b")
                 pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
-                pagenorm2 = @(x) cellfun(@(x) svds(x,1), num2cell(double(x),1:2));
+                pagenorm2 = @(x) pagenorm(x,2);
             end
-            if exist('pagemrdivide','builtin')
-                pagemrdivide_ = @pagemrdivide;
+            if     isMATLABReleaseOlderThan("R2021a")
+                pagemldivide_ = @(x,y) cell2mat(cellfun(@mldivide,num2cell(gather(x),1:2),num2cell(gather(y),1:2),'UniformOutput',false));
             else
-                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,num2cell(x,1:2),num2cell(y,1:2),'UniformOutput',false));
+                pagemldivide_ = @pagemldivide;
             end
 
             % get the apodization / delays from the sequence
-            tau = -seq.delays(     us.tx); % (M x V)
-            a   =  seq.apodization(us.tx); % (M x V)
+            tau = seq.delays(     us.tx); % (V x M)
+            a   = seq.apodization(us.tx); % (V x M)
 
             % get the frequency vectors
-            f = gather(chd.fftaxis); % perm(... x T x ...)
+            f = swapdim(chd.fftaxis, chd.tdim, 3); % 1 x 1 x T
 
-            % construct the encoding matrix (M x V x T)
-            H = a .* exp(+2j*pi*swapdim(f,chd.tdim,3).*tau);
+            % construct the encoding matrix (V x M x T)
+            H = a.' .* exp(-2j*pi*f.*tau.');
 
-            % compute the pagewise tikhonov-inversion inverse (V x M x T)
+            % bandpass filter (sharp)
+            w = 1; % identity
+            % w = max(1e-6,(us.xdc.bw(1) <= f & f <= us.xdc.bw(end))); % 1 x 1 x T
+            w = w .* pagenorm2(gather(H)).^-2; % weight by transform singular values per frequency
+
+            % compute the pagewise tikhonov-inversion inverse (M x V x T)
             % TODO: there are other options according to the paper - they
             % should be options here
             switch kwargs.method
-                case "tikhonov"
-                    % TODO: option to use pinv, as it is (slightly)
-                    % different than matrix division
-                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm2(gather(H)).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
-                    Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
-                    Hi = cast(Hi, 'like', H);
+                case "tikhonov" % (M x V x T)
+                    W = kwargs.gamma .* w .* eye(chd.N); % whitening
+                    A = (pagemtimes(H, 'ctranspose', H, 'none')) + W; % A = (H'*H + gamma * I)
+                    % Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
+                    Hi = pagemldivide_(A, pagetranspose(H)); % Hi = (A^-1 * H') <=> (A \ H')
+
+                case "adjoint"
+                    Hi = pagetranspose(H) .* w; % .* (f ./ (pagenorm2(gather(H))));
+
+                case "pinv"
+                    %  psuedo-inverse
+                    Hi = w .* cell2mat(cellfun(@pinv, num2cell(gather(H), 1:2),'uni',0));
+                    
+                    % apply ramp filter
+                    % Hi = Hi .* f;
             end
 
-            % move inverse matrix to matching data dimensions
-            D = max(ndims(chd.data), ndims(chd.t0));
-            ord = [chd.mdim, D+1, chd.tdim];
-            ord = [ord, setdiff(1:D, ord)]; % all dimensions
-            Hi = ipermute(Hi, ord);
+            % typing
+            Hi = cast(Hi, 'like', H);
+            Hi(isnan(Hi)) = 0;
 
             % move data to the frequency domain
+            f = chd.fftaxis; % perm(... x T x ...)
             x = chd.data;
             x = fft(x,chd.T,chd.tdim); % get the fft in time
             omega0 = exp(-2i*pi*f.*chd.t0); % time-alignment phase
             x = x .* omega0; % phase shift to re-align time axis
             
-            % apply to the data - this is really a tensor-times-matrix
-            % operation, but it's not natively supported yet. 
-            for v = chd.N:-1:1
-                y{v} = sum(sub(Hi,v,D+1) .* x, chd.mdim);
+            switch kwargs.method
+                case {"tikhonov", "pinv", "adjoint"}
+                    % move inverse matrix to matching data dimensions
+                    D = max(ndims(chd.data), ndims(chd.t0));
+                    ord = [D+1, chd.mdim, chd.tdim];
+                    Hi = swapdim(Hi, 1:3, ord); % (M x V x T) -> match data
+
+                    % apply to the data - this is really a tensor-times-matrix
+                    % operation, but it's not natively supported yet.
+                    mdim = chd.mdim;
+                    for v = chd.N:-1:1
+                        y{v} = sum(sub(Hi,v,D+1) .* x, mdim);
+                    end
+                    y = cat(chd.mdim, y{:});
             end
-            y = cat(chd.mdim, y{:});
 
             % move back to the time domain
+            % re-align time axes
             t0 = min(chd.t0,[],'all');
-            y = y .* exp(+2i*pi*f.*t0); % re-align time axes
+            y = y .* exp(+2i*pi*f.*t0);
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
