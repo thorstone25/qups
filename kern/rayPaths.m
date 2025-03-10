@@ -1,10 +1,11 @@
 function [w, d] = rayPaths(xg, zg, pj, pa, kwargs)
-% RAYPATHS - ray path integral weights
+% RAYPATHS - Ray-path integral weights
 %
-% w = RAYPATHS(xg, zg, pj, pa) computes a set of weights w defined on the 
-% grid {xg, zg} for all pairs of line segments from the each point {pj} to
-% each point {pa}. w is a sparse matrix of size [Z x X x J] x A where Z =
-% numel(zg), X = numel(xg), J = numel(pj)/2 and A = numel(pa)/2.
+% w = RAYPATHS(xg, zg, pj, pa) computes a set of weights w representing the
+% discrete line integral weights of the values defined on the grid {xg, zg}
+% for all pairs of line segments from each point pj to each point pa. Both
+% pj and pa are in 2D. w is a sparse matrix of size [Z x X x J] x A where 
+% Z = numel(zg), X = numel(xg), J = numel(pj)/2 and A = numel(pa)/2.
 %
 % [w, d] = RAYPATHS(...) also returns a full matrix d of the length of each
 % ray as a J x A array.
@@ -14,16 +15,25 @@ function [w, d] = rayPaths(xg, zg, pj, pa, kwargs)
 % Xiaolin Wu's line drawing algorithm. The "bilerp" method gives bilinear
 % interpolation weights. The default is "bilerp".
 %
-% [...] = RAYPATHS(..., 'gpu', tf) chooses whether to use a default. The
+% [...] = RAYPATHS(..., 'gpu', tf) chooses whether to use a gpu. The
 % default is true if one is available.
 %
 % [...] = RAYPATHS(..., 'ord', "XZ") swaps the order of the output array so
-% that the x-grid is placed before the z-grid i.e. so that w is of size [X
-% x Z x J] x A.
-%
+% that the x-grid iterates before the z-grid i.e. so that w is of size 
+% [X x Z x J] x A. This is useful when applying weights via matrix
+% multiplication to an image of size X x Z e.g.
+% ```
+% scn = ScanCartesian('x',-20:20, 'z', 0:40); % grid
+% scn.order = 'XZY'; % iteration order
+% s = (1/1.540) * ones(scn.size); % slowness (X x Z)
+% w = raypaths(scn.x, scn.z, [0 0]', [-10 20]', 'ord', 'XZ'); % integration weights
+% tau = s(:)' * w; % delay: (1 x [X x Z]) x ([X x Z] x 1) -> (1 x 1)
+% ```
+% 
 % [...] = RAYPATHS(..., 'bsize', B) computes in blocks of at most B points 
 % at a time. A larger value of B offers better compute performance, but
-% uses more memory. A lower value prevents out-of-memory (OOM) errors.
+% uses more memory. A lower value prevents out-of-memory (OOM) errors. The
+% default is chosen heuristically.
 %
 % [...] = RAYPATHS(..., 'verbose', true) prints updates about the progress
 % of the computation.
@@ -72,7 +82,7 @@ arguments
     kwargs.gpu (1,1) logical = logical(gpuDeviceCount())
     kwargs.method (1,1) string {mustBeMember(kwargs.method, ["bilerp", "xiaolin"])} = "bilerp"
     kwargs.verbose (1,1) logical = false;
-    kwargs.prototype = zeros([0, 0], 'like', [pj(end), pa(end)]) % prototype
+    kwargs.prototype = zeros([0, 0], 'like', [pj([]), pa([])]) % prototype
 end
 
 % output: I x J x M, I = Z x X
