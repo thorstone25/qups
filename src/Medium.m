@@ -675,7 +675,7 @@ classdef Medium < matlab.mixin.Copyable
 
             % number of voxels per dim
             wvl = range([grd.xb; grd.yb; grd.zb], 2) ./ us.lambda;
-            S = kwargs.scat_per_cell * prod(wvl(wvl > 0));
+            S = ceil(kwargs.scat_per_cell * prod(wvl(wvl > 0)));
 
             % generate uniform random positions and normally distributed amplitudes
             N   = arrayfun(@(p) grd.("n"+p), lower(grd.order)); % size in each dimension
