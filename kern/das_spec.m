@@ -410,6 +410,12 @@ else
     tmp = cellfun(@uint64, {T,N,M,I}, per_cell{:});
     [T, N, M, I] = deal(tmp{:});
     
+    % apply (de)modulation
+    if fmod       
+        t = t0 + double((0:T-1).') ./ fs; % time vector
+        x = x .* exp(2i*pi*fmod.*t);
+    end
+    
     % permute to compatible casting dimensions
     Pr = swapdim(Pr, 2, 5); % 3 x 1 x 1 x 1 x N
     Pv = swapdim(Pv, 2, 6); % 3 x 1 x 1 x 1 x 1 x M
@@ -432,12 +438,6 @@ else
     % bring to I1 x I2 x I3 x N x M == [I] x N x M
     dv = reshape(dv, size(dv, [2:ndims(dv),1])); 
     dr = reshape(dr, size(dr, [2:ndims(dr),1]));
-    
-    % apply modulation frequency
-    if fmod       
-        t = t0 + double((0:T-1).') ./ fs; % time vector
-        x = x .* exp(2i*pi*fmod.*t);
-    end
     
     % temporal packaging function
     pck = @(x) num2cell(x, [1:3,6:ndims(x)]); % pack for I, F
