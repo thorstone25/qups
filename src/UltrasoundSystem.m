@@ -3110,7 +3110,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 )
 
             % splice
-            setgpu = isa(W, 'parallel.Cluster'); % on implicit pools, gpu must be set explicitly
+            hcp = gcp('nocreate'); % reference the current pool
+            setgpu = isa(W, 'parallel.Cluster') || (isscalar(hcp) && isa(hcp, "parallel.ClusterPool")); % on implicit pools, gpu must be set explicitly
             runiso = ~isempty(kmedium_iso); % if empty, no need to simulate
             Np = numel(ksource); % number of sims
             parfor (puls = 1:Np, W)
