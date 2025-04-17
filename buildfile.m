@@ -259,7 +259,7 @@ if dwnld
                 movefile(fullfile(fld, "m_files","*"), fld); % move sub-folder files to main folder
             else
                 url = "https://www.field-ii.dk/program_code/matlab_2021/Field_II_ver_3_30_"+os+".tar.gz";
-                untar(url, fld);
+                untar(string(gunzip(url, fld)), fld);
             end
 
             % create a git repo
