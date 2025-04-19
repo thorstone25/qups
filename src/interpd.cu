@@ -333,10 +333,10 @@ __device__ void wsinterpd_temp(T2 * __restrict__ y,
                 u += js * dstride[2 + 4*s]; // add pitched index for this dim (time)
                 v += js * dstride[3 + 4*s]; // add pitched index for this dim (samples)
             }
-            
-            const T2 a = isinf((float)tau[u]) ? no_v : (T2){cosf(omega * tau[u]), sinf(omega * tau[u])}; // modulation phasor
+            if(isinf((float)tau[u])) continue; // exclude OOB time (equiv to val == 0)
+            const T2 a = {cosf(omega * tau[u]), sinf(omega * tau[u])}; // modulation phasor
             const T2 val = a * w[k] * sample(&x[(v)*T], (V)tau[u], flag, no_v, T); // weighted sample
-            atomicAddStore(&y[l], val); // store
+            if(val.x||val.y) atomicAddStore(&y[l], val); // store
         }
     }
 }
@@ -387,9 +387,10 @@ __device__ void wsinterpd2_temp(T2 * __restrict__ y,
                 v += js * dstride[4 + 5*s]; // add pitched index for this dim (samples)
             }
             const U  t = tau1[r] + tau2[u]; // time
-            const T2 a = isinf((float)t) ? no_v : (T2){cosf(omega * t), sinf(omega * t)}; // modulation phasor
+            if(isinf((float)t)) continue; // exclude OOB time (equiv to val == 0)
+            const T2 a = {cosf(omega * t), sinf(omega * t)}; // modulation phasor
             const T2 val = a * w[k] * sample(&x[(v)*T], (V)t, flag, no_v, T); // weighted sample
-            atomicAddStore(&y[l], val); // store
+            if(val.x||val.y) atomicAddStore(&y[l], val); // store
         }
     }
 }
