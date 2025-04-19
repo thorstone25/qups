@@ -39,7 +39,7 @@ assert(~isempty(h), "Cannot identify an image for this axis."); % HACK - get the
 % caxis auto; cmax = max(caxis); 
 if exist('clim', 'file'), clm = @clim; else, clm = @caxis; end %#ok<CAXIS> - backwards compatibility
 cmax = max(cellfun(@(x) max([x(isfinite(x)); -Inf],[],'all'),{h.CData}),[],'all','omitnan');
-if ~isfinite(cmax), warning("Cannot adjust colorbar for nonfinite data."); end
+if ~isfinite(cmax), warning("QUPS:dbr:nonfinite", "Cannot adjust colorbar for nonfinite data."); end
 switch mode
     case "b-mode", colormap(ax, 'bone'); if isfinite(cmax); clm(cmax + [-rang   0 ]); end
     case "echo"  , colormap(ax, 'jet' ); if isfinite(cmax); clm(cmax + [-rang   0 ]); end

@@ -300,8 +300,14 @@ classdef KernTest < matlab.unittest.TestCase
             end
 
             % test that defaults work
-            imagesc(us.scan, b); dbr;
+            h = imagesc(us.scan, b); dbr;
             arrayfun(@dbr, ["b-mode", "phase", "echo", "corr"])
+
+            % warn if all nonfinite (NaN/Inf)
+            for i = [NaN Inf -Inf]
+                h.CData(:) = i;
+                test.assertWarning(@()dbr(), "QUPS:dbr:nonfinite");
+            end
             
             % warn on ith argument
             clf(hf);
