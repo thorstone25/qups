@@ -1,7 +1,7 @@
 function r = cohfac(b, dim)
 % COHFAC - Compute the coherence factor
 % 
-% r = COHFAC(b, dim) computes the coherence factor of b in dimension
+% r = COHFAC(b, dim) computes the coherence factor of b in dimension(s)
 % dim.
 %
 % r = COHFAC(b) computes the coherence using the last non-singular
@@ -57,8 +57,8 @@ function r = cohfac(b, dim)
 
 arguments
     b {mustBeNumeric}
-    dim {mustBeInteger, mustBePositive} = find(size(b)~=1, 1, 'last');
+    dim {mustBeInteger, mustBePositive, mustBeVector} = find(size(b)~=1, 1, 'last');
 end
 
 % compute coherence
-r = (abs(sum(b, dim)).^2) ./ sum(abs(b).^2, dim) / size(b, dim);
+r = (abs(sum(b, dim)).^2) ./ sum(abs(b).^2, dim) / prod(size(b, dim));
