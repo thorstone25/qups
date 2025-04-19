@@ -59,12 +59,12 @@ classdef Scatterers < matlab.mixin.Copyable
         % us = UltrasoundSystem(); % default
         % us.fs = 10*us.fs; % increase for FieldII discretization
         % [us.scan.dx, us.scan.dz] = deal(us.lambda / 4); % imaging resolution
-        % scat = Scatterers.Grid([11 1 11]',2e-3, 1e-3*[0 0 20]); % targets
-        % scat_att = copy(scat);
-        % scat_att.alpha0 = 3 * 50e-6; % 10x soft tissue attenuation
+        % sct = Scatterers.Grid([11 1 11]',2e-3, 1e-3*[0 0 20]); % targets
+        % sct_att = copy(sct);
+        % sct_att.alpha0 = 3 * 50e-6; % 10x soft tissue attenuation
         % 
         % % Simulate
-        % chd = calc_scat_multi(us, [scat, scat_att]); % simulate
+        % chd = calc_scat_multi(us, [sct, sct_att]); % simulate
         % chd = subD(hilbert(chd, 2*chd.T), 1:chd.T, chd.tdim);
         % b = DAS(us, chd);
         % 
@@ -126,22 +126,22 @@ classdef Scatterers < matlab.mixin.Copyable
     
     % constructor and get/set methods
     methods
-        function scat = Scatterers(kwargs)
+        function sct = Scatterers(kwargs)
             % SCATTERERS - Construct a Scatterers object
             %
-            % scat = SCATTERERS('pos', pos) constructs a Scatterers
-            % object scat with scatterers located at the positions pos. The
+            % sct = SCATTERERS('pos', pos) constructs a Scatterers
+            % object sct with scatterers located at the positions pos. The
             % amplitudes are initialized to 1.
             %
-            % scat = SCATTERERS('amp', amp) constructs a Scatterers
-            % object scat with scatterers having the amplitudes amp. The 
+            % sct = SCATTERERS('amp', amp) constructs a Scatterers
+            % object sct with scatterers having the amplitudes amp. The 
             % positions of all scatterers are initialized to [0;0;0].
             %
-            % scat = SCATTERERS('pos', pos, 'amp', amp) constructs a 
-            % Scatterers object scat with scatterers located at the
+            % sct = SCATTERERS('pos', pos, 'amp', amp) constructs a 
+            % Scatterers object sct with scatterers located at the
             % positions pos and having the amplitudes amp.
             %
-            % scat = SCATTERERS(..., 'c0', c0) sets the homogeneous sound
+            % sct = SCATTERERS(..., 'c0', c0) sets the homogeneous sound
             % speed to be c0.
             %
             % Example:
@@ -162,106 +162,106 @@ classdef Scatterers < matlab.mixin.Copyable
             end
             
             % Name/Value initialization
-            for f = string(fieldnames(kwargs))', scat.(f) = kwargs.(f); end
+            for f = string(fieldnames(kwargs))', sct.(f) = kwargs.(f); end
 
             % whether data was set
             [Sa, Sp] = deal(isfield(kwargs, 'amp'), isfield(kwargs, 'pos'));
 
             % data sizing
-            [Na, Np] = deal(size(scat.amp,2), size(scat.pos,2));
+            [Na, Np] = deal(size(sct.amp,2), size(sct.pos,2));
 
             % check/default amplitudes / positions
             if      Sp &&  Sa % both set: validate
                 if Np ~= Na
-                    if     Np == 1, scat.pos = repmat(scat.pos, [1,Na]);
-                    elseif Na == 1, scat.amp = repmat(scat.amp, [1,Np]);
+                    if     Np == 1, sct.pos = repmat(sct.pos, [1,Na]);
+                    elseif Na == 1, sct.amp = repmat(sct.amp, [1,Np]);
                     else,           error('Number of scatterers must match!');
                     end
                 end 
             elseif  Sp && ~Sa % pos set: default amplitude
-                scat.amp = ones([1,Np]);
+                sct.amp = ones([1,Np]);
             elseif ~Sp &&  Sa % amp set: default positions
-                scat.pos = zeros([3,Na]);
+                sct.pos = zeros([3,Na]);
             else % ~Sp && ~Sa % none set: default pos and amp
-                scat.pos = [0;0;30e-3];
-                scat.amp = 1;
+                sct.pos = [0;0;30e-3];
+                sct.amp = 1;
             end
         end
         
-        function scat = scale(scat, kwargs)
+        function sct = scale(sct, kwargs)
             % SCALE - Scale units
             %
-            % scat = SCALE(scat, 'dist', factor) scales the distance of the
+            % sct = SCALE(sct, 'dist', factor) scales the distance of the
             % properties by factor. This can be used to convert from meters
             % to millimeters for example.
             %
-            % scat = SCALE(scat, 'time', factor) scales the temporal
+            % sct = SCALE(sct, 'time', factor) scales the temporal
             % properties by factor. This can be used to convert from
             % seconds to microseconds and hertz to megahertz.
             %
             % Example:
             %
             % % Create a Scatterers
-            % scat = Scatterers('pos', [0;0;30e-3], 'c0', 1500) % m, s
+            % sct = Scatterers('pos', [0;0;30e-3], 'c0', 1500) % m, s
             %
             % % convert from meters to millimeters, seconds to microsecond
-            % scat = scale(scat, 'dist', 1e3, 'time', 1e6) % mm, us
+            % sct = scale(sct, 'dist', 1e3, 'time', 1e6) % mm, us
             %
             %
 
             arguments
-                scat Scatterers
+                sct Scatterers
                 kwargs.dist (1,1) double
                 kwargs.time (1,1) double
             end
-            scat = copy(scat); % copy semantics
+            sct = copy(sct); % copy semantics
             cscale = 1; % speed scaling
             if isfield(kwargs, 'dist') % scale distance (e.g. m -> mm)
-                scat.pos    = scat.pos    * kwargs.dist;
+                sct.pos    = sct.pos    * kwargs.dist;
                 cscale      = cscale      * kwargs.dist; % scale speed
             end
             if isfield(kwargs, 'time')
                 cscale = cscale / kwargs.time; % scale speed
             end
-            scat.c0     = scat.c0     * cscale; % scale speed
-            scat.alpha0 = scat.alpha0 / cscale; % scale attenuation
+            sct.c0     = sct.c0     * cscale; % scale speed
+            sct.alpha0 = sct.alpha0 / cscale; % scale attenuation
         end
     end
 
     % conversion
     methods
-        function s = obj2struct(scat)
+        function s = obj2struct(sct)
             % OBJ2STRUCT - Convert a QUPS object into a native MATLAB struct
             %
-            % scat = OBJ2STRUCT(scat) converts the Scatterers scat and all
+            % sct = OBJ2STRUCT(sct) converts the Scatterers sct and all
             % of it's properties into native MATLAB structs.
             %
             % Example:
             % % Create a Scatterers
-            % scat = Scatterers()
+            % sct = Scatterers()
             %
             % % convert to a MATLAB struct
-            % scat = obj2struct(scat)
+            % sct = obj2struct(sct)
             %
             arguments
-                scat Scatterers
+                sct Scatterers
             end
 
             W = warning('off', "MATLAB:structOnObject"); % squash warnings
-            s = struct(scat); % convert scan
-            s.class = class(scat); % append class info
+            s = struct(sct); % convert scan
+            s.class = class(sct); % append class info
             warning(W); % restore warnings
         end
     end
 
     % plot methods
     methods 
-        function h = plot(scat, varargin, plot_args)
+        function h = plot(sct, varargin, plot_args)
             % PLOT - overload the plot function
             % 
-            % PLOT(scat) plots the locations of the Scatterers scat.
+            % PLOT(sct) plots the locations of the Scatterers sct.
             %
-            % PLOT(scat, ax) uses the axes ax instead of the current axes.
+            % PLOT(sct, ax) uses the axes ax instead of the current axes.
             % 
             % PLOT(..., Name, Value, ...) passes name-value pair arguments
             % to the built-in plot function so that name value pairs that 
@@ -272,13 +272,13 @@ classdef Scatterers < matlab.mixin.Copyable
             % Plots only the x-z slice.
             % 
             % Example:
-            % scat = Scatterers('pos', (-5 : 5) .* [1 0 0]' + [0 0 30]');
+            % sct = Scatterers('pos', (-5 : 5) .* [1 0 0]' + [0 0 30]');
             % figure;
-            % plot(scat, 'r.');
+            % plot(sct, 'r.');
             % 
             % See also MEDIUM/IMAGESC
             arguments
-                scat (1,1) Scatterers
+                sct (1,1) Scatterers
             end 
             arguments(Repeating)
                 varargin
@@ -299,10 +299,10 @@ classdef Scatterers < matlab.mixin.Copyable
 
             % plot
             plot_args = struct2nvpair(plot_args);
-            if any(scat.pos(2,:))
-                h = plot3(axs, scat.pos(1,:), scat.pos(3,:), scat.pos(2,:), varargin{:}, plot_args{:});
+            if any(sct.pos(2,:))
+                h = plot3(axs, sct.pos(1,:), sct.pos(3,:), sct.pos(2,:), varargin{:}, plot_args{:});
             else
-                h = plot( axs, scat.pos(1,:),                scat.pos(3,:), varargin{:}, plot_args{:});
+                h = plot( axs, sct.pos(1,:),                sct.pos(3,:), varargin{:}, plot_args{:});
             end
         end        
     end
@@ -310,16 +310,16 @@ classdef Scatterers < matlab.mixin.Copyable
     % interfaces
     methods
         % get SIMUS medium params
-        function p = getSIMUSParam(scat)
+        function p = getSIMUSParam(sct)
             % GETSIMUSPARAM - Create a MUST compatible parameter struct
             %
-            % p = GETSIMUSPARAM(scat) returns a structure with properties
+            % p = GETSIMUSPARAM(sct) returns a structure with properties
             % for a call to simus().
             %
             % See also ULTRASOUNDSYSTEM/SIMUS 
 
-            p = struct('c', scat.c0);
-            if ~isnan(scat.alpha0), p.attenuation = (1e6*1e-2) * scat.alpha0; end % convert to dB/cm/MHz
+            p = struct('c', sct.c0);
+            if ~isnan(sct.alpha0), p.attenuation = (1e6*1e-2) * sct.alpha0; end % convert to dB/cm/MHz
         end
     end
 
@@ -328,15 +328,15 @@ classdef Scatterers < matlab.mixin.Copyable
         function c = plus(a, b)
             % PLUS - Add two Scatterers
             %
-            % out = scat_lhs + scat_rhs adds the Scatterers scat_lhs and 
-            % the Scatterers scat_rhs to create a new Scatterers out. The
+            % out = sct_lhs + sct_rhs adds the Scatterers sct_lhs and 
+            % the Scatterers sct_rhs to create a new Scatterers out. The
             % Scatterers must have matching medium properties i.e. c0 and
             % alpha0 must match.
             % 
             % Example:
-            % left_scat  = Scatterers('pos', [-5 0 30]');
-            % right_scat = Scatterers('pos', [+5 0 30]');
-            % both_scats = left_scat + right_scat;
+            % left_sct  = Scatterers('pos', [-5 0 30]');
+            % right_sct = Scatterers('pos', [+5 0 30]');
+            % both_scts = left_sct + right_sct;
             % 
             arguments
                 a Scatterers
@@ -398,32 +398,32 @@ classdef Scatterers < matlab.mixin.Copyable
     end
 
     methods(Static)
-        function scat = Grid(sz, dp, p0, kwargs)
+        function sct = Grid(sz, dp, p0, kwargs)
             % GRID - Create a grid of scatterers
             %
-            % scat = Scatterers.Grid([C P R]) creates a 3D grid of point
+            % sct = Scatterers.Grid([C P R]) creates a 3D grid of point
             % scatterers with C columns (x), P pages (y), and R rows (z).
             % 
-            % scat = Scatterers.Grid([C P R], [dx dy dz]) uses a spacing of
+            % sct = Scatterers.Grid([C P R], [dx dy dz]) uses a spacing of
             % dx, dy and dz in the x, y, and z dimensions. The default is
             % [C P R] ./ 11.
             % 
-            % scat = Scatterers.Grid([C P R], [dx dy dz], p0) uses an
+            % sct = Scatterers.Grid([C P R], [dx dy dz], p0) uses an
             % initial point p0 as the primary point. The default is 
             % [0 0 0]'.
             % 
-            % scat = Scatterers.Grid(..., Name, Value) sets other name
+            % sct = Scatterers.Grid(..., Name, Value) sets other name
             % value pairs for constructing a Scatterers. The 'pos' property
             % will be overridden.
             % 
             % Example:
             % us = UltrasoundSystem();
-            % scat = Scatterers.Grid([5 1 5]', 5*us.lambda, [0 0 10e-3]');
+            % sct = Scatterers.Grid([5 1 5]', 5*us.lambda, [0 0 10e-3]');
             % 
             % figure;
             % plot(us);
             % hold on;
-            % plot(scat, '.');
+            % plot(sct, '.');
             % 
             % See also: SCATTERERS.DIFFUSE
             arguments
@@ -439,72 +439,72 @@ classdef Scatterers < matlab.mixin.Copyable
             p = [ax{:}]'; % 3 x S
             kwargs.pos = p; % set positions
             args = namedargs2cell(kwargs); % non-position args
-            scat = Scatterers(args{:}); % set
+            sct = Scatterers(args{:}); % set
         end
 
-        function scat = Diffuse(grid, N, dB, kwargs)
+        function sct = Diffuse(grd, N, dB, kwargs)
             % DIFFUSE - Construct Diffuse scatterers
             %
-            % scat = Diffuse(grid, N) constructs a Scatterers scat with N
+            % sct = Diffuse(grd, N) constructs a Scatterers sct with N
             % point scatterers within the ScanCartesian grid.
             %
-            % scat = Diffuse(grid) uses a default value of 
-            % N = 5^D * prod(grid.size); where D is the number of
+            % sct = Diffuse(grd) uses a default value of 
+            % N = 5^D * prod(grd.size); where D is the number of
             % non-singular dimensions e.g. D = 2 if y = 0.
             %
-            % scat = Diffuse(grid, N, dB) sets the (relative) scattering
+            % sct = Diffuse(grd, N, dB) sets the (relative) scattering
             % intensity in dB. The default is 0.
             % 
-            % scat = Diffuse(..., 'c0', c0) sets the sound speed as c0.
+            % sct = Diffuse(..., 'c0', c0) sets the sound speed as c0.
             % 
-            % scat = Diffuse(..., 'alpha0', alpha0) sets the attenuation
+            % sct = Diffuse(..., 'alpha0', alpha0) sets the attenuation
             % coefficient.
             % 
             % Example:
             % us = UltrasoundSystem();
-            % grid = copy(us.scan); % simulation region == imaging region
-            % N = 25 * prod(range([grid.xb; grid.zb],2) ./ us.lambda); % 25 scats / wavelength
-            % scat = Scatterers.Diffuse(grid, N),
+            % grd = copy(us.scan); % simulation region == imaging region
+            % N = 25 * prod(range([grd.xb; grd.zb],2) ./ us.lambda); % 25 scats / wavelength
+            % sct = Scatterers.Diffuse(grd, N),
             % 
             % See also: SCATTERERS.GRID
             arguments
-                grid (1,1) ScanCartesian
-                N (1,1) {mustBePositive, mustBeInteger} = prod(5 * grid.size(grid.size > 1)); % default to 5x the grid resolution
+                grd (1,1) ScanCartesian
+                N (1,1) {mustBePositive, mustBeInteger} = prod(5 * grd.size(grd.size > 1)); % default to 5x the grid resolution
                 dB (1,:) {mustBeReal} = 0 
                 kwargs.c0
                 kwargs.alpha0
             end
-            pb = cat(1, grid.xb, grid.yb, grid.zb); % boundaires of the grid
+            pb = cat(1, grd.xb, grd.yb, grd.zb); % boundaires of the grid
             [p0, dp] = deal(min(pb,[],2), range(pb, 2)); % offset / range
             kwargs.pos = p0 + dp.*rand([3 N]); % uniform random positions
             kwargs.amp = db2pow(dB) .* abs(randn([1 N])); % gaussian random amplitudes
             args = namedargs2cell(kwargs); % get optional arguments
-            scat = Scatterers(args{:});
+            sct = Scatterers(args{:});
         end
     
-        function scat = Verasonics(Media, kwargs)
+        function sct = Verasonics(Media, kwargs)
             % Verasonics - Create a Scatterers from a Verasonics Media struct
             %
-            % scat = Scatterers.Verasonics(Media) imports the point
+            % sct = Scatterers.Verasonics(Media) imports the point
             % scatterers in the verasonics Media struct.
             %
-            % scat = Scatterers.Verasonics(..., 'c0', c0) uses sound speed
+            % sct = Scatterers.Verasonics(..., 'c0', c0) uses sound speed
             % c0. The default is 1540.
             % 
-            % scat = Scatterers.Verasonics(..., 'scale', scale) scales the
+            % sct = Scatterers.Verasonics(..., 'scale', scale) scales the
             % locations of the point targets by scale. The default is 1.
             % 
             % Example:
             % % Import the Transducer and Scatterers
             % c0   = Resource.Parameters.speedOfSound;
             % xdc  = Transducer.Verasonics(Trans, c0);
-            % scat = Scatterers.Verasonics(Media,'c0',c0,'scale',c0/xdc.fc)
+            % sct = Scatterers.Verasonics(Media,'c0',c0,'scale',c0/xdc.fc)
             % 
             % % Display
             % figure;
             % plot(xdc);
             % hold on;
-            % plot(scat, 'r.');
+            % plot(sct, 'r.');
             % set(gca, 'YDir', 'reverse')
             % legend();
             % 
@@ -517,7 +517,7 @@ classdef Scatterers < matlab.mixin.Copyable
             
             % short-circuit on empty
             if isempty(Media)
-                scat = reshape(Scatterers.empty, size(Media)); 
+                sct = reshape(Scatterers.empty, size(Media)); 
                 return;
             end
             
@@ -527,7 +527,7 @@ classdef Scatterers < matlab.mixin.Copyable
             end
 
             % create a Scatterers for each Media
-            scat = arrayfun(@(m) Scatterers(...
+            sct = arrayfun(@(m) Scatterers(...
                 "pos", m.MP(:,1:3)'.*kwargs.scale, ...
                 "amp",m.MP(:,4)', ...
                 "c0", kwargs.c0, ...
@@ -538,13 +538,13 @@ classdef Scatterers < matlab.mixin.Copyable
     
     % dependent variables
     methods
-        function S = get.numScat(scat)
-            S = unique([size(scat.amp,2), size(scat.pos,2)]);
+        function S = get.numScat(sct)
+            S = unique([size(sct.amp,2), size(sct.pos,2)]);
             assert(isscalar(S), 'Cannot infer number of scatterers - check input sizes!');
         end
-        function b = get.bounds(scat), b = cat(1, scat.xb, scat.yb, scat.zb); end
-        function b = get.xb(scat), b = [min(scat.pos(1,:)), max(scat.pos(1,:))]; end
-        function b = get.yb(scat), b = [min(scat.pos(2,:)), max(scat.pos(2,:))]; end
-        function b = get.zb(scat), b = [min(scat.pos(3,:)), max(scat.pos(3,:))]; end
+        function b = get.bounds(sct), b = cat(1, sct.xb, sct.yb, sct.zb); end
+        function b = get.xb(sct), b = [min(sct.pos(1,:)), max(sct.pos(1,:))]; end
+        function b = get.yb(sct), b = [min(sct.pos(2,:)), max(sct.pos(2,:))]; end
+        function b = get.zb(sct), b = [min(sct.pos(3,:)), max(sct.pos(3,:))]; end
     end    
 end
