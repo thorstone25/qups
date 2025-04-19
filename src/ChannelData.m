@@ -1054,8 +1054,7 @@ classdef ChannelData < matlab.mixin.Copyable
                 chd ChannelData
                 ratio (1,1) {mustBePositive, mustBeInteger}
             end
-            chd = copy(chd); % copy semantics
-            chd = subD(chd, 1:ratio:chd.T, chd.tdim); % sub-index
+            chd = arrayfun(@(chd) subD(chd, 1:ratio:chd.T, chd.tdim), chd); % sub-index
         end
         function chd = resample(chd, fs, varargin)
             % RESAMPLE - Resample the data in time
