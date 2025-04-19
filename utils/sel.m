@@ -24,7 +24,7 @@ arguments
     x
     ind {mustBeIndex}
     dim (1,1) double {mustBeInteger, mustBePositive} = find(size(ind,1:max(ndims(x), ndims(ind)+1))==1, 1, 'first')
-    kwargs.legacy (1,1) logical = true
+    kwargs.legacy (1,1) logical = false
 end
 
 % create index axes for each dimension from ind
@@ -77,7 +77,7 @@ siz(end+1:K) = 1; % enforce at least K dims
 k = [1 cumprod(siz)]; % stride
 
 % explicit broadcast (implicit pre-allocation)
-rsz = siz(1:K) ./ size(varargin{dim},1:K); % replication size
+rsz = siz(1:K) ./ max(1,size(varargin{dim},1:K)); % replication size
 rsz(dim) = 1; % exempt indexing dimension
 varargin{dim} = repmat(varargin{dim}, rsz); % make full size
 

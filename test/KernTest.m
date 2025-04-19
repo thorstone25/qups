@@ -353,13 +353,15 @@ classdef KernTest < matlab.unittest.TestCase
             temp_folder = test.applyFixture(TemporaryFolderFixture);
             test.applyFixture(CurrentFolderFixture(temp_folder.Folder));
  
-             % sel.m
+            % sel.m
             sz = 5:-1:1;
             for d = 1:4
                 sz(1:d) = 1; % make scalar
                 x = rand(sz);
                 [y, ix] = max(x, [], 1);
-                test.assertEqual(y, sel(x,ix));
+                for legacy = [true, false]
+                    test.assertEqual(y, sel(x,ix,'legacy',legacy));
+                end
                 if canUseGPU()
                     test.assertEqual(y, gather(sel(gpuArray(x),(ix))));
                     test.assertEqual(y, gather(sel((x),gpuArray(ix))));
