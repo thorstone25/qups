@@ -616,11 +616,10 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
 
             % pre-allocate output
             [T, N, M, E] = deal(numel(t), us.rx.numel, us.tx.numel, prod(element_subdivisions));
-            x   = complex(zeros([1 T N M 0], 'like', kern)); % set size/type
-            x(:,:,:,:,1) = 0; % pre-allocate (once, not twice)
+            x = zeros([1 T N M], 'like', complex(kern([]))); % pre-allocate
 
             % splice
-            c0  = scat(f).c0;
+            c0 = scat(f).c0;
             ps = scat(f).pos; % 3 x S
             as = scat(f).amp; % 1 x S
             fso = us.fs; % output channel data sampling frequency
@@ -629,11 +628,19 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % compute the maximum distance for each scatterer
             % sort points by geometric mean of minimum/maximum distance
             [rminrx, rmaxrx, rmintx, rmaxtx] = deal(+inf, -inf, +inf, -inf);
-            for p = us.tx.positions, rminrx = min(rminrx, vecnorm(ps - p, 2, 1)); end % minimum scat time
-            for p = us.tx.positions, rmaxrx = max(rmaxrx, vecnorm(ps - p, 2, 1)); end % maximum scat time
-            for p = us.rx.positions, rmintx = min(rmintx, vecnorm(ps - p, 2, 1)); end % minimum scat time
-            for p = us.rx.positions, rmaxtx = max(rmaxtx, vecnorm(ps - p, 2, 1)); end % maximum scat time
+            for p = us.tx.positions, rs = vecnorm(ps - p, 2, 1); % distances
+                rminrx = min(rminrx, rs); % minimum scat time
+                rmaxrx = max(rmaxrx, rs); % maximum scat time
+            end
+            if us.tx ~= us.rx % different transducers
+            for p = us.rx.positions, rs = vecnorm(ps - p, 2, 1); % distances
+                rmintx = min(rmintx, rs); % minimum scat time
+                rmaxtx = max(rmaxtx, rs); % maximum scat time
+            end
             [rmin, rmax] = deal(rmintx + rminrx, rmaxtx + rmaxrx);
+            else % same transducer
+            [rmin, rmax] = deal(     2 * rminrx,      2 * rmaxrx);
+            end
             [~, i] = sort((rmin .* rmax)); % get sorting
 
             % sort points by geometric mean of minimum/maximum distance
@@ -644,8 +651,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 isftype = @(x,T) strcmp(class(x), T) || any(arrayfun(@(c)isa(x,c),["tall", "gpuArray"])) && strcmp(classUnderlying(x), T);
 
                 % determine the data type
-                if     isftype(kern, 'double'), typ = "double"; prc = 64; suffix = "" ; cfun = @double;
-                elseif isftype(kern, 'single'), typ = "single"; prc = 32; suffix = "f"; cfun = @single;
+                if     isftype(kern, 'double'), typ = "double"; prc = 64; suffix = "" ; cfun = @(x) cast(x, 'like', double(x([])));
+                elseif isftype(kern, 'single'), typ = "single"; prc = 32; suffix = "f"; cfun = @(x) cast(x, 'like', single(x([])));
                 elseif isftype(kern, 'halfT' ), typ = "halfT" ; prc = 16; suffix = "h"; cfun = @(x) alias(halfT(x));
                 else,   error("Datatype " + class(kern) + " not recognized as a GPU compatible type.");
                 end
@@ -867,7 +874,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd(f) = subD(chd(f), n0:T_, chd(f).tdim);
 
             % synthesize linearly
-            [chd(f)] = us.focusTx(chd(f), us.seq, 'interp', kwargs.interp, 'bsize', kwargs.bsize, 'verbose', kwargs.verbose);
+            [chd(f)] = us.focusTx(chd(f), us.seq, 'interp', kwargs.interp, 'bsize', kwargs.bsize*us.tx.numel, 'verbose', kwargs.verbose);
             end
 
             % combine all frames
@@ -3103,7 +3110,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 )
 
             % splice
-            setgpu = isa(W, 'parallel.Cluster'); % on implicit pools, gpu must be set explicitly
+            hcp = gcp('nocreate'); % reference the current pool
+            setgpu = isa(W, 'parallel.Cluster') || (isscalar(hcp) && isa(hcp, "parallel.ClusterPool")); % on implicit pools, gpu must be set explicitly
             runiso = ~isempty(kmedium_iso); % if empty, no need to simulate
             Np = numel(ksource); % number of sims
             parfor (puls = 1:Np, W)
@@ -3495,11 +3503,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
         end
         
         function [chd, Hi] = refocus(us, chd, seq, kwargs)
-            % REFOCUS - Recreate full-synthetic aperture data
+            % REFOCUS - Recreate full-synthetic aperture (FSA) data
             %
             % chd = refocus(us, chd) refocuses the ChannelData chd
-            % captured with the UltrasoundSystem us into FSA data.
-            %
+            % captured with the UltrasoundSystem us into FSA data via a
+            % linear algebraic expression mapping transmit pulses to
+            % transmit elements. If the encoding matrix H of phasors
+            % represents the linear mapping of elements to pulses per
+            % frequency, the REFoCUS algorithm seeks to model the observed
+            % data `y` per frequency as `y = H*x` and seeks to estimate the
+            % FSA data `x`. 
+            % 
             % [chd, Hi] = refocus(...) additionally returns the decoding
             % matrix Hi. Hi is of size (V x M x T) where V is the number
             % of transmit pulses, M is the number of transmit elements, and
@@ -3509,9 +3523,13 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % assuming that the ChannelData chd was captured using Sequence
             % seq instead of the Sequence us.seq.
             %
-            % [...] = refocus(..., 'method', 'tikhonov') uses a tikhonov
+            % [...] = refocus(..., 'method', 'adjoint') applies the adjoint
+            % of the encoding matrix as the decoder. This is typically 
+            % sufficient for plane-waves and/or orthogonal encodings.
+            %
+            % [...] = refocus(..., 'method', 'tikhonov') uses a Tikhonov
             % inversion scheme to compute the decoding matrix. This is
-            % best employed for focused transmit seuqneces
+            % preferable if using focused transmit sequences.
             %
             % [...] = refocus(..., 'method', 'tikhonov', 'gamma', gamma)
             % uses a regularization parameter of gamma for the tikhonov
@@ -3519,7 +3537,39 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % ignored. The regularization  parameter is scaled by the
             % maximum singular value for each frequency. The default is
             % (chd.N / 10) ^ 2.
-            %
+            % 
+            % [...] = refocus(..., 'method', 'pinv') applies the
+            % psuedoinverse of the encoding matrix H and is roughly
+            % equivalent to a Tikhonov inversion with gamma == 0. This
+            % option is not recommended.
+            % 
+            % 
+            % Note: 
+            % The QUPS delay model for focused transmits i.e. with
+            % us.seq.type == 'FC' places time t == 0 for each transmit at
+            % each focal point in pf = us.seq.focus. However, for FSA
+            % transmits, time t == 0 occurs at each transmitting element in
+            % pn = us.xdc.positions. 
+            % 
+            % While the refocused data will shift in time to satisfy this
+            % definition, the call to refocus() will not modify the time
+            % axes. Instead, the ChannelData chd should be zeropadded prior
+            % to calling refocus() to ensure that the time axes chd.time
+            % will contains the echoes. Otherwise, since REFoCUS operates
+            % in the frequency domain, the output will contain wrap-around
+            % artefacts.
+            % 
+            % For example, if the FSA ChannelData will contain echo energy
+            % from 10 us to 40 us, but the time axes for the focused
+            % ChannelData chd goes from -10 us to 20 us, then the focused
+            % ChannelData chd should be zeropadded at the end by at least
+            % 20 us e.g. 
+            % ```
+            % tmax = 40e-6; % the output data extends to 40 us.
+            % npad = ceil(chd.fs*(tmax - max(chd.time))); % convert to indices
+            % chd = chd.zeropad(0, npad); % zeropad the data in time
+            % ```
+            % 
             % References:
             % [1] Ali, R.; Herickhoff C.D.; Hyun D.; Dahl, J.J.; Bottenus, N. 
             % "Extending Retrospective Encoding For Robust Recovery of the Multistatic Dataset". 
@@ -3540,129 +3590,175 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % 
             % Example:
-            % % Define the setup - make plane waves
-            % c0 = 1500;
-            % us = UltrasoundSystem();
-            % seq = Sequence(        'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0);
-            % seqpw = SequenceRadial('type', 'PW', 'angles', -45:1.5:45, 'c0', c0);
-            % seqfc = SequenceRadial('type', 'FC', 'focus',[0 0 20]' + [1 0 0]'.*sub(us.xdc.positions,1,1), 'c0', c0);
-            % scat = Scatterers('pos', [5 0 30]'*1e-3, 'c0', seqpw.c0); % define a point target
+            % %% Define the setup
+            % c0 = 1500; % sound speed
+            % us = UltrasoundSystem(); % default
+            % pn = us.xdc.positions(); % element positions
+            % [xf, zf, yf] = ndgrid( pn(1,1:2:end), 1e-3*[20 40 60], 0); % foci grid
+            % pf = [xf(:),yf(:),zf(:)]'; % focal points (3 x V)
             %
-            % % Compute the image
-            % chd = greens(us, scat); % compute the response
-            % b = DAS(us, chd); % beamform the data
-            %
-            % % Focus into plane waves and beamform
+            % %% Create the Sequences
+            % seq   = Sequence(      'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0); % FSA
+            % seqhd = Sequence(      'type', 'FSA', 'numPulse', us.xdc.numel, 'c0', c0, 'apd', hadamard(us.xdc.numel)); % hadamard encoding
+            % seqpw = SequenceRadial('type', 'PW' , 'angles'  , -45:1.5:45  , 'c0', c0); % plane waves
+            % seqfc = SequenceRadial('type', 'FC' , 'focus'   , pf          , 'c0', c0); % focused
+            % 
+            % %% Simulate Scatterers
+            % % sct = Scatterers('pos', [5 0 30]'*1e-3, 'c0', c0); % define a point target
+            % sct = Scatterers.Grid([11 1 11], 2.5e-3, [0 0 20e-3]'); % define a grid of point targets 
+            % chd = greens(us, sct); % compute the FSA response
+            % 
+            % %% Synthesize plane waves, focused, and hadamard encoded transmits 
+            % chdhd = focusTx(us, chd, seqhd);
             % chdpw = focusTx(us, chd, seqpw);
-            % uspw = copy(us);
-            % uspw.seq = seqpw;
-            % bpw = DAS(uspw, chdpw);
-            %
-            % % Refocus back to FSA, and beamform
-            % chdfsa1 = refocus(us, chdpw, seqpw);
-            % bfsa1 = DAS(us, chdfsa1);
-            %
-            % % Focus at focal points and beamform
             % chdfc = focusTx(us, chd, seqfc);
-            % usfc = copy(us);
-            % usfc.seq = seqfc;
-            % bfc = DAS(usfc, chdfc);
-            %
-            % % Refocus back to FSA, and beamform
-            % chdfsa2 = refocus(us, chdpw, seqpw);
-            % bfsa2 = DAS(us, chdfsa2);
-            %
-            % % Display the channel data
+            % 
+            % %% Create the corresponding UltrasoundSystem
+            % ushd = copy(us); ushd.seq = seqhd;
+            % uspw = copy(us); uspw.seq = seqpw;
+            % usfc = copy(us); usfc.seq = seqfc;
+            % 
+            % %% Conditioning for Focused transmits w/ REFoCUS
+            % % Since REFoCUS operates in the frequency domain, we have to worry about
+            % % periodicity and wrap-around effects
+            % tpls = usfc.seq.pulse.duration + 2*usfc.xdc.impulse.duration; % pulse duration
+            % tdel = 2*max(range(usfc.seq.delays(usfc.xdc), 1)); % delay range
+            % tsct = 2*vecnorm(sct.pos)/sct.c0; tsct = [min(tsct(:)), max(tsct(:))]; % scatterer delay
+            % tbnd = tsct + [-1 1] * (tdel + tpls); % worst-case temporal boundaries
+            % Tpad = max(0,ceil(chdfc.fs * [max(chdfc.time(1,:)) - tbnd(1), tbnd(end) - min(chdfc.time(end,:))])); % padding sizes
+            % chdfc = chdfc.zeropad(Tpad(1), Tpad(2)); % extend channel data as necessary
+            % 
+            % %% Beamform images with native transmit pulse
+            % Hapd = pinv(ushd.seq.apodization(ushd.xdc)); % decoding matrix (pinv(H) == H' for Hadamard)
+            % bhd = DAS(ushd, chdhd * Hapd); % decoding applied over Tx
+            % bpw = DAS(uspw, chdpw       );
+            % bfc = DAS(usfc, chdfc       );
+            % 
+            % %% Refocus back to FSA
+            % chdhdr = refocus(us, chdhd, seqhd);
+            % chdpwr = refocus(us, chdpw, seqpw);
+            % chdfcr = refocus(us, chdfc, seqfc);
+            % 
+            % %% Beamform refocused data
+            % b    = DAS(us, chd   ); % original FSA
+            % bhdr = DAS(us, chdhdr);
+            % bpwr = DAS(us, chdpwr);
+            % bfcr = DAS(us, chdfcr);
+            % 
+            % %% Pack the Channel Data and B-modes
+            % chds = [chd, chdhdr, chdpw, chdpwr, chdfc, chdfcr];
+            % bs   = {b  ,   bhdr,   bpw,   bpwr,   bfc,   bfcr};
+            % tnms = ["Original", "Hadamard"; "Plane Waves", "Plane Waves"; "Focused", "Focused"]';
+            % tnms = tnms + ["","-REFoCUS"]';
+            % 
+            % %% Display the channel data
             % figure('Name', 'Channel Data');
             % tiledlayout(3,2);
-            % chds = [chd, chd, chdpw, chdfsa1, chdfc, chdfsa2];
-            % tnms = ["Original", "Original", "PW", "PW-REF", "FC", "FC-REF"];
-            % for i = 1:numel(chds)
-            %     himc = imagesc(chds(i),ceil(chds(i).M/2),nexttile()); 
-            %     title(tnms(i));
-            %     colorbar; colormap default; caxis(max(caxis) + [-50 0]);
+            % for i = numel(chds):-1:1
+            %     himc(i) = imagesc(chds(i), ceil(chds(i).M/2), nexttile(i));
+            %     dbr echo; title(tnms(i));
             % end
-            % linkaxes([himc.Parent]);
-            %
-            % % Display the images
+            % linkaxes([himc.Parent], 'x');
+            % 
+            % %% Display the images
             % figure('Name', 'B-mode');
             % tiledlayout(3,2);
-            % bs = {b, b, bpw, bfsa1, bfc, bfsa2};
-            % bpow = gather(mod2db(cellfun(@(b)max(b,[],'all'), bs)));
-            % for i = 1:numel(bs)
-            %     himb(i) = imagesc(us.scan, bs{i}, nexttile(), bpow(i) + [-80 0]);
-            %     colormap gray; colorbar; 
-            %     title(tnms(i));
+            % for i = numel(bs):-1:1
+            %     himb(i) = imagesc(us.scan, bs{i}, nexttile(i));
+            %     dbr b-mode; title(tnms(i));
             % end
             % linkaxes([himb.Parent]);
             %
-            % See also FOCUSTX
+            % See also FOCUSTX CHANNELDATA/ZEROPAD
             arguments
                 us (1,1) UltrasoundSystem
                 chd (1,1) ChannelData
                 seq (1,1) Sequence = us.seq
-                kwargs.gamma (1,1) {mustBeNumeric} = (chd.N / 10)^2 % heuristically chosen
-                kwargs.method (1,1) string {mustBeMember(kwargs.method, "tikhonov")} = "tikhonov"
+                kwargs.gamma (1,1)  {mustBeNumeric, mustBeNonnegative} = 10*(chd.N / 10)^2 % heuristically chosen
+                kwargs.method (1,1) string {mustBeMember(kwargs.method, ["tikhonov","adjoint","pinv"])} = "tikhonov"
             end
 
             % dispatch pagenorm/pagemrdivide function based on MATLAB version
-            if     exist('pagenorm', 'file')
-                pagenorm2 = @(x) pagenorm(x,2);
-            elseif exist('pagesvd', 'builtin')
+            if     isMATLABReleaseOlderThan("R2021b")
+                pagenorm2 = @(x) cellfun(@(x) svds(x,1), num2cell(double(x),1:2));
+            elseif isMATLABReleaseOlderThan("R2022b")
                 pagenorm2 = @(x) sub(pagesvd(x),{1,1},1:2);
             else
-                pagenorm2 = @(x) cellfun(@(x) svds(x,1), num2cell(double(x),1:2));
+                pagenorm2 = @(x) pagenorm(x,2);
             end
-            if exist('pagemrdivide','builtin')
-                pagemrdivide_ = @pagemrdivide;
+            if     isMATLABReleaseOlderThan("R2022a")
+                pagemldivide_ = @(x,y) cell2mat(cellfun(@mldivide,num2cell(gather(x),1:2),num2cell(gather(y),1:2),'UniformOutput',false));
             else
-                pagemrdivide_ = @(x,y) cell2mat(cellfun(@mrdivide,num2cell(x,1:2),num2cell(y,1:2),'UniformOutput',false));
+                pagemldivide_ = @pagemldivide;
             end
 
             % get the apodization / delays from the sequence
-            tau = -seq.delays(     us.tx); % (M x V)
-            a   =  seq.apodization(us.tx); % (M x V)
+            tau = seq.delays(     us.tx); % (V x M)
+            a   = seq.apodization(us.tx); % (V x M)
 
             % get the frequency vectors
-            f = gather(chd.fftaxis); % perm(... x T x ...)
+            f = swapdim(chd.fftaxis, chd.tdim, 3); % 1 x 1 x T
 
-            % construct the encoding matrix (M x V x T)
-            H = a .* exp(+2j*pi*swapdim(f,chd.tdim,3).*tau);
+            % construct the encoding matrix (V x M x T)
+            H = a.' .* exp(-2j*pi*f.*tau.');
 
-            % compute the pagewise tikhonov-inversion inverse (V x M x T)
+            % bandpass filter (sharp)
+            w = 1; % identity
+            % w = max(1e-6,(us.xdc.bw(1) <= f & f <= us.xdc.bw(end))); % 1 x 1 x T
+            w = w .* pagenorm2(gather(H)).^-2; % weight by transform singular values per frequency
+
+            % compute the pagewise tikhonov-inversion inverse (M x V x T)
             % TODO: there are other options according to the paper - they
             % should be options here
             switch kwargs.method
-                case "tikhonov"
-                    % TODO: option to use pinv, as it is (slightly)
-                    % different than matrix division
-                    A = real(pagemtimes(H, 'ctranspose', H, 'none')) + (kwargs.gamma * pagenorm2(gather(H)).^2 .* eye(chd.M)); % A = (H'*H + gamma * I)
-                    Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
-                    Hi = cast(Hi, 'like', H);
+                case "tikhonov" % (M x V x T)
+                    W = kwargs.gamma .* w .* eye(chd.N); % whitening
+                    A = (pagemtimes(H, 'ctranspose', H, 'none')) + W; % A = (H'*H + gamma * I)
+                    % Hi = pagetranspose(pagemrdivide_(gather(H), gather(A))); % Hi = (A^-1 * H)' <=> (H / A)'
+                    Hi = pagemldivide_(A, pagetranspose(H)); % Hi = (A^-1 * H') <=> (A \ H')
+
+                case "adjoint"
+                    Hi = pagetranspose(H) .* w; % .* (f ./ (pagenorm2(gather(H))));
+
+                case "pinv"
+                    %  psuedo-inverse
+                    Hi = w .* cell2mat(cellfun(@pinv, num2cell(gather(H), 1:2),'uni',0));
+                    
+                    % apply ramp filter
+                    % Hi = Hi .* f;
             end
 
-            % move inverse matrix to matching data dimensions
-            D = max(ndims(chd.data), ndims(chd.t0));
-            ord = [chd.mdim, D+1, chd.tdim];
-            ord = [ord, setdiff(1:D, ord)]; % all dimensions
-            Hi = ipermute(Hi, ord);
+            % typing
+            Hi = cast(Hi, 'like', H);
+            Hi(isnan(Hi)) = 0;
 
             % move data to the frequency domain
+            f = chd.fftaxis; % perm(... x T x ...)
             x = chd.data;
             x = fft(x,chd.T,chd.tdim); % get the fft in time
             omega0 = exp(-2i*pi*f.*chd.t0); % time-alignment phase
             x = x .* omega0; % phase shift to re-align time axis
             
-            % apply to the data - this is really a tensor-times-matrix
-            % operation, but it's not natively supported yet. 
-            for v = chd.N:-1:1
-                y{v} = sum(sub(Hi,v,D+1) .* x, chd.mdim);
+            switch kwargs.method
+                case {"tikhonov", "pinv", "adjoint"}
+                    % move inverse matrix to matching data dimensions
+                    D = max(ndims(chd.data), ndims(chd.t0));
+                    ord = [D+1, chd.mdim, chd.tdim];
+                    Hi = swapdim(Hi, 1:3, ord); % (M x V x T) -> match data
+
+                    % apply to the data - this is really a tensor-times-matrix
+                    % operation, but it's not natively supported yet.
+                    mdim = chd.mdim;
+                    for v = chd.N:-1:1
+                        y{v} = sum(sub(Hi,v,D+1) .* x, mdim);
+                    end
+                    y = cat(chd.mdim, y{:});
             end
-            y = cat(chd.mdim, y{:});
 
             % move back to the time domain
+            % re-align time axes
             t0 = min(chd.t0,[],'all');
-            y = y .* exp(+2i*pi*f.*t0); % re-align time axes
+            y = y .* exp(+2i*pi*f.*t0);
             y = ifft(y, chd.T, chd.tdim);
             
             % copy semantics
@@ -5412,9 +5508,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 % make full command
                 mcom(:,i) = cat(1,...
                     '-outdir', us.tmp_folder, ... place binaries in system's tmp folder
-                    join("-I" + d.IncludePath), ...
-                    join("-L" + d.Libraries), ...
-                    join("-D" + d.DefinedMacros),...
+                    join("-I" + d.IncludePath(:)), ...
+                    join("-L" + d.Libraries(:)), ...
+                    join("-D" + d.DefinedMacros(:)),...
                     fullfile(UltrasoundSystem.getSrcFolder(), 'FMM', 'functions', d.Source) ...
                     );
                 
@@ -5466,8 +5562,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % % change the source code ...
             %
             % % recompile the 3rd CUDA file manually
-            % system(nvcom(3)); % via nvcc
-            % % mexcuda(nvcom{3}{:}); % via mexcuda
+            % if   isstring(nvcom), system( nvcom(3)   ); % via nvcc
+            % elseif iscell(nvcom), mexcuda(nvcom{3}{:}); % via mexcuda
+            % end
             % 
             % See also ULTRASOUNDSYSTEM.RECOMPILE ULTRASOUNDSYSTEM.RECOMPILEMEX 
             % ULTRASOUNDSYSTEM.GENCUDADEFS
@@ -5492,25 +5589,25 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                     "--ptx " + which(string(d.Source)), ...
                     "-arch=" + arch + " ", ... compile for active gpu
                     "-o " + fullfile(us.tmp_folder, argn(2, @fileparts, d.Source) + ".ptx"), ...
-                    join("--" + d.CompileOptions),...
-                    join("-I" + d.IncludePath), ...
-                    join("-L" + d.Libraries), ...
-                    join("-W" + d.Warnings), ...
-                    join("-D" + d.DefinedMacros)...
+                    join("--" + d.CompileOptions(:)),...
+                    join("-I" + d.IncludePath(:)), ...
+                    join("-L" + d.Libraries(:)), ...
+                    join("-W" + d.Warnings(:)), ...
+                    join("-D" + d.DefinedMacros(:))...
                     ));
                     comp = @system;
                 else % via mexcuda
-                com{i} = cellstr(cat(2,...
+                com{i} = cellstr(cat(1,...
                     "-ptx", ...
                     "-output", fullfile(us.tmp_folder, argn(2, @fileparts, d.Source) + ".ptx"), ...
                     ... ("--" + d.CompileOptions),...
-                    ("-I" + d.IncludePath), ...
-                    ("-L" + d.Libraries), ...
+                    ("-I" + d.IncludePath(:)), ...
+                    ("-L" + d.Libraries(:)), ...
                     ... ("-W" + d.Warnings), ...
-                    ("-D" + d.DefinedMacros),...
+                    ("-D" + d.DefinedMacros(:)),...
                     which(string(d.Source)) ...
                     ... "-arch=" + arch + " ", ... compile for active gpu
-                    )');
+                    ));
                     comp = @(s) mexcuda(s{1}{:});
                 end                
                 try s = comp(com(i));
@@ -5581,6 +5678,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % 
             % % Compute
             % F = size(chd.data(:,:,:,:),4); % frames
+            % clear bf; % init
             % for f = 1:F
             %     bf{f} = k.feval(PRE_ARGS{:}, chd.data(:,:,:,f), POST_ARGS{:});
             % end
@@ -5626,9 +5724,9 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             flagnum = flagnum + 8*kwargs.keep_rx + 16*kwargs.keep_tx + 32*(chd.ndim>chd.mdim);
             
             % add the defined macros
-            def.DefinedMacros = cat(1, ...
+            def.DefinedMacros = cat(2, ...
                 def.DefinedMacros, ... keep the current defs
-                "QUPS_" + {... prepend 'QUPS_'
+                "QUPS_" + [... prepend 'QUPS_'
                 "VS="+VS,... virtual source model
                 "DV="+DV,... diverging wave model
                 "N="+N,... elements
@@ -5636,7 +5734,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
                 "I1="+Isz(1),... pixel dim 1
                 "I2="+Isz(2),... pixel dim 2
                 "I3="+Isz(3) ... pixel dim 3
-                }');
+                ]);
             if  kwargs.interp ~= "none"
                 def.DefinedMacros(end+1) = "QUPS_BF_FLAG="+flagnum; % interp / integration flag
             end
@@ -5645,11 +5743,8 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             end
             
             % if T is provided, include it
-            if isscalar(chd)
-                def.DefinedMacros = [def.DefinedMacros; ...
-                    {"QUPS_T="+chd.T}; ... number of time samples
-                    ];
-            end
+            if isscalar(chd), def.DefinedMacros(end+1) = "QUPS_T="+chd.T; end % number of time samples     
+            
         end
         function def = getGreensConstCudaDef(us, scat)
             % GETGREENSCONSTCUDADEF - Constant size compilation definition for greens
@@ -5694,17 +5789,17 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             def = UltrasoundSystem.genCUDAdefs('greens');
 
             % add the defined macros
-            def.DefinedMacros = cat(1, ...
+            def.DefinedMacros = cat(2, ...
                 def.DefinedMacros, ... keep the current defs
                 "QUPS_" + {... prepend 'QUPS_'
                 "T="+T,... elements
                 "N="+N,... elements
                 "M="+M,... transmits
-                }');
+                });
 
             % if I is provided, include it
             if isscalar(scat)
-                def.DefinedMacros = [def.DefinedMacros; ...
+                def.DefinedMacros = [def.DefinedMacros, ...
                     {"QUPS_I="+scat.numScat}; ... number of time samples
                     ];
             end

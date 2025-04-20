@@ -252,8 +252,15 @@ if dwnld
             else, error("Cannot identify system type for FieldII download.");
             end
 
-            url = "https://www.field-ii.dk/program_code/matlab_2021/Field_II_ver_3_30_"+os+".tar.gz";
-            untar(url, fld);
+            isM1 = ismac() && computer() == "MACA64"; % M1 chips
+            if isM1
+                url = "https://www.field-ii.dk/program_code/matlab_2023/Field_II_ver_4_11_"+os+".zip";
+                unzip(url, fld);
+                movefile(fullfile(fld, "m_files","*"), fld); % move sub-folder files to main folder
+            else
+                url = "https://www.field-ii.dk/program_code/matlab_2021/Field_II_ver_3_30_"+os+".tar.gz";
+                untar(string(gunzip(url, fld)), fld);
+            end
 
             % create a git repo
             vnm = replace(extractBetween(url, "Field_II_ver_", "_"+os),"_","."); % version name
@@ -422,14 +429,31 @@ end
 function compatabilityTask(context)
 % Check for required toolboxes
 req = ["Signal Processing", "Parallel Computing"];
-rec = ["Image Processing"];
+rec = ["Image Processing", "Statistics and Machine Learning"];
 sug = reshape(string.empty,1,0);
-rep = "The following packages are " + ["required", "recommended", "suggested"] ... 
-    + ": " + sprintf('\t') + cellfun(@(s)join(s,", ",2),{req,rec,sug});
-arrayfun(@disp, rep(~ismissing(rep)));
+pck = {req,rec,sug}; % packages
+sev = ["required", "recommended", "suggested"]; % severity
+rep = "The following packages are " + sev ... 
+    + ": " + sprintf('\t') + cellfun(@(s)join(s,", ",2),pck);
+
+disp(newline); arrayfun(@disp, rep(~ismissing(rep))); disp(newline);
 vn = string({ver().Name});
-i = ismember(req + " Toolbox", vn);
-assert(all(i), "The following toolboxes are required, but not installed:"+newline+join(req(~i)+ " Toolbox", newline));
-disp("All required toolboxes are installed.");
+
+for i = 1:numel(sev)
+    if isempty(pck{i}), continue; end
+    j = ismember(pck{i} + " Toolbox", vn);
+    if all(j)
+        disp("All "+sev(i)+" toolboxes are installed.");
+    else
+        msg = ("The following toolboxes are "+sev(i)+", but not installed: "...
+            +newline+join(pck{i}(~j)+ " Toolbox", newline)+newline);
+        switch sev(i)
+            case "required",    error(  msg);
+            case "recommended", warning(msg);
+            otherwise,          disp(   msg);
+        end
+    end
+end
+disp(newline);
 
 end

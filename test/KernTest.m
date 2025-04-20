@@ -300,8 +300,14 @@ classdef KernTest < matlab.unittest.TestCase
             end
 
             % test that defaults work
-            imagesc(us.scan, b); dbr;
+            h = imagesc(us.scan, b); dbr;
             arrayfun(@dbr, ["b-mode", "phase", "echo", "corr"])
+
+            % warn if all nonfinite (NaN/Inf)
+            for i = [NaN Inf -Inf]
+                h.CData(:) = i;
+                test.assertWarning(@()dbr(), "QUPS:dbr:nonfinite");
+            end
             
             % warn on ith argument
             clf(hf);
@@ -353,13 +359,15 @@ classdef KernTest < matlab.unittest.TestCase
             temp_folder = test.applyFixture(TemporaryFolderFixture);
             test.applyFixture(CurrentFolderFixture(temp_folder.Folder));
  
-             % sel.m
+            % sel.m
             sz = 5:-1:1;
             for d = 1:4
                 sz(1:d) = 1; % make scalar
                 x = rand(sz);
                 [y, ix] = max(x, [], 1);
-                test.assertEqual(y, sel(x,ix));
+                for legacy = [true, false]
+                    test.assertEqual(y, sel(x,ix,'legacy',legacy));
+                end
                 if canUseGPU()
                     test.assertEqual(y, gather(sel(gpuArray(x),(ix))));
                     test.assertEqual(y, gather(sel((x),gpuArray(ix))));

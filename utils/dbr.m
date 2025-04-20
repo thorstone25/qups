@@ -38,12 +38,13 @@ ax = gca; h = ax.Children( arrayfun(@(h) ...
 assert(~isempty(h), "Cannot identify an image for this axis."); % HACK - get the maximum value
 % caxis auto; cmax = max(caxis); 
 if exist('clim', 'file'), clm = @clim; else, clm = @caxis; end %#ok<CAXIS> - backwards compatibility
-cmax = max(cellfun(@(x) max([x(isfinite(x)); -Inf],[],'all','omitnan'),{h.CData}),[],'all','omitnan');
+cmax = max(cellfun(@(x) max([x(isfinite(x)); -Inf],[],'all'),{h.CData}),[],'all','omitnan');
+if ~isfinite(cmax), warning("QUPS:dbr:nonfinite", "Cannot adjust colorbar for nonfinite data."); end
 switch mode
-    case "b-mode", colormap(ax, 'bone'); clm(cmax + [-rang   0 ]);
-    case "echo"  , colormap(ax, 'jet' ); clm(cmax + [-rang   0 ]);
-    case "phase" , colormap(ax, 'hsv' ); clm(0    + [-rang rang]);
-    case "corr"  , colormap(ax, 'hot' ); clm(     + [rang    1 ]);
+    case "b-mode", colormap(ax, 'bone'); if isfinite(cmax); clm(cmax + [-rang   0 ]); end
+    case "echo"  , colormap(ax, 'jet' ); if isfinite(cmax); clm(cmax + [-rang   0 ]); end
+    case "phase" , colormap(ax, 'hsv' ); if isfinite(cmax); clm(0    + [-rang rang]); end
+    case "corr"  , colormap(ax, 'hot' ); if isfinite(cmax); clm(     + [rang    1 ]); end
 end
 
 function r = defaultRange(mode)

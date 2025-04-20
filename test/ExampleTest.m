@@ -145,7 +145,8 @@ classdef ExampleTest < matlab.unittest.TestCase
             lids = [...
                 "QUPS:kspaceFirstOrder:upsampling", ...  % in US
                 "MATLAB:ver:ProductNameDeprecated", ... % in k-Wave
-                "QUPS:recompile:UnableToRecompile" ... % in US 
+                "QUPS:recompile:UnableToRecompile", ... % in US 
+                "MATLAB:whitebg:WhitebgWillBeRemoved", ... % from ScanSpherical.convert() example
                 ];
                 W = warning(); % get current state
                 arrayfun(@(l) warning('off', l), lids); % silence

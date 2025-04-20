@@ -83,8 +83,12 @@ arguments
 end
 
 % ensure floating point, sorted, grid in vector form
-assert(issorted(x, 'strictmonotonic'), 'x-grid vector must be sorted and monotonic.');
-assert(issorted(y, 'strictmonotonic'), 'y-grid vector must be sorted and monotonic.');
+assert(issorted(x, 'strictmonotonic') , 'x-grid vector must be sorted and monotonic.');
+assert(issorted(y, 'strictmonotonic') , 'y-grid vector must be sorted and monotonic.');
+N = nnz(~(min(x) <= xa & xa <= max(x))); if N, warning('The x-coordinate of point a falls outside the grid.'); end
+N = nnz(~(min(x) <= xb & xb <= max(x))); if N, warning('The x-coordinate of point b falls outside the grid.'); end
+N = nnz(~(min(y) <= ya & ya <= max(y))); if N, warning('The y-coordinate of point a falls outside the grid.'); end
+N = nnz(~(min(y) <= yb & yb <= max(y))); if N, warning('The y-coordinate of point b falls outside the grid.'); end
 
 % move to same class to avoid precision matching issues
 proto = cat(1,x([]),y([]),xa([]),ya([]),xb([]),yb([])); % imply MATLAB casting rules
