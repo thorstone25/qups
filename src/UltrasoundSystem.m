@@ -874,7 +874,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             chd(f) = subD(chd(f), n0:T_, chd(f).tdim);
 
             % synthesize linearly
-            [chd(f)] = us.focusTx(chd(f), us.seq, 'interp', kwargs.interp, 'bsize', kwargs.bsize, 'verbose', kwargs.verbose);
+            [chd(f)] = us.focusTx(chd(f), us.seq, 'interp', kwargs.interp, 'bsize', kwargs.bsize*us.tx.numel, 'verbose', kwargs.verbose);
             end
 
             % combine all frames
@@ -3603,7 +3603,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             % seqpw = SequenceRadial('type', 'PW' , 'angles'  , -45:1.5:45  , 'c0', c0); % plane waves
             % seqfc = SequenceRadial('type', 'FC' , 'focus'   , pf          , 'c0', c0); % focused
             % 
-            % %% Simulate scatterers
+            % %% Simulate Scatterers
             % % sct = Scatterers('pos', [5 0 30]'*1e-3, 'c0', c0); % define a point target
             % sct = Scatterers.Grid([11 1 11], 2.5e-3, [0 0 20e-3]'); % define a grid of point targets 
             % chd = greens(us, sct); % compute the FSA response
