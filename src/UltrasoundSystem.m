@@ -3686,7 +3686,7 @@ classdef UltrasoundSystem < matlab.mixin.Copyable & matlab.mixin.CustomDisplay
             else
                 pagenorm2 = @(x) pagenorm(x,2);
             end
-            if     isMATLABReleaseOlderThan("R2021a")
+            if     isMATLABReleaseOlderThan("R2022a")
                 pagemldivide_ = @(x,y) cell2mat(cellfun(@mldivide,num2cell(gather(x),1:2),num2cell(gather(y),1:2),'UniformOutput',false));
             else
                 pagemldivide_ = @pagemldivide;
