@@ -168,6 +168,8 @@ classdef KernTest < matlab.unittest.TestCase
             test.set_device(dev);
             if prec == "halfT", test.assumeTrue(logical(exist('halfT', 'class'))); end
             if prec == "halfT", test.assumeFalse(isa(dev, 'oclDevice')); end % not supported
+            hasptx = logical(exist('interpd.ptx', 'file'));
+            hascl  = logical(exist('interpd.cl', 'file'));
 
             [I, T, N, M, F, fc, t, x, tau] = deal(test.dargs{1}{:});
             if isa(dev, 'parallel.gpu.CUDADevice'), [x, t, tau] = dealfun(@gpuArray, x, t, tau); end
@@ -185,7 +187,10 @@ classdef KernTest < matlab.unittest.TestCase
             % test defaults, options run
             interpd(x, tau);
             interpd(x, tau, 1, "cubic");
-            if isa(dev, 'parallel.gpu.CUDADevice'), interpd(x, tau, 1, "lanczos3"); end
+            if    (hasptx && isa(dev, 'parallel.gpu.CUDADevice')) ...
+               || (hascl  && isa(dev,               'oclDevice'))
+                interpd(x, tau, 1, "lanczos3");
+            end
 
             % cast data
             for terp_ = terp
@@ -320,6 +325,10 @@ classdef KernTest < matlab.unittest.TestCase
         end
         function wbilerp_test(test, dev)
             test.set_device(dev);
+            hasptx = logical(exist('wbilerp.ptx', 'file'));
+            hascl  = logical(exist('wbilerp.cl' , 'file'));
+            iscuda = isa(dev, 'parallel.gpu.CUDADevice');
+            isocl  = isa(dev,               'oclDevice');
 
             % Create a grid
             [x , y ] = deal(-5:5, -4:4);
@@ -327,11 +336,11 @@ classdef KernTest < matlab.unittest.TestCase
             [xb, yb] = deal( +3 ,  -2 );
 
             % implicit move to gpu
-            if isa(dev, 'parallel.gpu.CUDADevice')
+            if iscuda
                 [xa, ya, xb, xa] = dealfun(@gpuArray, xa, ya, xb, xa); 
             end
             wfuns = {@wbilerp};
-            if ~isnumeric(dev), wfuns{end+1} = @wbilerpg; end
+            if (iscuda && hasptx) || (isocl && hascl), wfuns{end+1} = @wbilerpg; end
 
             for swp = [false, true], if swp
                     [x, xa, xb, y, ya, yb] = ...
