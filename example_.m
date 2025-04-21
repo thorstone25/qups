@@ -123,7 +123,7 @@ switch "FSA"
 % Focused pulses:
 
         zf = 60 ; Nel = 16; % Focused (FC) Sequence  
-        apd = apWalking(Nel, M); % Walking aperture weights
+        apd = Sequence.apWalking(Nel, M); % Walking aperture weights
         pf = xdc.focActive(apd, zf); % Focused transmit locations
         seq = Sequence('type', 'FC', 'focus', pf); % Focused (FC) sequence
     case 'Sector'
