@@ -459,6 +459,7 @@ else
                 amn = swapdim(num2cell(apod{s}, [1:3]),[4 5]); % ({I} x [1|N] x [1|M])
                 asnm(s,:,:) = swapdim(repmat(amn, [double([N M]) ./ size(amn)]),[1,2],[2,3]); % broadcast to 1 x [1|N] x M
             end
+            asnm = reshape(asnm,[],N,M); % HACK: enforce sizing for M==1
             parfor m = 1:M
                 yn = dtypefun(zeros([Isz, 1, 1]));
                 asn = asnm(:,:,m);
