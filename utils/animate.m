@@ -16,8 +16,13 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % If h is an array of image handles and x is a corresponding cell array of
 % image data, each image h(i) will be updated by the data x{i}.
 %
+% ANIMATE(..., 'loop', true) plays through the animation continuously,
+% looping until the figure is closed. This is the default.
+%
 % ANIMATE(..., 'loop', false) plays through the animation once, rather than
 % looping until the figure is closed.
+%
+% ANIMATE(..., 'loop', N) plays through the animation N times.
 %
 % ANIMATE(..., 'title', ttl) sets the title for each image i and frame f to 
 % the string ttl(i,f). If ttl is singular in either the image or frame
@@ -88,10 +93,12 @@ arguments
     x {mustBeA(x, ["cell","sparse","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])} % data
     h (1,:) matlab.graphics.primitive.Image = inferHandles(x)
     kwargs.fs (1,1) {mustBePositive} = 20; % refresh rate (hertz)
-    kwargs.loop (1,1) logical = true; % loop until cancelled
+    kwargs.loop (1,1) {mustBeNumericOrLogical} = true; % loop until cancelled
     kwargs.title string = arrayfun(@(h) {join(string(strip(h.Parent.Title.String)), newline)}, h'); % array of titles (I x [1|M])
     kwargs.fn (1,1) logical = false; % whether to add frame number
 end
+% coerce loop into a loop count
+if islogical(kwargs.loop), if kwargs.loop, kwargs.loop = Inf; else, kwargs.loop = 1; end, end
 
 % place data in a cell if it isn't already
 if isnumeric(x) || islogical(x), x = {x}; end
@@ -202,7 +209,8 @@ while(all(isvalid(h)))
         if ~isempty(mvf), for f = 1:F, mvf{m,f} = getframe(hf(f)       ); end, end %  get the frames per figure
         pause(max(0, (1/kwargs.fs) - toc)); % pause for at least 0 sec, at most the framerate interval 
     end
-    if ~kwargs.loop, break; end
+    kwargs.loop = kwargs.loop - 1; % decrement counter
+    if kwargs.loop <= 0, break; end
 end
 if kwargs.fn, for i = 1:I, if isvalid(h(i)), h(i).Parent.Title.String = kwargs.title(i,1); end, end, end % reset titles
 
