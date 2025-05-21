@@ -37,6 +37,10 @@ function [mvf, mvh] = animate(x, h, kwargs)
 % 
 % ANIMATE(..., 'fs', fs) updates the image at a rate fs.
 % 
+% ANIMATE(..., 'alpha', a) additionally provides a ND-array of cell array
+% of ND-arrays of transparency alpha data a. The sizes of a must be
+% compatiable with x.
+% 
 % mvf = ANIMATE(...) returns a struct matrix of movie frames mvf for each
 % unique figure. This can be used to construct a movie or gif of each
 % figure.
@@ -96,13 +100,18 @@ arguments
     kwargs.loop (1,1) {mustBeNumericOrLogical} = true; % loop until cancelled
     kwargs.title string = arrayfun(@(h) {join(string(strip(h.Parent.Title.String)), newline)}, h'); % array of titles (I x [1|M])
     kwargs.fn (1,1) logical = false; % whether to add frame number
+    kwargs.alpha {mustBeA(kwargs.alpha, ["cell","sparse","gpuArray","double","single","logical","int64","int32","int16","int8","uint64","uint32","uint16","uint8"])}
 end
+hasa = isfield(kwargs,'alpha'); % whether alpha exists
+
 % coerce loop into a loop count
 if islogical(kwargs.loop), if kwargs.loop, kwargs.loop = Inf; else, kwargs.loop = 1; end, end
 
 % place data in a cell if it isn't already
 if isnumeric(x) || islogical(x), x = {x}; end
 I = numel(h); % number of images
+if hasa, a = kwargs.alpha; end
+if hasa, if isnumeric(a) || islogical(a), a = {a}; end, end
 
 % argument type checks - x must contain data that can be plotted
 % cellfun(@mustBeReal, x);
@@ -128,6 +137,7 @@ for i = 1:I
         ord = [c r, setdiff(dvec, [c,r])]; % permutation order - put '[c r]' first
         warning("QUPS:animate:MatchingPermutation","Permuting "+ith(i)+" argument to match the image (ord = ["+join(string(ord),",")+"]).");
         x{i} = permute(x{i}, ord); % permute
+        if hasa, a{i} = permute(a{i}, ord); end
     end
 end
 
@@ -194,10 +204,12 @@ end
 while(all(isvalid(h)))
     for m = 1:M
         if ~all(isvalid(h)), break; end
-        for i = 1:I, xi = x{i};
+        for i = 1:I, xi = x{i}; if hasa, ai = a{i}; end
             if ~issparse(xi), xim = xi(:,:,m); else, switch spim(i), case 0, xim = xi;  case 1, xim = xi(:,m); case 2, xim = xi(m,:); end, end
+   if hasa, if ~issparse(ai), aim = ai(:,:,m); else, switch spim(i), case 0, aim = ai;  case 1, aim = ai(:,m); case 2, aim = ai(m,:); end, end, end
             if isreal(xim), h(i).CData(:) = xim; else, h(i).CData(:) = mod2db(xim); end
-        end% update image
+            if hasa, h(i).AlphaData(:) = aim; end
+        end % update image
         % if isa(h, 'matlab.graphics.chart.primitive.Surface'), h(i).ZData(:) = h(i).CData(:); end % TODO: integrate surfaces
         if ~isempty(kwargs.title)
             for i = 1:I, h(i).Parent.Title.String = kwargs.title(i,m) + fttl(i,m); end
